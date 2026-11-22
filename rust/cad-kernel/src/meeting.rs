@@ -1096,6 +1096,12 @@ pub struct Shared {
     touches: std::collections::BTreeMap<(usize,usize),Vec<V>>,
     /// the pairs given, kept once asked for
     was_given: std::collections::BTreeSet<(usize,usize)>,
+    /// each pair found to meet in no curve but rest on one another at a point alone
+    /// (`ssi::meeting_resting`), in either order: that point (#994)
+    rests: std::collections::BTreeMap<(usize,usize),V>,
+    /// each index given a class of faces at once (`class`): two of one kind are apart by
+    /// construction, read by no region (#994)
+    classed: std::collections::BTreeSet<usize>,
 }
 
 impl Shared {
@@ -1118,17 +1124,41 @@ impl Shared {
                 _ => super::ssi::same(&self.surfaces[i],s,tol),
             }));
         if let Some(i) = found { super::geom::widen(&mut self.regions[i],region); return i }
+        self.push(s,region)
+    }
+    /// A new index, for `s` over `region`, among its kind's.
+    fn push(&mut self,s: &Surface,region: super::geom::Box3) -> usize {
         self.surfaces.push(s.clone());
         self.regions.push(region);
-        mine.push(self.surfaces.len()-1);
+        self.of_kind.entry(s.kind()).or_default().push(self.surfaces.len()-1);
         self.surfaces.len()-1
+    }
+    /// **The index of a class of faces one surface**, drawn by the caller face by face (#994,
+    /// `boolean`'s `Arrangement::classed`): `rep`, the surface standing for the class, over
+    /// `region`, the box its faces fill — the index of a surface given before (`give`) that one of
+    /// `members` (the class's surfaces, `rep` among them) is exactly, else a new one — never an
+    /// index another surface is read the same as over a region, which would join what the caller
+    /// parted.
+    pub fn class(&mut self,rep: &Surface,members: &[&Surface],region: super::geom::Box3) -> usize {
+        let mine = self.of_kind.entry(rep.kind()).or_default();
+        let i = match mine.iter().copied().find(|&i| members.iter().any(|m| self.surfaces[i] == **m)) {
+            Some(i) => { super::geom::widen(&mut self.regions[i],region); i }
+            None => self.push(rep,region),
+        };
+        self.classed.insert(i);
+        i
     }
     /// **Whether surfaces `i` and `j` are one** (#961): one index, or one over the part of space
     /// the faces given each fill (`ssi::same_over`, within `ON_CURVE` tolerances) — two of two
     /// kinds, which `index_over` keeps apart, a sheet lying in a plane. Their meeting is then
     /// `Ssi::Same`, and a piece on a face of the one is on the other's (`boolean`'s `Surfaces::one`).
+    /// Two indices each given a class of faces of one kind (`class`) are one only where they are
+    /// one index: the classes were drawn apart face by face, and a reading over the regions they
+    /// fill would join what no two of their faces are.
     pub fn one(&self,i: usize,j: usize,tol: f64) -> bool {
         if i == j { return true }
+        let classed = self.classed.contains(&i) && self.classed.contains(&j);
+        if classed && self.surfaces[i].kind() == self.surfaces[j].kind() { return false }
         let shared = common(self.regions[i],self.regions[j],tol);
         (0..3).all(|k| shared.0[k] <= shared.1[k])
             && super::ssi::same_over(&self.surfaces[i],&self.surfaces[j],super::tolerant::ON_CURVE*tol,shared)
@@ -1146,7 +1176,9 @@ impl Shared {
             return m
         }
         let start = crate::util::clock::Instant::now();
-        let m = if i != j && self.one(i,j,tol) { Ssi::Same } else { intersect(&self.surfaces[i],&self.surfaces[j],tol) };
+        let (m,rest) = if i != j && self.one(i,j,tol) { (Ssi::Same,None) }
+            else { super::ssi::meeting_resting(&self.surfaces[i],&self.surfaces[j],tol) };
+        if let Some(p) = rest { self.rests.insert((i.min(j),i.max(j)),p); }
         // the profile's count of meetings found in closed form and left to a trace (#777 V4)
         crate::util::meter::meeting(self.surfaces[i].kind(),self.surfaces[j].kind(),!matches!(m,Ssi::Traced),start.elapsed());
         self.meetings.insert((i,j),m.clone());
@@ -1189,14 +1221,17 @@ impl Shared {
     }
     /// **What surfaces `i` and `j` are known to meet on** (#990): one surface (`Met::Same`), or the
     /// curves of their meeting given (`give`, with the points they are given to touch at) or found
-    /// in closed form (`meeting`, asked in that order). A closed form meeting in no curve is no
-    /// knowledge of it: it leaves out a point the two touch at. `None` where it is traced, or
-    /// that.
+    /// in closed form (`meeting`, asked in that order), or no curve but the point the two rest on
+    /// one another at alone (`ssi::meeting_resting`: their least distance in closed form within
+    /// the tolerance, and the touch there alone over its radius, #994). Any other closed form
+    /// meeting in no curve is no knowledge of it: it may leave out a point the two touch at.
+    /// `None` where it is traced, or that.
     pub fn known(&mut self,i: usize,j: usize,tol: f64) -> Option<Met> {
         if self.given(i,j) { return Some(Met::On(self.given_curves(i,j),self.given_touches(i,j))) }
         match self.meeting(i,j,tol) {
             Ssi::Same => Some(Met::Same),
             Ssi::Curves(cs) if !cs.is_empty() => Some(Met::On(cs,Vec::new())),
+            Ssi::Curves(_) => self.rests.get(&(i.min(j),i.max(j))).map(|&p| Met::On(Vec::new(),vec![p])),
             _ => None,
         }
     }

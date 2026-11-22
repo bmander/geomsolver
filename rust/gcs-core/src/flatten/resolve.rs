@@ -1031,7 +1031,7 @@ impl<'a> Walk<'a> {
     }
 
     /// `alias_keys` brought up to the aliases made so far (`Lazy`): they are only ever added to.
-    fn index_aliases(&self) {
+    pub(super) fn index_aliases(&self) {
         let mut index = self.alias_keys.borrow_mut();
         let (made, keys) = &mut *index;
         debug_assert!(*made <= self.aliases.len(), "an alias was taken back");
@@ -1118,7 +1118,7 @@ impl<'a> Walk<'a> {
 
     /// The scope a set-aside block's chain is looked up in, with the access table the resolve
     /// pass would give it — so a private chain is no more reachable by iterating it.
-    fn pending_scope(&self, p: &Pending) -> Scope {
+    pub(super) fn pending_scope(&self, p: &Pending) -> Scope {
         Scope { access: std::rc::Rc::new(self.private_names.clone()), ..p.scope.clone() }
     }
 
@@ -1253,6 +1253,22 @@ impl<'a> Walk<'a> {
         Some(all.iter().filter(|f| f.listed_by(&rest, at)).map(|f| format!("{abs}.{}", f.text())).collect())
     }
 
+    /// Whether face `me` (an absolute name) is among those a path names (`faces_named`), looked
+    /// up by its name: `None` where the path is no solid's the elaborator has named faces of.
+    pub(super) fn among(
+        &self,
+        me: &str,
+        r: &Ref,
+        sc: &Scope,
+        alias: &dyn Aliases,
+    ) -> Option<bool> {
+        let (abs, rest) = self.look(alias).find(r, sc)?;
+        let listed = self.faces.given.get(&abs)?;
+        let face = me.strip_prefix(abs.as_str()).and_then(|f| f.strip_prefix('.'));
+        let k = face.and_then(|f| self.faces.index.get(&abs)?.get(f).copied());
+        Some(k.is_some_and(|k| listed.paths[k].listed_by(&rest, sc.prefix())))
+    }
+
     /// What a name stands for, as one absolute name: the entity or face it resolves to,
     /// through every alias — what two names are compared by when a `when` asks if they are
     /// the same (#267).
@@ -1337,6 +1353,29 @@ impl<'a> Walk<'a> {
                 });
             let Some((i, (walks, over))) = found else { break };
             let p = self.aside.blocks.remove(i);
+            // a block over faces copies only those meeting the face its `when` asks of (#994)
+            let adjacent = match (&walks, &over) {
+                (Ok(_), Some(o)) if o.nothing.is_none() => self.adjacent(&p, &o.solid, &o.listed),
+                _ => None,
+            };
+            // and what a statement's blocks over faces run over said, as the first is expanded
+            if let (Ok(_), Some(o)) = (&walks, &over) {
+                if !o.listed.is_empty() && !self.faces.tally.contains_key(&p.at) {
+                    let (said, will) = self.tally(&p, &o.solid, &o.listed);
+                    crate::progress::during(|| crate::progress::Work::expand(said.clone()), || ());
+                    crate::progress::gauge(|| format!("expanding {said}"));
+                    self.faces.tally.insert(p.at, Tally { said, will, made: 0 });
+                }
+            }
+            // the copies it leaves out, by place, and the pairs they would have read apart kept
+            let skip: Vec<u32> = match (adjacent, &over) {
+                (Some((face, apart)), Some(o)) => {
+                    let skip = apart.iter().map(|&(k, _)| k).collect();
+                    self.prune(p.at, &o.solid, face, &o.listed, apart);
+                    skip
+                }
+                _ => Vec::new(),
+            };
             if let Some(o) = over {
                 // a block over a solid's faces names it however they were named: the
                 // elaborator names them again where its solids now give them otherwise ([0.149])
@@ -1357,12 +1396,26 @@ impl<'a> Walk<'a> {
                 }
             }
             match walks {
-                Ok(walks) => self.expand_edges(p, walks),
+                Ok(walks) => {
+                    let (at, before) = (p.at, self.emitted());
+                    self.expand_edges(p, walks, &skip);
+                    self.projection(at, self.emitted().saturating_sub(before));
+                    if self.overflowed {
+                        break;
+                    }
+                }
                 Err((span, m)) => {
                     self.take_placeholder(&p);
                     self.err(Code::E080, span, m);
                 }
             }
+        }
+        // an expansion refused before it was made leaves its blocks unexpanded, said once
+        if self.overflowed {
+            for p in std::mem::take(&mut self.aside.blocks) {
+                self.take_placeholder(&p);
+            }
+            return;
         }
         let alias = self.alias_table();
         for p in std::mem::take(&mut self.aside.blocks) {
@@ -1400,6 +1453,35 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// **An expansion refused before it is made** (#994): a statement whose blocks over a solid's
+    /// faces have made `more` statements more, of the copies whose `when` held so far, projected
+    /// to the copies its tally says will hold (`Walk::tally`, each pair both ways, each three in
+    /// its six orders): where that comes to more than twice `MAX_FLAT` — no expansion a copy's
+    /// share of the first ones misjudges by so much is cut short — the one E103 is said at once,
+    /// with how far it got and what to do, and nothing more is walked (`overflowed`).  One that
+    /// projects nearer the limit is walked, and said as any past it is.
+    fn projection(&mut self, at: Span, more: usize) {
+        let Some(Tally { will: Some(will), made, .. }) = self.faces.tally.get_mut(&at) else {
+            return;
+        };
+        *made += more;
+        let (will, made) = (*will, *made);
+        let held = self.faces.selecting.get(&at).map_or(0, |s| s.made);
+        if self.overflowed || held == 0 || will <= held {
+            return;
+        }
+        let projected = made * will / held;
+        if projected <= 2 * MAX_FLAT {
+            return;
+        }
+        self.overflowed = true;
+        let t = &self.faces.tally[&at].said;
+        let m = format!("{t}, would make about {projected} statements, more than {MAX_FLAT} \
+            (its first {held} copies made {made}): the drawing is cut short, and nothing of it is \
+            built — {FEWER_FACES}");
+        self.err(Code::E103, at, m);
+    }
+
     /// Each name a list written in place gives its copies (#882) that names nothing, said at the
     /// item as any reference to nothing is — whether or not a copy reads it.
     pub(super) fn listed_names(&mut self) {
@@ -1432,7 +1514,7 @@ impl<'a> Walk<'a> {
     /// One block over a chain's edges — or several chains' and faces', in step: a copy per link,
     /// made into a vector of their own and spliced in where the walk met the block, so the
     /// statements stand in source order.
-    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>) {
+    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>, skip: &[u32]) {
         let Some(at) = self.take_placeholder(&p) else { return };
         let StmtKind::Block(b) = &p.st.kind else { return };
         let Some(over) = &b.over else { return };
@@ -1488,7 +1570,7 @@ impl<'a> Walk<'a> {
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None);
+        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None, skip);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);

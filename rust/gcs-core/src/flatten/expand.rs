@@ -146,7 +146,7 @@ impl<'a> Walk<'a> {
             }
             // said once, at the document's statement that expands to them (#625): every body
             // the walk is in stops here, and what is made of so much is no drawing
-            if self.emitted() >= MAX_FLAT {
+            if self.emitted() >= MAX_FLAT || self.overflowed {
                 if !self.overflowed {
                     self.overflowed = true;
                     let at = self.faces.at;
@@ -159,9 +159,15 @@ impl<'a> Walk<'a> {
                         }
                         _ => String::new(),
                     };
+                    // and, where it was expanding blocks over a solid's faces, what they ran
+                    // over and what to do (#994)
+                    let (from, todo) = match self.faces.tally.get(&at) {
+                        Some(t) => (format!(", from {}", t.said), format!(" — {FEWER_FACES}")),
+                        None => (String::new(), String::new()),
+                    };
                     self.err(Code::E103, at, format!(
-                        "more than {MAX_FLAT} statements once expanded{within}: the drawing is cut \
-                         short, and nothing of it is built"
+                        "more than {MAX_FLAT} statements once expanded{within}{from}: the drawing \
+                         is cut short, and nothing of it is built{todo}"
                     ));
                 }
                 return;
@@ -1147,12 +1153,13 @@ impl<'a> Walk<'a> {
             };
             let wanted = names.wanted.take();
             let unread = names.unread.get();
+            let unbuilt = names.unbuilt.take();
             let across = names.across.take();
             drop(names);
             if let Some((pairs, fixed)) = faced {
                 let s = self.faces.selecting.entry(self.faces.at).or_default();
                 s.asked = true;
-                s.held |= matches!(decided, Ok(true));
+                s.made += usize::from(matches!(decided, Ok(true)));
                 s.unsure |= decided.is_err() || fixed;
                 s.pairs.extend(pairs);
             }
@@ -1165,6 +1172,16 @@ impl<'a> Walk<'a> {
             self.faces.wanted.extend(wanted);
             if unread {
                 self.faces.unread.insert(b.head);
+            }
+            // a solid not built where the drawing stands: read again where it solves, and its
+            // statement not built if it is not built there either (#994)
+            let at = self.faces.at;
+            for (solid, why) in unbuilt {
+                self.faces.unread.insert(at);
+                let u = super::Unbuilt { at, solid, why };
+                if !self.faces.unbuilt.contains(&u) {
+                    self.faces.unbuilt.push(u);
+                }
             }
             match decided {
                 Ok(true) => {
@@ -1261,7 +1278,7 @@ impl<'a> Walk<'a> {
         };
         let edges: Vec<(&Name, &[super::Link])> =
             links.iter().map(|(v, l)| (*v, l.as_slice())).collect();
-        self.copies(b, st, scope, path, depth, n, &edges, items);
+        self.copies(b, st, scope, path, depth, n, &edges, items, &[]);
     }
 
     /// Whether the body declares what each copy calls its edge or its item, which would hide it:
@@ -1711,6 +1728,7 @@ impl<'a> Walk<'a> {
         n: usize,
         edges: &[(&Name, &[Link])],
         items: Option<(&Name, &[super::lists::Item])>,
+        skip: &[u32],
     ) {
         // a block's index and its edge or item binder are names of each copy, and one over a name
         // the enclosing scope already has would read two ways in one body (E002): said once per
@@ -1761,6 +1779,10 @@ impl<'a> Walk<'a> {
         };
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for k in 0..n {
+            // a copy its block's `when` is known to leave out (`adjacent`, #994) is not made
+            if skip.binary_search(&(k as u32)).is_ok() {
+                continue;
+            }
             // each copy a frame of its own — its binder, then what its body defines — over the
             // numbers around the block, shared by every copy and never copied (#405)
             let mut sub = Vals::over(scope.vals.clone());
@@ -2135,9 +2157,11 @@ impl Walk<'_> {
         let plain = set.path.is_empty() && !matches!(set.root.text.as_str(), "next" | "prev");
         let candidates = sc.prefixes.iter().map(|p| format!("{p}{}", set.root.text))
             .chain((!sc.closed).then(|| set.root.text.clone()));
+        // (an alias by the walk's index of them, not a look through every one, #994)
+        self.index_aliases();
         let first = candidates.filter(|_| plain).find(|abs| {
             self.names.contains(abs) || self.same.sets.contains_key(abs)
-                || self.aliases.iter().any(|(k, _, _)| k == abs)
+                || self.alias_keys.borrow().1.contains_key(abs)
         });
         let (found, through) = match first {
             Some(abs) if self.names.contains(&abs) => (Some((abs, Vec::new())), false),
@@ -2154,6 +2178,173 @@ impl Walk<'_> {
             return None;
         }
         Some((set.clone(), abs, through))
+    }
+}
+
+impl Walk<'_> {
+    /// The solid a face is listed by, its name from that solid and its path, by what the face
+    /// stands for (`disc.opening.rim`): the faces the elaborator gave the walk, looked up by name
+    /// (`FaceState::index`), so a `when` costs the same over a body of any size.
+    fn face<'s>(&'s self, abs: &'s str)
+        -> Option<(&'s str, &'s str, &'s crate::solid::faces::FacePath, &'s super::Listed)> {
+        // a solid's name is a prefix of its faces': each prefix ending at a dot, the shortest
+        // first, as the solids are ordered
+        let mut ends = abs.char_indices().filter(|&(_, c)| c == '.').map(|(k, _)| k);
+        ends.find_map(|end| {
+            let (solid, rest) = (&abs[..end], &abs[end + 1..]);
+            let (key, listed) = self.faces.given.get_key_value(solid)?;
+            let &k = self.faces.index.get(solid)?.get(rest)?;
+            Some((key.as_str(), rest, &listed.paths[k], listed))
+        })
+    }
+
+    /// **Only the faces that meet** (#994): a block over a solid's faces whose body is one `when`
+    /// that asks, among the conditions it joins by `and`, `v meets y` — `v` what each copy calls
+    /// its face, `y` a face of the same solid read before the block (`std.rounds`' `b` against
+    /// `a`, a corner's `c` against `a`) — makes nothing of a face `meets` reads apart from `y`,
+    /// whatever else it asks.  So it copies only the faces meeting `y`, each under its own index
+    /// as every copy is, read off the solid's `Meets` (O(log n) a face): a body's edges and
+    /// corners are copied, not every pair and three of its faces.  Its first face is copied
+    /// whatever it meets, so a condition that cannot be decided is said as it was.  The rest it
+    /// leaves are `y` by its name from the solid and each face read apart from it, by its place
+    /// in `listed` (ascending) with the layer it was read in: the copies not made, kept as the
+    /// pairs it read apart (`Pruned`, `Walk::prune`), read again where the drawing solves as
+    /// every pair `meets` reads apart is.  `None` where the block is not so, `y` is not read so
+    /// (no face, of another solid — refused where it is asked — or of a boundary that cannot
+    /// say), or every face meets it: every face is copied.
+    pub(super) fn adjacent(&self, p: &Pending, solid: &str, listed: &[String])
+        -> Option<(String, Vec<(u32, u32)>)> {
+        let StmtKind::Block(b) = &p.st.kind else { return None };
+        let over = b.over.as_ref()?;
+        let [only] = &b.body[..] else { return None };
+        let StmtKind::Block(when) = &only.kind else { return None };
+        if when.kind != BlockKind::When || b.joint.is_some() || listed.len() < 2 {
+            return None;
+        }
+        let var = over.var.text.as_str();
+        let cond = crate::expr::parse_condition_in(&when.count, self.units).ok()?;
+        let other = met_by(&cond, var)?;
+        let sc = self.pending_scope(p);
+        let names = Asked::new(self, &sc);
+        let y = super::values::Names::stands(&names, other)?;
+        drop(names);
+        let (of, ry, py, given) = self.face(&y)?;
+        if of != solid {
+            return None;
+        }
+        let layered = given.read.as_ref().ok()?;
+        // the use a copy stands in is read off its prefix up to the block's own key (`use_key`),
+        // so every copy reads its pair in the layer the first does
+        let at = format!("{}0.", super::keys::block(sc.prefix(), p.st.id.0));
+        let index = self.faces.index.get(solid)?;
+        let mut apart = Vec::new();
+        for (k, rz) in listed.iter().enumerate().skip(1) {
+            let pz = &given.paths[*index.get(rz)?];
+            let layer = given.layers.layer(&at, &[py, pz]);
+            if !layered.meets(layer).meets(ry, rz) {
+                apart.push((k as u32, layer as u32));
+            }
+        }
+        (!apart.is_empty()).then(|| (ry.to_string(), apart))
+    }
+
+    /// **The pairs a block over a solid's faces read apart and made no copy of, kept** (#994):
+    /// `face` and `apart` as `adjacent` gives them, of the block at `at` over `listed` — one
+    /// `Pruned`, its list of faces the one every block listing them alike shares, and none where
+    /// the same is kept already.
+    pub(super) fn prune(&mut self, at: Span, solid: &str, face: String, listed: &[String],
+        apart: Vec<(u32, u32)>) {
+        self.faces.selecting.entry(at).or_default().asked = true;
+        let next = self.faces.lists.len();
+        let (faces, &order) = match self.faces.lists.get_key_value(listed) {
+            Some(found) => found,
+            None => {
+                self.faces.lists.insert(listed.into(), next);
+                self.faces.lists.get_key_value(listed).expect("inserted")
+            }
+        };
+        let faces = faces.clone();
+        let key = (at, solid.to_string(), face, order, apart);
+        if self.faces.recorded.contains(&key) {
+            return;
+        }
+        let (at, solid, face, _, apart) = key.clone();
+        self.faces.recorded.insert(key);
+        self.faces.pruned.push(super::Pruned { solid, face, faces, apart, at });
+    }
+}
+
+impl Walk<'_> {
+    /// **What a statement's blocks over a solid's faces run over** (#994), as the walk expands the
+    /// first: the statement as written, how many faces of which solid, and how many pairs and
+    /// threes of them meet (each two of the three), read off the solid's `Meets` — the edges and
+    /// corners `std.rounds`' words copy — or that its boundary does not say, so every two are
+    /// taken to meet.  Said to whoever listens (`progress::Work::expand`), and in the E103 of an
+    /// expansion past its limit.
+    pub(super) fn tally(&self, p: &Pending, solid: &str, listed: &[String])
+        -> (String, Option<usize>) {
+        // the statement's first line, as written
+        let text = self.prog.span_text(p.at).unwrap_or("").trim();
+        let text = match text.split_once('\n') {
+            Some((first, _)) => format!("{} …", first.trim_end()),
+            None => text.to_string(),
+        };
+        let of = crate::program::public_path(solid);
+        let n = listed.len();
+        let faces = if n == 1 { "face".to_string() } else { format!("{n} faces") };
+        let head = format!("`{text}` over {faces} of `{of}`");
+        let meets = self.faces.given.get(solid).and_then(|g| {
+            let read = g.read.as_ref().ok()?;
+            let at = format!("{}0.", super::keys::block(self.pending_scope(p).prefix(), p.st.id.0));
+            Some(read.meets(g.layers.layer(&at, &[])))
+        });
+        // each face's neighbours among those listed, by place, where the boundary says of all
+        let place: BTreeMap<&str, usize> = listed.iter().enumerate().map(|(k, f)| (f.as_str(), k))
+            .collect();
+        let near: Option<Vec<BTreeSet<usize>>> = meets.and_then(|m| listed.iter().map(|f| {
+            Some(m.neighbours(f)?.iter().filter_map(|g| place.get(g.as_str()).copied()).collect())
+        }).collect());
+        let Some(near) = near else {
+            let field = self.faces.given.get(solid)
+                .is_some_and(|g| matches!(g.read, Err(crate::solid::faces::Unread::Field)));
+            return if field {
+                // every two and every three: each ordered as a word reaches it
+                (format!("{head}, whose boundary is its field's (a sweep cuts it), so which of \
+                    them meet is not read and every two are taken to"), Some(n * (n - 1) * (n - 1)))
+            } else {
+                (format!("{head}, whose boundary is not built where the drawing stands, so which \
+                    of them meet is read where it solves"), None)
+            };
+        };
+        let mut pairs = 0;
+        let mut threes = 0;
+        for (y, ny) in near.iter().enumerate() {
+            for &z in ny.range(y + 1..) {
+                pairs += 1;
+                threes += ny.range(z + 1..).filter(|w| near[z].contains(w)).count();
+            }
+        }
+        let count = |k: usize, one: &str, many: &str| match k {
+            1 => format!("1 {one}"),
+            k => format!("{k} {many}"),
+        };
+        // each pair reached both ways, each three in its six orders, as `std.rounds`' words reach
+        // them: the copies whose `when` will hold
+        (format!("{head}, of which {} and {} meet each other",
+                 count(pairs, "pair meets", "pairs meet"), count(threes, "three", "threes")),
+         Some(2 * pairs + 6 * threes))
+    }
+}
+
+/// The face `y` a condition asks `var meets y` (or `y meets var`) of, among the conditions it
+/// joins by `and` — the first such, as the walk reads them — where `y` is not `var` itself.
+fn met_by<'c>(c: &'c crate::expr::Cond, var: &str) -> Option<&'c str> {
+    use crate::expr::Cond;
+    match c {
+        Cond::And(a, b) => met_by(a, var).or_else(|| met_by(b, var)),
+        Cond::Meets(x, y) if x == var && y != var => Some(y),
+        Cond::Meets(x, y) if y == var && x != var => Some(x),
+        _ => None,
     }
 }
 
@@ -2176,6 +2367,9 @@ struct Asked<'w, 'a> {
     /// Whether a `when` held a face against a direction of a solid whose boundary was not built
     /// where the drawing stood (#948): its E103 deferred, read again where it solves.
     unread: std::cell::Cell<bool>,
+    /// Each solid `meets` was asked of whose boundary is not built where the drawing stands, and
+    /// why (#994): read again where it solves, and its statement not built if it is not there.
+    unbuilt: std::cell::RefCell<Vec<(String, String)>>,
     /// Whether the condition read a face at all — compared one with another, or asked whether
     /// two meet or how one lies (#962).
     faced: std::cell::Cell<bool>,
@@ -2199,6 +2393,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             reads: Default::default(),
             wanted: Default::default(),
             unread: Default::default(),
+            unbuilt: Default::default(),
             faced: Default::default(),
             across: Default::default(),
         }
@@ -2208,11 +2403,7 @@ impl<'w, 'a> Asked<'w, 'a> {
     /// stands for (`disc.opening.rim`): the faces the elaborator gave the walk.
     fn face<'s>(&'s self, abs: &'s str)
         -> Option<(&'s str, &'s str, &'s crate::solid::faces::FacePath, &'s super::Listed)> {
-        self.walk.faces.given.iter().find_map(|(solid, listed)| {
-            let rest = abs.strip_prefix(solid.as_str())?.strip_prefix('.')?;
-            let path = listed.paths.iter().find(|f| f.text() == rest)?;
-            Some((solid.as_str(), rest, path, listed))
-        })
+        self.walk.face(abs)
     }
 
     /// `ask` of `name`, through the aliases read lazily.
@@ -2241,6 +2432,10 @@ impl super::values::Names for Asked<'_, '_> {
         self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
     }
 
+    fn among(&self, me: &str, name: &str) -> Option<bool> {
+        self.ask(name, |r, alias| self.walk.among(me, r, self.scope, alias))
+    }
+
     /// Faces of one solid by its `Meets`, read where the drawing is seeded; of one whose boundary
     /// does not say, as meeting.  Faces of two solids are refused (#961): an edge is where two
     /// faces of one body meet, and the elaborator says so where it knows which bodies hold both
@@ -2258,9 +2453,28 @@ impl super::values::Names for Asked<'_, '_> {
                 crate::program::public_path(solid), crate::program::public_path(other))));
         }
         let read = |r| self.reads.borrow_mut().push(r);
-        let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get()) else {
-            read(super::FaceRead::Fixed(true));
-            return Some(Ok(true));
+        let layered = match &listed.read {
+            Ok(layered) if !self.every.get() => layered,
+            // a boundary the seeds do not build says nothing of which faces meet (#994), and taken
+            // to meet, every two and three of a body's faces would make a copy, a body of a few
+            // dozen faces running to `MAX_FLAT`.  None meet: the statement is read again where
+            // the drawing solves, as a face held along a direction is (#948), and where the body
+            // is not built there either, it is not built, as built on that body
+            // (`program::refused`)
+            Err(crate::solid::faces::Unread::Unbuilt(why)) if !self.every.get() => {
+                let unbuilt = (solid.to_string(), why.clone());
+                let mut said = self.unbuilt.borrow_mut();
+                if !said.contains(&unbuilt) {
+                    said.push(unbuilt);
+                }
+                read(super::FaceRead::Fixed(false));
+                return Some(Ok(false));
+            }
+            // a body a sweep cuts is its field's, read nowhere: its faces are taken to meet
+            _ => {
+                read(super::FaceRead::Fixed(true));
+                return Some(Ok(true));
+            }
         };
         // in the layer the block's use reads the body in (#879): a round's own faces meet
         // where it reads them, whatever a round standing over it has since made of their edge
@@ -2287,15 +2501,19 @@ impl super::values::Names for Asked<'_, '_> {
                  frame's axis", crate::program::public_path(line)
             )));
         };
-        let Some(layered) = &listed.read else {
+        let layered = match &listed.read {
+            Ok(layered) => layered,
             // a boundary the seeds do not build may be built where the drawing solves: read
             // again there, and said only if it is not built there either (#948)
-            self.unread.set(true);
-            return Some(Err(format!(
-                "`{}`'s faces are not read where they are named: its boundary is not built where \
-                 the drawing stands, seeded or solved (a body cut by a sweep is its field's)",
-                crate::program::public_path(solid)
-            )));
+            Err(_) => {
+                self.unread.set(true);
+                return Some(Err(format!(
+                    "`{}`'s faces are not read where they are named: its boundary is not built \
+                     where the drawing stands, seeded or solved (a body cut by a sweep is its \
+                     field's)",
+                    crate::program::public_path(solid)
+                )));
+            }
         };
         let layer = listed.layers.layer(self.scope.prefix(), &[path]);
         let held = layered.lays(layer).holds(rest, along, d)?;

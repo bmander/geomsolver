@@ -14,11 +14,20 @@
 //!   `8 tol` of each other over the part of space both faces' boxes hold are one surface, whatever
 //!   angle they lean apart at elsewhere — so two faces bounded by one edge and leaving it one way
 //!   are one face of the complex, and a piece lying on the other's face is on it (its partner,
-//!   read before its place in the other solid);
+//!   read before its place in the other solid); read face by face for every two faces of an
+//!   arrangement before any phase asks, each class of faces so joined one surface whatever order
+//!   they come in (`boolean`'s `Arrangement::classed`, #994), and two curves on it crossing where
+//!   they come within that reach (`query::crossings_in`);
 //! - **a vertex onto an edge** (`on_stretch`): within `8 tol` of the edge's curve inside its stretch
-//!   and clear of its ends by as much: the edge is cut there;
+//!   and clear of its ends by as much: the edge is cut there; within `8 tol` of an end, it is that
+//!   end (`onto_edge`), the two one vertex (#994);
 //! - **a point onto a meeting** (`on_meeting`): within `8 tol / sin θ` of the curve two surfaces
 //!   meet in at an angle `θ` — a point within `tol` of both stands that far off their meeting;
+//! - **a span onto a boundary** (`along_boundary`): a span of a meeting standing within `8 tol` of
+//!   a face's boundary at every eighth of it lies along that boundary, and is on the face — the
+//!   edge it lies along, which an edge onto an edge merges it into, unless phase 1 laid that edge
+//!   in the other face's surface as it is (`boolean`'s `kept`, #994): one edge, never a second a
+//!   hair beside it;
 //! - **a root met flatly onto a crossing** (`FLAT`): a root of an edge's distance from a surface
 //!   known only as the stretch within `16 tol` of it is the crossing found exactly inside that
 //!   stretch;
@@ -35,8 +44,25 @@
 //!
 //! Each is applied once, in that order, so the same two features are never merged by one rule in
 //! one call and parted by another in the next.
-use super::geom::{around,Curve,V};
+use super::geom::{around,Box3,Curve,Surface,V};
 use crate::util::space::{distance,dot,Grid};
+
+/// **A surface onto a surface** (the rule's own reading, #961, #994): whether the surfaces `a` and
+/// `b` of two faces filling the boxes `box_a` and `box_b` are one surface — the same surface, or,
+/// where the boxes share some of space, within `ON_CURVE tol` of each other over what they share
+/// and as far past it as a point near both is read onto their meeting at the least sine
+/// (`on_meeting` at `LEAST_SINE`); where they share none, the same to `tol` (`ssi::same`). What a
+/// Boolean joins faces into one class by (`boolean`'s `Arrangement::classed`) and what a ball
+/// rolls on as one side of it and the field reads as one surface (`fillet::one_surface`) are this,
+/// so faces a Boolean made one surface are one surface to what reads its result.
+pub fn one_surface(a: &Surface,box_a: Box3,b: &Surface,box_b: Box3,tol: f64) -> bool {
+    if a == b { return true }
+    let region = super::meeting::common(box_a,box_b,tol);
+    if !(0..3).all(|k| region.0[k] <= region.1[k]) { return super::ssi::same(a,b,tol) }
+    let past = on_meeting(tol,LEAST_SINE);
+    let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
+    super::ssi::same_over(a,b,ON_CURVE*tol,around)
+}
 
 /// A vertex onto a curve, and an edge onto an edge: within this many tolerances.
 pub const ON_CURVE: f64 = 8.;
@@ -67,12 +93,39 @@ pub fn least_sine_apart(radius: f64,tol: f64) -> f64 {
 /// stretch `t` of `c` (a closed curve's read from the stretch's start), where it stands within
 /// `ON_CURVE tol` of the curve inside the stretch and no nearer either end than that; the edge is
 /// cut there.
-pub fn on_stretch(c: &Curve,t: [f64;2],p: V,tol: f64) -> Option<f64> {
+pub fn on_stretch(c: &Curve,t: [f64;2],p: V,tol: f64) -> Option<f64> { stretch_at(c,t,p,tol).1 }
+
+/// Where `p` stands along the stretch `t` of `c`: the curve's inverse of it (a closed curve's read
+/// from the stretch's start), and that parameter again where `on_stretch` cuts the edge at it.
+fn stretch_at(c: &Curve,t: [f64;2],p: V,tol: f64) -> (f64,Option<f64>) {
     let mut s = c.inverse(p);
     if let Some(period) = c.period() { s = around(s,t[0],period); }
     // a vertex at the edge's end in all but the pool's labelling is its end
-    let near = |q: V| distance(q,p) <= ON_CURVE*tol;
-    (s > t[0] && s < t[1] && near(c.point(s)) && !near(c.point(t[0])) && !near(c.point(t[1]))).then_some(s)
+    let near = |q: V| reaches(q,p,tol);
+    let inside = s > t[0] && s < t[1] && near(c.point(s))
+        && !near(c.point(t[0])) && !near(c.point(t[1]));
+    (s,inside.then_some(s))
+}
+
+/// Whether `q` stands within `ON_CURVE tol` of `p`: the reach of a vertex onto an edge.
+fn reaches(q: V,p: V,tol: f64) -> bool { distance(q,p) <= ON_CURVE*tol }
+
+/// Where a vertex stands on an edge (`onto_edge`): inside its stretch, at a parameter the edge is
+/// cut at, or at one of its ends.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Onto { Stretch(f64),End(usize) }
+
+/// **A vertex onto an edge, its ends too** (#994): the parameter at which `p` stands on the
+/// stretch `t` of `c` where `on_stretch` reads one; else the end of the stretch it stands at —
+/// within `ON_CURVE tol` of that end and of the curve there, the vertex `on_stretch` does not cut
+/// the edge at, being its end in all but the pool's labelling. `None` where it stands on neither.
+/// The curve's inverse is read once for both.
+pub fn onto_edge(c: &Curve,t: [f64;2],p: V,tol: f64) -> Option<Onto> {
+    let (s,stretch) = stretch_at(c,t,p,tol);
+    if let Some(s) = stretch { return Some(Onto::Stretch(s)) }
+    let near = |q: V| reaches(q,p,tol);
+    if !near(c.point(s.clamp(t[0],t[1]))) { return None }
+    (0..2).find(|&k| near(c.point(t[k]))).map(Onto::End)
 }
 
 /// **An edge onto an edge** (the fifth rule): the piece of `a` over its stretch `ta`, between the
@@ -87,6 +140,22 @@ pub fn same_edge(a: &Curve,ta: [f64;2],va: [u32;2],b: &Curve,tb: [f64;2],vb: [u3
     if t < tb[0]-1e-9 || t > tb[1]+1e-9 || distance(b.point(t),mid) > ON_CURVE*tol { return None }
     Some(if va[0] != va[1] { va[0] == vb[0] } else { dot(a.tangent(ma),b.tangent(t)) > 0. })
 }
+
+/// **A span along a boundary** (#994): the stretch `t` of a curve two faces meet in lies along a
+/// face's boundary where it stands within `ON_CURVE tol` of it (`off`, a point's distance from
+/// the nearest of the boundary's edges) at every `ALONG`th of its stretch — the reach at which a
+/// vertex is on an edge (`on_stretch`), read along the span. Unlike an edge onto an edge
+/// (`same_edge`), whose two pieces share their vertices and so are read at the middle alone, the
+/// span shares none with the edge it lies along (its ends are where the meeting crosses others),
+/// and a span crossing the boundary near its middle is not one lying along it: so it is read along
+/// its stretch.
+pub fn along_boundary(c: &Curve,t: [f64;2],tol: f64,off: impl Fn(V) -> f64) -> bool {
+    (1..ALONG).all(|j| off(c.point(t[0]+(t[1]-t[0])*j as f64/ALONG as f64)) <= ON_CURVE*tol)
+}
+
+/// The parts a span is read at along its stretch, for whether it lies along a boundary
+/// (`along_boundary`): at its every eighth.
+const ALONG: usize = 8;
 
 /// **Points merged where they come within the tolerance of one another** (the first rule), each
 /// vertex keeping how far the farthest point merged into it stood (its tolerance).

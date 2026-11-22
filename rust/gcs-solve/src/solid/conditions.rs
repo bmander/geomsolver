@@ -14,7 +14,7 @@
 //!   on past its patch at a convex corner.
 use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
-use crate::space::{dot, norm, scale, sub};
+use crate::space::{add, dot, norm, scale, sub};
 use crate::vocab::Cmp;
 use std::sync::Arc;
 
@@ -41,7 +41,7 @@ pub enum SetDistance {
     /// One face's patch.
     Patch(Arc<Reading>),
     /// Anything else, as conditions.
-    Conditions(Vec<Cond>),
+    Conditions(Conds),
     /// The nearest of several: a set within a body's faces where the body is in pieces, each
     /// shell's conditions apart (within all of them at once is within none).
     Nearest(Vec<SetDistance>),
@@ -53,6 +53,44 @@ pub enum SetDistance {
 }
 
 pub use super::faces::Read;
+
+/// A set's conditions, and which they are: a number of their own, shared by their clones (the same
+/// conditions), by which the last nearest point found on a thread is remembered (`nearest`).
+#[derive(Clone)]
+pub struct Conds {
+    cs: Vec<Cond>,
+    id: u64,
+}
+
+thread_local! {
+    /// The last nearest point found on this thread: of which conditions (`Conds::id`), from which
+    /// point (its bits), and the point found.
+    static LAST: std::cell::Cell<Option<(u64, [u64; 3], Option<V>)>> = const { std::cell::Cell::new(None) };
+}
+
+impl Conds {
+    fn new(cs: Vec<Cond>) -> Conds {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        Conds { cs, id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) }
+    }
+
+    /// The point keeping every condition nearest `p` (`nearest`).  A region's terms ask it twice
+    /// from one point — `std.rounds`' `distance(p, centres) >= r` and `distance(p, rolled) <=
+    /// distance(p, centres) + r`, which reads `rolled` from `centres`' nearest point (#994) — so
+    /// the last answer on each thread is remembered against the conditions and the point, bit for
+    /// bit: the same steps from the same start onto the same conditions, taken once.
+    fn nearest(&self, p: V) -> Option<V> {
+        let at = p.map(f64::to_bits);
+        if let Some((id, from, q)) = LAST.get() {
+            if id == self.id && from == at {
+                return q;
+            }
+        }
+        let q = nearest(&self.cs, p, p);
+        LAST.set(Some((self.id, at, q)));
+        q
+    }
+}
 
 /// The face `f` names, as its patch (`F`, not `F.surface`).
 fn patch(f: &crate::model::FaceRef) -> crate::model::FaceRef {
@@ -71,6 +109,90 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
         }).collect(),
         None => vec![Arc::new(move |x| r.side_grad(x))],
     }
+}
+
+/// **A smooth chain read face by face as well** (#994): one measure for each face of `r`'s chain —
+/// a smooth chain of several faces, one chain (not pieces apart), read through its nearest face —
+/// beside the chain's own reading, each under `d` only where the point is nearer than `d` to a
+/// patch of the chain.  Every patch is of the chain's surface, so a point at least `d` off that
+/// surface is at least `d` off each patch, and each of these says only what the distance from the
+/// surface says — however the chain's own reading picks its face, at its rim too
+/// (`BodyFaces::nearest_face`): the set is the same.  What they add is the shape of the offset
+/// where the nearest face turns from one to another: where an arc's offset closes onto its axis — a
+/// pocket's floor rounded as tight as its corner, in a pocket whose reflex corner keeps its chain
+/// from bulging one way (`BodyFaces::bulging`); a rim rounded to the uprights' radius over a
+/// block's outline with a tab, its sides, rounds and fills one chain — the centres' corner is the
+/// two walls' offsets meeting on the axis, and a projection onto the nearest face's side alone
+/// steps from one wall's to the other's, never onto both (`nearest`).  Each face reads:
+/// - where the point's foot lies on its patch, its surface's side, the patch's distance;
+/// - past a seam into a face of the chain bulging toward the ball on its own (`BodyFaces::bulges`:
+///   a wall into a pocket's corner arc, the arc into the next wall), the plane tangent to that
+///   next face where the seam's point nearest the point is (`BodyFaces::tangent_side`, turned by
+///   `beyond` toward the side the point is on), where the point is nearer that face than `d` —
+///   the chain read as a convex one is about the corner, so the step sees the wall beyond the arc
+///   as well as the one the point is nearest; the next face's plane, not this one's, as they are
+///   one where the seam is tangent, and where it is tangent only to the drawing's numbers (a turn
+///   of a hair, #994's `rim_seams`) it is the side of the face the point stands beyond, so it
+///   reads `d` where that face's patch does, and a centre on its offset is kept however its
+///   distance rounds — and nothing (`d`, no gradient) where the point is not nearer than `d`: the
+///   next face is no further from the point than this one's patch, so it says all this one would;
+/// - past a seam into any other face of the chain (a reflex corner's arc or fill, whose tangent
+///   plane runs on through the pocket or the tab beyond it), nothing: that face is nearer, and
+///   says it;
+/// - past any other edge, its side carried on where the point is nearer the patch than `d` (a
+///   tangent plane through the patch's nearest point is no further than it), nothing where not.
+/// A face far from the point holds with no gradient, no row of a step's program (`nearest`), so a
+/// step chooses among the faces near the point.  Empty for one face, and for chains apart.
+fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
+    /// How far a face of the chain is read from the point, in the distance held (`d`): a face whose
+    /// box is farther says nothing without reading its patch.  Within `d` alone is all the set
+    /// needs, but a face whose foot lies on its patch a little past `d` gives a row that holds
+    /// where the step stands and keeps the next step from landing past it; twice `d` is the reach
+    /// the gate holds (`docs/contract/sets.md`, "Not yet one rule").
+    const SEEN: f64 = 2.0;
+    if !r.smooth || r.faces.len() < 2 || !r.chains.is_empty() {
+        return Vec::new();
+    }
+    let sigma = if beyond { 1.0 } else { -1.0 };
+    // (looked up, not scanned, as each face's condition is read: a chain grows with a body, #994)
+    let chain: Arc<std::collections::BTreeSet<usize>> = Arc::new(r.faces.iter().copied().collect());
+    // the faces of the chain each bulging toward the ball on its own
+    let toward: Arc<std::collections::BTreeSet<usize>> =
+        Arc::new(r.faces.iter().copied().filter(|&g| r.body.bulges(g, beyond, true)).collect());
+    r.faces.iter().map(|&fi| {
+        let (body, chain, toward) = (r.body.clone(), chain.clone(), toward.clone());
+        // the faces it goes on into across a seam, which a point near them reads through it
+        let beside: Vec<usize> = r.body.edges_of(fi).iter().filter(|&&e| r.body.seam(e))
+            .flat_map(|&e| r.body.faces_of(e).to_vec()).filter(|&h| h != fi && chain.contains(&h))
+            .collect();
+        Arc::new(move |x| {
+            // far from its patch and from every face it goes on into, by their boxes (`SEEN` times
+            // `d`), nothing: where the set's point is, a face holding it back is within `d` (#994),
+            // so a chain grown with a body is read only where the point is
+            let nothing = (c * d, [0.0; 3]);
+            let far = |h: usize| body.patch_gap(h, x) > SEEN * d;
+            if far(fi) && beside.iter().all(|&h| far(h)) {
+                return nothing;
+            }
+            let (past, (s, g)) = body.carried_past(fi, x);
+            let side = (c * sigma * s, scale(g, c * sigma));
+            let Some((e, off, at)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
+            let next = body.faces_of(e).iter().copied().find(|&h| h != fi && chain.contains(&h));
+            match next {
+                Some(h) if body.seam(e) => {
+                    if !toward.contains(&h) || body.patch_distance(h, x) >= d {
+                        return nothing;
+                    }
+                    // the next face's tangent plane there: this one's, where the seam is tangent,
+                    // and where it is tangent only to the drawing's numbers (a turn of a hair), the
+                    // side of the face the point stands beyond
+                    let (s, g) = body.tangent_side(h, at, x);
+                    (c * sigma * s, scale(g, c * sigma))
+                }
+                _ => if off < d { side } else { nothing },
+            }
+        }) as Fv
+    }).collect()
 }
 
 /// The face a term reads, as a patch (`Some(false)`) or a surface (`Some(true)`) held to
@@ -96,7 +218,7 @@ impl SetDistance {
             let body = readings[0].body.clone();
             return Ok(match readings.as_slice() {
                 [one] => SetDistance::Patch(Arc::new(Reading { body, faces: one.faces.clone(), smooth: one.smooth,
-                    chains: one.chains.clone() })),
+                    chains: one.chains.clone(), held: Vec::new() })),
                 [a, b] => SetDistance::Edges {
                     edges: body.edges_between(&a.faces, &b.faces),
                     faces: a.faces.iter().chain(&b.faces).copied().collect(),
@@ -155,7 +277,7 @@ impl SetDistance {
                 let terms = terms.iter().map(|t| conditions(sk, t, read, &sides_of, Some((body, k))))
                     .collect::<Result<Vec<_>, String>>()?;
                 if let Some(conds) = terms.into_iter().collect::<Option<Vec<_>>>() {
-                    each.push(SetDistance::Conditions(conds.into_iter().flatten().collect()));
+                    each.push(SetDistance::Conditions(Conds::new(conds.into_iter().flatten().collect())));
                 }
             }
             return Ok(SetDistance::Nearest(each));
@@ -164,7 +286,7 @@ impl SetDistance {
         for t in terms {
             conds.extend(conditions(sk, t, read, &sides_of, None)?.expect("every term holds somewhere unsplit"));
         }
-        Ok(SetDistance::Conditions(conds))
+        Ok(SetDistance::Conditions(Conds::new(conds)))
     }
 
     /// The distance from the set (infinite from an empty one).
@@ -173,7 +295,7 @@ impl SetDistance {
             SetDistance::Edges { body, edges, .. } => body.nearest_edge(edges, p).map_or(f64::INFINITY, |e| e.2),
             SetDistance::Points(ps) => ps.iter().map(|q| norm(sub(p, *q))).fold(f64::INFINITY, f64::min),
             SetDistance::Patch(r) => r.distance(p, false),
-            SetDistance::Conditions(cs) => nearest(cs, p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
+            SetDistance::Conditions(cs) => cs.nearest(p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
             SetDistance::Nearest(each) => each.iter().map(|s| s.distance(p)).fold(f64::INFINITY, f64::min),
             SetDistance::Body { body, beyond } => {
                 let v = body.signed_distance(p).0;
@@ -187,10 +309,29 @@ impl SetDistance {
         }
     }
 
+    /// The distance from the set, its nearest point sought from `start` where it is read as
+    /// conditions (`nearest`'s steps linearised there first): a set within another, from the
+    /// other's point nearest `p` (`std.rounds`' `rolled` within `centres`, #994).  Of two points of
+    /// the set found, the nearer `p`: that one, and the set's point nearest `start` — each a point
+    /// of the set, so no nearer than the set's nearest, and the second found where steps toward a
+    /// far `p` do not settle (a set of no inside, a ball's centre where it closes onto a point).
+    pub fn distance_from(&self, p: V, start: V) -> f64 {
+        match self {
+            SetDistance::Conditions(cs) => {
+                let found = [nearest(&cs.cs, p, start), cs.nearest(start)];
+                found.into_iter().flatten().map(|q| norm(sub(p, q))).fold(f64::INFINITY, f64::min)
+            }
+            SetDistance::Nearest(each) => {
+                each.iter().map(|s| s.distance_from(p, start)).fold(f64::INFINITY, f64::min)
+            }
+            _ => self.distance(p),
+        }
+    }
+
     /// The set's point nearest `p`, where it is read as conditions.
     pub fn nearest(&self, p: V) -> Option<V> {
         match self {
-            SetDistance::Conditions(cs) => nearest(cs, p),
+            SetDistance::Conditions(cs) => cs.nearest(p),
             SetDistance::Nearest(each) => each.iter().filter_map(|s| s.nearest(p))
                 .min_by(|a, b| norm(sub(p, *a)).total_cmp(&norm(sub(p, *b)))),
             _ => None,
@@ -247,7 +388,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     // it is that solid's signed distance turned round there and the condition convex — one
     // condition each face
     let carried = |r: &Reading, past: bool, sigma: f64| -> Vec<Cond> {
-        r.faces.iter().copied().flat_map(|fi| {
+        // a plane's side carried on past it is its own (`carried_side_grad`), so the faces of a
+        // chain on one plane — a face and the caps a round leaves on its surface beside it, one
+        // per corner of every pocket it is the top of — say one condition, not one each (#994)
+        r.body.one_per_plane(&r.faces).into_iter().flat_map(|fi| {
             let body = r.body.clone();
             held_as(Arc::new(move |x| {
                 let (s, g) = if past { body.carried_side_grad(fi, x) } else { body.side_grad(fi, x) };
@@ -307,10 +451,25 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             }
                         }
                     }
-                    return Ok(Some(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
-                        let (s, g) = side(x);
-                        (c * s.abs(), scale(g, c * s.signum()))
-                    }))).collect()));
+                    // any other: off the side of the face whose patch is nearest — and, a smooth
+                    // chain bulging no one way (a pocket's walls with a reflex corner), off each
+                    // face's patch besides (`faces_apart`): what that reading says already, so the
+                    // set is the same, but a projection sees each face meeting at a corner of the
+                    // offset
+                    let pieces = split && r.convex_pieces().is_some();
+                    let apart = match side_of(f) {
+                        Some(beyond) if t.cmp == Cmp::Ge && c > 0.0 && !pieces => {
+                            faces_apart(&r, c, beyond, (lo + grow) / c)
+                        }
+                        _ => Vec::new(),
+                    };
+                    let mut conds: Vec<Cond> = sides(r, split).into_iter()
+                        .flat_map(|side| held(Arc::new(move |x| {
+                            let (s, g) = side(x);
+                            (c * s.abs(), scale(g, c * s.signum()))
+                        }))).collect();
+                    conds.extend(apart.into_iter().flat_map(held));
+                    return Ok(Some(conds));
                 }
                 Target::Ent(e) if e.kind == crate::model::EntKind::Point => {
                     let o = sk.world_point(e.i());
@@ -333,7 +492,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
             let Target::Set { terms: inner, .. } = edge.as_ref() else {
                 return Err("where an edge ends is read of a set".to_string());
             };
-            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?)?);
+            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?, None)?);
             let most = runs.runs.iter().map(|(_, sides)| sides.len()).max().unwrap_or(0);
             Ok(Some((0..most).map(|k| {
                 let runs = runs.clone();
@@ -428,45 +587,76 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
     })
 }
 
-/// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
-/// conditions linearised where the last one stood.  Where every condition is convex its
+/// The point satisfying every condition nearest `p`: from `start` (`p` itself, or a point near the
+/// set), each step the nearest point of the conditions linearised where the last one stood.  Where every condition is convex its
 /// linearisation holds all of its points, so a step's point keeping every condition is the
 /// nearest: the steps stop there.  (Their own fixed point is no steadier: a step onto a surface
 /// curved tightly about a point far off — a ball's centres a hair short of closing onto a pocket
 /// corner's axis, seen from the corner — moves along it by the distance over the radius times any
-/// error in where the last step stood, and the steps wander round it.)
-fn nearest(cs: &[Cond], p: V) -> Option<V> {
+/// error in where the last step stood, and the steps wander round it.)  Where the steps do not
+/// settle, the nearest point they stood on that keeps every condition (#994): a condition holding
+/// with no gradient is no row of a step (`faces_apart`'s face whose patch the point is not near),
+/// so a step from a point keeping it, its row gone, can land back where it fails, and the two
+/// alternate — a ball's centres about a blend ended by a side an eye stands out past, its patch
+/// beyond the blend's end holding a centre back only near it.  Such a point is of the set, and
+/// its distance no less than the nearest's: a centre found, never a set read as empty.  And where
+/// the conditions read where a step landed have no point in common, the step is taken back half
+/// way, a few times, before the nearest point stood on is all there is.
+fn nearest(cs: &[Cond], p: V, start: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
     let kept = 1e-9 * (1.0 + norm(p));
+    let bar = 1e-7 * (1.0 + norm(p));
     let convex = cs.iter().all(|c| c.convex);
-    let mut x = p;
+    let mut x = start;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
+    // the nearest point stood on keeping every condition, and how far
+    let mut kept_at: Option<(f64, V)> = None;
+    let (mut last, mut halved) = (start, 0);
     for k in 0..80 {
         rows.clear();
         let mut off: f64 = 0.0;
-        rows.extend(cs.iter().map(|c| {
+        rows.extend(cs.iter().filter_map(|c| {
             let (v, g) = (c.f)(x);
             off = off.max(if c.eq { v.abs() } else { v.max(0.0) });
-            // a · y ≤ b, the condition linearised at x
-            (g, dot(g, x) - v, c.eq)
+            // a · y ≤ b, the condition linearised at x — none where it holds with no gradient
+            // (`faces_apart`'s faces far from the point), so the rows a step chooses among are
+            // the conditions near it
+            (c.eq || v > 0.0 || g != [0.0; 3]).then(|| (g, dot(g, x) - v, c.eq))
         }));
         // (every condition just read there keeps within `kept`, inside the final reading's bar)
         if convex && k > 0 && off <= kept {
             return Some(x);
         }
-        let y = project(p, &rows, tol)?;
+        if k > 0 && off <= bar {
+            let d = norm(sub(x, p));
+            if kept_at.is_none_or(|(e, _)| d < e) {
+                kept_at = Some((d, x));
+            }
+        }
+        // (where the conditions read where a step landed have no point in common — it stood
+        // where a chain is read through another face, a hair inside a body its patches are of —
+        // back half way toward where the last step stood, a few times)
+        let Some(y) = project(p, &rows, tol) else {
+            if halved < 8 && k > 0 {
+                halved += 1;
+                x = scale(add(x, last), 0.5);
+                continue;
+            }
+            return kept_at.map(|(_, y)| y);
+        };
         let step = norm(sub(y, x));
+        last = x;
         x = y;
         if step <= tol {
             break;
         }
     }
-    // only a point that keeps every condition
+    // only a point that keeps every condition: where the steps ended, or the nearest stood on
     let off = cs.iter().map(|c| {
         let v = (c.f)(x).0;
         if c.eq { v.abs() } else { v.max(0.0) }
     }).fold(0.0, f64::max);
-    (off <= 1e-7 * (1.0 + norm(p))).then_some(x)
+    if off <= bar { Some(x) } else { kept_at.map(|(_, y)| y) }
 }
 
 /// The nearest point to `p` of `{y : a·y ≤ b}` (`= b` where marked), at most three rows active:
@@ -643,8 +833,8 @@ impl Rest {
 /// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.  Where the
 /// edges are in several runs (#881: a crease a slot cuts across), a point is within the ends of
 /// the run nearest it (`EndRuns`).
-pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
-    let runs = EndRuns::of(set)?;
+pub fn ends(set: &SetDistance, reach: Option<f64>) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
+    let runs = EndRuns::of(set, reach)?;
     Ok(move |p: V| {
         runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.end_side(&c, p).0)
             .fold(f64::NEG_INFINITY, f64::max)
@@ -666,11 +856,11 @@ struct EndRuns {
 }
 
 impl EndRuns {
-    fn of(set: &SetDistance) -> Result<EndRuns, String> {
+    fn of(set: &SetDistance, reach: Option<f64>) -> Result<EndRuns, String> {
         let SetDistance::Edges { body, edges, faces } = set else {
             return Err("where a set ends is read of an edge: a set on two faces".to_string());
         };
-        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces) })
+        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces, reach) })
     }
 
     /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set

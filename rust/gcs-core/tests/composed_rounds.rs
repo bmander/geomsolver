@@ -3,12 +3,12 @@
 //! other leaves it (the stratum in layers, `solid::faces::layer`); and a ball or a flat standing
 //! against a face's smooth surface (`F.smooth`), so a chamfer's leg runs on across the seam where
 //! the face goes on tangent into a round.
-use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::{Code, Elaborated};
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{ent, parse, text::solved};
+use crate::common::rounds::{bisect, composite, volume};
 
 /// A disc of radius `r` drawn about the front plane's origin and swept 20 deep (y from 0 to 20),
 /// `rim` its wall, `near` and `far` its caps; then `rest`.
@@ -16,14 +16,6 @@ fn disc(r: f64, rest: &str) -> String {
     format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
              rim := circle(center: o) hint(r: {r})\n  radius({r}mm) rim\n}}\n\
              plate := solid(std.solids.Prism(face(rim), from: -20mm, to: 0))\n{rest}")
-}
-
-/// Solid `name` of `e` built exactly, and its volume.
-fn volume(e: &Elaborated, name: &str) -> f64 {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let exact = export::exact(&e.sketch, ent(e, name).i(), None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    props::volume(&exact.solid)
 }
 
 /// Solid `name`'s faces and their areas, as the report names them under it.
@@ -477,24 +469,6 @@ fn spilled_fill(r: f64) -> f64 {
     };
     let n = 2880;
     (0..n).map(|k| section(std::f64::consts::TAU * k as f64 / n as f64)).sum::<f64>() * std::f64::consts::TAU / n as f64
-}
-
-/// `∫ g` over `[a, z]` by the Gauss–Legendre `rule` (`common::rounds::gauss_legendre`) on `n`
-/// equal stretches.
-fn composite(rule: &[(f64, f64)], a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64) -> f64 {
-    (0..n).map(|j| {
-        let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
-        rule.iter().map(|&(x, w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
-    }).sum()
-}
-
-/// Where `below` turns false between `lo` (where it holds) and `hi`, by bisection.
-fn bisect(mut lo: f64, mut hi: f64, below: impl Fn(f64) -> bool) -> f64 {
-    for _ in 0..64 {
-        let m = 0.5 * (lo + hi);
-        if below(m) { lo = m } else { hi = m }
-    }
-    0.5 * (lo + hi)
 }
 
 /// The spilled part built exactly (#422's rung 2): the chamfer's ring kept short of the seam's

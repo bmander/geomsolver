@@ -980,7 +980,10 @@ pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
 /// it too — the wheel a frame stands (`x in f`) as well as the wheel standing, so the two read one
 /// B-rep, moved, and neither a field (#619).
 pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
-    supply_each(sk,(0..sk.solids.len()).filter(|&i| sk.is_swept(i) && wanted(i)))
+    // what is wanted asked first: whether a solid is swept validates it, and a body rounded all
+    // over is a region for each edge and corner, each lowered and gated to say so (#994)
+    let _holding = sk.caches.held.open();
+    supply_each(sk,(0..sk.solids.len()).filter(|&i| wanted(i) && sk.is_swept(i)))
 }
 
 /// Swept solid `i` given its exact B-rep where this kernel builds one and it holds none yet: what a

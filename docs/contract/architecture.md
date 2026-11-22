@@ -243,14 +243,24 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   stage the core runs (#851): the planes placed before the solve (`Work::place`), the parts
   checked (`Work::check`), the diagnosis read through the parts (`Work::parts`) with each part's
   rows ranked inside it by its definition (`Work::rank`), the definitions classified
-  (`Work::classify`) and a load scenario read (`Work::scenario`), all inside the CLI's whole run
+  (`Work::classify`) and a load scenario read (`Work::scenario`), a statement's blocks over a
+  solid's faces as the first is expanded, with what they run over and how many of those faces
+  meet (`Work::expand`, #994: `` expanded `round(r: 1.5mm) whole` over 210 faces of `whole`, of
+  which 318 pairs meet and 212 threes meet each other ``), all inside the CLI's whole run
   of the document (`Work::run`), whose own time is what no stage names, so none goes unsaid —
   timed by
   `clock::Instant` and worded by `progress::Work`; with nobody listening the work is not even
   named.  Work that knows how far it has got says so on its `Gauge` (`progress::gauge`, which sets
   the innermost open work's; shared by every copy, so a listener on another thread reads it, and
   no part of what the work is): a march says the instant it has reached, `still following t, now
-  at 120deg of (0deg, 360deg), 3.1 s so far` (`tests/progress.rs`).  `solventc --progress` says
+  at 120deg of (0deg, 360deg), 3.1 s so far` (`tests/progress.rs`); a body's build the term it
+  has reached, a round's region lowered and gated each (`cad::Walk::sets`, #994: `still building
+  whole, now at term 120 of 530 of `whole`, 10 s so far`); the elaboration the statement whose
+  blocks over faces it is expanding (`expanding `round(r: 1.5mm) whole` over 210 faces …`).
+  That is where a large round's count is said unasked: on a terminal, an elaboration still going
+  past 5 s says it on its line; the report says nothing of it, which is of the drawing and not of
+  the run (#994).
+  `solventc --progress` says
   each on stderr when it is done (the same work again, a solid at each pose of a sweep, the first
   time only), and work still going past 5 s is said again, then each time it doubles, so a slow
   boolean, or a long march, is told from a hang; on a terminal,

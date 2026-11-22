@@ -61,11 +61,17 @@ impl Refusal {
     }
 }
 
-/// Where two curves cross, to `tol`, in closed form for lines and circles: each crossing's
-/// parameter on `a` (over `ta`) and its point, where it lies within `b`'s stretch `tb` too. Two
-/// curves running along one another cross nowhere (their shared ends are vertices already), and
-/// any other kind of curve gives `None`: the caller has no closed form to read. A Boolean asks it
-/// of an edge lying in the other solid's surface, against that face's own edges.
+/// Where two curves cross, within `tol` of one another, in closed form for lines and circles: each
+/// crossing's parameter on `a` (over `ta`) and its point, where it lies within `b`'s stretch `tb`
+/// too. Two curves running along one another cross nowhere (their shared ends are vertices
+/// already), and any other kind of curve gives `None`: the caller has no closed form to read. A
+/// Boolean asks it of an edge lying in the other solid's surface, against that face's own edges,
+/// at the reach two curves on one surface cross within (`crossings_in`, `on_known`): `tol` is
+/// that reach in every test here — how far each crossing stands off either curve, and either
+/// stretch, how far apart two circles' or a line's and a circle's planes may stand and still be
+/// one plane, how near a line or a circle may pass another and touch it, how near two centres
+/// are one, and the reach an ellipse's or a turned cut's roots on a circle's cylinder are settled
+/// at — each a test of two curves coming within it of one another, none a test of rounding.
 pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::util::space::{cross,dot,sub};
     let within = |c: &Curve,t: f64,span: [f64;2]| within_stretch(c,t,span,tol);
@@ -108,14 +114,25 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
             let n = cross(f1.z,f2.z);
             if norm(n) <= 1e-12 {
                 if dot(sub(f2.o,f1.o),f1.z).abs() > tol { return Some(Vec::new()); }
-                // coplanar: the radical line, then the first circle along it
+                // coplanar: where the two circles meet, judged by how far apart they stand
+                // (`plane2::circles`), not by how far the chord they share stands inside the first
+                // — a lens of two circles crossing at a shallow angle, its chord within the
+                // tolerance of the first, stands twice as far apart across its middle where the
+                // two radii are one, and a touch read by the chord would be a third root between
+                // the two crossings the circles' surfaces read (#994)
                 let between = sub(f2.o,f1.o);
                 let l = norm(between);
                 if l <= tol { return Some(Vec::new()); }
                 let u = scale(between,1./l);
-                let x = (l*l+r1*r1-r2*r2)/(2.*l);
-                let foot = add(f1.o,scale(u,x));
-                line_circle(foot,cross(f1.z,u),f1.o,f1.z,r1)
+                let v = cross(f1.z,u);
+                match super::plane2::circles(l,r1.abs(),r2.abs(),Touch::Gap(tol)) {
+                    super::plane2::Circles::Same | super::plane2::Circles::Miss => Vec::new(),
+                    super::plane2::Circles::Touch(x) => vec![add(f1.o,scale(u,x))],
+                    super::plane2::Circles::Cross(x,h) => {
+                        let foot = add(f1.o,scale(u,x));
+                        vec![add(foot,scale(v,-h)),add(foot,scale(v,h))]
+                    }
+                }
             } else {
                 // the line the two planes share, then the first circle along it
                 let d = scale(n,1./norm(n));
@@ -180,7 +197,9 @@ fn within_stretch(c: &Curve,t: f64,span: [f64;2],tol: f64) -> Option<f64> {
 /// stretch both reach (the first's alone for the second), bracketed at samples and settled
 /// (`bracketed_root`); a sign change across a rule running off to infinity is no root, and is told
 /// by the two curves' points standing apart there. `None` where the two are none of these.
-fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+/// `tol` reads whether the two are of one sheet, one screw or one plane; `reach` whether a
+/// crossing lies on the other curve within its stretch (`crossings_in`).
+fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64,reach: f64) -> Option<Vec<(f64,V)>> {
     use super::geom::SheetCut;
     // the cut whose rule is read, the other curve, and their stretches
     let (cut,other,cut_is_a,cut_t,other_t) = match (a,b) {
@@ -197,7 +216,7 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
         let q = cut.point(at);
         let slack = 1e-12*(1.+at.abs());
         if !(at >= cut_t[0]-slack && at <= cut_t[1]+slack) { return Some(Vec::new()) }
-        let t = within_stretch(other,other.inverse(q),other_t,tol);
+        let t = within_stretch(other,other.inverse(q),other_t,reach);
         return Some(t.map(|t| (if cut_is_a { at } else { t },q)).into_iter().collect())
     }
     // the other's rule — a cut's on the same sheet, or a helix's `u` on this one — and whether the
@@ -240,23 +259,31 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
         let p = cut.point(v);
         let t = if one { v } else { other.inverse(p) };
         let slack = 1e-12*(1.+t.abs());
-        if t < other_t[0]-slack || t > other_t[1]+slack || distance(other.point(t),p) > 8.*tol { continue }
+        if t < other_t[0]-slack || t > other_t[1]+slack || distance(other.point(t),p) > reach { continue }
         if out.iter().any(|x| distance(x.1,p) <= tol) { continue }
         out.push((if cut_is_a { v } else { t },p));
     }
     Some(out)
 }
 
-/// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
-/// have one, else — one of them a line, a circle or an ellipse — the other's roots on a plane
-/// carrying it (a conic's own plane; a line's plane through it square to the surface there), kept
-/// where they lie on it within its stretch. Each crossing's parameter on `a` and its point; `None`
-/// where neither is a line or a conic, or the other runs along the carrier; the refusal where a
-/// reading of it was not proved (#814).
+/// **Where two curves lying in `surface` cross: where they come within its reach of each other**
+/// (#994) — `ON_CURVE` tolerances, the reach two surfaces are one surface within (`tolerant`) —
+/// inside both stretches by as much: `curve_curve`'s closed forms where they have one, read at
+/// that reach; else two curves on screwed sheets (`screwed_crossings`); else — one of them a line,
+/// a circle or an ellipse — the other's roots on a plane carrying it (a conic's own plane; a
+/// line's plane through it square to the surface there), found to `tol` and kept where they lie
+/// within the reach of it inside its stretch. Each crossing's parameter on `a` and its point;
+/// `None` where neither is a line or a conic, or the other runs along the carrier; the refusal
+/// where a reading of it was not proved (#814). Two lines on one plane of an arrangement, each an
+/// edge of a face drawn on it through rounded points (a strip's pad leaning `1e-6` rad onto a
+/// plate's foot), stand up to the reach apart where they cross, and cross there: read to the
+/// tolerance alone, they would cross nowhere, the one edge laid across the other's face as a
+/// slit.
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Result<Option<Vec<(f64,V)>>,Refusal> {
     use crate::util::space::cross;
-    if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Ok(Some(found)) }
-    if let Some(found) = screwed_crossings(a,ta,b,tb,tol) { return Ok(Some(found)) }
+    let reach = super::tolerant::ON_CURVE*tol;
+    if let Some(found) = curve_curve(a,ta,b,tb,reach) { return Ok(Some(found)) }
+    if let Some(found) = screwed_crossings(a,ta,b,tb,tol,reach) { return Ok(Some(found)) }
     // the roots of `other` on a surface carrying `line` (a line or a circle), on it
     let carried = |carrier: &Curve,span: [f64;2],other: &Curve,over: [f64;2]| -> Result<Option<Vec<(f64,V)>>,Refusal> {
         let held = match *carrier {
@@ -287,8 +314,8 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         let on = |q: V| -> Option<f64> {
             let mut t = carrier.inverse(q);
             if let Some(period) = carrier.period() { t = super::geom::around(t,span[0],period); }
-            let slack = tol/carrier.speed().max(1e-300);
-            (t >= span[0]-slack && t <= span[1]+slack && distance(carrier.point(t),q) <= 8.*tol).then_some(t)
+            let slack = reach/carrier.speed().max(1e-300);
+            (t >= span[0]-slack && t <= span[1]+slack && distance(carrier.point(t),q) <= reach).then_some(t)
         };
         let found: Vec<(f64,V)> = roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect();
         Ok(Some(tangential(carrier,other,over,found,tol)))

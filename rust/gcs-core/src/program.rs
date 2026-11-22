@@ -60,6 +60,9 @@ pub const NOT_BUILT: &str = "not built: the drawing did not solve";
 /// it made.  `p` is the program `map`'s spans index: what a word of a module made is said at the
 /// document's statement that used it.
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program) -> Vec<Diag> {
+    // every solid's refusal read over one reading held still (#994): each body's stratum and each
+    // solid's key worked out once, not once for each region of a body rounded all over
+    let _holding = sk.caches.held.open();
     let place = refused::Placing::new(p);
     let mut diags = refused::solids(sk, map, &place);
     let refuse = |e: EntRef, message: String| {
@@ -264,8 +267,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // each pass places the planes of a fresh drawing of the same document: from the same input,
     // once (`views::PlaceMemo`)
     let placing = views::PlaceMemo::default();
+    // and starts from the solids the pass before built (`Caches::carried`, #994): a body built to
+    // name its faces is the same body in the next pass, which only runs blocks over them
+    let carried = std::cell::RefCell::new(crate::model::Caches::default());
     loop {
-        match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose, &placing) {
+        match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose, &placing,
+                           &carried) {
             Ok(mut e) => {
                 // a part mated by what it made starts solved alone and placed whole (#904 A5),
                 // before its seeds are read against its bounds or the drawing solved for its faces
@@ -279,7 +286,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                     }
                 }
                 if pose.is_empty() {
-                    pose = at_solve::at_solve(&e);
+                    pose = at_solve::at_solve(&mut e);
                     if !pose.is_empty() {
                         // named again from nothing there, so with every pass the first naming had
                         // (#879): a count carried over left the faces half named, a round over

@@ -99,7 +99,10 @@ pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut:
 
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
 fn without(sk: &Sketch, readers: &BTreeSet<usize>) -> Result<Sketch, String> {
-    let mut out = sk.clone();
+    // what it builds of the bodies beneath is the drawing's own (#994): its memos are shared, each
+    // entry read only where its solid reads as it does in the drawing — a body's lists of terms
+    // are read by every key reaching it, so nothing reached through one changed here is shared
+    let mut out = sk.clone_with(sk.caches.shared());
     for (i, s) in out.solids.iter_mut().enumerate() {
         // a reader is none of the stratum: what it stands on is its own
         if readers.contains(&i) {
@@ -152,21 +155,38 @@ pub struct ListedFaces {
     faces: Vec<(String, Option<Vec<usize>>)>,
 }
 
+/// **Why a body's faces are not read where the drawing stands** (#994): its boundary is the
+/// field's, or it does not build there.  The two are told apart because only the second may come
+/// out otherwise where the drawing solves: a seed that puts a short edge's ends past each other
+/// (a straight of 0.05 between two corner rounds, seeded from its corners) builds nothing where
+/// the drawing is seeded, and its body where it solves.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Unread {
+    /// A body with a swept cut, whose boundary is the field's: its faces are not read anywhere.
+    Field,
+    /// A body that does not build where the drawing stands, and why (the stratum's refusal).
+    Unbuilt(String),
+}
+
 impl ListedFaces {
     /// The faces `listed` of solid `body`, or `None` where its boundary is not read here: a body
     /// with a swept cut, whose boundary is the field's, or one that does not build.
     pub fn read(sk: &Sketch, body: usize, listed: &[FacePath]) -> Option<ListedFaces> {
-        ListedFaces::read_above(sk, body, listed, &|_| false)
+        ListedFaces::read_above(sk, body, listed, &|_| false).ok()
     }
 
     /// `read`, a face made by a use that stands `below` this body (a layer beneath it, whose
     /// rounds its stratum has) read as the stratum has it: one it has not is no face there.
+    /// Where the boundary is not read, why (`Unread`).
     fn read_above(sk: &Sketch, body: usize, listed: &[FacePath], below: &dyn Fn(&str) -> bool)
-        -> Option<ListedFaces> {
-        if body >= sk.solids.len() || super::cad::contains_sweep(sk, body) {
-            return None;
+        -> Result<ListedFaces, Unread> {
+        if body >= sk.solids.len() {
+            return Err(Unread::Unbuilt(format!("solid {body} is not drawn")));
         }
-        let read = cached(sk, body).ok()?;
+        if super::cad::contains_sweep(sk, body) {
+            return Err(Unread::Field);
+        }
+        let read = cached(sk, body).map_err(Unread::Unbuilt)?;
         // each patch under its face's name, in one pass over the stratum
         let mut by_name: std::collections::BTreeMap<(&[String], &str), Vec<usize>> =
             Default::default();
@@ -174,13 +194,14 @@ impl ListedFaces {
             by_name.entry((&p.route, &p.face)).or_default().push(k);
         }
         let faces = listed.iter().map(|f| {
-            let own = by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default();
+            // with the caps lying on it (`BodyFaces::with_caps`, #994), as a reference reads it
+            let own = read.with_caps(by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default());
             // a round's face the stratum has not: it cannot say of that one, unless the round
             // is of a layer beneath, which the stratum holds whole
             let unread = own.is_empty() && f.of.as_deref().is_some_and(|of| !below(of));
             (f.text(), (!unread).then_some(own))
         }).collect();
-        Some(ListedFaces { read, faces })
+        Ok(ListedFaces { read, faces })
     }
 }
 
@@ -228,6 +249,11 @@ impl Layers {
     /// (`ListedFaces::read_above`).  What `Layered::read` reads each layer by, and what a round
     /// asks how two faces meet edge by edge in (`ListedFaces::meeting`, #962).
     pub fn listed(&self, sk: &Sketch, listed: &[FacePath], layer: usize) -> Option<ListedFaces> {
+        self.read(sk, listed, layer).ok()
+    }
+
+    /// `listed`, and where the boundary is not read, why.
+    fn read(&self, sk: &Sketch, listed: &[FacePath], layer: usize) -> Result<ListedFaces, Unread> {
         let k = layer.min(self.bodies.len() - 1);
         let below = |of: &str| self.uses.get(of).is_some_and(|&l| l < k);
         ListedFaces::read_above(sk, self.bodies[k], listed, &below)
@@ -264,13 +290,13 @@ pub struct Layered {
 }
 
 impl Layered {
-    /// The faces `listed` of solid `body` read in each of its `layers`, or `None` where its
-    /// boundary is not read (`ListedFaces::read`).
-    pub fn read(sk: &Sketch, layers: &Layers, listed: &[FacePath]) -> Option<Layered> {
+    /// The faces `listed` of solid `body` read in each of its `layers`, or why its boundary is
+    /// not read (`Unread`, the first layer's that is not).
+    pub fn read(sk: &Sketch, layers: &Layers, listed: &[FacePath]) -> Result<Layered, Unread> {
         let layers = (0..layers.bodies.len()).map(|k| {
-            layers.listed(sk, listed, k).map(|l| (Meets::of(&l), Lays::of(&l)))
-        }).collect::<Option<Vec<_>>>()?;
-        Some(Layered { layers })
+            layers.read(sk, listed, k).map(|l| (Meets::of(&l), Lays::of(&l)))
+        }).collect::<Result<Vec<_>, _>>()?;
+        Ok(Layered { layers })
     }
 
     /// Layer `layer`'s reading (the top's, past it).
@@ -286,11 +312,15 @@ impl Layered {
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    // each solid the walk reaches asked whether it reads `body`'s faces, rather than every solid
-    // of the drawing gathered into a set first: a body rounded all over is asked this by each of
-    // its rounds
-    let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
-    sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+    // where the drawing is held still the stratum is read once for the reading (#994), its key
+    // walked once rather than by every region of every edge and corner over the body
+    sk.caches.held.stratum(body, || {
+        // each solid the walk reaches asked whether it reads `body`'s faces, rather than every
+        // solid of the drawing gathered into a set first: a body rounded all over is asked this
+        // by each of its rounds
+        let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
+        sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+    })
 }
 
 /// **The stratum of `body` as its rounds' reading made it** (#996): the written terms of the body

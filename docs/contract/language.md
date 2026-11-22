@@ -304,7 +304,22 @@ its stratum. The elaborator reads it as it names a solid's faces (`solids_and_su
 drawing is seeded: `solid::faces::Meets::read` over `faces::cached`, each listed `FacePath` matched
 to its patches by route and face, beside the paths in `flatten::Listed` and read again only when
 the paths change. `expand::Asked::meets` answers it; a face a round made that the stratum has
-not, and a body with a swept cut (no `Meets`), meet.  **Faces of two solids are refused**
+not, and a body with a swept cut (no `Meets`, `solid::faces::Unread::Field`), meet.  **A body
+the seeds do not build is read where the drawing solves** (#994): `Layered::read` says why a
+boundary is not read (`Unread`), and of one that does not build where the drawing stands
+(`Unread::Unbuilt`, the stratum's refusal) `meets` answers that no two faces meet — taken to
+meet, every two and three of its faces made a copy of a round over the whole body, and a plate
+with three slots whose 0.05 straights the seeds put past their ends ran to `MAX_FLAT`.  The
+statement is an `flatten::Unbuilt` (`SourceMap::unbuilt`) and its span is in `unread`, so
+`at_solve` reads the drawing again where it solves, as for a face held along a direction (#948);
+where the body is not built there either, `refused::solids` says the statement not built, built
+on that body (N080, its cause the body's root, a face's edge of no length said at the face), and
+where the body is built at last but its faces were not read again (the drawing does not solve,
+or is refused besides) E080 at the statement says so with the seeds' reason
+(`tests/short_straights.rs`: the slot's floor rounds and rim chamfer each the closed form at
+straights of 0.5, 0.05 and 0.01 seeded short, a round over the whole plate making the copies
+seeded short it makes seeded where it stands, a straight of none and one of 1e-8 refused at the
+face; `refused_once.rs`).  **Faces of two solids are refused**
 ([0.223], #961): an edge is two faces of one body meeting, so `meets` answers them with no truth,
 the block is made for neither, and the pair is an `flatten::Across` at the document's statement
 (`FaceState::at`), once per statement (`Expansion::across`), said by the elaborator once the
@@ -330,7 +345,34 @@ thousandths, #948): its E103 is said only where it is not built where the drawin
 (`Expansion::unread`, `SourceMap::unread`, read again by `at_solve` where E103s are all the pass
 refused; `faces_along::a_body_the_seeds_do_not_build_is_read_where_the_drawing_solves`).
 `program::at_solve::read_again` reads it again in `solid_diagnostics` where the drawing is solved: a pair
-that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
+that meets there is E080, once per statement and solid.
+**Only the faces meeting one are copied (#994).**  A block over a solid's faces whose body
+is one `when` asking, among the conditions it joins by `and`, `v meets y` — `v` what each copy
+calls its face, `y` a face of the same solid read before the block (a round's `b` against `a`, a
+corner's `c` against `a`) — makes nothing of a face `meets` reads apart from `y`, whatever else it
+asks; so the walk copies only the faces meeting `y` (`Walk::adjacent`, read off `Meets`, each copy
+under its own index as every copy is), and its first face whatever it meets, so a condition that
+cannot be decided is said as it was.  The pairs it leaves are kept as one record of the block
+(`flatten::Pruned`: `y`, the block's faces, and the place and layer of each read apart), and
+every reader takes the `Apart`s and these as one list of the pairs read apart
+(`flatten::read_apart`, `SourceMap::read_apart`): read where the drawing solves
+(`at_solve::read_again`) and by W120 (`at_solve::unmade`, `Walk::unmade`) — every one as if its
+other conditions held, so a face newly meeting `y` there elaborates at that pose, though another
+condition would have left it out too.  Not where `y` is
+no face, is of another solid (refused where it is asked) or of a boundary that cannot say: every
+face is copied.  A `when` looks a face up by its name (`FaceState::index`; `c in B` by `Names::
+among`), not through every face listed.  So a body's round walks its edges and corners, not
+every pair and three of its faces: `tests/blanket.rs`.
+**Not yet one rule:** the copies are decided before they are made for this one shape of block
+alone (`std.rounds`' words are all of it); any other block a `when` gates — two statements, a
+`when` nested in a `when`, `meets` under `or`, a corner's second `meets` — makes every copy and
+reads each `meets` in it.  Deciding every `meets` conjunct before the copy moves what a pair read
+apart is kept as: one a made copy's `when` reads apart is an `Apart` only where it alone left the
+block out, and named as the `when` asked it (`c meets b`: `c`, then `b`); one never copied is a
+`Pruned` pair whatever else the `when` asks, named `y` first.  So E080 at such a statement would
+name another pair first, or one the other way round, and a pair another condition left out would
+be read again where the drawing solves — a language-visible change, to be made with its version.
+`std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
 block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars; #761's pin
 seeded off its plate and one left to `radius(3mm)`, and a post placed by `seats`, each the solid of
@@ -373,6 +415,22 @@ and a pin seeded off its plate whose `not (g meets f) and f parallel std.z` turn
 at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got
 to, and stops every body (`Walk::overflowed`); the elaborator builds nothing of the expansion
 (`Expansion::overflowed` clears `flat`), so no name the rest would have made is said missing.
+Where that statement's blocks ran over a solid's faces, it says what they ran over (#994,
+`Walk::tally`: the statement's first line, how many faces of which solid, how many pairs and
+threes of them meet, or that its boundary does not say which, so every two are taken to) and to
+run it over fewer at once (`blanket::an_expansion_past_its_limit_over_faces_says_what_it_ran_over`);
+the same tally is said to whoever listens as the first such block is expanded
+(`progress::Work::expand`).  **And it is refused before it is made** (#994,
+`Walk::projection`): the tally counts the copies its `when`s will hold — each pair that meets
+reached both ways and each three in its six orders, as `std.rounds`' words reach them, or every
+two and three of a body a sweep cuts (`Unread::Field`), whose faces are all taken to meet — and
+after each of the statement's blocks over faces is expanded, the statements its copies have made
+so far, over the copies that held, are projected to that count; past twice `MAX_FLAT` the one
+E103 is said at once, with the projection, how far it got and what to do, and nothing more is
+walked (`blanket::an_expansion_projected_past_its_limit_is_refused_at_once`: refused a few
+thousand statements in).  One projected nearer the limit is walked, and said as above if it
+passes it — a projection off a few copies is no count, and twice the limit is the margin it is
+given.
 
 **`rate(x over s)` and `initially { … }` (§6.5 [0.119], §6.9 [0.116], #339 D2, D3):** both
 reserved (`syntax::words::OPENERS`).  A rate is an **operand** of a relation (`P::operand`,

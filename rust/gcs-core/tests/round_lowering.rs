@@ -1481,15 +1481,18 @@ fn a_root_across_a_tangent_seam_is_rolled() {
 
 /// A mixed vertex the stratum leaves to the kernel: `runout.sv`'s lug rounded all over. The boss's
 /// root, rolled along its traced run, touches the boss's own wall along a curve, and the convex
-/// rounds read after it meet that fitted canal there tangent: the export is refused naming the
-/// kernel's limit — the meeting, once too ill-conditioned to trace, is now read from its critical
-/// set (#778), and the canal's pieces then do not close.
+/// rounds read after it meet that fitted canal there tangent. The meeting, once too ill-conditioned
+/// to trace, then read from its critical set (#778) into a canal whose pieces did not close, is
+/// read through its touches now (#994: surfaces resting on one another at a point meet there
+/// alone), and what is left is the part's own: the export is refused naming where the solid
+/// touches itself along a line, at the vertex where the wedge's top and far side meet the boss.
 #[test]
 fn a_lug_rounded_all_over_is_refused_by_the_kernel() {
     let src = include_str!("../../examples/rounds/runout.sv")
         .replace("lug.boss round(r: 2mm) lug.wedge.wt", "round(r: 1mm) lug");
     let why = refused(&solved(&src), "lug");
-    assert!(why.contains("nearly touching") && why.contains("ill-conditioned") || why.contains("pieces do not close"), "{why}");
+    assert!(why.contains("the solid touches itself along a line") && why.contains("`lug.wedge.wt`, `lug.wedge.far` and `lug.boss.boss_k`"),
+        "{why}");
 }
 
 /// A plate 30 deep whose outline is the disc of radius 100 between flats at `y = ±60`: two arcs

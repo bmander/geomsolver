@@ -10,6 +10,8 @@ use crate::vocab::Cmp;
 use std::f64::consts::FRAC_PI_2;
 
 type V = [f64; 3];
+/// A set's distance, read once and shared by the terms measuring from it.
+type Set = std::sync::Arc<crate::solid::conditions::SetDistance>;
 
 /// Region solid `solid` read point by point (`solid::field::RegionField`): its terms in general
 /// position, each the exact signed distance from its surface.  Its support is the box of the
@@ -64,6 +66,10 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
     let signed = |f: std::sync::Arc<dyn Fn(V) -> f64 + Send + Sync>| {
         Term { measure: Measure::Signed(Signed(f)), cmp: Cmp::Le, lo: 0.0, hi: None, grow: 0.0 }
     };
+    // each set measured from, read once across the terms: one distance, and the nearest point it
+    // remembers (`conditions::Conds`), for every term measuring from the same set (`std.rounds`'
+    // `centres`, from which `rolled` is measured too)
+    let mut sets_read: Vec<(&[RegionTerm], Result<Set, String>)> = Vec::new();
     for t in terms {
         let (lo, grow) = t.value(sk).map_err(named)?;
         let reach = t.hi.unwrap_or(lo).max(lo);
@@ -71,14 +77,24 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
         reads_faces |= crate::solid::faces::reads_faces(&t.shape);
         let measure = match t.shape {
             RegionShape::Measured { ref of } => {
-                // each set measured from, read once
-                let sets: Vec<Option<Result<crate::solid::conditions::SetDistance, String>>> = of.iter()
-                    .map(|(t, _)| match t {
-                        crate::model::Target::Set { terms, .. } => {
-                            Some(crate::solid::conditions::SetDistance::of(sk, terms, read))
+                // the sets it measures from, each read once (`sets_read`)
+                let mut sets: Vec<Option<Result<Set, String>>> = Vec::new();
+                for (target, _) in of {
+                    let crate::model::Target::Set { terms: inner, .. } = target else {
+                        sets.push(None);
+                        continue;
+                    };
+                    let set = match sets_read.iter().find(|(k, _)| *k == &inner[..]) {
+                        Some((_, set)) => set.clone(),
+                        None => {
+                            let set = crate::solid::conditions::SetDistance::of(sk, inner, read)
+                                .map(std::sync::Arc::new);
+                            sets_read.push((inner, set.clone()));
+                            set
                         }
-                        _ => None,
-                    }).collect();
+                    };
+                    sets.push(Some(set));
+                }
                 if t.cmp != Cmp::In && never(of, &sets, t.cmp) {
                     return Ok(crate::solid::field::RegionField::empty());
                 }
@@ -102,7 +118,22 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 continue;
             }
             RegionShape::FaceSide { ref face } => {
-                let r = crate::solid::faces::reading(sk, face, read).map_err(named)?;
+                let mut r = crate::solid::faces::reading(sk, face, read).map_err(named)?;
+                // a smooth chain's rim to a face the region holds its point outside of or within: a
+                // point in that face's plane reads the chain as one just past it or just within it
+                // (`BodyFaces::nearest_face`)
+                if r.smooth {
+                    for u in terms {
+                        let RegionShape::FaceSide { face: f } = &u.shape else { continue };
+                        if u.cmp == Cmp::In || u.hi.is_some() || f.solid != face.solid {
+                            continue;
+                        }
+                        let o = crate::solid::faces::reading(sk, f, read).map_err(named)?;
+                        let new: Vec<(usize, bool)> = o.faces.into_iter().filter(|g| !r.faces.contains(g))
+                            .map(|g| (g, u.cmp == Cmp::Ge)).collect();
+                        r.held.extend(new);
+                    }
+                }
                 if let Some((n, d)) = r.half_space() {
                     slab(&mut planes, t, n, d, if t.cmp == Cmp::In { lo } else { lo + grow });
                 } else if within {
@@ -167,7 +198,7 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                     return Err(format!("{name}: where an edge ends is read of a set"));
                 };
                 let set = crate::solid::conditions::SetDistance::of(sk, inner, read).map_err(named)?;
-                let within = crate::solid::conditions::ends(&set).map_err(named)?;
+                let within = crate::solid::conditions::ends(&set, section_size(sk, terms)).map_err(named)?;
                 reads_faces = true;
                 // a run that ends nowhere is cut off by nothing
                 let f = move |p: V| { let v = within(p); if v == f64::NEG_INFINITY { -GATE } else { v } };
@@ -405,8 +436,7 @@ fn ent_measure(sk: &Sketch, e: crate::model::EntRef) -> Result<crate::solid::fie
 /// A sum of measurements of a point (`RegionShape::Measured`), divided through by the sum of its
 /// numbers' sizes so it is one-Lipschitz as every term of the field is: each the distance from a
 /// point, a line produced or an axis, or a plane.
-fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
-            sets: &[Option<Result<crate::solid::conditions::SetDistance, String>>],
+fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)], sets: &[Option<Result<Set, String>>],
             read: &mut crate::solid::faces::Read)
     -> Result<crate::solid::field::region::Measure, String> {
     use crate::model::Target;
@@ -429,8 +459,38 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
             }
         }
     }
+    // a set stated as another's terms and more (`E` within `M`), measured less that one:
+    // `d(p, E) − d(p, M)` as written, `E`'s nearest point sought from `M`'s nearest `p` (#994,
+    // `std.rounds`' `rolled` within `centres`) — so nothing where that point is of `E` (a ball
+    // rolled along the edge), and `E`'s steps start on the set they lie in; where `M` is found
+    // nowhere, nothing to say
+    let mut within: Vec<Option<(usize, usize)>> = vec![None; of.len()];
+    let same = |a: &RegionTerm, b: &RegionTerm| a.shape == b.shape && a.cmp == b.cmp && a.lo == b.lo
+        && a.hi == b.hi && a.grow == b.grow;
+    for (i, (ti, ci)) in of.iter().enumerate() {
+        for (j, (tj, cj)) in of.iter().enumerate() {
+            let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
+            let holds = e.len() > m.len() && m.iter().all(|t| e.iter().any(|u| same(t, u)));
+            if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && holds && rest[j].is_none()
+                && within.iter().all(|w| w.is_none_or(|(a, b)| a != j && b != i)) {
+                within[i] = Some((i, j));
+                within[j] = Some((i, j));
+            }
+        }
+    }
     for (k, (target, c)) in of.iter().enumerate() {
         let d: Dist = match target {
+            Target::Set { .. } if within[k].is_some() => {
+                let (ie, im) = within[k].expect("checked");
+                let (Some(Ok(e)), Some(Ok(m))) = (sets[ie].clone(), sets[im].clone()) else {
+                    return Err("a set's distance, read".to_string());
+                };
+                if k == im {
+                    Box::new(move |p| m.nearest(p).map_or(0.0, |q| crate::space::norm(sub(p, q))))
+                } else {
+                    Box::new(move |p| m.nearest(p).map_or(0.0, |q| e.distance_from(p, q)))
+                }
+            }
             Target::Set { .. } if rest[k].is_some() => {
                 let r = rest[k].clone().expect("checked");
                 Box::new(move |p| r.distance(p))
@@ -460,13 +520,12 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
 
 /// Whether a sum of measurements can hold nowhere: it bounds from above a distance from a set
 /// that is empty (faces that do not meet), with nothing to take it back.
-fn never(of: &[(crate::model::Target, f64)],
-         sets: &[Option<Result<crate::solid::conditions::SetDistance, String>>], cmp: Cmp) -> bool {
+fn never(of: &[(crate::model::Target, f64)], sets: &[Option<Result<Set, String>>], cmp: Cmp) -> bool {
     use crate::solid::conditions::SetDistance;
-    let empty = |s: &Option<Result<SetDistance, String>>| match s {
-        Some(Ok(SetDistance::Edges { edges, .. })) => edges.is_empty(),
-        Some(Ok(SetDistance::Points(ps))) => ps.is_empty(),
-        Some(Ok(SetDistance::Patch(r))) => r.faces.is_empty(),
+    let empty = |s: &Option<Result<Set, String>>| match s.as_ref().and_then(|s| s.as_deref().ok()) {
+        Some(SetDistance::Edges { edges, .. }) => edges.is_empty(),
+        Some(SetDistance::Points(ps)) => ps.is_empty(),
+        Some(SetDistance::Patch(r)) => r.faces.is_empty(),
         _ => false,
     };
     let up = |c: f64| if cmp == Cmp::Ge { -c } else { c };
@@ -476,3 +535,22 @@ fn never(of: &[(crate::model::Target, f64)],
 /// What a gate's term reads where it holds and where it fails: far past any distance, so the
 /// field reads it only by its sign.
 const GATE: f64 = 1e30;
+
+/// The size of the section a region over a body's faces rounds or cuts its edge by, where its terms
+/// state one (#994): a ball's radius (`distance(p, centres) >= r`), a flat's longer leg (`distance(p,
+/// a)/lb + distance(p, b)/la <= 1`) — how far past a run's end the faces beyond a short end face
+/// reach it (`BodyFaces::end_faces`), as the lowering reads it by its section.
+fn section_size(sk: &Sketch, terms: &[RegionTerm]) -> Option<f64> {
+    use crate::model::Target;
+    terms.iter().filter_map(|t| {
+        let RegionShape::Measured { of } = &t.shape else { return None };
+        let lo = t.lo.read(sk)?;
+        match (&of[..], t.cmp) {
+            ([(Target::Set { .. }, c)], Cmp::Ge) if *c > 0.0 => Some(lo / c),
+            ([(Target::Face(_), kx), (Target::Face(_), ky)], Cmp::Le) if *kx > 0.0 && *ky > 0.0 => {
+                Some((lo / kx).max(lo / ky))
+            }
+            _ => None,
+        }
+    }).reduce(f64::max)
+}

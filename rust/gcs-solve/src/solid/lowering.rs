@@ -46,6 +46,7 @@
 //! | any of them where a face goes on tangent across a seam beside the edge the section reaches (`F.smooth`, #422): along a line seam, or round a circle seam about its axis | the section against the chain — the face's own trace to the seam, the next face's from there — the ball against the piece it touches, the flat each piece's sum of distances in turn (`chain`) |
 //! | the same round a circle seam off its axis, or along an edge no line or coaxial circle carries | the edge's own piece kept short of the seam's normal surface (a ring, a flat cut along the run) or with the stretch past the seam cut away (a ring's stretch, a ball rolled along the run), and the section against the next face beyond it, sectioned and fitted (`Beyond`, `brep::spill`), glued to it |
 //! | the same along a straight edge beside a line seam along it into a face no line along the edge turns about (a drafted side's plane into its corner's cone, #962) | the section reaches across the seam the edge's whole length: a round's ball rolled against the next face all along it, a flat's run kept short of the seam's normal plane and the flat against the next face beyond it, sectioned square to the edge and fitted (`Piece::Along`, `brep::spill`), carried past the edge's ends and cut off where the run is |
+//! | `Run` / `Fill` along a straight edge beside a line seam crossing its footprint aslant (a foot upright against a drafted side near its corner's cone, #994) | the run's prism short of the section where the ball's touch crosses the seam, and from that section the ball rolled against the next face (`piece::aslant_pieces`, `Beyond::seamed`), carried past the other end and cut off, glued to the run there — or that piece the edge's whole length where the touch is past the seam all along |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -78,6 +79,20 @@ pub enum Stroke {
     Line { from: V, to: V },
     Arc { centre: V, radius: f64, x: V, angles: [f64; 2] },
     Conic { a: V, m: V, b: V, w: f64 },
+}
+
+impl Stroke {
+    /// Where it starts and ends, an arc's in the plane square to `along` (the section's).
+    fn ends(&self, along: V) -> [V; 2] {
+        match *self {
+            Stroke::Line { from, to } => [from, to],
+            Stroke::Arc { centre, radius, x, angles } => {
+                let frame = crate::brep::geom::Frame::new(centre, along, x);
+                angles.map(|a| { let (s, c) = a.dsin_cos(); frame.at([radius * c, radius * s, 0.0]) })
+            }
+            Stroke::Conic { a, b, .. } => [a, b],
+        }
+    }
 }
 
 /// A section swept along a straight edge (model units): the section in the plane through `origin`
@@ -297,15 +312,22 @@ impl Run {
     /// arc's or conic's with the point its tangents there meet (each lies within those three).
     fn section_hull(&self) -> Vec<V> {
         self.strokes.iter().flat_map(|(s, _)| match *s {
-            Stroke::Line { from, to } => vec![from, to],
             Stroke::Arc { centre, radius, x, angles: [a0, a1] } => {
                 let frame = crate::brep::geom::Frame::new(centre, self.along, x);
-                let at = |a: f64, k: f64| { let (s, c) = a.dsin_cos(); frame.at([k * c, k * s, 0.0]) };
                 let apex = radius / (0.5 * (a1 - a0)).dcos().max(1e-3);
-                vec![at(a0, radius), at(a1, radius), at(0.5 * (a0 + a1), apex)]
+                let (sin, cos) = (0.5 * (a0 + a1)).dsin_cos();
+                let [e0, e1] = s.ends(self.along);
+                vec![e0, e1, frame.at([apex * cos, apex * sin, 0.0])]
             }
-            Stroke::Conic { a, m, b, .. } => vec![a, m, b],
+            Stroke::Conic { m, .. } => { let [a, b] = s.ends(self.along); vec![a, m, b] }
+            Stroke::Line { .. } => s.ends(self.along).to_vec(),
         }).collect()
+    }
+
+    /// The ends of each arc of the section: where a round's ball touches its faces.
+    fn arc_ends(&self) -> Vec<V> {
+        self.strokes.iter().filter(|(s, _)| matches!(s, Stroke::Arc { .. }))
+            .flat_map(|(s, _)| s.ends(self.along)).collect()
     }
 
     /// Where its stretch ends, `k` 0 or 1.
@@ -375,7 +397,9 @@ pub enum Piece {
     /// beyond it runs the edge's whole length (`Beyond::run`, cut off where the run is) — a round's
     /// ball touching the next face everywhere, the whole of it; a flat's the edge's own run too,
     /// kept short of the seam's normal plane (`run`), the piece beyond glued to it there and held
-    /// by it (#423).
+    /// by it (#423).  Beside a seam crossing the edge aslant (#994, `piece::aslant_pieces`): a
+    /// round's run short of the section where its touch crosses the seam, cut off there, and the
+    /// piece beyond from that section (`Beyond::seamed`), glued to it there — or that piece alone.
     Along { run: Option<Run>, beyond: Beyond },
 }
 
@@ -409,6 +433,10 @@ pub struct Beyond {
     /// `within`), past which it is carried and cut off.  None: between where the leg or the touch
     /// crosses the seam.
     pub run: Option<Vec<(V, f64)>>,
+    /// Along a straight edge a seam crosses aslant (#994, `piece::across_beyond`): whether it
+    /// starts at `ends[k]`'s section, where the ball's touch crosses the seam, the edge's own run
+    /// taking the other side and glued to it there (`Piece::Along`'s `run`).
+    pub seamed: [bool; 2],
 }
 
 /// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;
@@ -449,7 +477,9 @@ pub struct Rolled {
     pub beside: Option<V>,
     /// Whether its ball may stand still (a face of its two is a cylinder or a torus as tight as it,
     /// `brep::fillet::dome`): where its run ends in a run's or a ring's section, the two are glued
-    /// there, and a piece `beside` it is glued to it (#962).
+    /// there, and a piece `beside` it is glued to it (#962).  Not where a face cuts across the run
+    /// at an end: there the dome is carried past and cut off (`brep::fillet::dome_cut`), its section
+    /// at the other end the next run's only in part, and the two are unioned (#994).
     pub stands: bool,
 }
 
@@ -498,6 +528,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || {
+        crate::progress::made(crate::progress::Made::Lowered, || sk.solids[solid].name.clone());
         let spill = seams_beside(&body, &faces, section);
         piece::build(&body, &faces, section, &spill, sk.units)
     }.and_then(|pieces| {
@@ -554,6 +585,19 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, rounded: &[usize], 
     let (Some((f, g)), Some(e)) = (seam, end) else { return back_over_unnamed(sk, b) };
     let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
     let (witness, depth) = back_over_numbers(sk, b);
+    // a face the run's own face runs on into tangent, which no one moves: the run's face shorter
+    // than the round reaches — a band's foot arc tapering onto the disc it stands on (#994)
+    if body.smooth(&[own]).contains(&e) {
+        let side = body.side(e, at).abs();
+        let off = length_said(side, sk.units);
+        return format!("its round goes on tangent from {} into {} across their seam at {witness}, and {} runs on \
+            tangent into {}, which its run along {} ends on: the seam stands {off} off {}, nearer than the round's \
+            section reaches, so {} reaches {depth} back over the section there, the round along {} ends nowhere \
+            there and keeps that section whole, and the two meet in no one section: no exact construction is made \
+            of that yet. A smaller round, or a longer {}, keeps {} clear of the seam",
+            body.said(own), body.said(next), body.said(own), body.said(e), body.said(own), body.said(e),
+            body.said(e), body.said(next), body.said(own), body.said(e));
+    }
     format!("its round goes on tangent from {} into {} across their seam at {witness}, and {}, which its run \
         along {} ends on, reaches {depth} back over the section there: the round along {} ends nowhere there and \
         keeps that section whole, so the two meet in no one section, and no exact construction is made of that \
@@ -568,6 +612,11 @@ pub(super) fn point_said(p: V, units: crate::units::Units) -> String {
     format!("[{}, {}, {}]{}", figures(p[0]), figures(p[1]), figures(p[2]), units.name())
 }
 
+/// A length as a refusal says it: to two figures, in the document's unit (`0.12mm`).
+fn length_said(x: f64, units: crate::units::Units) -> String {
+    crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(x, 2).parse().unwrap_or(x), units)
+}
+
 /// `back_over_said` where the faces are not to be named: the seam's point and the depth.
 fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
     let (witness, depth) = back_over_numbers(sk, b);
@@ -580,8 +629,7 @@ fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
 /// unit, the depth a length to two.
 fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
     let witness = point_said(b.at, sk.units);
-    let depth = crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth), sk.units);
-    (witness, depth)
+    (witness, length_said(b.depth, sk.units))
 }
 
 /// **The face a recognised region leaves on its body, by the name its construction gives it**
@@ -619,19 +667,15 @@ pub(crate) type Spill = std::collections::BTreeMap<usize, Vec<(u32, usize)>>;
 /// over the face between its edge and its footprint, nearest the face's own surface.  A seam the
 /// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
 /// own rule, a run going on into the next piece, and is none of it either.  Nor is a seam between
-/// two pieces of one surface (`pieces`: a plate's top in the pieces the union of its operands left
-/// it, #952): the section stands against the surface, not the faces it is named by, so its
-/// footprint lands past such a seam onto the same surface, and the seam it reaches is the one
-/// where that surface's pieces go on into another.
+/// two pieces of one surface (`BodyFaces::pieces`: a plate's top in the pieces the union of its
+/// operands left it, #952): the section stands against the surface, not the faces it is named by,
+/// so its footprint lands past such a seam onto the same surface, and the seam it reaches is the
+/// one where that surface's pieces go on into another.
 fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Spill {
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Spill::new();
     for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
-        let chain = body.smooth(&groups[k]);
-        let mut own: Vec<usize> = groups[k].iter().flat_map(|&fi| pieces(body, fi)).collect();
-        own.sort_unstable();
-        own.dedup();
-        let beyond: Vec<usize> = chain.into_iter().filter(|fi| !own.contains(fi)).collect();
+        let (own, beyond) = going_on(body, &groups[k]);
         if beyond.is_empty() {
             continue;
         }
@@ -653,7 +697,7 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
                 continue;
             }
             let (fk, fo) = if groups[k].contains(&x) { (x, y) } else { (y, x) };
-            let surface = surfaces.entry(fk).or_insert_with(|| pieces(body, fk));
+            let surface = surfaces.entry(fk).or_insert_with(|| body.pieces(fk));
             for s in 0..=SEAM_SAMPLES {
                 let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
                 let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
@@ -691,20 +735,34 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     out
 }
 
-/// **The pieces of one surface** (#952): face `fi` and every face going on from it across a seam
-/// on the same surface (`Surf::same`), and from those on — a plate's top in the pieces the union
-/// of its operands left it, each named by its own operand's.  A section stands against a surface,
-/// not the names of its faces: to it they are one face, and a seam between two of them is none it
-/// reaches across.  `fi` first; it alone where its surface is none `Surf` reads.
-pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
-    let Some(own) = Surf::of(body, fi) else { return vec![fi] };
-    let same = |g: usize| Surf::of(body, g).is_some_and(|s| s.same(&own));
-    body.across_seams(&[fi], same).into_iter().map(|(g, _)| g).collect()
+/// **The pieces of the surfaces of `faces`** (#952, `BodyFaces::pieces`), each once, in the order
+/// met (`faces` first).  A section stands against a surface, not the names of its faces: to it
+/// they are one face, and a seam between two of them is none it reaches across.
+pub(crate) fn own_pieces(body: &super::faces::BodyFaces, faces: &[usize]) -> Vec<usize> {
+    let (mut own, mut seen) = (Vec::new(), std::collections::BTreeSet::new());
+    for g in faces.iter().flat_map(|&fi| body.pieces(fi)) {
+        if seen.insert(g) {
+            own.push(g);
+        }
+    }
+    own
 }
 
-/// Where `q` (on the surface of `faces`, the pieces of one: `pieces`) lies off them all: the edge
-/// of theirs nearest it that is no edge between two of them (`None` where it lies on one) — one
-/// face's own `off_face`.
+/// **The faces `faces` go on into smoothly, their own surfaces aside** (#994): the pieces of each
+/// one's surface (`own_pieces`), and every other face of their smooth chain
+/// (`BodyFaces::smooth`) — the faces a section standing against them can come to across a seam.
+/// A piece of the same surface is none of those: a flat's point or a ball's centre over it is as
+/// far from the surface as from `faces`' own patch, and a plate's bottom flush with a post's,
+/// each named by its own operand, is one plane to whatever stands against either.
+pub(crate) fn going_on(body: &super::faces::BodyFaces, faces: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let own = own_pieces(body, faces);
+    let beyond = body.smooth(&own).into_iter().filter(|g| !own.contains(g)).collect();
+    (own, beyond)
+}
+
+/// Where `q` (on the surface of `faces`, the pieces of one: `BodyFaces::pieces`) lies off them
+/// all: the edge of theirs nearest it that is no edge between two of them (`None` where it lies on
+/// one) — one face's own `off_face`.
 pub(crate) fn off_pieces(body: &super::faces::BodyFaces, faces: &[usize], q: V) -> Option<u32> {
     if let [fi] = faces {
         return body.off_face(*fi, q);

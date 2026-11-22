@@ -11,7 +11,7 @@
 //! it (`Placing`): a round's pieces at the round, not inside the word `std` defines for it.
 
 use super::{Code, Diag, Site, SourceMap};
-use crate::model::{EntRef, SolidDef, Sketch};
+use crate::model::{EntKind, EntRef, SolidDef, Sketch};
 use crate::syntax::{Program, Span, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -308,7 +308,6 @@ impl Under {
 /// bound no region — and that no solid can be made of it.
 fn face_said(sk: &Sketch, map: &SourceMap, fi: usize, fault: &crate::solid::FaceFault) -> String {
     use crate::solid::FaceFault;
-    use crate::model::EntKind;
     let called = |e: EntRef| super::rings::called(map, e);
     let face = called(EntRef::new(EntKind::Face, fi));
     let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
@@ -398,6 +397,23 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
             bearing.push(Diag::new(Code::E082, b.span, Some(StmtId(b.stmt)), message));
         } else {
             note((b.span, Some(StmtId(b.stmt))), &[solid], under);
+        }
+    }
+    // a statement whose `when a meets b` read a body not built where the drawing stands (#994),
+    // and not read again where the drawing solves or not built there either: no copy made for
+    // its faces, so the statement is not built, as built on that body — or, the body built where
+    // the drawing stands now but its faces not read here, said so at the statement
+    for u in &map.unbuilt {
+        let Some(e) = map.ent_named(&u.solid).filter(|e| e.kind == EntKind::Solid) else { continue };
+        let under = causes.roots(&[e.i()]);
+        if under.is_empty() {
+            bearing.push(Diag::new(Code::E080, u.at, None, format!(
+                "`{}`'s faces are not read where they are named: its boundary is not built where \
+                 the drawing is seeded ({}), and they were not read again where it solves (it \
+                 does not solve, or is refused besides), so nothing of this statement is made",
+                crate::vocab::public_path(&u.solid), crate::vocab::public_words(&u.why))));
+        } else {
+            note((u.at, None), &[e.i()], under);
         }
     }
     // a root is said as the document shows it before a note points at it
