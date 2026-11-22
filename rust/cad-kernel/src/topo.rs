@@ -165,23 +165,35 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
-/// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
+/// `uv`: the rate of the foot itself. The foot holds `(S − x)·S_u = (S − x)·S_v = 0`; differentiated
+/// along the edge, `J (du, dv)/dt = (x′·S_u, x′·S_v)` with `J = [S_i·S_j + (S − x)·S_ij]` — the
+/// metric, and the surface's second derivatives weighed by the gap `S − x`. On the surface (an
+/// edge built exact, a gap within a billionth of the point's size) the gap's term is nought and
+/// the rate is the edge's tangent by least squares in `[S_u S_v]` (`in_parameters`); off it (a
+/// file's edge within its tolerance of its faces, #993) the feet run at another rate, which the
+/// gap's term gives, its second derivatives the differences of the exact first a millionth of a
+/// parameter apart (their error weighed by the gap, some 1e-12 of the rate) — smooth along the
+/// edge, as a difference of the feet themselves was not (a rule settling on it refined it to its
+/// noise).
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
     let (x,d) = c.d1(t);
-    // a curve standing off its surface (a file's edge within its tolerance of its faces, #993):
-    // its feet run at another rate than its tangent read on the surface (by the surface's
-    // curvature times the gap), so the rate of the feet themselves, by a difference a millionth
-    // of the edge long, toward its inside — where the gap is a file's tolerance, a hundred-thousandth
-    // of the point's distance from the origin or more (a fitted curve's micron is left to its
-    // tangent, which a swept build's measures are read by)
-    if distance(surface.point(uv),x) > 1e-5*(1.+norm(x)) {
-        let h = 1e-6*(edge.t[1]-edge.t[0])*if t+1e-6*(edge.t[1]-edge.t[0]) <= edge.t[1] { 1. } else { -1. };
-        let next = unwrap(surface.inverse_near(c.point(t+h),uv),uv,surface.periods());
-        let rate = [(next[0]-uv[0])/h,(next[1]-uv[1])/h];
-        if rate.iter().all(|r| r.is_finite()) { return rate }
-    }
-    in_parameters(surface,uv,d)
+    let (p,su,sv) = surface.d1(uv);
+    let gap = sub(p,x);
+    if !(norm(gap) > 1e-9*(1.+norm(x))) { return in_parameters(surface,uv,d) }
+    let h = |k: usize| 1e-6*(1.+uv[k].abs());
+    let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
+    let (hu,hv) = (h(0),h(1));
+    let ((up_u,_),(dn_u,_)) = (at(0,hu),at(0,-hu));
+    let ((up_vu,up_v),(dn_vu,dn_v)) = (at(1,hv),at(1,-hv));
+    let suu = scale(sub(up_u,dn_u),0.5/hu);
+    let svv = scale(sub(up_v,dn_v),0.5/hv);
+    let suv = scale(sub(up_vu,dn_vu),0.5/hv);
+    let (a11,a12,a22) = (dot(su,su)+dot(gap,suu),dot(su,sv)+dot(gap,suv),dot(sv,sv)+dot(gap,svv));
+    let (b1,b2) = (dot(su,d),dot(sv,d));
+    let det = a11*a22-a12*a12;
+    let rate = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
+    if det != 0. && rate.iter().all(|r| r.is_finite()) { rate } else { in_parameters(surface,uv,d) }
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
@@ -230,6 +242,24 @@ pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
     if lu*std::f64::consts::PI <= within && lv > lu { Some(0) }
     else if lv*std::f64::consts::PI <= within && lu > lv { Some(1) }
     else { None }
+}
+
+/// Whether the pole at `uv` (its collapsed parameter `along`) is a cusp: the surface's derivative
+/// across it one line whatever the collapsed parameter's value — read at three values a third of
+/// its span apart — so that no tangent plane is there and a curve's tangent arriving says nothing
+/// of the value it arrives along (a horn torus's middle; a net whose collapsed row's neighbour is
+/// one point too). A sphere's pole and a cone's apex are none.
+pub(crate) fn cusp(surface: &Surface,uv: Uv,along: usize) -> bool {
+    let span = match (surface.periods()[along],surface) {
+        (Some(p),_) => p,
+        (None,Surface::BSpline(_,n)) => { let [lo,hi] = n.domain()[along]; hi-lo }
+        _ => return false,
+    };
+    let across = |x: f64| { let mut q = uv; q[along] = x; let (_,su,sv) = surface.d1(q); if along == 0 { sv } else { su } };
+    let d: Vec<V> = (0..3).map(|i| across(uv[along]+span*i as f64/3.)).collect();
+    let sizes: Vec<f64> = d.iter().map(|x| norm(*x)).collect();
+    if sizes.iter().any(|&s| !(s > 0.)) { return false }
+    (0..3).all(|i| norm(crate::util::space::cross(d[i],d[(i+1)%3])) <= 1e-9*sizes[i]*sizes[(i+1)%3])
 }
 
 /// Whether `surface` is one no chart of which collapses anywhere, so it has no pole: a plane, a
@@ -392,7 +422,28 @@ impl Brep {
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
             // (from the curve's own end, which a vertex read from a file need not be: a step
             // out from a vertex on the far side of the pole reads the meridian opposite, #993)
-            let limit = leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)?;
+            // The value the use's own feet tend to, which its pcurve reads up to its end: their
+            // limit extrapolated from three steps in, `x(h) = x₀ + a h + b h²`. The tangent's
+            // value (#797) where the two agree to a millionth, exact to the bit on a solid built
+            // here; the feet's at a cusp (a horn torus's middle, a net's row collapsed with its
+            // neighbour, every curve arriving along one line, its tangent saying nothing of the
+            // value); and where a file's curve stands off its face near the pole within its
+            // tolerance (its tangent not the surface's, its foot a step along it reading the pole's
+            // far side as soon as the near), neither, the tangent's having left the use leaping
+            // along the pole at its end
+            let x = |h: f64| c.pcurve.at(e.t[end]+into*h*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices)[along];
+            let feet = { let (x1,x2,x4) = (x(1e-3),x(5e-4),x(2.5e-4)); (8.*x4-6.*x2+x1)/3. };
+            let tangent = if cusp(&f.surface,a,along) { None }
+                else { leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along) };
+            let limit = match tangent {
+                Some(t) if (t-feet).abs() <= 1e-6 => t,
+                None => feet,
+                // (neither to be trusted — a file's curve standing off its face near the pole,
+                // its feet swinging round it within the gap — its foot a hundredth of its span
+                // in, where the gap is small beside the pole's distance on the files read)
+                Some(_) => x(1e-2),
+            };
+            if !limit.is_finite() { return None }
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }

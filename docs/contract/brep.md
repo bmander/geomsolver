@@ -1584,6 +1584,29 @@ two discs, every circle begun at another angle and one run at another pace, so e
 other's vertex and the dropped halves inverted onto a net and onto the cylinder across its seam)
 are the gate.
 
+**What the file writes is in the standard's parameters** (#993 stage 1, `step::step_uv`,
+`step::turned`): a face's curves in its parameters are written as ISO 10303-42 reads the surface.
+A cone's `v` runs along its axis there, `C + (R + v tan α)(cos u x + sin u y) + v z`, so the
+file's `v` is the kernel's (along the generator, as OCCT's is) times `cos α` — written as the
+kernel's, every pcurve on a cone lay off its edge (a drilled frustum's traced edges by 2.5 mm,
+which OCCT read 1.4e-4 off in volume). A lemon (the kernel's torus of negative major radius, which
+a `toroidal_surface`'s positive lengths forbid) is the `DEGENERATE_TOROIDAL_SURFACE` of major
+radius `−big` with `select_outer` false, its curves at `(u + π, π − v)` and its face's sense
+turned. A curve in a net's parameters is written as a line only where sixteen uneven samples find
+one (eighths of a turn, where an affine torus's arc parameter and its angle agree by symmetry,
+found lines 0.075 mm off their edges), otherwise as the cubic within `EXACT`. Gates:
+`step_parameters::every_pcurve_lies_on_its_edge_at_the_edges_parameter` (each pcurve, read through
+the reader's evaluation of the standard, on its edge within `FIT + 2·EXACT`),
+`a_lemon_is_written_as_a_degenerate_torus`.
+
+**A rational net's foot is not stopped by a seam or a pole** (`geom::net_settle`, `pole_newton`):
+a foot Newton's method holds on the domain's edge is sought again across a closed net's seam and
+from beside a collapsed row, and only a strictly nearer foot is taken (a point on a ball's net
+with poles was read 2.19 off). **A sheet's offset at a pole is the limit of its normal along the
+collapsed row** (`offset_at_pole`): a ball's net offset is the ball grown, an apex's offset the
+circle of its rows' limits. Gates: `net_inverse::a_point_on_a_rational_net_is_read_back_to_itself`,
+`a_balls_net_offset_is_a_ball`.
+
 ## Reading STEP (#993 stage 1)
 
 `step_read::read(text)` gives the manifold solids a STEP file holds, each a `Brep` with the file's
@@ -1674,6 +1697,55 @@ revolution of its arc bounded by its faces. Gates:
 `step_kinds::a_curve_turned_off_its_axis_plane_is_seated_where_no_face_crosses`,
 `a_line_turned_off_its_axis_plane_sweeps_its_hyperboloid`.
 
+**A STEP file's topology is read to the solid it writes, identity the file's**
+(`step_read::topology`). Each VERTEX_POINT, EDGE_CURVE and ADVANCED_FACE is read once by its `#n`,
+and a vertex or edge shared by reference is shared in the `Brep`; nothing is merged by proximity,
+and what the reader lays (a pole's edge, a seam, the far piece of an edge cut at a pole) names no
+entity or the file's one. Each edge's ends are the points of its curve nearest its vertices, an
+arc running counter-clockwise from its first to its second and a closed edge a whole turn; an edge
+running against its curve is laid along it with its vertices swapped and every use turned. A loop
+whose edges do not meet at the same vertex entity is malformed (the schema's `edge_loop` rule); a
+shell of no face is refused `Empty` naming it; an edge farther off its faces or vertices than
+max(100 × the stated uncertainty, 1e-3 × the solid's size) is refused naming the edge; a boundary
+`Brep::check` refuses is Open, NotManifold or Unsound naming the face or edge the check names.
+Gates: `step_read::every_solid_the_kernel_writes_reads_back_to_itself`,
+`what_is_not_read_is_refused_naming_the_entity`, `an_empty_shell_is_refused_naming_it`.
+
+**A face's parameters are walked round each loop, and a walk keeps its branch**
+(`topology::walk_loop`, `track`). Each use starts where the last ended, its points read on the
+branch nearest the last, in as many steps as its curve turns round a period (by the surface's
+speed along it: a thread's helix of sixteen turns read by chords was no turn at all), a step
+sweeping more than a twelfth of a period halved. The file's curve in the face's parameters is the
+use's pcurve where its image is the edge's — at the edge's own parameter, or as a set within the
+tolerance the edge measures anyway — and never widens a tolerance; otherwise the edge inverted
+between the walk's ends (`Pcurve::Inverse`), refused naming the edge where a point of its walk
+stands half a period from the line between them. A file without pcurves reads the same. The outer
+loop is the one enclosing the most of the face's parameters, never FACE_OUTER_BOUND. A sphere's
+file curve a whole turn off in `v` (OCCT's habit) is moved back. At a pole the collapsed
+parameter's branch keeps the face on the loop's left; a use's end there is its curve's own where
+its tangent and its feet agree, else its foot a hundredth of its span in; an edge crossing its
+face's pole between its ends is cut there, `close_poles` laying the pole's edge. **A seam the file
+does not write is laid**: a loop winding once round a pole is joined to it by a meridian or a
+generator; two loops winding a period opposite ways (a cylinder between two circles, Parasolid's
+habit) by a seam at one value of the period, vertex to vertex where one stands there, else cutting
+the other's edge, and crossing no other loop of the face; a whole torus or sphere bounded by lone
+vertices gets its seams. A band where no seam can be laid, a loop that both winds and crosses its
+pole, an edge two seams would cut, are refused `Unsupported` naming the entity. Gates:
+`step_read::a_cap_written_with_no_seam_reads_to_its_closed_form`,
+`a_band_written_with_no_seam_reads_to_its_closed_form`,
+`a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is`,
+`a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form`,
+`an_edges_feet_off_its_face_run_at_their_own_rate`.
+
+**A face reaching a pole is integrated along the parameter the pole collapses**
+(`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
+collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the
+measure. Its edges' rules are settled stretch by stretch and cut where a pcurve crosses a sheet's
+knot line or an area's turning line; a spindle torus's area is the closed form of
+`∫|R + r cos v|`. A solid farther from the origin than ten times its size is measured moved to its
+middle (`props::volume`). Gates: `step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
+`a_spindle_torus_reads_to_its_closed_form`.
+
 **A tolerant boundary is read as known to within its measured tolerances** (`step_read::sound`,
 run on every solid `topology::solid` builds). Tolerances are measured (`Brep::measure_tolerances`),
 never taken from the file and never widened to pass a check; the file's stated uncertainty is
@@ -1724,6 +1796,26 @@ measure is no gate where it has not converged (its fixed rule is off by up to 7e
 CADGenBench). A file that represents no solid must be refused; one the two readers read
 differently may be read either way or refused. `step_corpus::nothing_is_read_wrong` and
 `nothing_panics` hold at every commit; `the_corpus_reads` is the stage's finish line.
+
+**The corpus holds each face, not only the totals** (`step_corpus::Refs`, `face_bar`,
+`faces_judged`; `scripts/step-corpus/faces.py`). A total within its bar does not show a solid read
+right: a face read at half its area in a part of thousands moves the total by less than a loose
+bar (CADGenBench 214's face #28635, its sheet's whole domain, read 11.27 mm² against 16.82 while
+the file's totals passed). So a file read right in total also has each face, named by its
+ADVANCED_FACE, within its bar of OCCT's area of that face and of brep-bench's measurer's. OCCT's
+faces are named by the shells' order where the kinds agree, else by OCCT's own record of the
+translation (a face it split is the sum of its parts); the measurer's faces are put on their
+surfaces from the edges' curves in space, scaled by the unit read off the faces both readers
+share. The bar is `Σ max(tol, u)·length + 1e-6·area + 1e-9 mm²` over the face's edges — the area a
+tolerant boundary's slack can sweep, at the edge's measured tolerance or the file's stated
+uncertainty, whichever is larger, plus the quadrature's — its constants measured on the corpus
+(the worst agreeing face past its slack stands 9.4e-8 of its area off). Where the two readers
+disagree past the bar the face is disputed and may be read to either; a reader whose faces do not
+sum to the file's area is no reference for any of them; a table missing or of other bytes is said
+and counted, never taken for agreement. The per-face tables (340,000 faces) are read from
+`$STEP_CORPUS/oracle/` at run time, not committed. What the bar cannot see: a thin face's slack
+can approach a tenth of its area. `step_survey --faces [--past-sound]` prints the same judgement a
+face a line. Gates: `step_corpus::nothing_is_read_wrong`, `step_mutants::no_mutant_is_read_wrong`.
 
 **Never wrong on files written wrong** (`tests/step_mutants.rs`, `scripts/step-corpus/mutants.py`).
 Each mutant of the corpus — one edit of a well-formed file: a sense or an orientation flipped, a
