@@ -304,6 +304,13 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections
                     if let Some(cut) = union(&through_late)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     body
                 }
+                // a body a file gives (#993 stage 2): its own exact boundary, read whole
+                SolidDef::Given(_) => {
+                    let e = sk.exact_preimage(i)?;
+                    let f = BuiltField::new(&e).ok_or_else(|| format!("`{}`: the body its file \
+                        gives is read as no material field", sk.solid_name(i)))?;
+                    Snapshot::Static(f.into())
+                }
                 SolidDef::Family {..} => return Err("material fields \
                     currently require prisms, revolutions, Boolean bodies or named motions"
                     .into()),

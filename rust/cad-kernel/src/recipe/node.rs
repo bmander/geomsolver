@@ -100,6 +100,21 @@ pub enum Node {
     /// a profile or a B-spline net, named, joined where their boundaries are one curve to `tol`
     /// (`sew::sewn`) — a closed shell of panels and the faces that close it.
     Sewn { pieces: Vec<SewnPiece>,tol: f64 },
+    /// **A B-rep given whole** (#993 stage 2): one a file gave (`step_read`), handed through
+    /// untouched — its faces in their order, each on its own surface, its tolerances as measured.
+    Given(Given),
+}
+
+/// A `Given` node's B-rep (millimetres, about the origin the recipe is written about) and a digest
+/// of what it was read from: shared, never copied, and its `Debug` the digest and its size, since a
+/// read B-rep may be megabytes and a node's `Debug` is read where nodes are told apart.
+#[derive(Clone)]
+pub struct Given { pub brep: std::sync::Arc<crate::topo::Brep>,pub digest: u64 }
+
+impl std::fmt::Debug for Given {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f,"Given {{ digest: {:016x}, faces: {} }}",self.digest,self.brep.faces.len())
+    }
 }
 
 /// One piece of a `Sewn` node: a planar face of a profile, or a sheet of a B-spline net — each
@@ -211,7 +226,7 @@ impl Node {
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
             Node::Lowered(_) => "lowered",
             Node::Family(_) => "family",Node::Carried {..} => "carried",Node::Hull {..} => "hull",
-            Node::Half {..} => "half",Node::Sewn {..} => "sewn",
+            Node::Half {..} => "half",Node::Sewn {..} => "sewn",Node::Given(_) => "given",
         }
     }
 }
