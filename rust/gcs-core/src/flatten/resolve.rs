@@ -287,7 +287,11 @@ impl Lookup<'_> {
     /// the spelling, only from what exists — so the longest match that names something wins.
     /// An instance's datums read from outside are its own frame's (`instance_datum`).
     pub(super) fn raw(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
-        let (abs, rest) = self.named(r, sc)?;
+        // a given body (#993 stage 2) is read by name where it stands, and found where it would
+        // have to be placed only to be refused there (`flatten::given`)
+        let (abs, rest) = self.named(r, sc)
+            .or_else(|| self.standard.given.unplaced(&read_segments(r), sc))?;
+        self.standard.given.note(&abs, r, sc);
         match rest.first().map(String::as_str) {
             Some("std") => self.instance_datum(abs, rest),
             _ => Some((abs, rest)),

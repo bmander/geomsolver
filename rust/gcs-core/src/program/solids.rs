@@ -135,7 +135,11 @@ fn build_solids(
                 }
                 res.of.insert(name.clone(), e);
                 map.bind(&name, e, d.name.named());
-                map.record(st, Made::Ent(e));
+                // a given body (#993 stage 2) is no statement's: the document's `use` names it
+                // and an edit never makes or moves it, so it has no site to keep
+                if !matches!(d.sweep, Some(crate::syntax::Sweep::Given(_))) {
+                    map.record(st, Made::Ent(e));
+                }
                 // The solid owns its inline section and that section's closing lines.
                 // Record the solid first, as source editing expects for every declaration.
                 for fi in first_face..sk.faces.len() {
@@ -172,6 +176,15 @@ fn body_rule(
         }
         let StmtKind::SolidRel(r) = &st.kind else { continue };
         match body_operands(sk, res, r) {
+            // **a given body is never extended** (#993 stage 2): it is the file's, and stays
+            // nameable as given — the body a statement makes of it is named, and extended
+            Ok((_, b)) if matches!(sk.solids[b.i()].def, SolidDef::Given(_)) => {
+                let (given, what) = (&r.body.root.text, &r.what.root.text);
+                let word = r.word.as_str();
+                diags.push(Diag::within(Code::E080, r.span, st.id, format!(
+                    "`{given}` is the body a file gives, and it is never extended: name the body \
+                     this makes of it, `part := solid({given})`, then `{what} {word} part`")));
+            }
             Ok((a, b)) => stated.push((*st, r.word, r.span, a, b)),
             Err((code, span, m)) => diags.push(Diag::within(code, span, st.id, m)),
         }

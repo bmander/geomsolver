@@ -153,6 +153,7 @@ mod gear_crowns;
 mod generated_envelopes;
 mod generation;
 mod generation_examples;
+mod given_bodies;
 mod given_solids;
 mod guided_frames;
 mod geometry_semantics;
