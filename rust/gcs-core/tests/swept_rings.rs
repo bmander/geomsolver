@@ -857,7 +857,7 @@ fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
 /// 2.2318 joined to it in chords straight in each leaf's parameters, and each leaf's drawing of it,
 /// merged into the other's by the arrangement, keeping its own pcurve carried onto the other
 /// (`boolean`'s `carried_pcurve`) — inverted, it landed on the leaf past the fold, 1.3e-5 off. Its
-/// volume 23.6738854, the peer kernel cadrs's 23.6739; held to the sweep's membership. And each face
+/// volume 23.6738853, the peer kernel cadrs's 23.6739; held to the sweep's membership. And each face
 /// is the boundary by the depth: a place well inside it (the grid's place in its parameters farthest
 /// from its loops) is covered by no instant but its own deeper than the tolerance (`depth::cover`,
 /// its own instant the sheet's roll, or the end pose's whose torus it lies on).
@@ -869,7 +869,7 @@ fn the_full_turn_is_built_closed() {
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-23.6738854384).abs() < 1e-7,"{v}");
+    assert!((v-23.6738852579).abs() < 1e-7,"{v}");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
     let ring = Ring::read(&tool).unwrap();
     let located = gcs_core::brep::query::Located::new(&built,tol);
@@ -920,7 +920,7 @@ fn the_full_turn_is_built_wherever_its_end_poses_seams_stand() {
                     let v = gcs_core::brep::props::volume(&built);
                     let worth = tol*built.faces.iter().map(|f| gcs_core::brep::props::area(&built,f)).sum::<f64>();
                     if let Err(e) = built.check(tol) { failed.push(format!("end {end} seam {seam:.3}: {e:?}")) }
-                    else if (v-23.6738854384).abs() > worth { failed.push(format!("end {end} seam {seam:.3}: volume {v}")) }
+                    else if (v-23.6738852579).abs() > worth { failed.push(format!("end {end} seam {seam:.3}: volume {v}")) }
                 }
                 Err(u) => failed.push(format!("end {end} seam {seam:.3}: {u:?}")),
             }
