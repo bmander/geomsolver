@@ -8,6 +8,128 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
+  a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
+  the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
+  face, edge and vertex naming its entity (`Given`). A file is read correctly or refused with a
+  `Refusal {why, entity, msg}` naming the entity at fault; an open shell, a face that crosses
+  itself, an unsupported surface and an assembly's product structure are refusals. Units and the
+  stated uncertainty are read (`step_read::context`), tolerances measured and never widened, and
+  the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
+  writes reads back to the same solid.
+
+- **A torus whose hole is a hair wide has a pole** (#993 stage 1): `topo::poleless` called any
+  torus whose major radius passes its minor poleless, so a horn torus built a bit open (its minor
+  radius one bit under its major, as a platform whose `sin` rounds lower builds one) had its pole's
+  degenerate edge left unlaid by the reader and `close_poles`, though `pole_at` reads a pole there.
+  A ring torus is now one whose hole is wider than a millionth of its radius.
+
+- **How far an edge stands off its face is the boundary's to say** (#993 stage 1): the measure
+  `step::write` states a file's uncertainty from is `Brep::standing`, one function for the writer
+  and whatever holds a file to it.
+
+- **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
+  inverse curve off its face read the surface's second derivatives as differences a millionth of
+  a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
+  millionth past a quadratic net's knot ran at 0.92 where its feet run at 0.99). A net's second
+  derivatives are its own, in the span holding the foot; any other surface's differences are
+  taken on the foot's side of a break within them.
+
+- **A polynomial net's `G` is read along its iso curve** (#993 stage 1): away from the flux's
+  table, `props` integrated `G` from a face's middle across every span to each node of every use,
+  each point a two-way evaluation of the sheet; it now reads the net's rows across the held
+  parameter once a node and each point as a curve's (`Iso`), the same values to rounding.
+  brep-bench's bull-nose carried along a spline (a 91 × 143 quintic) had its area read in 13 s,
+  and now in 6.5 s.
+
+- **A net creased at its knots is measured as a smooth one** (#993 stage 1): `props` tabled a
+  polynomial net's `G` per `v` span through Chebyshev nodes that include the span's far end, and
+  read the net there in the next span, so across a knot of the degree's multiplicity (a net joined
+  in value only, where `S_v` jumps) a column was tabled from the wrong side: a face family's wall
+  written piece by piece between its stations read its flux 2.8e-5 off (`paths/bent_pipe.sv`'s
+  bar).  Each column's rows are read in its own span.  A pcurve that is a line is also cut where
+  it crosses such a crease, in closed form, where `G` jumps.
+
+- **A stretch of a use is read by ten nodes only where they read it** (#993 stage 1): `props`
+  read each stretch of an edge between its breaks by one ten-point Gauss rule, unchecked, so an
+  edge whose curve had a knot a hair past its start had its whole half turn about a rational net
+  read by ten points (brep-bench's frustum screwed across a ring sector, one face's area 3.8e-5
+  off; its drum leaning across a turn, two 1.7e-6).  Each stretch is checked by the rule's 21-point
+  Kronrod extension, which reuses its nodes: kept where they agree to rounding (to the bit as
+  before), the extension where its own error estimate is within the budget, else settled.
+
+- **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
+  face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
+  solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
+  distance, as it was read.
+
+- **A face family's wall and rail that turn at their stations' joints are written** (#993 stage
+  1): a family's numbers are a polynomial through six stations a piece, two pieces meeting in value
+  only, and `step` fitted its wall and rails smooth across the joints, which no net closes in on
+  (`lofts/pipe.sv`'s tube 1.7e-2 mm off at the fit's cap, refused).  Where the smooth fit misses
+  `step::FIT`, the wall is fitted piece by piece on one grid along its edge and the rail stretch
+  by stretch between its breaks, joined with a knot of the degree's multiplicity.
+
+- **A STEP file prefers the curve in space where that is the exact one** (#993 stage 1): every
+  `SURFACE_CURVE` and `SEAM_CURVE` was written with `master_representation` `.PCURVE_S1.`, which
+  ISO 10303-42 reads as the representation preferred where they differ, though the kernel's
+  pcurves are fitted to its curve in space or read off it.  It is now `.CURVE_3D.`, and
+  `.PCURVE_Sk.` only where the curve in space is a fit and the `k`th pcurve is the kernel's own
+  spline in the parameters of a surface written exactly.
+
+- **A STEP file never states less than it holds** (#993 stage 1): `step::write` stated the
+  uncertainty asked (1e-7 in the tests) over a loft's net and rails fitted within `step::FIT`
+  (1e-6) and over a solid's own edges standing up to 2e-5 off their faces, so a reader measured 26
+  of the library's solids looser than their files said.  The file now states the tolerance asked
+  where it covers a quarter more than its geometry holds, and else what it holds, up to the next
+  of 1, 2 and 5 times a power of ten — each edge's distance off its faces measured afresh at 64
+  points, its knots and halfway between, plus its curve's, its faces' and its pcurves' measured
+  misses, and each vertex's tolerance.  `step::write_stating` returns that uncertainty with the
+  text (`write` is it without), and the export says so where it is past the one asked.
+
+- **No curve of a STEP file is written in more than `3 MOST + 1` points** (`step::MOST`, 4096
+  pieces; #993 stage 1): where no cubic closed in on an edge's curve in a toolpath's net, the
+  writer fell back to a polyline within the stated uncertainty, one pcurve of 2.5 million points
+  (a 257 MB file for `capped_thread`, 3.1 GB for `whole_turn`, a drill not written in a minute).
+  A pcurve no cubic and no polyline of `MOST` points holds is now left out (a reader puts the edge
+  on the face itself, as where a file writes none; a seam's two are written both or neither), and
+  a traced curve's polyline is written within the bar `MOST` points hold, which the file states.
+  A fitted pcurve is held no nearer the edge's foot than the edge stands off the face: the cubic
+  held to 1e-9 against an edge standing 1e-7 off chased a rate read wrongly just past a joint into
+  pieces of `2⁻³⁰` of the edge.
+
+- **A cone's curves in its parameters are written along its axis, as the standard reads them**
+  (#993 stage 1): ISO 10303-42's `conical_surface` runs `v` along the axis, `C + (R + v tan α)(cos u
+  x + sin u y) + v z`, where the kernel's cone (and OCCT's) runs it along the generator; `step`
+  wrote the kernel's `v`, so every pcurve on a cone lay off its edge (a frustum's by 0.2 mm, a
+  drilled frustum's traced edges by 2.5 mm, which OCCT read 1.4e-4 off in volume).  The file's `v`
+  is now the kernel's times `cos α`.
+
+- **A pcurve in a net's parameters is written as a line only where it is one** (#993 stage 1): an
+  affine image's face is written as its preimage's net, whose parameters reach an angle at the arc
+  parameter, and the test that an edge's curve in them is a line looked only at eighths of a turn,
+  where the two agree by symmetry: a sheared torus's circles were written as lines 0.075 mm off
+  their edges between.  The test reads sixteen uneven fractions, and such a curve is the cubic
+  fitted within `step::EXACT`.
+
+- **A spindle torus's lemon is written as a degenerate torus** (#993 stage 1): a toroidal surface's
+  radii are positive lengths, and the kernel's torus of negative major radius was written as one.
+  It is now `DEGENERATE_TOROIDAL_SURFACE` of major radius `−big` with `select_outer` false, its
+  pcurves in that surface's parameters `(u + π, π − v)` and its face's sense turned with them
+  (`step::turned`; `step_check` reads the degenerate torus and the turned sense).
+
+- **A rational net's foot is not stopped by a seam or a pole** (#993 stage 1): `geom::net_inverse`
+  took the first foot Newton's method settled on from a pole's Greville point, one held on the
+  domain's edge among them, and a warm start held there; a ball's net read a point on it 2.2 off.
+  A foot held on an edge is sought again across a closed net's seam and from beside a collapsed
+  row (`net_settle`), the first foot inside the domain or on the sheet taken, else the nearest;
+  the grid's last resort polishes its eight nearest distinct samples by Newton's method.
+
+- **A sheet's offset at a pole is the pole's offset** (#993 stage 1): `Surface::Offset` returned the
+  sheet's own point where `S_u × S_v` vanished (and a garbage normal where rounding left it a hair
+  off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
+  the ball grown, and its partials there carried from beside it.
+
 ## [0.21.0] - 2026-11-22
 
 - **An edge is read against what its faces are known to meet, by one rule** (#990): an edge lies in

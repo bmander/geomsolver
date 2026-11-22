@@ -78,7 +78,7 @@ impl Pcurve {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => along(a,b,fraction(t,edge)),
-            Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
+            Pcurve::Inverse {a,b} => inverse_from(a,b,t,edge.point(t,vertices),edge,surface,None,reach(t,edge,vertices)),
         }
     }
     /// `d(u, v)/dt` at `t`.
@@ -108,7 +108,7 @@ impl Pcurve {
     pub fn at_and_derivative_from(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex],seed: Option<Uv>) -> (Uv,Uv) {
         match *self {
             Pcurve::Inverse {a,b} => {
-                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed);
+                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed,reach(t,edge,vertices));
                 (uv,inverse_derivative(uv,t,edge,surface))
             }
             _ => self.at_and_derivative(t,edge,surface,vertices),
@@ -145,7 +145,14 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
 /// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None) }
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None,0.) }
+
+/// How far from a pole an inverse curve's end at `t` is read as on it: its vertex's tolerance
+/// there (a file's curve may pass its vertex at a pole on the pole's far side, #993), none
+/// between its ends.
+fn reach(t: f64,edge: &Edge,vertices: &[Vertex]) -> f64 {
+    match fraction(t,edge) { 0. => vertices[edge.v[0] as usize].tol,1. => vertices[edge.v[1] as usize].tol,_ => 0. }
+}
 
 /// `inverse_at`, the point sought from `seed` where one is given (finite) and not from the line
 /// between the ends, its branch on a periodic surface still the one nearest that line.
@@ -154,8 +161,9 @@ pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) 
 /// (`Edge::tol`) is sought again from the line, and the nearer kept: a carried seed can leave the
 /// curve where it bends away from its rate — the thin tumbling torus's double curve dipping below
 /// a swallowtail point's row, its foot carried onto the face's top row and held there by the
-/// domain's edge, 1.7e-3 of the roll off, and the face's flux read 0.22 of itself wrong.
-fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
+/// domain's edge, 1.7e-3 of the roll off, and the face's flux read 0.22 of itself wrong. An end is
+/// on a pole within the edge's tolerance or `reach`, its vertex's there (`near_pole`).
+fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>,reach: f64) -> Uv {
     let s = fraction(t,edge);
     let near = along(a,b,s);
     let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
@@ -168,27 +176,95 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
             if off(again) < carried { uv = again }
         }
     }
-    if s == 0. || s == 1. { on_pole(surface,uv,near,edge.tol) } else { uv }
+    if s == 0. || s == 1. { on_pole(surface,uv,near,edge.tol.max(reach)) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
-/// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
+/// `uv`: the rate of the foot itself. The foot holds `(S − x)·S_u = (S − x)·S_v = 0`; differentiated
+/// along the edge, `J (du, dv)/dt = (x′·S_u, x′·S_v)` with `J = [S_i·S_j + (S − x)·S_ij]` — the
+/// metric, and the surface's second derivatives weighed by the gap `S − x`. On the surface (an
+/// edge built exact, a gap within a billionth of the point's size) the gap's term is nought and
+/// the rate is the edge's tangent by least squares in `[S_u S_v]` (`solved`); off it (a file's
+/// edge within its tolerance of its faces, #993) the feet run at another rate, which the gap's
+/// term gives, its second derivatives the differences of the exact first a millionth of a
+/// parameter apart (their error weighed by the gap, some 1e-12 of the rate) — smooth along the
+/// edge, as a difference of the feet themselves was not (a rule settling on it refined it to its
+/// noise).
 ///
-/// Where the two derivatives are parallel there — a fan's pinch, where its sheet's parameters
-/// fold — the least squares has no answer, and the rate is the chord of the curve's own feet
-/// either side of `t`, along the edge (#942 T1d-cube: a rim 2e-6 long at the pinch where a fan's
-/// crossing with itself is born gave the solid's volume as NaN).
+/// Where the two derivatives are parallel there and neither vanishes — a fan's pinch, where its
+/// sheet's parameters fold — the least squares has no answer, and the rate is the chord of the
+/// curve's own feet either side of `t`, along the edge (#942 T1d-cube: a rim 2e-6 long at the
+/// pinch where a fan's crossing with itself is born gave the solid's volume as NaN); where one
+/// vanishes (a spline's collapsed row), `solved`'s answer of least norm.
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
+    let (x,d) = c.d1(t);
     // (the two rates read once, for the solve and its fold)
-    let (_,su,sv) = surface.d1(uv);
-    let d = solved(su,sv,c.tangent(t));
-    if d.iter().all(|x| x.is_finite()) && !folded(su,sv) { return d }
+    let (p,su,sv) = surface.d1(uv);
+    let gap = sub(p,x);
+    if norm(gap) > 1e-9*(1.+norm(x)) { if let Some(rate) = off_surface(uv,gap,su,sv,d,surface) { return rate } }
+    let r = solved(su,sv,d);
+    if r.iter().all(|x| x.is_finite()) && (!folded(su,sv) || dot(su,su)*dot(sv,sv) == 0.) { return r }
     let h = 1e-3*(edge.t[1]-edge.t[0]);
     let (lo,hi) = ((t-h).max(edge.t[0]),(t+h).min(edge.t[1]));
     if !(hi > lo) { return [0.;2] }
     let [a,b] = [lo,hi].map(|x| surface.inverse_near(c.point(x),uv));
     [(b[0]-a[0])/(hi-lo),(b[1]-a[1])/(hi-lo)]
+}
+
+/// `inverse_derivative` of a foot standing `gap` off the edge's point, `J`'s solve; none where it
+/// has no finite answer.
+fn off_surface(uv: Uv,gap: V,su: V,sv: V,d: V,surface: &Surface) -> Option<Uv> {
+    let (suu,suv,svv) = second(surface,uv);
+    let (a11,a12,a22) = (dot(su,su)+dot(gap,suu),dot(su,sv)+dot(gap,suv),dot(sv,sv)+dot(gap,svv));
+    let (b1,b2) = (dot(su,d),dot(sv,d));
+    // a foot held on a spline sheet's domain edge, the nearest point of the sheet past it (an edge
+    // standing off a face whose own edge it runs along: the gap not square to the sheet there):
+    // that parameter stays on the edge, and the other runs alone (CADGenBench 246's face #11343, its
+    // sheet's whole domain, read 6.5e-4 over it where the rate across the edge was the free foot's)
+    if let Surface::BSpline(_,n) = surface {
+        let dom = n.domain();
+        let held: Vec<usize> = (0..2).filter(|&k| {
+            let [lo,hi] = dom[k];
+            let s = [su,sv][k];
+            (uv[k] <= lo || uv[k] >= hi) && dot(gap,s).abs() > 1e-6*norm(gap)*norm(s)
+        }).collect();
+        match held[..] {
+            [k] => { let mut r = [0.;2]; r[1-k] = if k == 0 { b2/a22 } else { b1/a11 }; if r[1-k].is_finite() { return Some(r) } }
+            [_,_] => return Some([0.;2]),
+            _ => {}
+        }
+    }
+    let det = a11*a22-a12*a12;
+    let rate = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
+    (det != 0. && rate.iter().all(|r| r.is_finite())).then_some(rate)
+}
+
+/// `S_uu`, `S_uv`, `S_vv` at `uv`, on the side of a joint `uv` lies (a spline sheet's knot line,
+/// a face family's station, where the second derivatives jump, or the first): a polynomial or
+/// rational net's own, in its span holding `uv`; elsewhere the differences of the exact first
+/// derivatives a millionth of a parameter apart, taken on one side where a break of the surface
+/// lies within that. Differences across a joint read the two sides' mean — or, across a crease,
+/// its jump over two millionths — and the rate of a foot a millionth past a quadratic net's knot
+/// was read 0.92 where the feet run at 0.99 (`step_read::a_foot_just_past_a_joint_runs_at_its_own_rate`).
+fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
+    if let Surface::BSpline(_,n) = surface { let [_,_,_,suu,suv,svv] = n.d2(uv[0],uv[1]); return (suu,suv,svv) }
+    let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
+    // along `k`: the rates of `(S_u, S_v)`, by a central difference, or a one-sided one on `uv`'s
+    // side of a break within it
+    let rate = |k: usize| -> (V,V) {
+        let h = 1e-6*(1.+uv[k].abs());
+        let (lo,hi) = match surface.breaks(k,[uv[k]-h,uv[k]+h]).first() {
+            Some(&b) if uv[k] >= b => (0.,h),
+            Some(_) => (-h,0.),
+            None => (-h,h),
+        };
+        let ((ua,va),(ub,vb)) = (at(k,lo),at(k,hi));
+        let w = 1./(hi-lo);
+        (scale(sub(ub,ua),w),scale(sub(vb,va),w))
+    };
+    let ((suu,_),(suv,svv)) = (rate(0),rate(1));
+    (suu,suv,svv)
 }
 
 /// **Whether a surface's two rates `su`, `sv` at a place stand one way to half the digits**
@@ -202,7 +278,7 @@ fn folded(su: V,sv: V) -> bool {
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
-/// two derivatives are parallel, a pole's).
+/// two derivatives are parallel and neither vanishes).
 pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
     solved(su,sv,d)
@@ -213,6 +289,9 @@ fn solved(su: V,sv: V,d: V) -> Uv {
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;
+    // (where one derivative vanishes — a spline's collapsed row, its foot clamped onto it — the
+    // least-squares answer of least norm: along the other alone, #993)
+    if det == 0. && a11+a22 > 0. { return if a11 >= a22 { [b1/a11,0.] } else { [0.,b2/a22] } }
     [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det]
 }
 
@@ -263,12 +342,34 @@ pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
     else { None }
 }
 
+/// Whether the pole at `uv` (its collapsed parameter `along`) is a cusp: the surface's derivative
+/// across it one line whatever the collapsed parameter's value — read at three values a third of
+/// its span apart — so that no tangent plane is there and a curve's tangent arriving says nothing
+/// of the value it arrives along (a horn torus's middle; a net whose collapsed row's neighbour is
+/// one point too). A sphere's pole and a cone's apex are none.
+pub(crate) fn cusp(surface: &Surface,uv: Uv,along: usize) -> bool {
+    let span = match (surface.periods()[along],surface) {
+        (Some(p),_) => p,
+        (None,Surface::BSpline(_,n)) => { let [lo,hi] = n.domain()[along]; hi-lo }
+        _ => return false,
+    };
+    let across = |x: f64| { let mut q = uv; q[along] = x; let (_,su,sv) = surface.d1(q); if along == 0 { sv } else { su } };
+    let d: Vec<V> = (0..3).map(|i| across(uv[along]+span*i as f64/3.)).collect();
+    let sizes: Vec<f64> = d.iter().map(|x| norm(*x)).collect();
+    if sizes.iter().any(|&s| !(s > 0.)) { return false }
+    (0..3).all(|i| norm(crate::util::space::cross(d[i],d[(i+1)%3])) <= 1e-9*sizes[i]*sizes[(i+1)%3])
+}
+
 /// Whether `surface` is one no chart of which collapses anywhere, so it has no pole: a plane, a
-/// cylinder, an extrusion, a ring torus.
+/// cylinder, an extrusion, a ring torus — one whose hole is wider than a millionth of its radius.
+/// A ring torus narrower in the hole is a horn torus to every tolerance a pole is read at
+/// (`pole_at`), so its middle is read as a pole: a horn torus built where the platform's `sin`
+/// rounds a bit lower is one (coin's slab on CI, its minor radius 1.9999999999999998 of 2,
+/// `step_roundtrip::a_use_ending_at_a_horn_toruss_pole_a_bit_open_reads_back`).
 pub(crate) fn poleless(surface: &Surface) -> bool {
     match *surface {
         Surface::Plane(_) | Surface::Cylinder(..) | Surface::Extrusion(..) => true,
-        Surface::Torus(_,big,small) => big > small.abs(),
+        Surface::Torus(_,big,small) => big-small.abs() > 1e-6*big,
         _ => false,
     }
 }
@@ -476,7 +577,30 @@ impl Brep {
             let into = if end == 0 { 1. } else { -1. };
             // beside the use's own value a little way in, on its branch of the periods
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
-            let limit = leaving_pole(&f.surface,vertex.p,scale(curve.tangent(e.t[end]),into),inner,along)?;
+            // (from the curve's own end, which a vertex read from a file need not be: a step
+            // out from a vertex on the far side of the pole reads the meridian opposite, #993)
+            // The value the use's own feet tend to, which its pcurve reads up to its end: their
+            // limit extrapolated from three steps in, `x(h) = x₀ + a h + b h²`. The tangent's
+            // value (#797) where the two agree to a millionth, exact to the bit on a solid built
+            // here; the feet's at a cusp (a horn torus's middle, a net's row collapsed with its
+            // neighbour, every curve arriving along one line, its tangent saying nothing of the
+            // value); and where a file's curve stands off its face near the pole within its
+            // tolerance (its tangent not the surface's, its foot a step along it reading the pole's
+            // far side as soon as the near), neither, the tangent's having left the use leaping
+            // along the pole at its end
+            let x = |h: f64| c.pcurve.at(e.t[end]+into*h*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices)[along];
+            let feet = { let (x1,x2,x4) = (x(1e-3),x(5e-4),x(2.5e-4)); (8.*x4-6.*x2+x1)/3. };
+            let tangent = if cusp(&f.surface,a,along) { None }
+                else { leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along) };
+            let limit = match tangent {
+                Some(t) if (t-feet).abs() <= 1e-6 => t,
+                None => feet,
+                // (neither to be trusted — a file's curve standing off its face near the pole,
+                // its feet swinging round it within the gap — its foot a hundredth of its span
+                // in, where the gap is small beside the pole's distance on the files read)
+                Some(_) => x(1e-2),
+            };
+            if !limit.is_finite() { return None }
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }
@@ -660,7 +784,11 @@ impl Brep {
         let at = self.vertices[self.ends(c)[1] as usize].tol;
         let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
         let d = distance(f.surface.point(a),f.surface.point(b));
-        ([a,b],d,corner,d > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3)
+        // on the same branch: within a thousandth in parameters, or within what the corner's
+        // tolerance spans there where that is more (a file's edges standing their tolerance off
+        // their faces, #993)
+        let spans = { let (_,su,sv) = f.surface.d1(a); let least = norm(su).min(norm(sv)); if least > 0. { 2.*corner/least } else { 0. } };
+        ([a,b],d,corner,d > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > spans.max(1e-3))
     }
 
     /// **Use `c` of face `f` read against its edge** (`check`'s measure): at the edge's eighths, each
@@ -744,7 +872,7 @@ impl Brep {
                 if settled { continue }
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
-                if (li == 0) != (ccw != f.reversed) {
+                if (li == 0) != (ccw != f.reversed) && !self.sliver(f,l,area,tol) {
                     return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name).into())
                 }
             }
@@ -900,6 +1028,27 @@ impl Brep {
         out
     }
 
+    /// **Whether a loop is a sliver its edges' tolerance cannot orient** (#993): the area it
+    /// encloses in its face's parameters (`area`), carried into space at its first corner, no
+    /// more than its length times the largest tolerance among its edges and vertices, or the one
+    /// the check is asked for — a face thinner than its edges stand off their vertices, as a file's
+    /// sloppy edges leave one, which turns whichever way they stray. Never one built exact and
+    /// checked exactly, whose tolerances are nought.
+    fn sliver(&self,f: &Face,l: &[Coedge],area: f64,tol: f64) -> bool {
+        let widest = l.iter().map(|c| { let e = &self.edges[c.edge as usize]; e.v.iter().map(|&v| self.vertices[v as usize].tol).fold(e.tol,f64::max) })
+            .fold(tol,f64::max);
+        if !(widest > 0.) { return false }
+        let Some(c) = l.first() else { return false };
+        let (_,su,sv) = f.surface.d1(self.uv_ends(f,c)[0]);
+        let mut length = 0.;
+        for c in l {
+            let e = &self.edges[c.edge as usize];
+            let pts: Vec<V> = (0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&self.vertices)).collect();
+            length += pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>();
+        }
+        area.abs()*norm(crate::util::space::cross(su,sv)) <= length*widest
+    }
+
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive), by
     /// `green_area` over its uses — a straight image its chord.
     pub fn loop_area(&self,f: &Face,l: &[Coedge]) -> f64 {
@@ -911,6 +1060,26 @@ impl Brep {
             let k = if c.reversed { n-j } else { j };
             c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*k as f64/n as f64,e,&f.surface,&self.vertices)
         })
+    }
+
+    /// **How far an edge stands off a face that uses it** (millimetres): the most its points stand
+    /// from the face's at the use `u` of face `fi`, its curve in the face's parameters, at 64
+    /// points along it and at every break of either curve, and halfway between each two of those
+    /// — its tolerance there as a reader measures one (`measure_tolerances`), measured afresh
+    /// rather than taken from the edge (a solid's tolerances are not kept up to date through every
+    /// operation). What `step::write` states and `tests/step_roundtrip.rs` holds a file to.
+    pub fn standing(&self,fi: usize,u: &Coedge) -> f64 {
+        let (f,e) = (&self.faces[fi],&self.edges[u.edge as usize]);
+        let EdgeCurve::Curve(c) = &e.curve else { return 0. };
+        let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
+        ts.extend(c.breaks(e.t));
+        if let Pcurve::Curve(pc) = &u.pcurve { ts.extend(pc.breaks(e.t)); }
+        // (and halfway between each two: an edge may stand off its face at a spike between its
+        // knots, `creased.sv`'s 2e-5 where its knots read 4e-6)
+        ts.sort_by(f64::total_cmp);
+        let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
+        ts.extend(halves);
+        ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
     }
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image

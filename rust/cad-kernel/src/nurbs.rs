@@ -836,7 +836,7 @@ impl Net {
         }))
     }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
-    /// the same parameters, only the net that reaches there.
+    /// the same parameters, only the net that reaches there (`BSpline::segment` is a curve's).
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
         let [[a0,a1],[b0,b1]] = self.domain();
         let (u0,u1,v0,v1) = (u0.max(a0),u1.min(a1),v0.max(b0),v1.min(b1));

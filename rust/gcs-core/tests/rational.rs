@@ -255,3 +255,46 @@ fn a_cylinder_read_with_a_rational_side_is_its_closed_form() {
     assert!(bad != cylinder_json(r,h));
     assert!(gcs_core::brep::json::read(&bad).is_err());
 }
+
+/// A band of a cylinder of radius `r` and height `h` round `turn` radians, its side a net of two
+/// rational quadratic arcs (each half the turn), alone: four edges, its rims that net's arcs.
+fn band_json(r: f64,h: f64,turn: f64) -> String {
+    let half = turn/2.;
+    let w = (half/2.).cos();
+    let at = |a: f64,s: f64| [s*r*a.cos(),s*r*a.sin()];
+    let poles = [at(0.,1.),at(half/2.,1./w),at(half,1.),at(1.5*half,1./w),at(turn,1.)];
+    let weights = [1.,w,1.,w,1.];
+    let list = |x: &[f64]| format!("[{}]",x.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(","));
+    let knots = "[0,0,0,0.5,0.5,1,1,1]";
+    let rim = |z: f64| format!("{{\"kind\":\"bspline\",\"degree\":2,\"knots\":{knots},\"poles\":[{}],\"weights\":{}}}",
+        poles.iter().map(|p| list(&[p[0],p[1],z])).collect::<Vec<_>>().join(","),list(&weights));
+    let side = format!("{{\"kind\":\"bspline\",\"du\":2,\"dv\":1,\"uknots\":{knots},\"vknots\":[0,0,{h:?},{h:?}],\"poles\":[{}],\"weights\":[{}]}}",
+        poles.iter().map(|p| format!("[{},{}]",list(&[p[0],p[1],0.]),list(&[p[0],p[1],h]))).collect::<Vec<_>>().join(","),
+        weights.iter().map(|&x| list(&[x,x])).collect::<Vec<_>>().join(","));
+    let line = |p: [f64;2],d: [f64;2]| format!("{{\"kind\":\"line\",\"p\":[{:?},{:?},0],\"d\":[{:?},{:?},0]}}",p[0],p[1],d[0],d[1]);
+    let used = |e: usize,reversed: bool,pcurve: String| format!("{{\"edge\":{e},\"reversed\":{reversed},\"pcurve\":{pcurve}}}");
+    let [a,z] = [poles[0],poles[4]];
+    format!("{{\"vertices\":[{{\"p\":{},\"tol\":0}},{{\"p\":{},\"tol\":0}},{{\"p\":{},\"tol\":0}},{{\"p\":{},\"tol\":0}}],\"edges\":[\
+        {{\"v\":[0,1],\"t\":[0,1],\"tol\":0,\"curve\":{}}},\
+        {{\"v\":[2,3],\"t\":[0,1],\"tol\":0,\"curve\":{}}},\
+        {{\"v\":[0,2],\"t\":[0,{h:?}],\"tol\":0,\"curve\":{{\"kind\":\"line\",\"p\":{},\"d\":[0,0,1]}}}},\
+        {{\"v\":[1,3],\"t\":[0,{h:?}],\"tol\":0,\"curve\":{{\"kind\":\"line\",\"p\":{},\"d\":[0,0,1]}}}}],\"faces\":[\
+        {{\"reversed\":false,\"surface\":{side},\"loops\":[{{\"outer\":true,\"uses\":[{},{},{},{}]}}]}}]}}",
+        list(&[a[0],a[1],0.]),list(&[z[0],z[1],0.]),list(&[a[0],a[1],h]),list(&[z[0],z[1],h]),rim(0.),rim(h),
+        list(&[a[0],a[1],0.]),list(&[z[0],z[1],0.]),
+        used(0,false,line([0.,0.],[1.,0.])),used(3,false,line([1.,0.],[0.,1.])),
+        used(1,true,line([0.,h],[1.,0.])),used(2,true,line([0.,0.],[0.,1.])))
+}
+/// **A stretch of a use is read by ten nodes only where they read it** (`props`'s `checked`): a
+/// band of a cylinder round 340°, its side a net of two rational arcs of 170° each and its rims those
+/// arcs, has each rim's stretch between its knots read by ten Gauss nodes, which read 1e-8 of the
+/// band's area off unchecked; checked by their Kronrod extension, the band is `r θ h` to rounding,
+/// and a quarter's ten-node reading, already exact, is kept.
+#[test]
+fn a_rational_arcs_stretch_is_read_to_its_closed_form() {
+    for deg in [90.,160.,300.,340.] {
+        let (r,h,turn) = (2.,0.5,deg*PI/180.);
+        let b = gcs_core::brep::json::read(&band_json(r,h,turn)).unwrap_or_else(|e| panic!("{deg}°: {e}"));
+        close(gcs_core::brep::props::area(&b,&b.faces[0]),r*turn*h,1e-14);
+    }
+}

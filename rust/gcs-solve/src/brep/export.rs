@@ -317,10 +317,13 @@ pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let (uncertainty,fit) = step_accuracy(tolerance);
-    let text = super::step::write(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
+    let (text,stated) = super::step::write_stating(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
-    (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
+    // (a file states what its fits and the solid's own edges hold where that is past what was asked)
+    let held = if stated > uncertainty { format!("; it states an uncertainty of {stated:e} mm, what its geometry holds, past the {uncertainty:e} asked") }
+        else { String::new() };
+    (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's{held} ({:?})",
         verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
     (say.mark)(Stage::Step);
     Ok(text)
