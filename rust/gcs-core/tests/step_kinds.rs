@@ -890,3 +890,50 @@ fn a_master_pcurve_on_another_surface_is_set_aside() {
         close(&format!("a master pcurve on surface {on}: area"), a, TAU * r * r + TAU * r * h, 1e-9);
     }
 }
+
+/// **A band round a torus's axis is the part of its tube its bounds keep on their left** (#993;
+/// NIST's FTC 11, a rim rounded more than a quarter of its tube round): the tube of radius 1 about
+/// the circle of radius 4 from its outer equator over its top to the circle at `θ` round it, two
+/// circles round the axis and no seam, closed by the discs at `z = 0` and `z = sin θ` — `π ∫ (R +
+/// cos v)² cos v` over `[0, θ]`, and `2π (R θ + sin θ) + π (R + 1)² + π (R + cos θ)²`. Whether the
+/// torus's axis runs up or down (its `v` then turned, the band at `v ∈ [−θ, 0]` where its inverse
+/// reads the top circle at `2π − θ`), its top circle's vertex above the outer's or a quarter turn
+/// round (the outer circle cut where the seam meets it), less than half the tube round or more.
+/// Read before with its seam laid from the outer circle to the top one the way round the tube its
+/// inverse put them, which took the rest of the tube where `v` runs down: refused, "turns the
+/// wrong way".
+#[test]
+fn a_band_round_a_torus_is_the_part_its_bounds_keep_left() {
+    let big = 4.;
+    for theta in [FRAC_PI_2 + FRAC_PI_4 + 0.2, FRAC_PI_4] {
+        let (rho, h) = (big + theta.cos(), theta.sin());
+        let v = PI * integral(&|t: f64| (big + t.cos()).powi(2) * t.cos(), 0., theta, 2000);
+        let a = TAU * (big * theta + theta.sin()) + PI * (big + 1.) * (big + 1.) + PI * rho * rho;
+        for down in [false, true] {
+            for quarter in [false, true] {
+                let mut e = Ents::new();
+                let axis = [0., 0., if down { -1. } else { 1. }];
+                let t = e.place([0.; 3], axis, [1., 0., 0.]);
+                let s = e.add(format!("TOROIDAL_SURFACE('',#{t},{},1.)", real(big)));
+                let (v0, v1) = (e.vertex([big + 1., 0., 0.]), e.vertex(if quarter { [0., rho, h] } else { [rho, 0., h] }));
+                let c0 = e.circle([0.; 3], [0., 0., 1.], [1., 0., 0.], big + 1.);
+                let c1 = e.circle([0., 0., h], [0., 0., 1.], [1., 0., 0.], rho);
+                let (e0, e1) = (e.edge(v0, v0, c0, true), e.edge(v1, v1, c1, true));
+                let bound = |e: &mut Ents, edge: u32, along: bool| {
+                    let o = e.add(format!("ORIENTED_EDGE('',*,*,#{edge},{})", logical(along)));
+                    let l = e.add(format!("EDGE_LOOP('',(#{o}))"));
+                    e.add(format!("FACE_BOUND('',#{l},.T.)"))
+                };
+                let (b0, b1) = (bound(&mut e, e1, false), bound(&mut e, e0, true));
+                let band = e.add(format!("ADVANCED_FACE('',(#{b0},#{b1}),#{s},.T.)"));
+                let p0 = e.plane([0.; 3], [0., 0., 1.], [1., 0., 0.]);
+                let p1 = e.plane([0., 0., h], [0., 0., 1.], [1., 0., 0.]);
+                let bottom = e.face(&[(e0, false)], false, p0, false);
+                let top = e.face(&[(e1, true)], false, p1, true);
+                let what = format!("θ {theta:.3}, the axis {}, the top vertex {}", if down { "down" } else { "up" },
+                    if quarter { "a quarter round" } else { "above" });
+                reads(&what, &e.file(&[band, bottom, top]), v, a, 1e-9);
+            }
+        }
+    }
+}

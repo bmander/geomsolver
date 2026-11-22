@@ -1910,6 +1910,21 @@ apple by Pappus, to 1e-9), `a_closed_edge_on_a_spline_runs_round_from_its_vertex
 rules by their corpus rows (springrep coin-turned-about-a-line-through-its-rim,
 bull-nose-carried-along-a-spline, v-wheel-turned-once-round-rod).
 
+**A band round a torus is the part of its tube its bounds keep left** (`topology::band`'s
+`lift`). A face between two loops each winding once round one period of a surface closed round
+both (a torus's band round its axis or round its tube, written with no seam) is joined by a seam
+the reader lays from the one loop to the other. Its other parameter is periodic too, so the two
+loops' walks, each on the branch its own inverse gave, settle nothing of which way round the tube
+the seam runs: the second loop is moved by whole periods onto the side of the first the face lies
+on — its left as it runs, its right where the face's sense turns the surface's normal — and the
+seam is laid across the face, never round the rest of the tube. On a cylinder or a cone, which
+close round one parameter only, nothing moves; two loops running the same way are refused as
+before. Read the way the walks left it, a band reaching more than half round its tube took the
+rest of it and was refused as turning the wrong way (NIST's FTC 11 face #1195, a rim rounded
+160.66° of its tube, now read to its closed form 797.485). Gate:
+`step_kinds::a_band_round_a_torus_is_the_part_its_bounds_keep_left` (eight files: the band's
+reach, the torus's axis up or down, the vertices in line or a quarter turn apart).
+
 **A surface closed on itself is periodic whether or not its form has a period, and a loop on it is
 walked as on any periodic surface** (`topology::Rolled`, `closes`, `rolled`, `unrolled`, `window`).
 A B-spline sheet (or its offset) whose rows at a parameter's two ends are one curve, to 1e-7 of its
