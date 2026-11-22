@@ -1730,8 +1730,8 @@ fn joined(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],pair: [(f64,f64,f64);2],a
     let off = |(th,t,_): (f64,f64,f64)| [(th-tha+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI,t-ta];
     let [d1,d2] = pair.map(off);
     let tha = pair[0].0-d1[0];
-    if d1[0].hypot(d1[1]) > (d2[0]-d1[0]).hypot(d2[1]-d1[1]) { return None }
-    let kn = 1f64.hypot(apex.way);
+    if d1[0].dhypot(d1[1]) > crate::plane2::dist(d2,d1) { return None }
+    let kn = 1f64.dhypot(apex.way);
     let (k,n) = ([1./kn,apex.way/kn],[-apex.way/kn,1./kn]);
     let parts = |d: [f64;2]| (d[0]*k[0]+d[1]*k[1],d[0]*n[0]+d[1]*n[1]);
     let (p1,p2) = (parts(d1),parts(d2));
@@ -2585,7 +2585,7 @@ fn traces(r: &Reading,seeds: &[P2]) -> Vec<Vec<P2>> {
     if debug { eprintln!("met: face {:?} end {}: rim crossings {:?}",r.u,r.end,ends.iter().map(|e| e.0).collect::<Vec<_>>()) }
     let mut used = vec![false;ends.len()];
     let mut out: Vec<Vec<P2>> = Vec::new();
-    let tangent = |p: [f64;2]| { let d = grad(p[0],p[1]); let l = d[0].hypot(d[1]); [-d[1]/l,d[0]/l] };
+    let tangent = |p: [f64;2]| { let d = grad(p[0],p[1]); let l = d[0].dhypot(d[1]); [-d[1]/l,d[0]/l] };
     for start in 0..ends.len()+seeds.len() {
         // (past the rims' crossings, each seed inside the face: settled onto the zero set, unless a
         // curve traced already passes within a step of it)
@@ -2921,7 +2921,7 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
             // (strictly inside both: an end on the other is cut above)
             if t > 1e-9 && t < 1.-1e-9 && u > 1e-9 && u < 1.-1e-9 {
                 let x = [a[0]+r[0]*t,a[1]+r[1]*t];
-                if kept.iter().any(|&(m,n,p)| ((m,n) == (i,j) || (m,n) == (j,i)) && (p[0]-x[0]).hypot(p[1]-x[1]) <= SNAP_ON) { continue }
+                if kept.iter().any(|&(m,n,p)| ((m,n) == (i,j) || (m,n) == (j,i)) && crate::plane2::dist(p,x) <= SNAP_ON) { continue }
                 cuts[i].push((k,t,x));
                 cuts[j].push((l,u,x));
             }
@@ -2936,7 +2936,7 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
         for k in 0..pts.len()-1 {
             while at < c.len() && c[at].0 == k {
                 let q = c[at].2;
-                if (q[0]-piece[piece.len()-1][0]).hypot(q[1]-piece[piece.len()-1][1]) > 1e-12 { piece.push(q) }
+                if crate::plane2::dist(q,piece[piece.len()-1]) > 1e-12 { piece.push(q) }
                 if piece.len() >= 2 { out.push((e,std::mem::take(&mut piece))) }
                 piece = vec![q];
                 at += 1;
@@ -2944,7 +2944,7 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
             // (a cut at a point of the chord's own is that point once: no step of no length, whose
             // way is none)
             let last = piece[piece.len()-1];
-            if (pts[k+1][0]-last[0]).hypot(pts[k+1][1]-last[1]) > 1e-12 { piece.push(pts[k+1]) }
+            if crate::plane2::dist(pts[k+1],last) > 1e-12 { piece.push(pts[k+1]) }
         }
         if piece.len() >= 2 { out.push((e,piece)) }
     }
@@ -3100,7 +3100,7 @@ pub fn loops_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Vec<P2>>>,U
 /// beside the chord's middle point: no farther from it than half the way to any other chord's or
 /// the square's side, nor than a thousandth of the square; none where the piece walks no chord.
 fn beside_chord(walk: &[Walk],chords: &[(usize,Vec<P2>)]) -> Option<P2> {
-    let long = |c: &[P2]| c.windows(2).map(|w| (w[1][0]-w[0][0]).hypot(w[1][1]-w[0][1])).sum::<f64>();
+    let long = |c: &[P2]| c.windows(2).map(|w| crate::plane2::dist(w[1],w[0])).sum::<f64>();
     let (i,forward) = walk.iter().filter_map(|w| match *w { Walk::Chord(i,f) => Some((i,f)),_ => None })
         .max_by(|x,y| long(&chords[x.0].1).total_cmp(&long(&chords[y.0].1)))?;
     let c = &chords[i].1;
@@ -3108,10 +3108,10 @@ fn beside_chord(walk: &[Walk],chords: &[(usize,Vec<P2>)]) -> Option<P2> {
     let j = (c.len()/2).min(c.len()-2);
     let (p,q) = if forward { (c[j],c[j+1]) } else { (c[j+1],c[j]) };
     let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
-    let l = (q[0]-p[0]).hypot(q[1]-p[1]);
+    let l = crate::plane2::dist(q,p);
     if !(l > 0.) { return None }
     let left = [-(q[1]-p[1])/l,(q[0]-p[0])/l];
-    let others = chords.iter().enumerate().filter(|&(k,_)| k != i).flat_map(|(_,c)| &c.1).map(|r| (r[0]-m[0]).hypot(r[1]-m[1]));
+    let others = chords.iter().enumerate().filter(|&(k,_)| k != i).flat_map(|(_,c)| &c.1).map(|&r| crate::plane2::dist(r,m));
     let side = m[0].min(1.-m[0]).min(m[1]).min(1.-m[1]);
     let clear = others.fold(side,f64::min);
     let depth = (0.5*clear).min(1e-3).min(0.25*l);
@@ -3256,7 +3256,7 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                     let m = round_square(0.5*(s0+s1));
                     let into = INWARD[(s0.floor() as usize).min(3)];
                     // no farther in than half the way to the nearest chord
-                    let clear = chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
+                    let clear = chords.iter().flat_map(|(_,c)| c).map(|&p| crate::plane2::dist(p,m)).fold(f64::INFINITY,f64::min);
                     let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
                     [m[0]+into[0]*depth,m[1]+into[1]*depth]
                 }

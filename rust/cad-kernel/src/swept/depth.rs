@@ -20,7 +20,7 @@
 use super::closed::Unbuilt;
 use super::rings::{Label,Ring};
 use crate::trajectory::{Trajectory,Twist};
-use crate::util::fmath::{HALF_READ,THIRD_READ};
+use crate::util::fmath::{Det,HALF_READ,THIRD_READ};
 
 use crate::trajectory::Pose;
 use crate::util::space::{distance,norm};
@@ -436,7 +436,7 @@ impl Covered<'_> {
     /// there the end pose's row.
     fn preimage(&self,c: &Cover) -> Option<(f64,f64,f64)> {
         let l = self.ring.frame.local(c.point);
-        let th = l[1].atan2(l[0]).rem_euclid(std::f64::consts::TAU);
+        let th = l[1].datan2(l[0]).rem_euclid(std::f64::consts::TAU);
         let w = Twist::body(self.path.at(c.at).ok()?);
         self.ring.roots(&w,th).into_iter().map(|(_,r)| (crate::util::space::distance(r.x,c.point),r.sigma))
             .filter(|p| p.0 <= self.within).min_by(|p,q| p.0.total_cmp(&q.0)).map(|p| (th,c.at,p.1))
@@ -949,8 +949,7 @@ impl Sampled<'_> {
             let last = *out.last().unwrap();
             let e = if (e1-last.e-step)*(e1-e0) < 0. { e1 } else { last.e+step };
             let (Some(p),Some(m)) = (at(e),at(0.5*(last.e+e))) else { break };
-            let mid = [0.5*(last.x[0]+p.x[0]),0.5*(last.x[1]+p.x[1]),0.5*(last.x[2]+p.x[2])];
-            if distance(mid,m.x) > tol {
+            if distance(crate::util::space::lerp(last.x,p.x,0.5),m.x) > tol {
                 step *= 0.5;
                 if last.e+step == last.e { return Err(Unbuilt::Failed("a seam of the depth trim not traced: its step no longer halves".into())) }
                 continue

@@ -27,6 +27,7 @@ use crate::geom::{Curve,Frame,Surface};
 use crate::nurbs::{BSpline,Net};
 use crate::topo::Brep;
 use crate::trajectory::Trajectory;
+use crate::util::fmath::Det;
 use crate::util::space::{add,distance,dot,scale};
 use super::closed::Unbuilt;
 use super::depth::Sampled;
@@ -48,16 +49,11 @@ impl Torus {
     /// Its point and normal at `α` round the axis and `ψ` round the tube, and their rates by `α`.
     fn at(&self,a: f64,p: f64) -> [V;4] {
         let f = &self.f;
-        let er = add(scale(f.x,a.cos()),scale(f.y,a.sin()));
-        let ea = add(scale(f.x,-a.sin()),scale(f.y,a.cos()));
-        let n = add(scale(er,p.cos()),scale(f.z,p.sin()));
+        let er = add(scale(f.x,a.dcos()),scale(f.y,a.dsin()));
+        let ea = add(scale(f.x,-a.dsin()),scale(f.y,a.dcos()));
+        let n = add(scale(er,p.dcos()),scale(f.z,p.dsin()));
         let x = add(add(f.o,scale(er,self.big)),scale(n,self.small));
-        [x,n,scale(ea,self.big+self.small*p.cos()),scale(ea,p.cos())]
-    }
-    /// Its signed distance at `x` (below nought inside).
-    fn signed(&self,x: V) -> f64 {
-        let l = self.f.local(x);
-        (l[0].hypot(l[1])-self.big).hypot(l[2])-self.small
+        [x,n,scale(ea,self.big+self.small*p.dcos()),scale(ea,p.dcos())]
     }
 }
 
@@ -70,7 +66,7 @@ fn contact(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,p: f64)
     if a == theta {
         dot(m.vector(na),v)+dot(nw,crate::util::space::sub(m.velocity(add(x,xa)),m.velocity(x)))
     } else {
-        dot(nw,v)/(a-theta).sin()
+        dot(nw,v)/(a-theta).dsin()
     }
 }
 
@@ -78,11 +74,11 @@ fn contact(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,p: f64)
 fn contact_d(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,p: f64) -> (f64,f64) {
     let [x,n,..] = torus.at(a,p);
     let f = &torus.f;
-    let er = add(scale(f.x,a.cos()),scale(f.y,a.sin()));
-    let np = add(scale(er,-p.sin()),scale(f.z,p.cos()));
+    let er = add(scale(f.x,a.dcos()),scale(f.y,a.dsin()));
+    let np = add(scale(er,-p.dsin()),scale(f.z,p.dcos()));
     let v = m.velocity(x);
     let nw = m.vector(n);
-    let s = (a-theta).sin();
+    let s = (a-theta).dsin();
     let dv = crate::util::space::sub(m.velocity(add(x,scale(np,torus.small))),v);
     (dot(nw,v)/s,(dot(m.vector(np),v)+dot(nw,dv))/s)
 }
@@ -228,8 +224,8 @@ impl Side {
     /// `v1` (as the curve's parameter, so any branch).
     fn meridian(surf: &Surface,u: f64,[v0,v1]: [f64;2]) -> Side {
         let Surface::Torus(f,big,small) = *surf else { unreachable!("a meridian of a torus") };
-        let er = add(scale(f.x,u.cos()),scale(f.y,u.sin()));
-        let ea = add(scale(f.x,-u.sin()),scale(f.y,u.cos()));
+        let er = add(scale(f.x,u.dcos()),scale(f.y,u.dsin()));
+        let ea = add(scale(f.x,-u.dsin()),scale(f.y,u.dcos()));
         // (its frame's `y` the torus's axis, so its parameter is the angle round the tube)
         let c = Curve::Circle(Frame::new(add(f.o,scale(er,big)),scale(ea,-1.),er),small);
         if v0 <= v1 { Side {c,t:[v0,v1],forward:true} } else { Side {c,t:[v1,v0],forward:false} }
@@ -305,7 +301,7 @@ pub(super) fn entered(tool: &Brep,ring: &Ring,touched: &[(f64,f64,usize)],path: 
     let (lo,hi) = blank.bounds();
     let within = |x: V| (0..3).all(|i| x[i] >= lo[i]-tol && x[i] <= hi[i]+tol);
     let m0 = torus.f.local(ring.meridian_point(theta,k));
-    let alpha = m0[1].atan2(m0[0]);
+    let alpha = m0[1].datan2(m0[0]);
     let instants: Vec<f64> = (0..=looks).map(|k| a+(b-a)*k as f64/looks as f64).collect();
     let swept_by = |th: f64| -> Result<Vec<V>,Unbuilt> {
         let mut out = Vec::new();
@@ -399,7 +395,7 @@ pub(super) fn entered(tool: &Brep,ring: &Ring,touched: &[(f64,f64,usize)],path: 
                 let p = if u == 0. { rim } else { contact_root(&torus,&m,theta,al,rim).ok_or_else(|| refused(first))? };
                 Ok(path.pose(t)?.point(torus.at(al,p)[0]))
             };
-            let g = |u: f64,t: f64| at(u,t).map(|x| torus.signed(back.point(x)));
+            let g = |u: f64,t: f64| at(u,t).map(|x| ring.signed(back.point(x)).0);
             // where the leaf crosses the tool: the first place from the rim inside it, scanned at
             // the roll's grain, then the last outside before it halved toward the rim, then halved
             // (near the corner the crossing comes in linearly with the angle, `slope` read halfway
@@ -518,7 +514,7 @@ pub(super) fn entered(tool: &Brep,ring: &Ring,touched: &[(f64,f64,usize)],path: 
         let f = &torus.f;
         // (the torus's frame turned so the meridian stands at `u = π`, the surface's seam round its
         // axis at the far meridian, clear of the blank)
-        let er = add(scale(f.x,theta.cos()),scale(f.y,theta.sin()));
+        let er = add(scale(f.x,theta.dcos()),scale(f.y,theta.dsin()));
         let surf = Surface::Torus(Frame::new(pose.point(f.o),pose.vector(f.z),pose.vector(scale(er,-1.))),torus.big,torus.small);
         let on = on_meridian(end)?;
         let d = (on[1]-on[0]).rem_euclid(TAU)-if sweep < 0. { TAU } else { 0. };
