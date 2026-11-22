@@ -105,6 +105,7 @@ pub(super) fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Fa
     let faces = Faces { faces, within: cmp == Cmp::Le };
     let n = faces.pairs().len();
     let (mut angles, mut ends, mut slab, mut section) = (vec![0; n], vec![0; n], 0, None);
+    let mut rolled: Option<f64> = None;
     for t in terms {
         match &t.shape {
             RegionShape::FaceSide { .. } => {}
@@ -124,6 +125,18 @@ pub(super) fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Fa
                 ends[faces.pair_of([x, y], false)?.0] += 1;
             }
             RegionShape::Measured { of } => match &of[..] {
+                // a ball touching every face no more than its radius further off than the nearest
+                // ball within them (#994): what the ball rolled along the edge leaves, the same
+                // section — its radius the bound's, held to the section's below
+                [(Target::Set { terms: x, .. }, cx), (Target::Set { terms: y, .. }, cy)]
+                    if (cx + cy).abs() <= 1e-12 * cx.abs()
+                        && rolled_by(sk, t, x, y, *cx, &faces).is_some() => {
+                    let r = rolled_by(sk, t, x, y, *cx, &faces).expect("read");
+                    if rolled.is_some_and(|q: f64| q != r) {
+                        return None;
+                    }
+                    rolled = Some(r);
+                }
                 // nearer the faces' common part than wherever else their surfaces meet
                 [(Target::Set { terms: x, .. }, cx), (Target::Set { terms: y, .. }, cy)] => {
                     let (common, meeting) = if *cx > 0.0 { (x, y) } else { (y, x) };
@@ -157,7 +170,43 @@ pub(super) fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Fa
         }
     }
     (angles.iter().chain(&ends).all(|&k| k == 1) && slab == 1).then_some(())?;
+    // the rolled ball's, where stated, the section's own
+    let same = |q: f64| matches!(section, Some(Section::Round(r)) if (q - r).abs() <= 1e-12 * r);
+    if rolled.is_some_and(|q| !same(q)) {
+        return None;
+    }
     Some((faces, section?))
+}
+
+/// The radius of the ball a term keeps the point near where it rolls (`distance(p, rolled) <=
+/// distance(p, centres) + r`): `x` (by `cx`) a ball's centres touching every face — on the
+/// region's side of each, at its surface's distance `r` — and the other where the centre of one
+/// within every face may stand (`ball_centres`); `None` where the term is not that.
+fn rolled_by(sk: &Sketch, t: &RegionTerm, x: &[RegionTerm], y: &[RegionTerm], cx: f64,
+    faces: &Faces) -> Option<f64> {
+    let (touch, centres) = if cx > 0.0 { (x, y) } else { (y, x) };
+    let r = plain(sk, t)?;
+    if t.cmp != Cmp::Le || !(r > 0.0) || !ball_centres(sk, centres, faces, r) {
+        return None;
+    }
+    let (mut sides, mut at) = (Vec::new(), Vec::new());
+    for u in touch {
+        if let Some((f, c)) = side_of(sk, u) {
+            if (c == Cmp::Le) != faces.within {
+                return None;
+            }
+            sides.push(f);
+            continue;
+        }
+        let (f, c) = crate::solid::faces::measured_face(u)?;
+        let (lo, hi) = (u.lo.read(sk)?, u.hi?);
+        let at_r = lo == hi && (lo - r).abs() <= 1e-12 * r;
+        if c != 1.0 || u.cmp != Cmp::In || u.grow.is_some() || !at_r {
+            return None;
+        }
+        at.push(f);
+    }
+    (faces.all(&sides, false) && faces.all(&at, true)).then_some(r)
 }
 
 /// Whether a set is where the centre of a ball of radius `r` touching every face may stand: on

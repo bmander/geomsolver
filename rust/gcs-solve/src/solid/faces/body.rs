@@ -820,8 +820,17 @@ impl BodyFaces {
                 let (s, n) = (self.side(c, p), self.normal(c, p));
                 s.abs() > self.past(p) && dot(back, n) * s < 0.0
             }).collect();
-        let stepped = |g: usize| self.edges[g].iter()
-            .any(|&x| self.faces_of(x).iter().any(|c| between.contains(c)));
+        // (the chain goes on round it only where it bounds it nearer the point than any face not of
+        // the chain does: a block's side bowed in under an eye bounds the eye at its far end, its
+        // own end and top nearer, and past its foot the floor's own plane is read, #994)
+        let off_chain = |c: usize| self.edges[c].iter().copied()
+            .filter(|&x| self.faces_of(x).iter().any(|&h| h != c && !fs.contains(&h)))
+            .filter_map(|x| self.nearest_edge(&[x], p)).map(|(_, _, d)| d)
+            .fold(f64::INFINITY, f64::min);
+        let reach: Vec<(usize, f64)> = between.iter().map(|&c| (c, off_chain(c))).collect();
+        let near = |x: u32, d: f64| self.nearest_edge(&[x], p).is_some_and(|(_, _, e)| e <= d);
+        let stepped = |g: usize| self.edges[g].iter().any(|&x| self.faces_of(x).iter()
+            .any(|c| reach.iter().any(|&(b, d)| b == *c && near(x, d))));
         Some(fs.iter().copied().filter(|&g| g != fi && (at_end(g) || stepped(g)) && self.off_face(g, p).is_none())
             .map(|g| (self.side(g, p).abs(), g)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(fi, |(_, g)| g))
     }

@@ -959,6 +959,37 @@ from `b.smooth` is read from its patches (`distance(p, b.smooth)`), the block's 
 beside its rim ("its flat, reaching 1.5mm from `dck.k3`, comes within 1.28mm of `base.j3`, which
 `dck.k3` goes on into smoothly").
 
+**What the ball rolled along the edge leaves, and no pocket a chain leaves elsewhere** (#994,
+fixture 122's clevis: a band whose far side bows in under an eye standing out past it, the eye
+blended into the band's floor by an R20 round, every edge of the floor rounded 1 or 2). A face's
+smooth chain runs as far as its seams go — the floor on into the blend, the blend on into the eye —
+and where it parts about a face not of it (the blend ended by the bowed side, the eye going on past
+it) the material it bounds has a convex corner of its own that no ball within the chain reaches,
+however far from the edge being rounded. `Run` and `Fill` read every point within both faces'
+sides that no ball covers, within the run's ends and nearest the crease of the faces' meeting — a
+straight edge between two planes, the floor's along the band's end 45 mm off, took the blend's end
+for its own, and the construction, rightly, did not (the gate never probes there; the comparison
+over the whole body found it, 8 to 10 points in 3600). Both now say also `distance(p, rolled) <=
+distance(p, centres) + r`, `rolled` the centres of the ball touching both faces: the point's
+nearest rolled ball stands no more than a radius further off than its nearest ball of all. Every
+point a rolled ball leaves has its nearest centre on that ball's spine (the difference nothing),
+whatever the faces' angle, and a pocket elsewhere has the spine across the body (`lowering`'s
+recogniser reads the term with the section's radius, `recognise::rolled_by`; the construction is
+unchanged). `Corner` and `CornerFill` are not changed: their region is read about their vertex.
+`tests/resting_touches.rs` holds the clevis bowed in 1, 3 and 6, rounded 1 and 2, and a straight
+band whose eye stands 2 out past its side (the configuration alone: 8 and 10 points wrong without
+`rolled`), field and kernel over the whole body. The centres' projection there also never settled
+and the set was read as empty ([sets.md](sets.md), `conditions::nearest`). Still not the kernel's,
+with nothing refused: where the eye's end lies within the band rather than past its side — a
+straight band, the eye's end 5.8 inside it, rounded 2 (18 points of 4000, 28 without `rolled`), and
+the clevis bowed out 3 rounded 1 (16) — the fill where the floor meets the eye's end and the run
+along the far side read pockets at the eye's end whose nearest centre the projection does not find
+(a local nearest, the chain read through the eye's cylinder at its end). Refused: bowed out 3 and
+rounded 2, "disagrees with the field" at the far side's run; bowed out 1, "its ball, of radius 1mm,
+rolled against `part.plate.far` comes 0.242mm past `part.blend.filled.round`" — read against the
+round's side carried past its patch beyond the eye's end, where the floor runs on flat for less than
+a millimetre before the bowed side; whether the shape has that ball is open.
+
 **A band tapering to nothing on a plate** (#994 item 2d, fixture 142). A band unioned onto a plate's
 face (or a disc's) thins to nothing at its ends, its top coming down onto the plate; the fill where
 the band's side meets the plate runs along the side's foot and ends on the top, cut off there and

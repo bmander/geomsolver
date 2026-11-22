@@ -19,6 +19,17 @@ their own runs alone; another body's plane wall is the chain's end too. A wall o
 turning back over a run at a reflex corner of less than a right angle is now its end, kept on its
 side: through 0.228 the run ended square at the corner and took the boss's material beside it (96
 mm³ at a square boss turned 45°).
+## [NEXT-clevis-gate]
+
+**A round is what its rolled ball leaves, not a pocket a chain leaves elsewhere** (#994).
+`std.rounds`' `Run` and `Fill` also say `distance(p, rolled) <= distance(p, centres) + r`, `rolled`
+the centres of the ball touching both faces (`c distance(r) boundary(a.smooth)`): the point's
+nearest rolled ball stands no more than a radius further off than its nearest ball of all. A
+face's smooth chain parting about a face not of it — a floor going on into a blend and the blend
+into an eye, the blend ended by a side the eye stands out past — bounds a corner no ball reaches,
+and through 0.228 a round of an edge 45 mm away read it as its own. Every point a rolled ball
+leaves keeps the new bound with nothing to spare; a point at a distance from a surface on the side
+a set holds its point is read by that side's signed distance.
 
 ## [NEXT-taper-root]
 
