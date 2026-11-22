@@ -8,6 +8,22 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **An upright tool of revolution under a motion keeping its plane, swept closed** (#880 T1f,
+  `swept::upright`, new): a convex tool of revolution with flat ends whose axis stands along the
+  normal of a plane every pose keeps sweeps, at each height, the region within the radius there
+  of the path its axis's foot runs (`{(p, h) : d(p) ≤ ρ(h)}`). Each piece of the meridian is a
+  slab; the region's offsets and end discs are its sheets, their double curves traced exactly by
+  continuation in `(p₁, p₂, σ)` from the region's corners (`region::SweptRegion`), ended on rims,
+  joins, triple points (solved with the third foot) and swallowtail births (a pair on one side in
+  its divided chart, its stretch into the birth read in its normal form); each sheet parted as a
+  planar graph, cut from each birth to the rim, each part kept by the path's certified distance;
+  sides fitted as nets with their pcurves, ends the tool's own faces posed, caps the regions; the
+  faces sewn and judged. The closed class asks it before K2, whose pencil reads no contact
+  touched whole (a flat bottom under a translation). brep-bench's bull nose along a looping
+  spline builds through `closed::cut_from` (10956.98646, 2.5 s). `region::SweptRegion::held`
+  (new) says which candidates are edges held at an end pose; `planar_solid::holding` is
+  `pub(super)`.
+
 - **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
   (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
   (`query::curve_surface`) and read at one point of each piece, within by more than

@@ -1,6 +1,7 @@
 //! brep-bench's cases the kernel's examples share, written once: the runner's frame along the
-//! bench's cubic (`ring_build`, `ring_depth`, `ring_profile`) and the tumbling torus
-//! (`depth_probe`, `ring_profile`, `size_check`). Cargo builds each example as a crate of its own,
+//! bench's cubic (`ring_build`, `ring_depth`, `ring_profile`), the tumbling torus (`depth_probe`,
+//! `ring_profile`, `size_check`) and the bull nose along its looping spline (`bull_nose`,
+//! `bull_probe`, `bull_curves`). Cargo builds each example as a crate of its own,
 //! so each takes this file in as a module by `#[path = "support/bench.rs"] mod bench;`; a
 //! directory with no `main.rs` is no example itself.  Each is the computation it was where it was
 //! first written, to the bit: the gates these examples measure pin volumes to 1e-7.

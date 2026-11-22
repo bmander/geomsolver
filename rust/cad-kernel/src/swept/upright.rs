@@ -471,15 +471,12 @@ impl Stand<'_> {
             if dy.iter().fold(0f64,|m,d| m.max(d.abs())) <= 4.*f64::EPSILON*(1.+self.scale) { break }
         }
         let r = g(y);
-        if debug() { eprintln!("triple: {y:?} residual {r:?}") }
         // (settled to the rounding of the plane's lengths)
         if !(r.iter().fold(0f64,|m,v| m.max(v.abs())) <= 1e3*f64::EPSILON*(1.+self.scale)) { return None }
         let x = self.settle(k,pair,[y[0],y[1],y[2]],[0.,0.,1.],y[2])?;
         // which sheet the third instant's point lies on: a side by its normal's sense, or an end
         let [rho,..] = self.slabs[k].at(x[2]);
         let q = self.at(pair.a,x[0],rho);
-        let third = if at_end(y[3]) && !at_end(t3) { None } else { Some(()) };
-        let _ = third;
         let sheet = if at_end(t3) {
             let e = if (t3-a).abs() <= (b-t3).abs() { 0 } else { 1 };
             let r = p_sub(q,self.ends[e]);
@@ -587,7 +584,6 @@ impl Stand<'_> {
             let s = j as f64/stations as f64;
             let [rho,..] = self.slabs[k].at(s);
             let rings = self.rings(&self.region(rho)?,rho)?;
-            if debug() { for r in &rings { eprintln!("σ {s}: ring area {:.4}: {:?}",r.area,r.runs) } }
             for corner in self.corners(k,s,&rings)? {
                 let near = |t: &Trace| t.pair == corner.pair && t.points.iter().any(|y|
                     (0..3).all(|i| (y[i]-corner.x[i]).abs() <= MOST_STEP));
@@ -913,8 +909,8 @@ fn fitted_curve(f: &dyn Fn(f64) -> V,fit: f64) -> Result<BSpline,Unbuilt> {
 }
 
 /// **A net through `f` over `[u0, u1] × [v0, v1]`**, rows along `u` interpolated at each `v` and
-/// their poles' columns along `v`, each doubled until the net holds `f` within `fit` at the middles
-/// of its cells and of their sides.
+/// their poles' columns along `v`, each way doubled until the net holds `f` within `fit` at the
+/// middles of its cells and of their sides.
 fn fitted_net(f: &dyn Fn(f64,f64) -> V,[u0,u1]: [f64;2],[v0,v1]: [f64;2],fit: f64) -> Result<Net,Unbuilt> {
     let failed = || Unbuilt::Failed("a sheet could not be interpolated".into());
     let (mut nu,mut nv) = (8,8);
@@ -932,8 +928,14 @@ fn fitted_net(f: &dyn Fn(f64,f64) -> V,[u0,u1]: [f64;2],[v0,v1]: [f64;2],fit: f6
         let err_u = (0..nu).flat_map(|i| vs.iter().map(move |&v| (i,v))).map(|(i,v)| off(mid(&us,i),v)).fold(0.,f64::max);
         let err_v = (0..nv).flat_map(|j| us.iter().map(move |&u| (j,u))).map(|(j,u)| off(u,mid(&vs,j))).fold(0.,f64::max);
         let err_c = (0..nu).flat_map(|i| (0..nv).map(move |j| (i,j))).map(|(i,j)| off(mid(&us,i),mid(&vs,j))).fold(0.,f64::max);
-        let (grow_u,grow_v) = (err_u.max(err_c) > fit,err_v.max(err_c) > fit);
-        if !grow_u && !grow_v { net.check().map_err(Unbuilt::Failed)?; return Ok(net) }
+        // (each way grown by its own misses; a cell's middle missed alone grows the worse way)
+        let (mut grow_u,mut grow_v) = (err_u > fit,err_v > fit);
+        if !grow_u && !grow_v && err_c > fit { if err_u >= err_v { grow_u = true } else { grow_v = true } }
+        if !grow_u && !grow_v {
+            if debug() { eprintln!("upright: a net of {} by {} over {:?} × {:?}",nu,nv,[u0,u1],[v0,v1]) }
+            net.check().map_err(Unbuilt::Failed)?;
+            return Ok(net)
+        }
         if (grow_u && nu >= MOST_FIT) || (grow_v && nv >= MOST_FIT) {
             return Err(Unbuilt::Failed(format!("a sheet fits within {fit:e} only to {:e}",err_u.max(err_v).max(err_c))))
         }
@@ -947,9 +949,25 @@ const FIT: f64 = 0.1;
 
 impl Stand<'_> {
     /// The posed tool's face of slab `k` at the roll's end `e`.
+    /// (Its frame turned about its axis so its seam stands opposite the middle of the end's half,
+    /// as the pieces road lays an arc's: a face across a surface's seam is read on either side of
+    /// it, and the mesher found the half's boundary passing through its own points.)
     fn end_surface(&self,k: usize,e: u8) -> Result<Surface,Unbuilt> {
         let pose = self.path.pose(self.roll[e as usize])?;
-        Ok(self.tool.faces[self.slabs[k].face].surface.moved(&crate::geom::Rigid {r:pose.r,t:pose.p}))
+        let s = self.tool.faces[self.slabs[k].face].surface.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
+        let [lo,hi] = self.domain(Sheet::End(e));
+        let (sn,cs) = (0.5*(lo+hi)+PI).dsin_cos();
+        let away = crate::util::space::add(crate::util::space::scale(self.plane.u,cs),crate::util::space::scale(self.plane.v,sn));
+        let turned = |f: Frame| {
+            let x = crate::util::space::normalised(sub(away,crate::util::space::scale(f.z,dot(away,f.z)))).unwrap_or(f.x);
+            Frame {o:f.o,x,y:crate::util::space::cross(f.z,x),z:f.z}
+        };
+        Ok(match s {
+            Surface::Torus(f,big,small) => Surface::Torus(turned(f),big,small),
+            Surface::Cylinder(f,r) => Surface::Cylinder(turned(f),r),
+            Surface::Cone(f,r,a) => Surface::Cone(turned(f),r,a),
+            other => other,
+        })
     }
 
     /// **A double curve's curves in space**: the curve cut where the coordinate of `(p₁, p₂, σ)` it
@@ -983,7 +1001,6 @@ impl Stand<'_> {
         for (c,&(i0,i)) in cuts.iter().enumerate() {
             let i1 = cuts.get(c+1).map_or(n-1,|&(j,_)| j);
             let (a,b) = (pts[i0][i],pts[i1][i]);
-            if debug() { eprintln!("piece {:?}: points {i0}..{i1} along {i}: {:?} .. {:?}, ways {:?} {:?}",t.pair,pts[i0],pts[i1],way(i0),way(i1)) }
             let settled = |s: f64| -> X {
                 if s <= 0. { pts[i0] } else if s >= 1. { pts[i1] } else {
                     let v = a+(b-a)*s;
@@ -993,9 +1010,7 @@ impl Stand<'_> {
                     let pred = std::array::from_fn(|q| pts[j][q]+f*(pts[j+1][q]-pts[j][q]));
                     let mut row = [0.;3];
                     row[i] = 1.;
-                    let r = self.settle(k,t.pair,pred,row,v).unwrap_or([f64::NAN;3]);
-                    if debug() && (0..3).any(|q| (r[q]-pred[q]).abs() > 1e-3) { eprintln!("settled far: s {s} v {v} along {i} between {j} {:?} {:?}: pred {pred:?} got {r:?}",pts[j],pts[j+1]) }
-                    r
+                    self.settle(k,t.pair,pred,row,v).unwrap_or([f64::NAN;3])
                 }
             };
             let curve = fitted_curve(&|s| { let x = settled(s); self.point(k,t.pair.a,x[0],x[2]) },FIT*self.tol)?;
@@ -1101,11 +1116,13 @@ impl Stand<'_> {
             if j == 0 { places.push(uv(from)) }
             let to = if *fwd { *y } else { *x };
             let mut w = uv(to);
-            if let Sheet::End(_) = sheet {
-                // (through the edge's middle: a rim of an end spans half a turn)
-                let mut mid = uv([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]);
-                mid[0] = unwrap(mid[0],places[places.len()-1][0]);
-                w[0] = unwrap(w[0],mid[0]);
+            // (each parameter the surface repeats in, through the edge's middle: a rim of an end
+            // spans half a turn)
+            let mut mid = uv([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]);
+            for (i,period) in surface.periods().into_iter().enumerate() {
+                let Some(period) = period else { continue };
+                mid[i] = unwrap(mid[i],places[places.len()-1][i],period);
+                w[i] = unwrap(w[i],mid[i],period);
             }
             places.push(w);
             b.vertex(point(from));
@@ -1134,8 +1151,8 @@ impl Stand<'_> {
     }
 }
 
-/// `x` turned by whole turns to stand within half a turn of `near`.
-fn unwrap(x: f64,near: f64) -> f64 { x-TAU*((x-near)/TAU).round() }
+/// `x` moved by whole periods to stand within half a period of `near`.
+fn unwrap(x: f64,near: f64,period: f64) -> f64 { x-period*((x-near)/period).round() }
 
 impl Stand<'_> {
     /// **A flat end's face**: the region its disc sweeps, at its height — its loops' runs read on
@@ -1158,8 +1175,7 @@ impl Stand<'_> {
                     let j = (i+n-1)%n;
                     let (a,b2) = ((runs[j].sheet,runs[j].p[1]),(runs[i].sheet,runs[i].p[0]));
                     if self.is_join(a,b2) {
-                        let (side,e,pe) = match (a.0,b2.0) { (Sheet::Side(sd),Sheet::End(e)) | (Sheet::End(e),Sheet::Side(sd)) => (sd,e,0),_ => unreachable!("a join") };
-                        let _ = pe;
+                        let (side,e) = match (a.0,b2.0) { (Sheet::Side(sd),Sheet::End(e)) | (Sheet::End(e),Sheet::Side(sd)) => (sd,e),_ => unreachable!("a join") };
                         let (t,phi) = self.join(side,e);
                         for (x,idx,end) in [(a.0,j,1),(b2.0,i,0)] { runs[idx].p[end] = if let Sheet::Side(_) = x { t } else { phi } }
                         continue
