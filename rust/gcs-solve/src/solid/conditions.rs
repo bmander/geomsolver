@@ -303,7 +303,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     // it is that solid's signed distance turned round there and the condition convex — one
     // condition each face
     let carried = |r: &Reading, past: bool, sigma: f64| -> Vec<Cond> {
-        r.faces.iter().copied().flat_map(|fi| {
+        // a plane's side carried on past it is its own (`carried_side_grad`), so the faces of a
+        // chain on one plane — a face and the caps a round leaves on its surface beside it, one
+        // per corner of every pocket it is the top of — say one condition, not one each (#994)
+        r.body.one_per_plane(&r.faces).into_iter().flat_map(|fi| {
             let body = r.body.clone();
             held_as(Arc::new(move |x| {
                 let (s, g) = if past { body.carried_side_grad(fi, x) } else { body.side_grad(fi, x) };

@@ -442,6 +442,9 @@ pub struct Expansion {
     /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
     /// it is solved (`program::at_solve`).
     pub apart: Vec<Apart>,
+    /// Every block over a solid's faces that copied only the faces meeting one (#994), with the
+    /// pairs it read apart and made nothing of: read as `apart` is.
+    pub pruned: Vec<Pruned>,
     /// Every statement whose blocks over a solid's faces may have selected no edge (#962) — for
     /// the elaborator to read where it is solved (`program::at_solve::unmade`).
     pub unmade: Vec<Unmade>,
@@ -456,6 +459,12 @@ pub struct Expansion {
     /// again where it solves (`program::at_solve`) — a seed off its arc's circle builds no face,
     /// where the solve does.
     pub unread: BTreeSet<Span>,
+    /// Every document statement whose `when a meets b` read a solid whose boundary is not built
+    /// where the drawing stands (#994), once per statement and solid, with the stratum's reason:
+    /// its spans are in `unread` too, to be read again where the drawing solves, and where it is
+    /// not built there either the statement is not built, said as built on that body
+    /// (`program::refused::solids`), with no copy made for any two or three of its faces.
+    pub unbuilt: Vec<Unbuilt>,
     /// Every document statement whose `when` asked whether faces of two solids meet (#961),
     /// once each: for the elaborator to refuse, naming the body that holds both where one does
     /// (`program::solids::across`).
@@ -480,6 +489,8 @@ pub struct Unmade {
     /// Each pair of faces a `when` asked `meets` of (each by its name from the solid), with the
     /// layer it read them in — none where no `when` paired two (one face, paired with itself).
     pub pairs: Vec<([String; 2], usize)>,
+    /// And the pairs its blocks made no copy of, read apart (#994): pairs too.
+    pub pruned: Vec<Pruned>,
 }
 
 /// What the `when`s under one statement read of faces and made (`Unmade`): the blocks over a
@@ -490,6 +501,7 @@ pub struct Unmade {
 struct Selecting {
     blocks: Vec<(String, Vec<String>, Vec<String>)>,
     pairs: BTreeSet<(String, [String; 2], usize)>,
+    pruned: Vec<Pruned>,
     asked: bool,
     held: bool,
     unsure: bool,
@@ -513,6 +525,31 @@ pub struct Apart {
     /// The layer of the solid they were read in (`solid::faces::Layered`).
     pub layer: usize,
     pub at: Span,
+}
+
+/// **The faces a block over a solid's faces did not copy** (#994): its `when` asks `v meets y` of
+/// the face each copy calls `v` and a face `y` read before the block, so a face `meets` reads
+/// apart from `y` makes no copy (`Walk::adjacent`) — the pairs the walk would have read apart
+/// and made nothing of, kept as one record of the block rather than one per pair: `face` is `y`
+/// by its name from the solid, `faces` the block's faces (shared by every copy of the block
+/// that lists them alike), and `apart` each one read apart from `y`, by its place in `faces`,
+/// with the layer it was read in.  Read as `Apart`s are, pair by pair (`pairs`), where the
+/// drawing is solved; and by what `Unmade` reads.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pruned {
+    pub solid: String,
+    pub face: String,
+    pub faces: std::sync::Arc<[String]>,
+    pub apart: Vec<(u32, u32)>,
+    pub at: Span,
+}
+
+impl Pruned {
+    /// Each pair read apart, `face` first, with the layer it was read in.
+    pub fn pairs(&self) -> impl Iterator<Item = ([&str; 2], usize)> + '_ {
+        self.apart.iter().map(|&(k, layer)| ([self.face.as_str(), self.faces[k as usize].as_str()],
+                                             layer as usize))
+    }
 }
 
 /// **A face a `when … parallel …` or `… perpendicular …` read** (#763): the solid by its absolute
@@ -969,14 +1006,27 @@ struct SetState<'a> {
     shells: Vec<developable::EnclosedInfo>,
 }
 
+/// A document statement whose `when a meets b` read a solid not built where the drawing stands
+/// (`Expansion::unbuilt`, #994).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unbuilt {
+    /// The document's statement.
+    pub at: Span,
+    /// The solid, by its absolute name.
+    pub solid: String,
+    /// Why its boundary is not built (`solid::faces::Unread::Unbuilt`).
+    pub why: String,
+}
+
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
 /// from the solid, and which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where
-/// its boundary says — in each layer the solid's rounds stand in (`Layers`, `Layered`, #879).
+/// its boundary says — in each layer the solid's rounds stand in (`Layers`, `Layered`, #879) —
+/// and where it does not, why (`Unread`, #994).
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
     pub layers: crate::solid::faces::Layers,
-    pub read: Option<crate::solid::faces::Layered>,
+    pub read: Result<crate::solid::faces::Layered, crate::solid::faces::Unread>,
 }
 
 /// **What the elaborator names for the walk off the drawing** (#183 F4, #763): each solid a
@@ -1020,6 +1070,15 @@ struct FaceState {
     repeats: BTreeSet<String>,
     /// See `Expansion::apart`.
     apart: BTreeSet<Apart>,
+    /// See `Expansion::pruned`.
+    pruned: Vec<Pruned>,
+    /// What each document statement's blocks over a solid's faces run over, and how many of
+    /// those faces meet (`Walk::tally`, #994): said as the first is expanded, and in the one E103
+    /// where its expansion passes the limit.
+    tally: BTreeMap<Span, String>,
+    /// Each solid's faces in `given` by name from the solid, to their place in its paths: what
+    /// a `when` looks a face up by, as often as it is asked (#994).
+    index: BTreeMap<String, BTreeMap<String, usize>>,
     /// What the `when`s under each statement read of faces and made (#962), by the statement —
     /// see `Expansion::unmade`.
     selecting: BTreeMap<Span, Selecting>,
@@ -1031,6 +1090,8 @@ struct FaceState {
     wanted: BTreeSet<String>,
     /// See `Expansion::unread`.
     unread: BTreeSet<Span>,
+    /// See `Expansion::unbuilt`.
+    unbuilt: Vec<Unbuilt>,
     /// See `Expansion::across`.
     across: Vec<Across>,
     /// The document's own statement being walked — its root body's — where a block set aside
@@ -1064,6 +1125,9 @@ pub fn expand_faces(
     let mut w = Walk::new(prog, units, None);
     w.sets.unlowered = unlowered;
     w.faces.given = named.faces.clone();
+    w.faces.index = named.faces.iter().map(|(solid, listed)| {
+        (solid.clone(), listed.paths.iter().enumerate().map(|(k, f)| (f.text(), k)).collect())
+    }).collect();
     w.faces.directions = named.directions.clone();
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
@@ -1219,12 +1283,13 @@ impl<'a> Walk<'a> {
                 return None;
             }
             let solid = &s.blocks[0].0;
-            if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid) {
+            if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid)
+                || s.pruned.iter().any(|p| &p.solid != solid) {
                 return None;
             }
             // where no `when` paired two, one face, and no copy made
             let faces = || s.blocks.iter().flat_map(|b| &b.2).collect::<BTreeSet<_>>().len();
-            if s.pairs.is_empty() && (s.held || faces() != 1) {
+            if s.pairs.is_empty() && s.pruned.is_empty() && (s.held || faces() != 1) {
                 return None;
             }
             Some(Unmade {
@@ -1232,6 +1297,7 @@ impl<'a> Walk<'a> {
                 solid: solid.clone(),
                 blocks: s.blocks.into_iter().map(|(_, rest, listed)| (rest, listed)).collect(),
                 pairs: s.pairs.into_iter().map(|(_, faces, layer)| (faces, layer)).collect(),
+                pruned: s.pruned,
             })
         }).collect()
     }
@@ -1365,10 +1431,12 @@ impl<'a> Walk<'a> {
             held: self.held.names,
             reads: self.held.reads,
             apart: self.faces.apart.into_iter().collect(),
+            pruned: self.faces.pruned,
             unmade,
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
             unread: self.faces.unread,
+            unbuilt: self.faces.unbuilt,
             across: self.faces.across,
             overflowed: self.overflowed,
         }

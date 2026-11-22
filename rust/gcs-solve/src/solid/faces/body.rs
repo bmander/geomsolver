@@ -818,6 +818,24 @@ impl BodyFaces {
         Some((if f.reversed { scale(frame.z, -1.0) } else { frame.z }, self.back(frame.o)))
     }
 
+    /// `faces`, but of those lying on one plane (their normals away from the material one, and
+    /// each's origin on the other's plane within the boundary's tolerance) the first alone: what
+    /// a plane says of a point — its side, carried on past its patch or not — it says whichever of
+    /// its faces says it (#994).
+    pub fn one_per_plane(&self, faces: &[usize]) -> Vec<usize> {
+        let tol = self.tolerance();
+        let mut planes: Vec<(V, V)> = Vec::new();
+        faces.iter().copied().filter(|&fi| {
+            let Some((n, o)) = self.plane(fi) else { return true };
+            let same = planes.iter()
+                .any(|&(m, p)| norm(sub(m, n)) <= 1e-9 && dot(m, sub(o, p)).abs() <= tol);
+            if !same {
+                planes.push((n, o));
+            }
+            !same
+        }).collect()
+    }
+
     /// Face `fi`'s cylinder, where it lies on one: a point of its axis, the axis's unit direction
     /// and its radius (model units).
     pub fn cylinder(&self, fi: usize) -> Option<(V, V, f64)> {
@@ -995,6 +1013,13 @@ impl BodyFaces {
                         }
                         for &(u, way, wid) in ends.iter().filter(|&&(_, _, w)| w != vid) {
                             let at = self.ends_at(&other, &[c, f], u, way, wid, true);
+                            // that edge ending only where `f` goes on tangent across a seam, `c`
+                            // going on along the next face (a floor's edge along a drafted side
+                            // running on round its corner's cone, #994): a seam is no edge, so
+                            // nor is it the end of one
+                            if at.is_empty() && self.seam_from(f, wid) {
+                                continue;
+                            }
                             let by: Vec<(EndBy, f64)> = if at.is_empty() {
                                 vec![(EndBy::Square { at: u, out: scale(way, -1.0) }, 1.0)]
                             } else {
@@ -1143,6 +1168,11 @@ impl BodyFaces {
             k += 1;
         }
         out
+    }
+
+    /// Whether face `fi` goes on tangent across a seam (`seam`) at vertex `vid`.
+    fn seam_from(&self, fi: usize, vid: u32) -> bool {
+        self.edges[fi].iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&vid) && self.seam(e))
     }
 
     /// Whether edge `e` is a seam: two faces bound it whose outward normals are one at its middle,

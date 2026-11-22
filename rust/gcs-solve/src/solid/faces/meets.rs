@@ -45,6 +45,12 @@ impl Meets {
         Meets { faces }
     }
 
+    /// The faces face `a` (by its name from the solid) shares a point with, itself among them:
+    /// `None` where it is a face the boundary cannot say of, or is not listed.
+    pub fn neighbours(&self, a: &str) -> Option<&BTreeSet<String>> {
+        self.faces.get(a)?.as_ref()
+    }
+
     /// Whether faces `a` and `b` (each by its name from the solid) share a point: where either
     /// is a face the boundary cannot say of, or neither is listed, they are taken to.
     pub fn meets(&self, a: &str, b: &str) -> bool {

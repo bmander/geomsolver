@@ -46,6 +46,7 @@
 //! | any of them where a face goes on tangent across a seam beside the edge the section reaches (`F.smooth`, #422): along a line seam, or round a circle seam about its axis | the section against the chain — the face's own trace to the seam, the next face's from there — the ball against the piece it touches, the flat each piece's sum of distances in turn (`chain`) |
 //! | the same round a circle seam off its axis, or along an edge no line or coaxial circle carries | the edge's own piece kept short of the seam's normal surface (a ring, a flat cut along the run) or with the stretch past the seam cut away (a ring's stretch, a ball rolled along the run), and the section against the next face beyond it, sectioned and fitted (`Beyond`, `brep::spill`), glued to it |
 //! | the same along a straight edge beside a line seam along it into a face no line along the edge turns about (a drafted side's plane into its corner's cone, #962) | the section reaches across the seam the edge's whole length: a round's ball rolled against the next face all along it, a flat's run kept short of the seam's normal plane and the flat against the next face beyond it, sectioned square to the edge and fitted (`Piece::Along`, `brep::spill`), carried past the edge's ends and cut off where the run is |
+//! | `Run` / `Fill` along a straight edge beside a line seam crossing its footprint aslant (a foot upright against a drafted side near its corner's cone, #994) | the run's prism short of the section where the ball's touch crosses the seam, and from that section the ball rolled against the next face (`piece::aslant_pieces`, `Beyond::seamed`), carried past the other end and cut off, glued to the run there — or that piece the edge's whole length where the touch is past the seam all along |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -375,7 +376,9 @@ pub enum Piece {
     /// beyond it runs the edge's whole length (`Beyond::run`, cut off where the run is) — a round's
     /// ball touching the next face everywhere, the whole of it; a flat's the edge's own run too,
     /// kept short of the seam's normal plane (`run`), the piece beyond glued to it there and held
-    /// by it (#423).
+    /// by it (#423).  Beside a seam crossing the edge aslant (#994, `piece::aslant_pieces`): a
+    /// round's run short of the section where its touch crosses the seam, cut off there, and the
+    /// piece beyond from that section (`Beyond::seamed`), glued to it there — or that piece alone.
     Along { run: Option<Run>, beyond: Beyond },
 }
 
@@ -409,6 +412,10 @@ pub struct Beyond {
     /// `within`), past which it is carried and cut off.  None: between where the leg or the touch
     /// crosses the seam.
     pub run: Option<Vec<(V, f64)>>,
+    /// Along a straight edge a seam crosses aslant (#994, `piece::across_beyond`): whether it
+    /// starts at `ends[k]`'s section, where the ball's touch crosses the seam, the edge's own run
+    /// taking the other side and glued to it there (`Piece::Along`'s `run`).
+    pub seamed: [bool; 2],
 }
 
 /// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;

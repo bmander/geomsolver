@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-chain-short]
+
+**A body its seeds do not build is read where the drawing solves** (#994). `when a meets b`
+read the faces of a body that builds nothing where the drawing is seeded as every two meeting, so
+`round(r) X` over such a body made a copy for every two and three of its faces: a pocket whose
+corner rounds leave a straight of 0.05 between them, seeded a hair short so the rounds' ends
+passed each other, ran the expansion to `E103: more than 200000 statements` on a plate of three
+such slots. Such a body's faces are now read where the drawing solves, as a face held along a
+direction is (0.204), and the words expand there as they do seeded where it stands; the short
+straight is a face like any other. Where the body is not built where the drawing solves either,
+the round makes no copy and is said not built, built on the body, whose own refusal is the root
+(a straight of none: `` `pocket_f`'s edge `e1` has no length ``), never a count of statements. A
+body a sweep cuts is read nowhere, and its faces still meet.
+
 ## [NEXT-flush-deck]
 
 **A run ends on a face going on tangent that carries no round on** (#994). In `S.ends`, a face
@@ -29,6 +43,21 @@ itself, a face of another operand on the same surface keeps its own name, and a 
 lying on it are never paired as two faces that meet. A smooth outline turning both ways (a block
 with a tab, its uprights rounded) now has its rim rounded to the uprights' own radius, where it
 was refused as leaving out what the field reads.
+
+## [NEXT-blanket-scale]
+
+**A round over a whole body walks its edges, and says so** (#994).  A block over a solid's faces
+whose `when` asks `v meets y` of a face read before it copies only the faces meeting `y`
+(`Walk::adjacent`): `round(r: …) X` walks a copy for each face, each pair of faces that meets and
+each three, its edges and corners, where it walked one for every pair and every three paired with
+an edge — a body of a hundred faces took minutes, and one whose boundary cannot say which faces
+meet passed the expansion's limit.  Nothing it makes changes.  The first such block of a statement
+is said to whoever listens with what it runs over (`` expanded `round(r: 0.5mm) whole` over 10
+faces of `whole`, of which 24 pairs meet and 16 threes meet each other ``, `solventc --progress`),
+and an expansion past the limit says it in its E103 with what to do, rather than only where in
+`std.rounds` it had got to.  A chain of faces on one plane (a top and the caps its pockets'
+fills leave on it) is one condition of a set, so a round on that top no longer costs the cube of
+the pockets.
 
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
