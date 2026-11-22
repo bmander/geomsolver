@@ -8,7 +8,8 @@
 //! * `no_mutant_is_read_wrong` (`#[ignore]`d: the mutants are made from the corpus outside the
 //!   repository, `$STEP_CORPUS/mutants/`, by scripts/step-corpus/mutants.py): every mutant of the
 //!   table `step_mutants/mutants.tsv` refused, or read to OCCT's reading of that mutant within its
-//!   row's bar (`step_corpus`'s own judgement, `wrong`); a mutant OCCT reads to no solid (an open
+//!   row's bar (`step_corpus`'s own judgement, `wrong`, face by face too where the oracle has
+//!   the mutant's faces); a mutant OCCT reads to no solid (an open
 //!   or inverted shell, a crash, a hang) or to an invalid one whose measures moved is refused. No
 //!   read panics or takes more than `BOUND`.
 //! * `kernel_written_mutants`: the same property over files the kernel writes (`step::write`)
@@ -18,7 +19,7 @@
 //! * `syntax_never_panics`: a kernel-written file truncated at every 97th byte, with seeded
 //!   single-byte substitutions and with its lines shuffled, read without a panic, each within
 //!   `QUICK`. What it returns is not judged.
-use crate::step_corpus::{measured,read_table,report,table_at,unread,within,wrong,Outcome,Read,Row};
+use crate::step_corpus::{face_census,measured,read_table,report,table_at,unread,within,wrong,Outcome,Read,Row};
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{cone,disc,prism,sphere,square,torus};
 use gcs_core::brep::props::{area,volume};
@@ -63,7 +64,7 @@ fn no_mutant_is_read_wrong() {
         let t = tally.entry(kind(row)).or_default();
         match &r.outcome {
             Outcome::Refused(_) => t[0] += 1,
-            Outcome::Read {..} => match wrong(row,&r.outcome) {
+            Outcome::Read {..} => match wrong(row,r) {
                 Some(w) => { t[2] += 1; bad.push(format!("{}: {w} ({})",row.path,row.from)) }
                 None => t[1] += 1,
             },
@@ -74,6 +75,7 @@ fn no_mutant_is_read_wrong() {
     }
     println!("{:<20} {:>8} {:>8} {:>6} {:>6} {:>5} {:>8}","mutation","refused","read","WRONG","PANIC","HUNG","missing");
     for (k,t) in &tally { println!("{k:<20} {:>8} {:>8} {:>6} {:>6} {:>5} {:>8}",t[0],t[1],t[2],t[3],t[4],t[5]) }
+    face_census(rows,reads);
     assert!(bad.is_empty(),"{} mutants read wrong, panicked on or hung:\n{}",bad.len(),bad.join("\n"));
 }
 
