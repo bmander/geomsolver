@@ -701,12 +701,20 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
         let sheet = matches!(s,Surface::Blend(..));
         let mut folds = false;
+        // (the least ratio of each derivative's length to the other's on the boundary: a sheet's
+        // row or column all but collapsed there, a pole in all but name)
+        let mut thin = [f64::INFINITY;2];
         for c in f.loops.iter().flatten() {
             let e = &b.edges[c.edge as usize];
             for j in 0..=8 {
                 let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
                 folds |= sheet && s.area_factor(q) < ON_FOLD;
+                if matches!(s,Surface::BSpline(..)) {
+                    let (_,su,sv) = s.d1(q);
+                    let (lu,lv) = (norm(su),norm(sv));
+                    if lu > 0. && lv > 0. { thin[0] = thin[0].min(lu/lv); thin[1] = thin[1].min(lv/lu); }
+                }
             }
         }
         // (a swept sheet's face across its fold read by columns instead)
@@ -720,10 +728,13 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // is nought and the value a use arrives along — which a file's edge standing off its face
         // leaves to within that gap, and a curve passing near the pole sweeps through in a hair of
         // its span — weighs nothing
+        // — a sheet's row or column all but collapsed where the boundary reaches it too (one of
+        // its derivatives a thousandth of the other's there: a fillet's net run into a corner),
+        // where the parameter along it is read off its edges' feet as ill as at a pole
         let collapsed = f.loops.iter().flatten().find_map(|c| match (&b.edges[c.edge as usize].curve,&c.pcurve) {
             (EdgeCurve::Degenerate,&Pcurve::Line {a,b}) => (0..2).max_by(|&i,&j| (a[i]-b[i]).abs().total_cmp(&(a[j]-b[j]).abs())),
             _ => None,
-        });
+        }).or_else(|| (0..2).filter(|&k| thin[k] < 1e-3).min_by(|&i,&j| thin[i].total_cmp(&thin[j])));
         let mut prefix = match s {
             Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) && collapsed != Some(1) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),
             _ => None,

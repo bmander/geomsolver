@@ -413,12 +413,13 @@ struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
 fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32,
-    taken: &mut BTreeMap<usize,usize>,placed: &mut BTreeMap<usize,Uv>) -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
+    taken: &mut BTreeMap<usize,usize>,placed: &mut BTreeMap<usize,Uv>) -> Result<(Vec<Coedge>,Option<Wound>,Vec<Crossed>),Refusal> {
     let s = &sheet.surface;
     let (b,periods) = (st.b,s.periods());
     let spline = matches!(s,Surface::BSpline(..));
-    let steps = if matches!(s,Surface::Plane(_)) { 2 } else { 16 };
+    let plain = if matches!(s,Surface::Plane(_)) { 2 } else { 16 };
     let mut out = Vec::with_capacity(uses.len());
+    let mut crossed = Vec::new();
     let mut last: Option<Uv> = None;
     let mut first = None;
     for &(ei,rev) in uses {
@@ -498,6 +499,20 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
                     unwrap(s.inverse_near(begin,q),q,periods)
                 });
+                // (a step of the walk turning less than a twelfth of a period: a thread's helix
+                // winding sixteen turns round its cylinder, walked in sixteen steps, read each a
+                // whole turn on as no turn at all — its length over the surface's speed along the
+                // period at its middle, the turn it makes at most)
+                let steps = {
+                    // (its length by its speed at 64 points, which no turn of it aliases as chords do)
+                    let length = match &e.curve {
+                        EdgeCurve::Curve(c) => (0..64).map(|j| norm(c.d1(e.t[0]+(e.t[1]-e.t[0])*(j as f64+0.5)/64.).1)).sum::<f64>()*(e.t[1]-e.t[0]).abs()/64.,
+                        EdgeCurve::Degenerate => 0.,
+                    };
+                    let (_,su,sv) = s.d1(s.inverse(e.point(0.5*(e.t[0]+e.t[1]),&b.vertices)));
+                    let turn = (0..2).filter_map(|k| periods[k].map(|p| length/(norm([su,sv][k])*p))).filter(|x| x.is_finite()).fold(0.,f64::max);
+                    (plain.max((48.*turn).ceil().min(4096.) as usize)+1)/2*2
+                };
                 let (mut walked,mut read) = track(s,e,&b.vertices,travel,from,steps,st.within,reversed,&|_,at| at);
                 // a seam of a sheet closed without a period: walked again, every point of it on the
                 // domain's edge sought on the one side — the side its other use is not on, or for
@@ -566,6 +581,47 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         so unevenly that its parameter {} stands {far:.3} from the line between its ends, past the half period a \
                         curve inverted between its ends is read within",["u","v"][k])))
                 }
+                // a curve crossing its face's pole between its ends (a meridian over a ball's
+                // top): its collapsed parameter jumps there, which no one inverse curve reads — the
+                // edge cut at the pole (`Cut`), each piece its own inverse to the pole on its own
+                // branch, and
+                // the pole's degenerate edge between them laid by `close_poles`; the way the jump
+                // goes, the one that closes the loop
+                let crossing = (1..read.len().saturating_sub(1)).find_map(|i| {
+                    let (f,q) = read[i];
+                    let k = pole_at(s,q,st.within)?;
+                    let p = periods[k]?;
+                    let (before,after) = (read[..i].iter().rev().find(|x| pole_at(s,x.1,st.within).is_none())?,
+                        read[i+1..].iter().find(|x| pole_at(s,x.1,st.within).is_none())?);
+                    (f > 0. && f < 1. && (after.1[k]-before.1[k]).abs() > p/12.).then_some((f,q,k,p,before.1,after.1))
+                });
+                if let Some((f,q,k,p,before,after)) = crossing {
+                    let EdgeCurve::Curve(curve) = &e.curve else { unreachable!("a walked edge has a curve") };
+                    let pole = s.point(q);
+                    let t = { let t = curve.inverse(pole); if t > e.t[0] && t < e.t[1] { t } else { travel[0]+(travel[1]-travel[0])*f } };
+                    if !(t > e.t[0] && t < e.t[1]) || distance(curve.point(t),pole) > st.within {
+                        return Err(Refusal::unsupported(st.reads[ei].entity,"an edge crossing its face's pole at none of its points: not read"))
+                    }
+                    let (mut m1,mut m2) = (q,q);
+                    m1[k] = before[k]+off[k];
+                    m2[k] = after[k]+off[k];
+                    m1[1-k] += off[1-k];
+                    m2[1-k] += off[1-k];
+                    let z2 = z;
+                    // the pieces in the loop's order: to the pole, and from it; the edge keeps its
+                    // first piece along its curve, the far one is laid
+                    let (to,from_pole) = if rev {
+                        (Coedge {edge:CROSSED,reversed:true,pcurve:Pcurve::Inverse {a:m1,b:a}},Coedge {edge:ei as u32,reversed:true,pcurve:Pcurve::Inverse {a:z2,b:m2}})
+                    } else {
+                        (Coedge {edge:ei as u32,reversed:false,pcurve:Pcurve::Inverse {a,b:m1}},Coedge {edge:CROSSED,reversed:false,pcurve:Pcurve::Inverse {a:m2,b:z2}})
+                    };
+                    crossed.push(Crossed {at:out.len()+if rev { 0 } else { 1 },past:out.len()+1,k,p,edge:ei,t,point:curve.point(t)});
+                    first.get_or_insert((a,begin));
+                    out.push(to);
+                    out.push(from_pole);
+                    last = Some(z2);
+                    continue
+                }
                 let (ea,eb) = if rev { (z,a) } else { (a,z) };
                 (Pcurve::Inverse {a:ea,b:eb},a,z)
             }
@@ -573,6 +629,18 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
         first.get_or_insert((start,begin));
         out.push(Coedge {edge:ei as u32,reversed:rev,pcurve});
         last = Some(end);
+    }
+    // (a loop crossing a pole once: the half turn its collapsed parameter jumps there either way,
+    // the one that brings the loop back round to where it began — a whole turn off is the jump
+    // the other way, every use past the pole moved by it)
+    if let ([c],Some(l),Some((a,_))) = (&crossed[..],last,first) {
+        let turn = l[c.k]-a[c.k];
+        if (turn.abs()-c.p).abs() <= 1e-3*c.p {
+            let mut d = [0.;2];
+            d[c.k] = -turn;
+            for co in &mut out[c.past..] { co.pcurve = moved(&co.pcurve,d); }
+            last = Some([l[0]+d[0],l[1]+d[1]]);
+        }
     }
     // round to where it began, on the same branch, or round a whole period of `u`
     let mut wound = None;
@@ -595,8 +663,16 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
             }
         }
     }
-    Ok((out,wound))
+    Ok((out,wound,crossed))
 }
+
+/// An edge a loop's walk crossed its face's pole on: the index in the loop of the use of the far
+/// piece laid (named `CROSSED` until `face` numbers it) and of the first use past the pole, the
+/// collapsed parameter and its period, the edge, its parameter at the pole and the point there.
+struct Crossed { at: usize,past: usize,k: usize,p: f64,edge: usize,t: f64,point: V }
+
+/// The name a walked loop gives the far piece of an edge cut at its face's pole.
+const CROSSED: u32 = u32::MAX-15;
 
 /// A loop winding once round its surface's period along parameter `k` (a sphere's or a cone's axis
 /// for `u`): where it begins in the face's parameters, and how far round it comes (a whole period,
@@ -608,8 +684,9 @@ struct Wound { at: Uv,k: usize,turn: f64 }
 /// generator (a cone's) from the loop's first vertex `v` to the pole the face holds — north of
 /// the loop where it winds `+u` with the face's material normal its surface's, south where either
 /// is turned — and the pole, laid; the loop walked on up the seam from where it came round to,
-/// and back down it to where it began (`Brep::close_poles` lays the pole's edge between).
-fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,laid: u32) -> Option<(V,Edge,[Coedge;2])> {
+/// and back down it to where it began (`Brep::close_poles` lays the pole's edge between). The
+/// seam is named `seam`, the pole `laid`.
+fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,seam: u32,laid: u32) -> Option<(V,Edge,[Coedge;2])> {
     let north = (w.turn > 0.) != reversed;
     let u = w.at[0];
     let (pole,curve) = match *s {
@@ -638,7 +715,6 @@ fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,laid: u32) -> Option<(V
     let edge = Edge {curve:EdgeCurve::Curve(curve),t,v:ends,tol:0.};
     let along = |u: f64| { let (a,b) = ([u,w.at[1]],[u,pole]); if up { Pcurve::Inverse {a,b} } else { Pcurve::Inverse {a:b,b:a} } };
     // up from where the loop came round to, and down to where it began
-    let seam = LAID;
     Some((point,edge,[Coedge {edge:seam,reversed:!up,pcurve:along(u+w.turn)},Coedge {edge:seam,reversed:up,pcurve:along(u)}]))
 }
 
@@ -888,9 +964,23 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     // a loop winding round a pole the face holds is joined to it by a seam laid; two winding
     // opposite ways round one period bound a band, joined by a seam laid between them (`band`)
     let (mut laid,mut poles) = (Vec::new(),Vec::new());
-    let mut walked = walked;
-    let wound: Vec<usize> = (0..walked.len()).filter(|&i| walked[i].1.is_some()).collect();
     let mut cuts = Vec::new();
+    // (an edge a walk crossed the pole on: its far piece and the pole's vertex laid, the edge cut)
+    let mut walked: Vec<(Vec<Coedge>,Option<Wound>)> = walked.into_iter().map(|(mut l,wound,crossed)| {
+        if !crossed.is_empty() && wound.is_some() {
+            return Err(Refusal::unsupported(w.entity,"a face whose bound winds round its surface and crosses its pole: not read"))
+        }
+        for c in crossed {
+            let (lid,vid) = (LAID-laid.len() as u32,LAID-poles.len() as u32);
+            let e = &b.edges[c.edge];
+            laid.push(Edge {curve:e.curve.clone(),t:[c.t,e.t[1]],v:[vid,e.v[1]],tol:0.});
+            poles.push(c.point);
+            cuts.push(Cut {edge:c.edge,t:c.t,vertex:vid,laid:lid});
+            l[c.at].edge = lid;
+        }
+        Ok((l,wound))
+    }).collect::<Result<_,_>>()?;
+    let wound: Vec<usize> = (0..walked.len()).filter(|&i| walked[i].1.is_some()).collect();
     if wound.len() == 2 {
         let (i,j) = (wound[0],wound[1]);
         let others: Vec<&[Coedge]> = (0..walked.len()).filter(|&x| x != i && x != j).map(|x| &walked[x].0[..]).collect();
@@ -910,7 +1000,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     for ((mut l,wound),u) in walked.into_iter().zip(&uses) {
         if let Some(x) = wound {
             let v = b.edges[u[0].0].v[u[0].1 as usize];
-            let Some((p,e,uses)) = pole_seam(s,&x,v,reversed,LAID).filter(|_| x.k == 0) else {
+            let Some((p,e,uses)) = pole_seam(s,&x,v,reversed,LAID-laid.len() as u32,LAID-poles.len() as u32).filter(|_| x.k == 0) else {
                 return Err(Refusal::unsupported(w.entity,"a face whose bound winds round its surface's period with no seam and no pole \
                     inside it: not read"))
             };

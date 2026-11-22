@@ -422,14 +422,28 @@ impl Brep {
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
             // (from the curve's own end, which a vertex read from a file need not be: a step
             // out from a vertex on the far side of the pole reads the meridian opposite, #993)
-            // (at a cusp — a horn torus's middle, a net's row collapsed with its neighbour, every
-            // curve arriving along one line — the tangent says nothing of the value: the limit of
-            // the curve's own feet, extrapolated from three steps in, `x(h) = x₀ + a h + b h²`)
-            let limit = if cusp(&f.surface,a,along) {
-                let x = |h: f64| c.pcurve.at(e.t[end]+into*h*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices)[along];
-                let (x1,x2,x4) = (x(1e-3),x(5e-4),x(2.5e-4));
-                (8.*x4-6.*x2+x1)/3.
-            } else { leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)? };
+            // The value the use's own feet tend to, which its pcurve reads up to its end: their
+            // limit extrapolated from three steps in, `x(h) = x₀ + a h + b h²`. The tangent's
+            // value (#797) where the two agree to a millionth, exact to the bit on a solid built
+            // here; the feet's at a cusp (a horn torus's middle, a net's row collapsed with its
+            // neighbour, every curve arriving along one line, its tangent saying nothing of the
+            // value); and where a file's curve stands off its face near the pole within its
+            // tolerance (its tangent not the surface's, its foot a step along it reading the pole's
+            // far side as soon as the near), neither, the tangent's having left the use leaping
+            // along the pole at its end
+            let x = |h: f64| c.pcurve.at(e.t[end]+into*h*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices)[along];
+            let feet = { let (x1,x2,x4) = (x(1e-3),x(5e-4),x(2.5e-4)); (8.*x4-6.*x2+x1)/3. };
+            let tangent = if cusp(&f.surface,a,along) { None }
+                else { leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along) };
+            let limit = match tangent {
+                Some(t) if (t-feet).abs() <= 1e-6 => t,
+                None => feet,
+                // (neither to be trusted — a file's curve standing off its face near the pole,
+                // its feet swinging round it within the gap — the end the use was given: a
+                // reader's, from its curve a step in)
+                Some(_) => return None,
+            };
+            if !limit.is_finite() { return None }
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }
