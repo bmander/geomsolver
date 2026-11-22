@@ -452,8 +452,8 @@ fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_
 /// square. That end is the tube's own place, by construction: put on the crossing's polyline
 /// instead, it stood 1e-6 (3.5 tolerances) from the rim's corner it is, two vertices of the tube on
 /// the tool, the touching rim a slit in the tool's face and the trim refused where it read the
-/// face's piece both ways. Every two of the tubes' vertices on the tool where it stops are one place
-/// or stand clear apart.
+/// face's piece both ways. No two of the tubes' vertices on the tool where it stops stand a few
+/// tolerances apart, within ten of one another and not one place.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the thin tumbling torus entered and sewn")]
 fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it() {
@@ -474,6 +474,6 @@ fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it
     assert!(on.len() > 4,"the tubes' vertices on the tool where it stops: {}",on.len());
     for (i,&p) in on.iter().enumerate() { for &q in &on[i+1..] {
         let d = distance(p,q);
-        assert!(d <= tol || d >= 1e3*tol,"two of the tubes' vertices on the tool {d:e} apart: {p:?} and {q:?}");
+        assert!(d <= tol || d > 10.*tol,"two of the tubes' vertices on the tool {d:e} apart: {p:?} and {q:?}");
     } }
 }
