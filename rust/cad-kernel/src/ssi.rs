@@ -1163,9 +1163,11 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
         let cc = dot(c,c)-cw*cw-s*s;
         (bb,bb*bb-aa*cc)
     };
-    let at = |u: f64,side: f64| { let (bb,dd) = bd(u); add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)) };
-    // the gap between the branches at u
-    let gap = |u: f64| 2.*bd(u).1.max(0.).sqrt()/aa;
+    // the branch's point at u, and the gap between the branches there
+    let at = |u: f64,side: f64| -> (f64,V,f64) {
+        let (bb,dd) = bd(u);
+        (u,add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)),2.*dd.max(0.).sqrt()/aa)
+    };
     // D's roots round the turn, each to the last bit
     const M: usize = 4096;
     let us: Vec<f64> = (0..=M).map(|j| TAU*j as f64/M as f64).collect();
@@ -1201,24 +1203,25 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
     // one branch from `u0` to `u1`, its points, refined while a chord stands more than a quarter of
     // the branches' gap at its ends, or an eighth of the radius, long — down to `16 tol`
     let longest = r/8.;
+    // (each point read once, carried with its parameter and gap by the intervals it bounds)
     let branch = |u0: f64,u1: f64,side: f64| -> Vec<V> {
         let n = (((u1-u0)/TAU*64.).ceil() as usize).max(8);
-        let mut done: Vec<(f64,V)> = Vec::new();
-        let mut stack: Vec<(f64,f64)> = (0..n).rev().map(|j| (u0+(u1-u0)*j as f64/n as f64,u0+(u1-u0)*(j+1) as f64/n as f64)).collect();
-        while let Some((x,y)) = stack.pop() {
-            let (p,q) = (at(x,side),at(y,side));
+        let mut done: Vec<V> = Vec::new();
+        let ends: Vec<(f64,V,f64)> = (0..=n).map(|j| at(u0+(u1-u0)*j as f64/n as f64,side)).collect();
+        let mut stack: Vec<[(f64,V,f64);2]> = (0..n).rev().map(|j| [ends[j],ends[j+1]]).collect();
+        while let Some([(x,p,gx),(y,q,gy)]) = stack.pop() {
             let chord = distance(p,q);
-            let bar = longest.min(0.25*gap(x).min(gap(y)).max(0.));
+            let bar = longest.min(0.25*gx.min(gy).max(0.));
             if chord > bar && chord > 16.*tol && y-x > 1e-13 && done.len() < 200_000 {
-                let m = 0.5*(x+y);
-                stack.push((m,y));
-                stack.push((x,m));
+                let m = at(0.5*(x+y),side);
+                stack.push([m,(y,q,gy)]);
+                stack.push([(x,p,gx),m]);
                 continue
             }
-            if done.is_empty() { done.push((x,p)) }
-            done.push((y,q));
+            if done.is_empty() { done.push(p) }
+            done.push(q);
         }
-        done.into_iter().map(|(_,p)| p).collect()
+        done
     };
     let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
     if roots.is_empty() {
