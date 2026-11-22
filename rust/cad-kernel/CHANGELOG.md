@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A boundary read from the depth enters the ring road as a seam** (#942, `swept::depth`): new
+  `depth::Covered`, the far cover's depth as a `zero_set::Field` over a ring's sheet (its gradient by
+  the envelope theorem), and `depth::seams`, its zero set traced over a box of the sheet's `(θ, t)`
+  from the caller's seeds, each chord's middle pulled onto it and held to the tolerance in space
+  (beside a swallowtail point the sheet's rates are nearly one way and a first-order distance took
+  a chord 3.6e-5 off as near); each `Seam` with the covering instant's preimages, and
+  `Seam::curves` in `rings::cut_along`'s form. On `tumbling-torus-half-turn` it traces the double
+  curve; the half turn's refusal is measured to be no missing seam (its birth cut at `s''` nought to
+  3e-7; the double curve from its swallowtail point to the cut within 3.03e-6 of the cut's contact,
+  the tolerance 3.2e-6). `depth_probe` reads `seams`, `birth`, `near`, `find` and `chord`; the
+  sweep probe reads a dump's `faces`; `SOLVENT_TRIM_DEBUG` says the check's refusal.
+
 - **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
   `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
   by search misses an arc between the two points where they touch. A given curve a face holds as
@@ -75,7 +87,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its meetings with the ring and the tubes given by construction (`entered` returns the strips after
   the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
   the refusal stands.
-
 - **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
   `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
   the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
