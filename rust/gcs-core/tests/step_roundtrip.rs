@@ -1259,3 +1259,8 @@ fn a_drill_is_written_within_a_minute() { known("twist_drill/drill.sv","drill") 
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, 16 s: a ball's toolpath written twice")]
 fn a_solid_read_is_written_again_within_a_minute() { known("solid_sweeps/tight_ball.sv","block") }
+
+
+#[test]
+#[ignore = "a known defect, reported: the file is the wall's (its net within 2e-13 of the family's, the solid built 1e-15 off its closed form 6(L − π/4)), but `props::fluxes` over a net creased at each of its 42 stations, the kernel's own pcurves and edges kept, reads its volume 2.7e-5 off (`paths/` tubes 5e-5)"]
+fn a_net_creased_at_its_stations_is_measured() { known("paths/bent_pipe.sv","bar") }
