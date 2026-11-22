@@ -195,7 +195,6 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
                 corners.push(x);
             } }
         }
-        if crate::timing() { eprintln!("ring: the end poses' corners {corners:?}") }
         if corners.len() < 2 { continue }
         let s = &fs.surface;
         let at: Vec<crate::geom::Uv> = corners.iter().map(|&x| s.inverse(x)).collect();
@@ -208,6 +207,7 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
         for (i,c) in at.iter().enumerate() {
             let near = at.iter().enumerate().filter(|&(j,_)| j != i).map(|(_,p)| (p[0]-c[0]).abs().max((p[1]-c[1]).abs()))
                 .fold(f64::INFINITY,f64::min);
+            // (no narrower than half the digits of the parameters read: the rounding's)
             let mut grow = near.max(HALF_READ);
             loop {
                 let rect: crate::zero_set::Rect = std::array::from_fn(|k| [(c[k]-grow).max(whole[k][0]),(c[k]+grow).min(whole[k][1])]);

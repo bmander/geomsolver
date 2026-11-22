@@ -168,7 +168,7 @@ struct Witness { face: (usize,usize),at: [V;2],said: String }
 /// through itself), with that: a surface's meeting with itself is no meeting two surfaces are given.
 #[allow(clippy::too_many_arguments)]
 fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],bounding: &BTreeSet<(usize,usize)>,
-    boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,pairs: &mut BTreeSet<([usize;2],[usize;2])>,hair: f64,tol: f64)
+    boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,pairs: &mut BTreeSet<([usize;2],[usize;2])>,buried: &dyn Fn(V) -> bool,hair: f64,tol: f64)
     -> Result<usize,String> {
     const WALK: usize = 64;
     let (k,i) = w.face;
@@ -212,6 +212,13 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                 let x = at(0.5*(t0+t1));
                 if !located[k2].face_holds(g,x) {
                     if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g})'s surface crosses it at {x:?}, outside the face",w.at) }
+                    continue
+                }
+                // (a crossing the sweep is proved to hold more than a few tolerances deep bounds nothing:
+                // a meeting there is buried, and needs no cut — the full turn's start and end tori, where
+                // their tubes touch among the instants between)
+                if buried(x) {
+                    if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g}), a {}, crosses it at {x:?}, buried",w.at,sg.kind()) }
                     continue
                 }
                 let key = if [k,i] <= [k2,g] { ([k,i],[k2,g]) } else { ([k2,g],[k,i]) };
@@ -577,7 +584,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         };
         round += 1;
         let gave = if round > ROUNDS { 0 } else {
-            completed(&seen,&candidates,&completing,&bounding,&boxes,&mut given,&mut pairs,hair,tol).map_err(Unbuilt::Failed)?
+            completed(&seen,&candidates,&completing,&bounding,&boxes,&mut given,&mut pairs,&|x| matches!(swept.beyond(x,ON_CURVE*tol),Ok(Some(_))),hair,tol).map_err(Unbuilt::Failed)?
         };
         if debug() || crate::timing() { eprintln!("trim: round {round}: {} curves completed from {:?}",gave,seen.at) }
         if gave == 0 { return Err(Unbuilt::Failed(seen.said)) }

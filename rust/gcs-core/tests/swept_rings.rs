@@ -633,20 +633,9 @@ fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_
     assert_eq!(sheets.len(),2,"one tube a contact curve: {:?}",sheets.iter().map(|s| s.faces.len()).collect::<Vec<_>>());
 }
 
-/// **The full turn gets past its start and end tori** (#942 T1d-tori, the slow tier):
-/// brep-bench's `tumbling-torus-full-turn`, a torus of tube 0.16 turned 0.375 a radian about one
-/// line and back a radian about another over a whole turn. Its trim reads every piece of the tori
-/// at its end poses one way all over — the start torus's rim laid as each edge the tube holds it as
-/// (refused before, a piece of the start torus the boundary on one side of the rim and off it on
-/// the other); its last stretch's tail between a double curve and the tube's seam dropped, and the
-/// curve's end where it meets the end pose one point on both leaves (refused before, a piece of the
-/// end torus read both ways round a chord hung open) — and it is refused only where the two tori's
-/// meeting, found by search, misses an arc between the points they touch at (the end pose the start
-/// turned 0.75π about a line parallel to the torus's axis).
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn built to its refusal")]
-fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
-    use gcs_core::brep::swept::closed::ring;
+/// brep-bench's `tumbling-torus-full-turn`: a torus of tube 0.16 turned 0.375 a radian about one line
+/// and back a radian about another over a whole turn, and its tolerance.
+fn full_turn() -> (gcs_core::brep::topo::Brep,Trajectory,[f64;2],f64) {
     use gcs_core::brep::trajectory::Screw;
     let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
     let (sl,cl) = 30f64.to_radians().sin_cos();
@@ -655,10 +644,65 @@ fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_me
     let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
         advance:0.});
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-std::f64::consts::PI,std::f64::consts::PI];
-    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,0.16/50_000.).expect_err("refused where the tori meet"));
-    assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("face (1, 0), a torus")
-        && why.contains("met by search"),"{why}");
+    (tool,path,[-std::f64::consts::PI,std::f64::consts::PI],0.16/50_000.)
+}
+
+/// **The full turn gets past its start and end tori** (#942 T1d-tori, the slow tier): its trim
+/// reads every piece of the tori at its end poses one way all over — the start torus's rim laid as
+/// each edge the tube holds it as; its last stretch's tail between a double curve and the tube's
+/// seam dropped, and the curve's end where it meets the end pose one point on both leaves — and the
+/// two tori's meeting is given where it bounds the sweep (`depth::ends_met`), the crossings of a
+/// witness the sweep buries completed by nothing. It is refused where the start torus's piece kept
+/// about the uncovered island between the two strands the tubes near the end cover reaches the
+/// start torus's seam through what the instants after the start hold.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 50 s: the full turn built to its refusal")]
+fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
+    use gcs_core::brep::swept::closed::ring;
+    let (tool,path,roll,tol) = full_turn();
+    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,tol).expect_err("refused beside the start torus's seam"));
+    assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("circle edge"),"{why}");
+}
+
+/// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942
+/// T1d-tori, `depth::ends_met`; the slow tier): over a whole turn the end pose stands beside the
+/// start and the two tori meet, mostly where the instants between cover one or both — there no cut
+/// is needed — but along two arcs, each some 0.02 long between a corner on a tube's seam with one
+/// pose and a corner on the other pose's rim, both tori are uncovered but by one another: the arc
+/// the trim's search missed ("a meeting no edge crosses"). Read apart from the road by `cover`:
+/// each given arc lies on both tori and, at its middle, neither is covered by any other instant by
+/// more than the tolerance.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the full turn entered")]
+fn the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given() {
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
+    use gcs_core::brep::swept::depth::{Reading,cover};
+    let (tool,path,roll,tol) = full_turn();
+    let RingEntered {ends,given,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
+    let ring = Ring::read(&tool).unwrap();
+    let met: Vec<&gcs_core::brep::boolean::Given> = given.iter()
+        .filter(|g| g.surfaces[0] == ends[0].faces[0].surface && g.surfaces[1] == ends[1].faces[0].surface).collect();
+    assert_eq!(met.len(),1,"one meeting of the two poses given");
+    assert_eq!(met[0].curves.len(),2,"two arcs, one beside each place the tori's core circles cross");
+    let poses = roll.map(|t| path.pose(t).unwrap());
+    for c in &met[0].curves {
+        let gcs_core::brep::geom::Curve::BSpline(b) = c else { panic!("an arc is a spline: {}",c.kind()) };
+        let [t0,t1] = b.domain();
+        let pts: Vec<[f64;3]> = (0..=16).map(|k| c.point(t0+(t1-t0)*k as f64/16.)).collect();
+        let long: f64 = pts.windows(2).map(|w| gcs_core::brep::util::space::distance(w[0],w[1])).sum();
+        assert!(long > 0.01 && long < 0.05,"an arc some 0.02 long: {long}");
+        for &x in &pts {
+            for q in &poses { assert!(ring.signed(q.inverse().point(x)).0.abs() <= tol,"the arc lies on both tori at {x:?}") }
+        }
+        let mid = pts[8];
+        for (e,&own) in roll.iter().enumerate() {
+            match cover(&ring,&path,roll,mid,own,if e == 0 { 0. } else { tol },tol).unwrap() {
+                Reading::Far(cv) => assert!(cv.depth >= -tol,"the pose at {own} uncovered at the arc's middle: {cv:?}"),
+                Reading::Alone => {}
+                r => panic!("the pose at {own} uncovered at the arc's middle: {r:?}"),
+            }
+        }
+    }
 }
 
 /// The least signed distance from the ring posed at an instant of `roll` of the point `p`, over

@@ -2211,15 +2211,37 @@ rounding's** (#942 F6), none a number of its own:
   short lead through most of a turn, wrong at a tenth, the tool's size or the extent while the
   complex read tied faces a thousandth of the box in, is right at a twentieth, a tenth and half the
   extent since it reads them nearest first, `brep.md`'s A1.)
+**The tool at the roll's two ends is met where both bound the sweep** (#942 T1d-tori,
+`depth::ends_met`): over a full turn the end pose's tool stands beside the start's and meets it.
+Most of that meeting is buried, one tool or both covered by the instants between (where their tubes
+touch: no cut is needed there). Along two arcs, each some 0.02 long, both are uncovered except by
+one another, and no edge crosses those arcs, so the trim's search missed them. Read under the depth
+(`cover`), an arc on the boundary ends where its cover changes hands, at a corner on a seam the road
+gives on one pose (a tube's trace with it, its rim) where the other pose's signed distance changes
+sign. So the corners are found along the given seams by a certified march (steps no longer than
+the larger of that distance and the tolerance) and kept where neither pose is covered there by more
+than the tolerance. The meeting is traced as the zero set of the end pose's signed distance over
+the start pose's face (`zero_set::trace`, a window about each corner grown until the piece through
+it reaches another corner on each side where it is uncovered). It is cut at the corners, and each
+stretch whose middle neither pose covers is given (gated in
+`swept_rings::the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given`). A witness's
+missing meeting is completed at no crossing that membership proves the sweep holds or leaves
+(`trim::completed`): there it is buried and bounds nothing. Before this, the full turn's tori were
+given a meeting traced through where their tubes touch, and its trim was refused across the instants
+after the start.
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where its two end poses'
 tori meet (#942 T1d-tori: past its start and end tori's pieces, above, the boundary left open along
 the start torus's seam circle beside a piece the end torus crosses): over a full turn the end pose is
 the start turned 0.75π about a line parallel to the torus's axis, two congruent tori in one plane
-whose tubes touch at two points beside each place their core circles cross, and their meeting,
-found by search seeded where an edge crosses it, misses an arc between those points that no edge
-crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
-the sine below 4e-3); the thin one beside the swallowtail point where its fold pair is born
+whose tubes touch at two points beside each place their core circles cross. Their meeting is given
+where it bounds the sweep (above). The trim is refused where the start torus's piece about the
+uncovered island at angles (2.745, −0.887) of the torus reaches the start torus's seam at
+`(2.5965, 3.3856, −0.2104)`, which the instants after the start hold. That island lies between the
+two strands, 0.13–0.16 deep, that the tube near the end (`t` 3.03–3.13) covers. It is bounded by that
+tube's trace with the start pose (one given curve round its sides and bottom), the arc above, and the
+start pose's rim; where the piece leaves it is not yet found. The island's read point is uncovered, 0.122 clear
+of the end pose; the thin one beside the swallowtail point where its fold pair is born
 (above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
 root); the half turn — its double curve built
 from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
