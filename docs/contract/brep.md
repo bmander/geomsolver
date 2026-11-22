@@ -866,7 +866,18 @@ face and the sheet's two, was cut by nothing — the full turn's start rim dangl
 where the tube, late in the roll, passes over it, and a piece leaked round it. Each two such edges
 of one operand laid across one face are cut where their curves cross, to the tolerance
 (`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`); only given
-curves are read so, since a sound operand's edges cross nowhere but at its vertices. A vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
+curves are read so, since a sound operand's edges cross nowhere but at its vertices. **A piece
+merged into another edge keeps its own pcurve, carried** (#942, `carried_pcurve`): where an
+operand's edge has a polyline pcurve of its own (a double curve's chord on one leaf of a sweep's
+sheet, drawn through the places its trace passes) and is merged into another's (the other leaf's
+drawing, one curve in space), its pcurve's vertices are moved to the other's parameter of their
+nearest points, a stretch that does not hold given its middle until it does; inverted onto the face
+from the other's curve, the full turn's landed on the leaf past the fold, 1.3e-5 off. It holds where
+the surface along it stands within a quarter of the tolerance of the other's curve, or the merge's
+gap, at each stretch's quarters; else the inverse is read as before. The merge's gap is read at the
+eighths of the piece and at each vertex of either polyline (they crowd where a drawing bends: the
+full turn's two drawings part by 4.1e-6 within a ten-thousandth of an end, which the eighths read
+as 7.7e-7). A vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it). **An edge is read against a known meeting by one rule** (#990, `Arrangement::known`,
 `meeting::Shared::known`, `on_known`): it lies in each of its own faces' surfaces, so it meets

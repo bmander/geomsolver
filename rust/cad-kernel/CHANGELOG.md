@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **brep-bench's `tumbling-torus-full-turn` is built** (#942): 35 faces, volume 23.6738854 (the
+  peer kernel cadrs's 23.6739), its check clean at the call's tolerance, in some 39 s
+  (`swept_rings::the_full_turn_is_built_closed`, held to membership). Two last changes. A double
+  curve joined to its swallowtail point (`swept::rings`'s `joined`) is laid in chords doubled
+  until each leaf's chord straight in its own `(θ, t)` stands at its middle within the tolerance of
+  the curve's own middle: across the kernel each preimage is a parabola, and the leaves' straight
+  chords parted by 3.8e-4. And a piece merged by the arrangement into another edge keeps its own
+  polyline pcurve, carried onto the other's parameter (`boolean`'s `carried_pcurve`), the merge's
+  gap read at either polyline's vertices too; inverted from the other's curve, the full turn's
+  landed on the leaf past the fold, 1.3e-5 off.
+
 - **A trim's refusal names the piece that is mixed, not a face tangent to it** (#942,
   `swept::trim`'s `missing_across`): a point read across an open edge on a candidate face is on a
   kept face where a face of the solid on that candidate's own surface holds it. Read against the

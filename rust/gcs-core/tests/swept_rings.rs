@@ -749,27 +749,27 @@ fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
     assert!(holes > 0,"a tube's face holed by the end torus");
 }
 
-/// **The full turn gets past its start and end tori** (#942 T1d-tori, the slow tier): its trim
-/// reads every piece of the tori at its end poses one way all over — the start torus's rim laid as
-/// each edge the tube holds it as; its last stretch's tail between a double curve and the tube's
-/// seam dropped, and the curve's end where it meets the end pose one point on both leaves — and the
-/// two tori's meeting is given where it bounds the sweep (`depth::ends_met`), the crossings of a
-/// witness the sweep buries completed by nothing; and the start rim, where the tube late in the
-/// roll passes back over it on the start torus, cut there (`boolean`'s `given_crossings`), so no
-/// piece of the start torus reaches round it to its seam; the tube's crossings with itself cut in
-/// (`depth::passed_back`), and the end torus's closed trace across the tube in the middle of the roll
-/// a hole in its face. Its trim's Boolean is then refused by the check: a double curve's edge, where
-/// it runs into a fold at the cut where the contact changes shape (the roll 2.2318), merged from the
-/// stretch below the cut, is inverted onto the face above it on the leaf past the fold, 1.3e-5 off
-/// at 5/8 of it — the two stretches' drawings of the one curve part there by 3.8e-4 along it, both on
-/// the boundary to 7e-9.
+/// **brep-bench's `tumbling-torus-full-turn` is built closed** (#942, the slow tier): its trim reads
+/// every piece of the tori at its end poses one way all over — the start torus's rim laid as each
+/// edge the tube holds it as; its last stretch's tail between a double curve and the tube's seam
+/// dropped, and the curve's end where it meets the end pose one point on both leaves — and the two
+/// tori's meeting is given where it bounds the sweep (`depth::ends_met`); the start rim cut where
+/// the tube late in the roll passes back over it (`boolean`'s `given_crossings`); the tube's crossings
+/// with itself cut in (`depth::passed_back`), and the end torus's closed trace across the tube in the
+/// middle of the roll a hole in its face; the double curve beside its swallowtail point at the cut
+/// 2.2318 joined to it in chords straight in each leaf's parameters, and each leaf's drawing of it,
+/// merged into the other's by the arrangement, keeping its own pcurve carried onto the other
+/// (`boolean`'s `carried_pcurve`) — inverted, it landed on the leaf past the fold, 1.3e-5 off. Its
+/// volume 23.6738854, the peer kernel cadrs's 23.6739; held to the sweep's membership.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 45 s: the full turn built to its refusal")]
-fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
-    use gcs_core::brep::swept::closed::ring;
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 60 s: the full turn built and held to membership")]
+fn the_full_turn_is_built_closed() {
     let (tool,path,roll,tol) = full_turn();
-    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,tol).expect_err("refused along the start rim"));
-    assert!(why.contains("(sheet): edge") && why.contains("'s pcurve is"),"{why}");
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-23.6738854384).abs() < 1e-7,"{v}");
+    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
 }
 
 /// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942

@@ -1644,7 +1644,7 @@ fn joined(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],pair: [(f64,f64,f64);2],a
     // each read at its middle too)
     let (x,_) = sheet_at(ring,path,pair[0].0,pair[0].1,pair[0].2)?;
     let (xa,_) = sheet_at(ring,path,tha,ta,sa)?;
-    let chords = (crate::util::space::distance(x,xa)/(8.*tol*ring.thickness).sqrt()).ceil().max(1.) as usize;
+    let first = (crate::util::space::distance(x,xa)/(8.*tol*ring.thickness).sqrt()).ceil().max(1.) as usize;
     let outer = |(th,t,sg): (f64,f64,f64)| -> Option<V> {
         let (w,dw) = rates(path,t,[a,b]).ok()?;
         let th = th.rem_euclid(TAU);
@@ -1653,15 +1653,36 @@ fn joined(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],pair: [(f64,f64,f64);2],a
         let (_,r) = ring.roots(&w,th).into_iter().min_by(|x,y| apart(x.1.sigma).total_cmp(&apart(y.1.sigma)))?;
         (ring.bend(&w,&dw,th,&r) > 0.).then(|| path.pose(t).ok().map(|m| m.point(r.x)))?
     };
-    let mut out = Vec::new();
-    for j in (1..2*chords).rev() {
-        let f = j as f64/(2*chords) as f64;
-        let (q1,q2) = (at(p1,f,pair[0].2),at(p2,f,pair[1].2));
-        let (y1,y2) = (outer(q1)?,outer(q2)?);
-        if crate::util::space::distance(y1,y2) > tol { return None }
-        if j%2 == 0 { out.push([q1,q2]) }
+    // (and as many again, twice over, until each leaf's chord straight in its `(θ, t)` — what a
+    // tube's face draws between two of its points, #942 the full turn — stands at its middle within
+    // the tolerance of the curve's own middle: across the kernel each preimage is the parabola
+    // `x = −2τ²`, and the two leaves bend opposite ways, so their straight chords part, the full
+    // turn's by 3.8e-4 beside its point at the cut 2.2318; doubled no further than chords no longer
+    // in space than the tolerance, whose middles stand within it of anything between their ends)
+    let mid = |q: (f64,f64,f64),r: (f64,f64,f64)| (0.5*(q.0+r.0),0.5*(q.1+r.1),0.5*(q.2+r.2));
+    let mut chords = first;
+    loop {
+        let mut out = Vec::new();
+        let mut straight = true;
+        let mut last: Option<[(f64,f64,f64);2]> = None;
+        for j in (1..2*chords).rev() {
+            let f = j as f64/(2*chords) as f64;
+            let (q1,q2) = (at(p1,f,pair[0].2),at(p2,f,pair[1].2));
+            let (y1,y2) = (outer(q1)?,outer(q2)?);
+            if crate::util::space::distance(y1,y2) > tol { return None }
+            if j%2 == 0 { out.push([q1,q2]); last = Some([q1,q2]); continue }
+            // (the middle of the chord from the point after it, or the pair, to the point before)
+            let after = last.unwrap_or(pair);
+            let g = (j-1) as f64/(2*chords) as f64;
+            let before = if j == 1 { [(tha,ta,sa);2] } else { [at(p1,g,pair[0].2),at(p2,g,pair[1].2)] };
+            for (k,y) in [y1,y2].into_iter().enumerate() {
+                if outer(mid(after[k],before[k])).is_none_or(|z| crate::util::space::distance(z,y) > tol) { straight = false }
+            }
+        }
+        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: joined to {:?} in {chords} chords, straight {straight}",apex.at) }
+        if straight || crate::util::space::distance(x,xa) <= tol*chords as f64 { return Some(((tha,ta,sa),out)) }
+        chords *= 2;
     }
-    Some(((tha,ta,sa),out))
 }
 
 /// `double_curve` from `seed`, toward the pair unless it is built from its swallowtail point
