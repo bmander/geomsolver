@@ -321,8 +321,8 @@ fn curve_ends(c: &crate::geom::Curve) -> Vec<V> {
 fn corners_along(c: &crate::geom::Curve,g: &dyn Fn(V) -> f64,tol: f64) -> Vec<V> {
     use crate::geom::Curve;
     // (over its span: a spline's, an iso-curve's, a conic's turn, `query::curve_domain`)
-    let Some([t0,t1]) = crate::query::curve_domain(c).filter(|_| matches!(c,Curve::BSpline(..) | Curve::Iso(..) | Curve::Circle(..) | Curve::Ellipse(..)))
-        else { return Vec::new() };
+    let marched = matches!(c,Curve::BSpline(..) | Curve::Iso(..) | Curve::Circle(..) | Curve::Ellipse(..));
+    let Some([t0,t1]) = crate::query::curve_domain(c).filter(|_| marched) else { return Vec::new() };
     let mut out = Vec::new();
     let (mut t,mut v) = (t0,g(c.point(t0)));
     while t < t1 {
