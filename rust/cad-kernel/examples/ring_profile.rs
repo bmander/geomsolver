@@ -20,7 +20,8 @@
 //! so; `shape crossed-forward|crossed-reverse|… [looks]` reads their contact's shape over the roll
 //! and each meridian touched whole for an instant (`Ring::touched_once`), with `n · v`, `s''` and the
 //! depth round it; `event-map crossed-forward|crossed-reverse t* θ* dθ dt n` maps how each branch's
-//! sheet stands under the sweep about such an instant.
+//! sheet stands under the sweep about such an instant; `holed crossed-forward|crossed-reverse ρ₀
+//! [roll end, degrees]` fits their road with a hole of radius `ρ₀` about it (`closed::ring_fitted_holed`).
 //!
 //! `cargo run --release -p cad-kernel --example ring_profile -- full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline`
 use cad_kernel::trajectory::{Screw,Trajectory};
@@ -53,6 +54,7 @@ fn main() {
     if args.first().map(String::as_str) == Some("shape") { return shape(&args[1..]) }
     if args.first().map(String::as_str) == Some("event-map") { return event_map(&args[1..]) }
     if args.first().map(String::as_str) == Some("collar") { return collar(&args[1..]) }
+    if args.first().map(String::as_str) == Some("holed") { return holed(&args[1..]) }
     let (tube,(tool,path),half) = match args.first().map(String::as_str) {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
@@ -485,5 +487,27 @@ fn collar(args: &[String]) {
             out += &format!("  ψ {:.6}° (θ {th:.6}, t {t:.6}) cover {d:+.1e} at own{dt:+.5} {pt:.5?}",held.to_degrees());
         }
         println!("{out}");
+    }
+}
+
+/// **`holed crossed-forward|crossed-reverse ρ₀ [end]`: the crossed tori's road fitted with a hole of
+/// radius `ρ₀` about the meridian touched whole** (#880 T1f, `closed::ring_fitted_holed`): each
+/// stretch, its hole and swallowtail points, and the double curves traced, or the refusal.
+fn holed(args: &[String]) {
+    let observer = if args[0] == "crossed-forward" { 1. } else { -1. };
+    let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,observer);
+    let rho: f64 = args[1].parse().expect("a radius");
+    let end: f64 = args.get(2).map_or(100.,|x| x.parse().expect("degrees"));
+    let roll = [-100f64.to_radians(),end.to_radians()];
+    let clock = std::time::Instant::now();
+    match cad_kernel::swept::closed::ring_fitted_holed(&tool,&path,roll,0.22/50000.,rho) {
+        Ok(f) => {
+            println!("fitted in {:?}: {} stretches, {} double curves",clock.elapsed(),f.fits.len(),f.curves.len());
+            for fit in &f.fits {
+                println!("  {:?}: {} nets, hole {:?}, swallowtail points {}, seeds {}, ways {}",fit.roll,fit.nets.len(),fit.hole.as_ref().map(|h| h.rho),
+                    fit.apexes.len(),fit.seeds.len(),fit.ways.len())
+            }
+        }
+        Err(e) => println!("refused {e:?} in {:?}",clock.elapsed()),
     }
 }

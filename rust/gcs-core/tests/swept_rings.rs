@@ -1268,6 +1268,38 @@ fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name(
 /// 72.883° and 257.127° where it passes the tolerance below). Nothing of the boundary's structure
 /// stands at the event: the meridian's touching half, the two saddles and the instant lie inside one
 /// smooth piece of the collar.
+/// **A pair's end through the swing is the swing's within the hole** (#880 T1f, `rings::Hole`): at
+/// the instant `s''` is odd about the meridian, and the forward's tube `+` has its pair's least 0.044
+/// of a turn past it at a depth all but `s''` beside it — its end, read where `s''` climbs back to
+/// the depth, flipped from roll to roll between the swing and the flat stretch beside it (5.9282 at
+/// 1.32581410146, 5.9025 at 1.3264234849, the swing at 5.9716). In a stretch with a hole of
+/// `ρ₀ = 0.03` it is the swing there, and runs in on it smoothly from the hole's rim.
+#[test]
+fn a_pairs_end_through_the_swing_is_the_swings_within_the_hole() {
+    use gcs_core::brep::swept::rings;
+    let (tool,path,roll,_) = crossed(1.);
+    let ring = Ring::read(&tool).unwrap();
+    let once = ring.touched_once(&path,roll).unwrap()[0];
+    let hole = rings::Collar::new(&ring,&path,roll,once).unwrap().hole(0.03).unwrap();
+    let (t0,th0) = (once.0,once.1);
+    // (tube `+`'s touching end, the stretch from its pair's swallowtail point to the instant)
+    let end = |t: f64| -> f64 {
+        let cs = rings::stretch_pieces(&ring,&path,roll,[1.2815882460604988,t0-1e-7],Some(hole.clone()),t).unwrap();
+        let c = cs.iter().find(|c| c[0].2.branch).unwrap();
+        c.iter().find(|p| p.3 == rings::Side::Touching).unwrap().1.rem_euclid(std::f64::consts::TAU)
+    };
+    for t in [1.32581410146,1.3258141015,1.3264234849] {
+        let e = end(t);
+        assert!((e-th0).abs() < 1e-3,"at {t} the end {e}, the meridian {th0}");
+    }
+    // (smooth: its second differences over 64 rolls up to a millionth short of the instant)
+    let ts: Vec<f64> = (0..=64).map(|k| t0-0.04+(0.04-1e-6)*k as f64/64.).collect();
+    let es: Vec<f64> = ts.iter().map(|&t| end(t)).collect();
+    let most = es.windows(3).map(|w| (w[0]-2.*w[1]+w[2]).abs()).fold(0f64,f64::max);
+    let step = es.windows(2).map(|w| (w[1]-w[0]).abs()).fold(0f64,f64::max);
+    assert!(most < 0.1*step,"its second differences up to {most:e} against its steps' {step:e}: {es:?}");
+}
+
 #[test]
 fn the_collar_about_a_meridian_touched_whole_charts_both_tubes_and_holds_one_strip_of_boundary() {
     use gcs_core::brep::swept::{depth,rings};

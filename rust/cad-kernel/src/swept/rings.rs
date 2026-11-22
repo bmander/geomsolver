@@ -455,16 +455,25 @@ impl Ring {
     /// `instant`, where `unborn` names an angle round the axis with each curve's narrow pair nearest
     /// it not put in (`Reader::unborn`, the swallowtail point of a pair born since): read so, the pair
     /// is the touching pieces either side of it, as a dip of `s''` that folds nowhere is.
-    fn instant_born(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
+    fn instant_born(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<(f64,Option<Label>)>) -> Result<Instant,V> {
+        self.instant_holed(w,dw,scale,unborn,None)
+    }
+
+    /// `instant_born` at the roll `t` of a stretch holding the hole about a meridian touched whole
+    /// for an instant (`Hole`): a narrow pair whose least lies in the hole has its end beside the
+    /// least on the row's least `|(A, B)|` (`Hole::least`), blended to the end read across the
+    /// hole's outer half — at the instant `s''` is odd about the meridian, so the depth of the least
+    /// is the sheet's `s''` beside it, and the end read there is no one root.
+    fn instant_holed(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<(f64,Option<Label>)>,hole: Option<(&Hole,f64)>) -> Result<Instant,V> {
         let clock = crate::util::clock::Instant::now();
-        let out = self.instant_read(w,dw,scale,unborn);
+        let out = self.instant_read(w,dw,scale,unborn,hole);
         spent::INSTANTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         spent::INSTANT_NANOS.fetch_add(clock.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
         out
     }
 
     /// `instant_born`, uncounted.
-    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
+    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<(f64,Option<Label>)>,hole: Option<(&Hole,f64)>) -> Result<Instant,V> {
         let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
         let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
         let m = read[0].len();
@@ -597,10 +606,14 @@ impl Ring {
                     }
                 }
             }
-            // (the pair nearest the angle `unborn` names read as not yet born)
-            if let Some(th) = unborn {
+            // (the pair nearest the angle `unborn` names read as not yet born — where it names the
+            // contact's label too, only a pair on it: a pair born on one branch of an arc beside
+            // another's at that angle is not that one, #880 T1f)
+            if let Some((th,label)) = unborn {
                 let apart = |x: f64| { let d = (x-th).rem_euclid(TAU); d.min(TAU-d) };
-                if let Some(k) = (0..narrow.len()).min_by(|&i,&j| apart(narrow[i].3).total_cmp(&apart(narrow[j].3))) { narrow.remove(k); }
+                let on = |i: usize| label.is_none_or(|l| narrow[i].1.iter().min_by(|p,q| (p.0-narrow[i].3).abs().total_cmp(&(q.0-narrow[i].3).abs()))
+                    .is_some_and(|p| p.2 == l));
+                if let Some(k) = (0..narrow.len()).filter(|&i| on(i)).min_by(|&i,&j| apart(narrow[i].3).total_cmp(&apart(narrow[j].3))) { narrow.remove(k); }
             }
             let mut joins: Vec<(f64,Kind)> = Vec::new();
             for i in 0..s {
@@ -648,7 +661,30 @@ impl Ring {
                         |m| value(m).is_some_and(|v| (v.1-depth < 0.) == (fa < 0.)));
                     Some(0.5*(x+y))
                 };
-                let (Some(l),Some(r)) = (edge(*first,*mid),edge(*mid,*last)) else { return Err(read[0][0].1.x) };
+                let (mut l,mut r) = (edge(*first,*mid),edge(*mid,*last));
+                // (an end the swing through the hole parts from the least put on the swing,
+                // `instant_holed`: by how far it stands from the swing toward the least, as a part of
+                // the way between them — beyond the swing or at it wholly, from halfway on not at all,
+                // the smooth step between — wholly over the hole's inner half, not at all at its rim,
+                // and only where the least stands clear of the swing by twice its width: read there, an end beyond the swing falls anywhere along the flat stretch beside
+                // it, or within the swing itself)
+                if let Some((hole,t)) = hole {
+                    if let Some((swing,k,width)) = hole.swing(self,&w,*mid,t) {
+                        let gap = *mid-swing;
+                        // (and only a pair whose least the swing parts from it: one whose least is
+                        // the swing's own, within its width, folds there, and its ends are its own)
+                        let clear = step(0.5*gap.abs()/width);
+                        let moved = |e: Option<f64>,bound: f64| -> Option<f64> {
+                            let x = (e.unwrap_or(bound)-swing)/gap;
+                            let g = if x.is_finite() { 1.-step(0.5+x) } else { 0. };
+                            let pull = (1.-k)*g*clear;
+                            if pull == 1. { Some(swing) } else if pull == 0. { e } else { e.map(|e| e+pull*(swing-e)) }
+                        };
+                        if ring_debug() { eprintln!("hole: at {t} a pair's least at {mid}, the swing {swing} ({k}), ends {l:?} {r:?}") }
+                        (l,r) = (moved(l,*first),moved(r,*last));
+                    }
+                }
+                let (Some(l),Some(r)) = (l,r) else { return Err(read[0][0].1.x) };
                 let side = if *sign > 0. { Side::Touching } else { Side::Buried };
                 let (Some((ll,_)),Some((lr,_))) = (value(l),value(r)) else { return Err(read[0][0].1.x) };
                 let wrap = |x: f64| x.rem_euclid(span);
@@ -796,10 +832,13 @@ pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<S
     /// Where the stretch was fitted with a fold pair born within it read as not yet born
     /// (`fitted_unborn`): the end of the stretch its pieces are matched to, which has no such pair,
     /// and the pair's swallowtail point's angle round the axis.
-    pub unborn: Option<(f64,f64)>,
+    pub unborn: Option<(f64,f64,Option<Label>)>,
     /// Each bridge's end that gives way to a double curve over the stretch (`give_way`): the face
     /// ends on the curve's preimage itself, and the curve is laid there as no chord.
-    pub ways: Vec<Way> }
+    pub ways: Vec<Way>,
+    /// The hole about a meridian touched whole for an instant inside the stretch (#880 T1f, `Hole`):
+    /// the tubes inside its rim stand-ins, cut away along it, the collar the sheet there.
+    pub hole: Option<Hole> }
 
 /// **A bridge's end given way to a double curve** (#942 T1d-tori, `give_way`): the bridge `piece` of
 /// the instant's curve `curve` (its index among the first instant's), its end `side` (0 its start
@@ -856,9 +895,9 @@ impl Way {
 /// **A swallowtail point of a ring's sheet** (#942 T1d-tori): where a fold's way along the tube is
 /// the way the sheet does not move — the kernel of its rates `Σ_θ, Σ_t` tangent to the fold — and its
 /// double curve begins. Its angle round the axis, roll and place round the meridian, and the kernel's
-/// way there as the rate of the roll by the angle, `dt/dθ`.
+/// way there as the rate of the roll by the angle, `dt/dθ`; and the contact's label there.
 #[derive(Clone,Copy,Debug)]
-pub struct Apex { pub at: (f64,f64,f64),pub way: f64 }
+pub struct Apex { pub at: (f64,f64,f64),pub way: f64,pub label: Label }
 
 /// **A meridian's touching half swept** (#942 T1d-ring): where the instants touch a meridian whole,
 /// its arc sweeps a sheet of its own — the canal of the ball about the arc's centre — of which the
@@ -903,13 +942,16 @@ struct Reader<'a> {
     /// Where a fold pair the first instant does not have is read as not yet born (`fitted_unborn`):
     /// its swallowtail point's angle round the axis, an instant whose shape is not the first's read
     /// again with each curve's pair nearest it not put in.
-    unborn: Option<f64>,
+    unborn: Option<(f64,Option<Label>)>,
     /// Where reading unborn, each roll's narrow pairs as the instant read whole has them: their
     /// labels and angles (`newborn`).
     born: std::sync::Mutex<std::collections::BTreeMap<u64,Vec<(Label,[f64;2])>>>,
     /// The bridges' ends given way to double curves (`give_way`): each read on its branch's preimage
     /// at every roll the branch spans.
     ways: Vec<Way>,
+    /// The hole about a meridian touched whole for an instant (#880 T1f, `Hole`): the tube read
+    /// inside it as its stand-in, which the collar's sheet replaces.
+    hole: Option<Hole>,
     cache: std::sync::Mutex<std::collections::BTreeMap<u64,Read>>,
 }
 
@@ -921,9 +963,9 @@ impl<'a> Reader<'a> {
 
     /// The reader a stretch is fitted by (`Fitted::unborn`): its curves matched to those at its
     /// middle, or at the end `unborn` names with the pair born since read as not yet born.
-    fn of(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,unborn: Option<(f64,f64)>) -> Result<Reader<'a>,Unbuilt> {
+    fn of(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,unborn: Option<(f64,f64,Option<Label>)>) -> Result<Reader<'a>,Unbuilt> {
         let mut r = Reader::within(ring,path,whole,[a,b],unborn.map_or(0.5*(a+b),|u| u.0),scale)?;
-        r.unborn = unborn.map(|u| u.1);
+        r.unborn = unborn.map(|u| (u.1,u.2));
         Ok(r)
     }
 
@@ -932,7 +974,7 @@ impl<'a> Reader<'a> {
         let (w,dw) = rates(path,first,whole)?;
         let pose = path.pose(first)?;
         let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,unborn:None,born:Default::default(),ways:Vec::new(),
+        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,unborn:None,born:Default::default(),ways:Vec::new(),hole:None,
             cache:Default::default()})
     }
 
@@ -943,9 +985,10 @@ impl<'a> Reader<'a> {
         if let Some(r) = self.cache.lock().unwrap().get(&t.to_bits()) { return Ok(r.clone()) }
         let (w,dw) = rates(self.path,t,self.whole)?;
         let pose = self.path.pose(t)?;
-        let mut i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+        let hole = self.hole.as_ref().map(|h| (h,t));
+        let mut i = self.ring.instant_holed(w,dw,Some(self.scale),None,hole).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
         if self.unborn.is_some() && !same_shape(&self.first,&i.curves) {
-            i = self.ring.instant_born(w,dw,Some(self.scale),self.unborn).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+            i = self.ring.instant_holed(w,dw,Some(self.scale),self.unborn,hole).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
         }
         let refused = |c: &[Piece]| Unbuilt::Curved {at:pose.point(self.ring.root(&w,c[0].from.rem_euclid(TAU),c[0].label,false)
             .map_or(self.ring.centre,|r| r.x))};
@@ -999,7 +1042,7 @@ impl<'a> Reader<'a> {
     /// folds there as a bridge's does, and the fold lies in the tail its double curve cuts off
     /// (`fitted_unborn`): read for folds no more than a bridge is.
     fn newborn(&self,run: &Run,faces: &[Face],u: f64,t: f64) -> bool {
-        let Some(apex) = self.unborn else { return false };
+        let Some((apex,_)) = self.unborn else { return false };
         let Ok(r) = self.read(t) else { return false };
         let known = self.born.lock().unwrap().get(&t.to_bits()).cloned();
         let bridges = match known {
@@ -1040,6 +1083,18 @@ impl<'a> Reader<'a> {
         // hair inside it where that stands apart from the end's, #880 T1d M2 — elsewhere the end's
         // own, the one the face beside reads its seam at)
         let th = p.from+(p.to-p.from)*f;
+        // (inside the hole about a meridian touched whole for an instant, the stand-in: the collar
+        // is the sheet there, and the tube's piece inside the rim is cut away along it)
+        if let Some(hole) = &self.hole {
+            if let Some(x) = hole.stand_in(self.ring,&r.instant.w,th.rem_euclid(TAU),t,p.label) {
+                let c = &r.curves[run.curve];
+                if !(p.side == Side::Touching || narrow(c,run.pieces[piece])) {
+                    return Err(Unbuilt::Failed("a dipped stretch of a ring's tube runs into the collar about a meridian touched \
+                        whole for an instant: not yet built".into()))
+                }
+                return Ok(r.pose.point(x))
+            }
+        }
         let mut root = at(th)?;
         if f <= 0. || f >= 1. {
             let hair = (1e-10f64).min(0.25*(p.to-p.from).abs());
@@ -1064,6 +1119,18 @@ impl<'a> Reader<'a> {
         let place = (i+n-j-1)%n;
         let lambda = ((place as f64+f)/count as f64).clamp(0.,1.);
         Ok(r.pose.point(add(root.x,scale(root.n,-DEEP*self.ring.thickness*dip(lambda,t,self.roll)))))
+    }
+
+    /// **Whether the run's point at `u`, `t` lies in the hole** about a meridian touched whole for an
+    /// instant (`Hole`): read for folds no more than a bridge is, its stand-in cut away.
+    fn in_hole(&self,run: &Run,faces: &[Face],u: f64,t: f64) -> bool {
+        let Some(hole) = &self.hole else { return false };
+        let Ok(r) = self.read(t) else { return false };
+        let k = (u.floor().max(0.) as usize).min(faces.len()-1);
+        let Face {piece,share,of} = faces[k];
+        let p = r.curves[run.curve][run.pieces[piece]];
+        let th = (p.from+(p.to-p.from)*(share as f64+(u-k as f64))/of as f64).rem_euclid(TAU);
+        p.label.on == On::Face(hole.arc) && hole.holds(self.ring,&r.instant.w,th,t).is_some()
     }
 
     /// Whether the run's sheet stays regular, read at its fitted points off the bridges (each
@@ -1136,7 +1203,16 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
 /// roll's, so a fold's band is the same in every stretch), the curves matched to those at the
 /// stretch's middle.
 pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64) -> Result<Fitted,Unbuilt> {
-    fitted_as(ring,path,whole,[a,b],scale,tol,None,Vec::new())
+    fitted_as(ring,path,whole,[a,b],scale,tol,None,Vec::new(),None)
+}
+
+/// **`fitted_over` with a hole about a meridian touched whole for an instant** (#880 T1f, `Hole`):
+/// each tube read inside it as its stand-in, its folds not read there, and the hole kept with the
+/// fit (`Fitted::hole`) for the trim to cut away along its rim.
+#[allow(clippy::too_many_arguments)]
+pub fn fitted_holed(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<(f64,f64,Option<Label>)>,
+    hole: Option<Hole>) -> Result<Fitted,Unbuilt> {
+    fitted_as(ring,path,whole,[a,b],scale,tol,unborn,Vec::new(),hole)
 }
 
 /// **`fitted_over` with the fold pairs born within the stretch read as not yet born** (#942
@@ -1148,20 +1224,22 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
 /// curve begins: the pair's sliver over it lies above the double curve, in the tail its cut drops,
 /// and bounds nothing.
 pub fn fitted_unborn(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,from: f64,apex: f64) -> Result<Fitted,Unbuilt> {
-    fitted_as(ring,path,whole,[a,b],scale,tol,Some((from,apex)),Vec::new())
+    fitted_as(ring,path,whole,[a,b],scale,tol,Some((from,apex,None)),Vec::new(),None)
 }
 
 /// **`fit` fitted again with its bridges' ends given way** (`give_way`): as it was fitted (over its
 /// stretch, read unborn as it was), each end in `ways` read on its double curve's preimage.
 pub fn fitted_giving_way(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &Fitted,scale: f64,tol: f64,ways: Vec<Way>) -> Result<Fitted,Unbuilt> {
-    fitted_as(ring,path,whole,fit.roll,scale,tol,fit.unborn,ways)
+    fitted_as(ring,path,whole,fit.roll,scale,tol,fit.unborn,ways,fit.hole.clone())
 }
 
 /// `fitted_over`, `fitted_unborn` and `fitted_giving_way`.
 #[allow(clippy::too_many_arguments)]
-fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<(f64,f64)>,ways: Vec<Way>) -> Result<Fitted,Unbuilt> {
+fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<(f64,f64,Option<Label>)>,ways: Vec<Way>,
+    hole: Option<Hole>) -> Result<Fitted,Unbuilt> {
     let mut reader = Reader::of(ring,path,whole,[a,b],scale,unborn)?;
     reader.ways = ways;
+    reader.hole = hole.clone();
     let runs = runs(&reader.first);
     if runs.is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
     let mut nets = Vec::new();
@@ -1240,7 +1318,7 @@ fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: 
                 // (the loop closing at `pieces`: the piece after its last join the first)
                 let k = (u.floor().max(0.) as usize)%pieces;
                 bridge(k) || (u-u.round()).abs() <= 1e-9 && bridge((u.round() as usize+pieces-1)%pieces)
-                    || reader.newborn(run,&faces,u,t)
+                    || reader.newborn(run,&faces,u,t) || reader.in_hole(run,&faces,u,t)
             };
             if !missed_u.iter().flatten().any(|&m| m) && !missed_t.contains(&true) { reader.folds(&net,&us,&ts,&bridged)?; break net }
             let refined_u: Vec<Vec<f64>> = fractions.iter().zip(&missed_u).map(|(fr,m)| halved(fr,m)).collect();
@@ -1360,7 +1438,7 @@ fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: 
     }
     let tails = vec![Vec::new();doubles.len()];
     let strips = strips(ring,path,[a,b],&nets,&crossings,tol)?;
-    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,tails,path:path.clone(),seeds,apexes,ends,crossings,strips,unborn,ways:reader.ways})
+    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,tails,path:path.clone(),seeds,apexes,ends,crossings,strips,unborn,ways:reader.ways,hole})
 }
 
 impl Ring {
@@ -1546,6 +1624,33 @@ pub fn changes(ring: &Ring,path: &Trajectory,[a,b]: [f64;2]) -> Result<(f64,Vec<
 /// it changes sign; the fold at each roll halved to the rounding from the pair's least `s''`
 /// (golden sections over the bridge) toward the bridge's end, where `s''` is the depth of its least
 /// above nought. Every rate a central difference.
+/// **The narrow pairs of the stretch `[a, b]` and their swallowtail points within it, read before
+/// it is fitted** (#880 T1f): how many bridges its curves hold (as `fitted_over` reads them, matched
+/// to the stretch's middle, `hole` read as the fit will), and each bridge's swallowtail points
+/// (`swallowtails`). Where a pair is born or vanishes at a cut the sheet goes as the square root of
+/// the roll from the cut and no net over `(u, t)` fits it: the stretch is read with the pair not yet
+/// born from the cut to its swallowtail point (`fitted_unborn`), which the road needs before it fits.
+pub fn pairs_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,hole: Option<Hole>)
+    -> Result<std::collections::BTreeMap<Vec<Label>,(usize,Vec<Apex>)>,Unbuilt> {
+    let mut reader = Reader::of(ring,path,whole,[a,b],scale,None)?;
+    reader.hole = hole;
+    // (per curve, known by its labels in order from the least: an arc's two branches are two curves)
+    let mut out = std::collections::BTreeMap::new();
+    for run in runs(&reader.first) {
+        let c = &reader.first[run.curve];
+        let mut labels: Vec<Label> = c.iter().map(|p| p.label).collect();
+        labels.dedup();
+        labels.sort();
+        let entry: &mut (usize,Vec<Apex>) = out.entry(labels).or_default();
+        for (i,&k) in run.pieces.iter().enumerate() {
+            if !narrow(c,k) { continue }
+            entry.0 += 1;
+            entry.1.extend(swallowtails(&reader,&run,i,[a,b])?);
+        }
+    }
+    Ok(out)
+}
+
 fn swallowtails(reader: &Reader,run: &Run,piece: usize,[a,b]: [f64;2]) -> Result<Vec<Apex>,Unbuilt> {
     let (ring,path,whole) = (reader.ring,reader.path,reader.whole);
     // (a central difference's step: the cube root of the rounding, where the difference's rounding
@@ -1593,6 +1698,11 @@ fn swallowtails(reader: &Reader,run: &Run,piece: usize,[a,b]: [f64;2]) -> Result
     // `∇s'' · k` at the fold on `side` at `t`, its label, angle and the kernel's `dθ/dt`
     let gauge = |t: f64,side: f64| -> Result<Option<(f64,Label,f64,f64)>,Unbuilt> {
         let Some((l,th)) = fold(t,side)? else { return Ok(None) };
+        // (a fold in the hole about a meridian touched whole for an instant is the meridian's own
+        // there, turning with the contact across the swing: not read, #880 T1f)
+        if let Some(hole) = &reader.hole {
+            if l.on == On::Face(hole.arc) && hole.holds(ring,&rates(path,t,whole)?.0,th.rem_euclid(TAU),t).is_some() { return Ok(None) }
+        }
         let (Some(sp),Some(sm),Some(tp),Some(tm)) = (bend(l,th+h,t)?,bend(l,th-h,t)?,bend(l,th,t+ht)?,bend(l,th,t-ht)?) else { return Ok(None) };
         let (Some(xp),Some(xm),Some(yp),Some(ym)) = (point(l,th+h,t)?,point(l,th-h,t)?,point(l,th,t+ht)?,point(l,th,t-ht)?) else { return Ok(None) };
         let (s_th,s_t) = (scale(crate::util::space::sub(xp.0,xm.0),0.5/h),scale(crate::util::space::sub(yp.0,ym.0),0.5/ht));
@@ -1600,9 +1710,16 @@ fn swallowtails(reader: &Reader,run: &Run,piece: usize,[a,b]: [f64;2]) -> Result
         Ok(Some(((sp-sm)*0.5/h*ak+(tp-tm)*0.5/ht,l,th,ak)))
     };
     let (lo,hi) = (a.max(whole[0]+ht),b.min(whole[1]-ht));
+    // (read at the stretch's ends; with a hole in it, at the fit's first rows too, each change
+    // between two read there bracketed: the gauge is not read in the hole, and a change there
+    // beside one outside it would cancel it between the ends)
+    let rolls: Vec<f64> = if reader.hole.is_some() { (0..=FIRST_ROWS).map(|j| lo+(hi-lo)*j as f64/FIRST_ROWS as f64).collect() } else { vec![lo,hi] };
     let mut out = Vec::new();
     for side in [-1.,1.] {
-        let (Some(gl),Some(gh)) = (gauge(lo,side)?,gauge(hi,side)?) else { continue };
+        let read: Vec<(f64,(f64,Label,f64,f64))> = rolls.iter().map(|&t| Ok(gauge(t,side)?.map(|g| (t,g)))).collect::<Result<Vec<_>,Unbuilt>>()?
+            .into_iter().flatten().collect();
+        for w in read.windows(2) {
+        let ((lo,gl),(hi,gh)) = (w[0],w[1]);
         if (gl.0 < 0.) == (gh.0 < 0.) { continue }
         let (mut x,mut y) = (lo,hi);
         loop {
@@ -1617,7 +1734,8 @@ fn swallowtails(reader: &Reader,run: &Run,piece: usize,[a,b]: [f64;2]) -> Result
         // angle, which `double_curve` steps — not yet built)
         if !(ak.abs() > 0.) { continue }
         let Some((_,sigma)) = point(l,th,t)? else { continue };
-        out.push(Apex {at:(th,t,sigma),way:1./ak});
+        out.push(Apex {at:(th,t,sigma),way:1./ak,label:l});
+        }
     }
     Ok(out)
 }
@@ -3587,6 +3705,33 @@ pub fn pieces_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64) -> Result<V
     Ok(r.curves.iter().map(|c| c.iter().map(|p| (p.from,p.to,p.label,p.side)).collect()).collect())
 }
 
+/// Each contact curve's pieces at roll `t` as the stretch `[a, b]` of the roll `whole` is fitted
+/// by them (`fitted_over`'s reader: the whole roll's scale, the curves matched to the stretch's
+/// middle) — a probe of the fit.
+pub fn stretch_pieces(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],hole: Option<Hole>,t: f64)
+    -> Result<Vec<Vec<(f64,f64,Label,Side)>>,Unbuilt> {
+    let scale = ring.scale_at(path,whole[0],whole)?;
+    let mut reader = Reader::of(ring,path,whole,[a,b],scale,None)?;
+    reader.hole = hole;
+    let r = reader.read(t)?;
+    Ok(r.curves.iter().map(|c| c.iter().map(|p| (p.from,p.to,p.label,p.side)).collect()).collect())
+}
+
+/// The point of the curve `run`'s sheet at `(u, t)` as the stretch `[a, b]` is fitted through it
+/// (`fitted_holed`'s reader and faces) — a probe of the fit.
+pub fn stretch_point(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],hole: Option<Hole>,run: usize,u: f64,t: f64) -> Result<V,Unbuilt> {
+    let scale = ring.scale_at(path,whole[0],whole)?;
+    let mut reader = Reader::of(ring,path,whole,[a,b],scale,None)?;
+    reader.hole = hole;
+    let run = &runs(&reader.first)[run];
+    let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
+    let faces: Vec<Face> = run.pieces.iter().enumerate().flat_map(|(i,&k)| {
+        let of = if reader.first[run.curve][k].side == Side::Fold { 1 } else { per };
+        (0..of).map(move |share| Face {piece:i,share,of})
+    }).collect();
+    reader.point(run,&faces,u,t)
+}
+
 pub fn contacts(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,n: usize) -> Result<Vec<Vec<(V,Side)>>,Unbuilt> {
     let reader = Reader::new(ring,path,roll)?;
     let r = reader.read(t)?;
@@ -3756,6 +3901,118 @@ impl<'a> Collar<'a> {
         let [th,t] = self.place(psi,rho)?;
         let r = self.ring.on_arc(th.rem_euclid(TAU),self.arc,psi)?;
         Some((self.path.pose(t).ok()?.point(r.x),[th,t]))
+    }
+}
+
+/// **The hole about a meridian touched whole for an instant** (#880 T1f): where `|(A, B)| < ρ₀` on
+/// the arc about the instant, which the collar charts and the tubes' nets over `(u, t)` cannot — the
+/// tube's contact turning half round the meridian across it, its rows bending without bound toward
+/// the instant. A tube's net is fitted over its whole rectangle with a stand-in there (`stand_in`),
+/// cut away along the rim `|(A, B)| = ρ₀`, the collar's own rim, by construction; and only the hole
+/// about this instant: `(θ, t)` within `reach` of it, its rim's own box doubled about the instant (a
+/// near miss elsewhere in the roll, `|(A, B)|` small without vanishing, is no hole).
+#[derive(Clone,Debug)]
+pub struct Hole { pub arc: usize,pub at: (f64,f64),pub rho: f64,pub reach: [f64;2] }
+
+impl Hole {
+    /// `(A, B)` at `θ` under the twist `w` where `(θ, t)` lies in the hole.
+    pub fn holds(&self,ring: &Ring,w: &Twist,theta: f64,t: f64) -> Option<[f64;2]> {
+        let (t0,th0) = self.at;
+        let way = (theta-th0+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+        if !(way.abs() <= self.reach[0] && (t-t0).abs() <= self.reach[1]) { return None }
+        let Element::Arc {c,..} = ring.elements[self.arc] else { return None };
+        let u = w.velocity(ring.lift(theta,c));
+        let (er,_,ez) = ring.axes(theta);
+        let ab = [dot(er,u),dot(ez,u)];
+        (ab[0].dhypot(ab[1]) < self.rho).then_some(ab)
+    }
+
+    /// **The tube's stand-in inside the hole** (on the tool, at `θ`, the contact labelled `l`):
+    /// where `|(A, B)| = ρ` is below `ρ₀/2` the arc's point `c + r (B, −A)/h(ρ)` (branch `+`; the
+    /// other `−`), `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)` with `β(s) = e^(1 − 1/(1 − s²))` — smooth through
+    /// the instant (`(B, −A)` is), the contact itself from `ρ₀/2` out, where `β` and all its rates
+    /// are nought, so the net fits the very sheet across the rim; `None` outside the hole or where
+    /// the contact is itself.
+    pub fn stand_in(&self,ring: &Ring,w: &Twist,theta: f64,t: f64,l: Label) -> Option<V> {
+        if l.on != On::Face(self.arc) { return None }
+        let [a,b] = self.holds(ring,w,theta,t)?;
+        let rho = a.dhypot(b);
+        let half = 0.5*self.rho;
+        if !(rho < half) { return None }
+        let Element::Arc {c,r,..} = ring.elements[self.arc] else { return None };
+        let s = rho/half;
+        let h = (rho*rho+half*half*(1.-1./(1.-s*s)).exp()).sqrt();
+        let g = if l.branch { r/h } else { -r/h };
+        Some(ring.lift(theta,[c[0]+g*b,c[1]-g*a]))
+    }
+}
+
+/// The smooth step from nought below `½` to one at `1` and above, flat at both: `f(2s − 1) /
+/// (f(2s − 1) + f(2 − 2s))`, `f(x) = e^(−1/x)` for `x > 0`.
+fn step(s: f64) -> f64 {
+    let f = |x: f64| if x > 0. { (-1./x).exp() } else { 0. };
+    let (p,q) = (f(2.*s-1.),f(2.-2.*s));
+    if p+q > 0. { p/(p+q) } else { 0. }
+}
+
+impl Hole {
+    /// `(A, B)` at `θ` under `w`, wherever it is.
+    fn ab(&self,ring: &Ring,w: &Twist,theta: f64) -> Option<[f64;2]> {
+        let Element::Arc {c,..} = ring.elements[self.arc] else { return None };
+        let u = w.velocity(ring.lift(theta,c));
+        let (er,_,ez) = ring.axes(theta);
+        Some([dot(er,u),dot(ez,u)])
+    }
+
+    /// **The angle along the row at which `|(A, B)|` is least** near `θ`: Gauss–Newton on
+    /// `(A, B)` by `θ` (its rate by central differences at `ε^(1/3)`, `THIRD_READ`), its steps taken
+    /// while they shrink. Through the instant this is one smooth line, the angle the collar's `ψ`
+    /// turns about on each row.
+    fn least(&self,ring: &Ring,w: &Twist,mut theta: f64) -> Option<f64> {
+        let h = THIRD_READ;
+        let mut last = f64::INFINITY;
+        loop {
+            let (f,p,m) = (self.ab(ring,w,theta)?,self.ab(ring,w,theta+h)?,self.ab(ring,w,theta-h)?);
+            let d = [(p[0]-m[0])/(2.*h),(p[1]-m[1])/(2.*h)];
+            let dd = d[0]*d[0]+d[1]*d[1];
+            if !(dd > 0.) { return None }
+            let step = (f[0]*d[0]+f[1]*d[1])/dd;
+            if !(step.abs() < last) { return Some(theta) }
+            (theta,last) = (theta-step,step.abs());
+        }
+    }
+
+    /// **Where the row `t` swings through the hole** (`instant_holed`), from near `θ`: the row's
+    /// least `|(A, B)|` (`least`), the smooth step (`step`) of that least's part of `ρ₀` — nought
+    /// over the hole's inner half, one at its rim — and the swing's width, `|(A, B)|` there over its
+    /// rate along the row: across it the contact turns half round the meridian. `None` where the
+    /// row's least is outside the hole.
+    fn swing(&self,ring: &Ring,w: &Twist,theta: f64,t: f64) -> Option<(f64,f64,f64)> {
+        let least = self.least(ring,w,theta)?;
+        let [a,b] = self.holds(ring,w,least.rem_euclid(TAU),t)?;
+        let h = THIRD_READ;
+        let (p,m) = (self.ab(ring,w,least+h)?,self.ab(ring,w,least-h)?);
+        let rate = ((p[0]-m[0])/(2.*h)).dhypot((p[1]-m[1])/(2.*h));
+        let rho = a.dhypot(b);
+        Some((least,step(rho/self.rho),rho/rate))
+    }
+}
+
+impl Collar<'_> {
+    /// **The hole of radius `ρ₀` this collar charts** (`Hole`): its reach the rim's box, read at the
+    /// fit's first points round it, doubled about the instant; `None` where the rim is not read.
+    pub fn hole(&self,rho: f64) -> Option<Hole> {
+        let (t0,th0) = self.at;
+        let mut reach = [0f64;2];
+        for i in 0..4*FIRST_ROWS {
+            let psi = TAU*i as f64/(4*FIRST_ROWS) as f64;
+            for r in [rho,-rho] {
+                let [th,t] = self.place(psi,r)?;
+                let way = (th-th0+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+                reach = [reach[0].max(2.*way.abs()),reach[1].max(2.*(t-t0).abs())];
+            }
+        }
+        Some(Hole {arc:self.arc,at:self.at,rho,reach})
     }
 }
 

@@ -2576,6 +2576,41 @@ crossing the meridian, which that chart blows down to the point
 curves inside one stretch's tubes, holes in them; the strip cut from it by its two double curves,
 each laid as a swallowtail's is and running out across the rims into the tubes' own; vertices at
 those crossings and at the swallowtail points; the meridian no edge.
+**The tubes fitted through the instant with a hole** (#880 T1f, `rings::Hole`,
+`closed::ring_fitted_holed`; not yet the road's, which refuses the instant by name until the collar
+fills the hole): the roll is cut at `t*` — the pieces' kinds do not change there, but the bridges'
+ends, read from the sign of `s''` along the curve, which the branches exchange, jump across it (tube
+`−`'s bridge [5.4478, 6.3607] → [5.6925, 5.9700], tube `+`'s touching end 5.9723 → 5.5436, forward)
+— and each tube's net over `(u, t)` is fitted over its whole rectangle, read inside the hole
+`|(A, B)| < ρ₀` about the instant (its reach the rim's box doubled, so a near miss elsewhere is no
+hole) as its stand-in `c + r (B, −A)/h(ρ)`, `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)`, `β(s) = e^(1 − 1/(1 − s²))`:
+smooth through the instant, the contact itself from `ρ₀/2` out, so the net fits the very sheet
+across the rim the trim is to cut it along; its folds are not read in the hole. **A pair's end
+through the swing**: at the instant `s''` is odd about the meridian (±0.611 forward), and tube
+`+`'s pair has its least 0.044 of a turn past the meridian at a depth (0.614) all but that `s''`
+beside it, so its end, where `s''` climbs back to the depth, was found from roll to roll at the
+swing (5.9719) or along the flat stretch beside it (5.9282, 5.9025), and the fit refined to 1e-11
+of the roll there. Within the hole an end is pulled onto the swing — the row's least `|(A, B)|`
+(`Hole::least`), one smooth line through the instant — by the smooth step's weight: wholly over the
+hole's inner half and nothing at its rim, wholly where it stands beyond the swing from the least and
+nothing from halfway to the least on, and only where the least stands clear of the swing by twice
+its width (tube `−`'s least lies in the swing, and its ends are its own); no decision on a
+threshold, each weight `C^∞`. **A pair born or vanishing at a cut is read unborn up to its
+swallowtail point before the stretch is fitted** (`rings::pairs_over`, on a road with a hole): at
+the cut the pair has no width and the sheet goes as the square root of the roll from it, so the
+stretch beside the cut fits only by luck — the forward's `Folded` at a roll's end of 74.5° was tube
+`+`'s pair born at 1.2240, its rows refined to a millionth of the roll and flipped there, not the
+instant. Its point is the earliest (latest) on the curve whose pairs change in number, matched by
+the curve's labels, the pair dropped by its label (`Apex::label`): forward tube `+`'s at (6.0508,
+1.28159), `ρ` 0.087, and (5.9103, 1.35616), `ρ` 0.071 — the predecessor's two. In a stretch with a
+hole the gauge is read at the fit's first rows and not at a fold in the hole: tube `−`'s fold runs
+into the instant, and its change of sign 2.3e-4 short of it hid tube `+`'s point between the
+stretch's ends. **Measured, ρ₀ = 0.03 forward**: fitted from −100° through 1.28159 to `t*` (the
+stretch holding tube `+`'s pair from its swallowtail point 219 rows); refused `Folded` in
+[`t*`, 1.38326] at its last rows: tube `−`'s pair vanishing at 1.3833 has no swallowtail point
+outside the hole in that stretch — its fold is the one through the instant — so nothing yet reads it
+unborn toward the cut. Not yet: that, `ρ₀`'s rule, the rim as a chord and the hole's piece dropped
+by construction, the collar's net and its trim.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

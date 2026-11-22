@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The crossed tori's tubes fitted through a meridian touched whole for an instant, with a hole**
+  (#880 T1f, `swept::rings::Hole`, `closed::ring_fitted_holed`, `rings::pairs_over`; not yet the
+  road's): the roll cut at the instant, each tube read inside `|(A, B)| < ρ₀` as a smooth stand-in
+  exact from `ρ₀/2` out, a narrow pair's end through the swing pulled onto the row's least
+  `|(A, B)|` by smooth weights, a pair born or vanishing at a cut read unborn to its swallowtail
+  point before fitting (matched by its curve's labels; `Apex` carries its label), the swallowtail
+  gauge not read in the hole. The forward fits to the instant; the stretch after it is refused
+  `Folded` at a vanishing pair with no swallowtail point outside the hole. Probes:
+  `ring_profile holed`, `rings::stretch_pieces`, `rings::stretch_point`.
 - **The collar about a meridian touched whole for an instant** (#880 T1f, `swept::rings::Collar`,
   `rings::collar_meridian`): `(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` solved by Newton's method charts both
   tubes and the meridian about the instant as one smooth annulus; on the crossed tumbling tori the
