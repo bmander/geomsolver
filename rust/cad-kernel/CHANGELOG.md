@@ -46,6 +46,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   in no curve, in closed form (`ssi::ball_clear`). A cylinder, a torus, a ball resting on a
   cylinder, a torus or a cone at a point was refused ("a cylinder and a torus meet at …, where no
   edge crosses, in a curve that could not be traced", "nearly touching", "pieces do not close").
+- **A standing ball's dome carried past an end a face cuts across** (#994): `fillet::roll`, where
+  the ball stands still over a stretch of its loop and the stretch ends where a face cuts across
+  it (a lid's chord, a hub's side across an arm's rounded end), no longer refuses ("no stretch of
+  its dome is carried past and cut off by a face yet").  The dome goes on round past that end as
+  far as the faces' meeting stays out of the faces it ends on: round the whole loop (the meeting
+  in closed form, the whole loop's hemisphere) where both ends are cut across, half round from
+  the other end's section where a face goes on tangent there — then cut off by every face at the
+  cut end (a plane's half-space, a curved face's solid).  Refused by name where the meeting comes
+  back within those faces elsewhere, where the run going on ends apart from the ball's section,
+  or where the surfaces meet in no closed curve in closed form.  No public API changes.
 
 - **A round beyond a seam that starts where its touch crosses the seam** (#994): `spill::Beyond`
   has a new field `seamed: [bool; 2]` — with `run`, an end where the ball's touch crosses a line

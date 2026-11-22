@@ -456,7 +456,9 @@ pub struct Rolled {
     pub beside: Option<V>,
     /// Whether its ball may stand still (a face of its two is a cylinder or a torus as tight as it,
     /// `brep::fillet::dome`): where its run ends in a run's or a ring's section, the two are glued
-    /// there, and a piece `beside` it is glued to it (#962).
+    /// there, and a piece `beside` it is glued to it (#962).  Not where a face cuts across the run
+    /// at an end: there the dome is carried past and cut off (`brep::fillet::dome_cut`), its section
+    /// at the other end the next run's only in part, and the two are unioned (#994).
     pub stands: bool,
 }
 

@@ -304,13 +304,23 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         return traced.map(|run| {
             let e = run[0];
             let at = body.middle(e);
-            let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
+            let run_ends = body.run_ends(&run);
+            let ends: Vec<V> = run_ends.iter().map(|&(v, ..)| v).collect();
             Ok(Piece::Rolled(match section {
                 Section::Round(r) => {
-                    // a face as tight as the ball: it may stand still against it
+                    // a face as tight as the ball: it may stand still against it — glued to the
+                    // runs going on at its sections, unless a face cuts across the stretch at an
+                    // end: the dome carried past and cut off there (#994, `brep::fillet::dome_cut`)
+                    // keeps of the section where a run goes on only what that face leaves, the
+                    // next run's in part, and the two are unioned
                     let tight = |g: &usize| body.cylinder(*g).map(|c| c.2).or_else(|| body.torus(*g).map(|t| t.3))
                         .is_some_and(|radius| (radius - r).abs() <= 1e-9 * (r + norm(at)));
-                    let stands = ga.iter().chain(gb).any(tight);
+                    let own: Vec<usize> = ga.iter().chain(gb).copied().collect();
+                    let crossed = run_ends.iter().any(|&(p, _, v)| body.faces_at(v, &own).into_iter().any(|f| {
+                        let n = body.normal(f, p);
+                        own.iter().all(|&g| 1.0 - dot(n, body.normal(g, p)).abs() > 1e-9)
+                    }));
+                    let stands = ga.iter().chain(gb).any(tight) && !crossed;
                     Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
                         beyond: None, beside: None, stands }
                 }
