@@ -367,35 +367,54 @@ fn gap(pc: &Pcurve,e: &Edge,s: &Surface,vs: &[Vertex],turned: Option<&Turned>) -
 /// **The edge a pcurve master shows** (`Held::Master`): where the file names a pcurve the edge's
 /// master and a face using the edge lies on that pcurve's surface, how far the pcurve's image
 /// stands from the edge's 3D curve at the edge's parameter and from its vertices at its ends
-/// (`gap`, over `candidates` and `ends_matched`, the nearest) — what the edge's tolerance,
-/// measured, will then be. None where the master is its 3D curve or bounds no face of the edge;
-/// where that reading stands more than twice as far as the image does from the 3D curve as a set,
-/// within `near` (the pcurve runs at another parameter than the edge's, by more than its own gap,
-/// and the kernel's pcurve, read at the edge's parameter, would hold it only with a tolerance
-/// wider than the representations differ: it is then read as any other pcurve); or where it stands
-/// farther than `loose` (`sound::LOOSE` of the solid's size, past which a reading says nothing): a
-/// curve that far from the edge's other geometry is another curve — on another surface, between
-/// other ends, as a file's error makes it — and the edge is read by its 3D curve as where its
-/// master is that.
+/// (`gap`, the nearest of `candidates` and `ends_matched`) — what the edge's tolerance, measured,
+/// will then be. None where the master is its 3D curve or bounds no face of the edge, and none —
+/// the master set aside, the edge read by its 3D curve as where its master is that — where:
+///
+/// * it stands farther than `loose` (`sound::LOOSE` of the solid's size, past which a reading says
+///   nothing): a curve that far from the edge's other geometry is another curve — on another
+///   surface, between other ends, as a file's error makes it;
+/// * that reading stands more than twice as far as its image does from the 3D curve as a set,
+///   within `near`: it runs at another parameter than the edge's, by more than its own gap, and
+///   the kernel's pcurve, read at the edge's parameter, would hold it only with a tolerance wider
+///   than the representations differ;
+/// * it stands past `near` from the 3D curve and is not **corroborated**: some other face of the
+///   edge holds no curve of the file in its parameters whose image follows the master's at least
+///   as closely as it follows the 3D curve. A master the edge's other representations both stand
+///   apart from, agreeing with each other (CADGenBench's `.PCURVE_S1.` a hundred times farther
+///   from its 3D curve and its other pcurve than they from each other: 201's edge #6220, 6.7e-2
+///   against 6.4e-4), bounds its own face alone; its other face, bounded by its own curve or the
+///   3D curve's foot, leaves the solid open by the difference, its face read a hundredth under
+///   both references (201's #6071), its bar widened by a tolerance only that reading measures.
 fn shown(r: &Read,e: &Edge,on: &BTreeSet<u32>,sheets: &BTreeMap<u32,Sheet>,turned: &BTreeMap<u32,Turned>,vs: &[Vertex],near: f64,loose: f64) -> Option<f64> {
     let (id,flat) = r.pcurves.get(r.master?)?;
     if !on.contains(id) { return None }
     let EdgeCurve::Curve(c) = &e.curve else { return None };
-    let sheet = sheets.get(id)?;
-    let f = flat.scaled(sheet.scale)?;
-    let (s,w) = (&sheet.surface,turned.get(id));
-    let mut all = candidates(&f,e,r.rate,s,vs);
-    all.extend(ends_matched(&f,e,s,vs,w));
-    let (d,set) = all.iter().map(|pc| {
-        let set = AT.iter().map(|&j| {
-            let q = pc.at(e.t[0]+(e.t[1]-e.t[0])*j,e,s,vs);
-            let y = s.point(w.map_or(q,|w| w.of(q)));
-            distance(y,c.point(c.inverse(y)))
-        }).fold(0.,f64::max);
-        (gap(pc,e,s,vs,w),set)
-    }).min_by(|x,y| x.0.total_cmp(&y.0))?;
-    if std::env::var_os("STEP_MASTER_DEBUG").is_some() { eprintln!("master\t#{}\t{d:.3e}\tset {set:.3e}\tloose {loose:.3e}\tsurface #{id}",r.entity); }
-    (d <= 2.*set+near && d <= loose).then_some(d)
+    let read = |id: u32,flat: &Flat| -> Option<(&Surface,Option<&Turned>,Vec<Pcurve>)> {
+        let sheet = sheets.get(&id)?;
+        let f = flat.scaled(sheet.scale)?;
+        let (s,w) = (&sheet.surface,turned.get(&id));
+        let mut all = candidates(&f,e,r.rate,s,vs);
+        all.extend(ends_matched(&f,e,s,vs,w));
+        Some((s,w,all))
+    };
+    let (s,w,all) = read(*id,flat)?;
+    let image = |pc: &Pcurve,s: &Surface,w: Option<&Turned>,t: f64| { let q = pc.at(t,e,s,vs); s.point(w.map_or(q,|w| w.of(q))) };
+    let (d,k) = all.iter().enumerate().map(|(k,pc)| (gap(pc,e,s,vs,w),k)).min_by(|x,y| x.0.total_cmp(&y.0))?;
+    let set = AT.iter().map(|&j| { let y = image(&all[k],s,w,e.t[0]+(e.t[1]-e.t[0])*j); distance(y,c.point(c.inverse(y))) }).fold(0.,f64::max);
+    if !(d <= loose && d <= 2.*set+near) { return None }
+    if d <= near { return Some(d) }
+    // (each other face's surface: a curve of the file there following the master's image)
+    let corroborated = on.iter().filter(|&&o| o != *id).all(|&o| {
+        r.pcurves.iter().filter(|(id2,_)| *id2 == o).any(|(_,f2)| {
+            let Some((s2,w2,a2)) = read(o,f2) else { return false };
+            a2.iter().any(|pc| {
+                let to_master = AT.iter().map(|&j| { let t = e.t[0]+(e.t[1]-e.t[0])*j; distance(image(pc,s2,w2,t),image(&all[k],s,w,t)) }).fold(0.,f64::max);
+                to_master <= gap(pc,e,s2,vs,w2)
+            })
+        })
+    });
+    corroborated.then_some(d)
 }
 
 /// The file's curve of an edge in a face's parameters as the kernel's pcurve (`candidates`), or

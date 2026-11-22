@@ -811,3 +811,98 @@ fn a_closed_edge_on_a_spline_runs_round_from_its_vertex() {
     let text = e.file(&faces);
     reads("a cylinder whose circles start off their vertices", &text, PI * r * r * h, TAU * r * r + TAU * r * h, 1e-9);
 }
+
+/// A cylinder of radius `side` between `z = 0` and `z = h`, its seam at `+x`, whose top edge's
+/// geometry is a `SURFACE_CURVE` of the circle of radius `r` in space and two curves in its faces'
+/// parameters — the top plane's the circle of radius `r + δ` (run at the edge's own angle), the
+/// side's the line `v = h` (its image the circle of radius `side`) — with the master `master`
+/// names; `on` says, by the surface's place (0 the top, 1 the side, 2 the bottom), which surface
+/// the top plane's curve says it lies on. Its area.
+fn tolerant_drum(r: f64, side: f64, h: f64, delta: f64, master: &str, on: usize) -> Result<f64, Refusal> {
+    let mut e = Ents::new();
+    let z: V = [0., 0., 1.];
+    let (b, t) = (e.vertex([side, 0., 0.]), e.vertex([side, 0., h]));
+    let wall = e.place([0.; 3], z, [1., 0., 0.]);
+    let wall = e.add(format!("CYLINDRICAL_SURFACE('',#{wall},{})", real(side)));
+    let bottom = e.plane([0.; 3], z, [1., 0., 0.]);
+    let top = e.plane([0., 0., h], z, [1., 0., 0.]);
+    let cb = e.circle([0.; 3], z, [1., 0., 0.], side);
+    let eb = e.edge(b, b, cb, true);
+    let ct = e.circle([0., 0., h], z, [1., 0., 0.], r);
+    // (the top's curve: the circle of radius r + δ about the plane's origin, from its x axis)
+    let (o, x) = (e.flat_point([0., 0.]), e.add(format!("DIRECTION('',({}))", reals(&[1., 0.]))));
+    let a2 = e.add(format!("AXIS2_PLACEMENT_2D('',#{o},#{x})"));
+    let wide = e.add(format!("CIRCLE('',#{a2},{})", real(r + delta)));
+    let surfaces = [top, wall, bottom];
+    let ctx = e.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('','') )");
+    let d1 = e.add(format!("DEFINITIONAL_REPRESENTATION('',(#{wide}),#{ctx})"));
+    let p1 = e.add(format!("PCURVE('',#{},#{d1})", surfaces[on]));
+    // (the side's: the line v = h, its parameter the angle)
+    let (q, dq) = (e.flat_point([0., h]), e.add(format!("DIRECTION('',({}))", reals(&[1., 0.]))));
+    let vq = e.add(format!("VECTOR('',#{dq},1.)"));
+    let l = e.add(format!("LINE('',#{q},#{vq})"));
+    let d2 = e.add(format!("DEFINITIONAL_REPRESENTATION('',(#{l}),#{ctx})"));
+    let p2 = e.add(format!("PCURVE('',#{wall},#{d2})"));
+    let sc = e.add(format!("SURFACE_CURVE('',#{ct},(#{p1},#{p2}),.{master}.)"));
+    let et = e.edge(t, t, sc, true);
+    let seam = segment(&mut e, [side, 0., 0.], [side, 0., h]);
+    let es = e.edge(b, t, seam, true);
+    let faces = [e.face(&[(eb, false)], false, bottom, false), e.face(&[(et, true)], false, top, true),
+        e.face(&[(eb, true), (es, true), (et, false), (es, false)], false, wall, true)];
+    measures(&e.file(&faces)).map(|(_, a)| a)
+}
+
+/// **The master is the edge** (ISO 10303-42 `surface_curve.master_representation`: the
+/// representation preferred where a tolerant file's 3D curve and pcurves differ). A cylinder of
+/// radius `r + δ` whose top edge is, in space, the circle of radius `r` and, in its faces'
+/// parameters, the circle of radius `r + δ` in the top plane's and the line `v = h` in the side's
+/// (the circle of radius `r + δ` too): the 3D curve stands `δ` off both pcurves, which agree. Under
+/// `.PCURVE_S1.` (the plane's curve the master, the side's following it) and `.PCURVE_S2.` (the
+/// side's line the master, the plane's following it) the top is the disc the pcurves bound,
+/// `π (r + δ)²`, the edge's tolerance `δ`, measured; under `.CURVE_3D.` neither pcurve is the
+/// edge's within the file's uncertainty and each face is bounded by the circle's foot: the top
+/// `π r²`. The side and the bottom are the same under all three.
+#[test]
+fn an_edge_is_what_its_master_says() {
+    let (r, h, delta) = (10., 20., 0.01);
+    let (wide, narrow) = (PI * (r + delta) * (r + delta), PI * r * r);
+    let rest = wide + TAU * (r + delta) * h;
+    for (master, top) in [("PCURVE_S1", wide), ("PCURVE_S2", wide), ("CURVE_3D", narrow)] {
+        let a = tolerant_drum(r, r + delta, h, delta, master, 0).unwrap_or_else(|e| panic!("{master}: refused {e:?}"));
+        close(&format!("a top whose master is {master}: area"), a, rest + top, 1e-9);
+    }
+}
+
+/// **A master its edge's other representations stand apart from is set aside**: the cylinder of
+/// radius `r`, its top edge the circle of radius `r` in space and the side's line `v = h` (exact),
+/// the top plane's curve the circle of radius `r + δ` and the master `.PCURVE_S1.`. The side's
+/// pcurve follows the 3D curve, not the master: read by the master, the top would be bounded by
+/// a circle the side does not meet, the solid open by a ring of width `δ`, and its tolerance `δ`
+/// measured only because that one reading made it. The edge is read by its 3D curve, the top
+/// `π r²`. (CADGenBench's `.PCURVE_S1.` stands so, 201's edge #6220 6.7e-2 mm off a 3D curve and
+/// a second pcurve 6.4e-4 apart: read by it, face #6071 read a hundredth under OCCT and the
+/// measurer, both of which follow the other two.)
+#[test]
+fn a_master_its_edges_other_curves_stand_apart_from_is_set_aside() {
+    let (r, h, delta) = (10., 20., 0.01);
+    let a = tolerant_drum(r, r, h, delta, "PCURVE_S1", 0).unwrap_or_else(|e| panic!("refused {e:?}"));
+    close("a master standing apart: area", a, TAU * r * r + TAU * r * h, 1e-9);
+}
+
+/// **A master that is not the edge is no master**: the top edge's master `.PCURVE_S1.` names the
+/// circle of radius `r + δ` in a plane's parameters but says it lies on another surface than the
+/// top's — the bottom plane, which no face using the edge lies on (its image 20 mm under the edge),
+/// or the side, the edge's other face (its image wound round the cylinder, nowhere near the edge's
+/// vertex). Either is plainly another curve than the edge, farther from its 3D curve and its
+/// vertex than `sound::LOOSE` of the solid's size, past which a reading says nothing: trusting it
+/// would read a solid the file does not describe. It is set aside and the edge read by its 3D
+/// curve, as where its master is that — the curve that runs between the edge's vertices and lies
+/// on both its faces — the top `π r²`, the side bounded by its own exact line.
+#[test]
+fn a_master_pcurve_on_another_surface_is_set_aside() {
+    let (r, h, delta) = (10., 20., 0.01);
+    for on in [2, 1] {
+        let a = tolerant_drum(r, r, h, delta, "PCURVE_S1", on).unwrap_or_else(|e| panic!("on {on}: refused {e:?}"));
+        close(&format!("a master pcurve on surface {on}: area"), a, TAU * r * r + TAU * r * h, 1e-9);
+    }
+}
