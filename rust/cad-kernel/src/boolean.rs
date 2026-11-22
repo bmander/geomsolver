@@ -1320,6 +1320,16 @@ impl<'a> Arrangement<'a> {
     /// built in another (fixture 115's feet and lip united with the plate at its true edge). Where
     /// no face of a class stands for all its faces (a chain of faces each within reach of the next,
     /// leaning apart past it end to end), the first face of the lowest operand stands for it.
+    /// **The part of space two faces are read over reaches as far past what their boxes share as a
+    /// point near both is read onto their meeting at the least sine** (`tolerant::on_meeting` at
+    /// `LEAST_SINE`, #994): two faces whose boxes share no more than the line they cross along are
+    /// one surface only where they lean apart less than the arrangement resolves a meeting at, and
+    /// otherwise two, their meeting laid. Read over that line alone, any two planes crossing along
+    /// it within `1e-3` rad were one there: a plate's top and the raised half of a lip's pad turned
+    /// `1e-3` rad across it, one face of the lip from the other half lying under the top, were one
+    /// class, the plate's top standing for it, and a foot's meeting with the class was laid on the
+    /// lowered half `3e-4` off it — refused as a shell kept on one side of a plane and dropped on
+    /// another, where joined the other way round the three built.
     fn classed(&mut self) {
         let reach = super::tolerant::ON_CURVE*self.tol;
         let mut faces: Vec<(Side,usize,Box3)> = Vec::new();
@@ -1338,7 +1348,11 @@ impl<'a> Arrangement<'a> {
                 if a.kind() != b.kind() || root(&mut of,i) == root(&mut of,j) { continue }
                 let region = super::meeting::common(faces[i].2,faces[j].2,self.tol);
                 let near = (0..3).all(|k| region.0[k] <= region.1[k]);
-                if a == b || if near { super::ssi::same_over(a,b,reach,region) } else { super::ssi::same(a,b,self.tol) } {
+                // (read as far past the part of space the two boxes share as a point near both is
+                // read onto their meeting at the least sine)
+                let past = super::tolerant::on_meeting(self.tol,0.);
+                let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
+                if a == b || if near { super::ssi::same_over(a,b,reach,around) } else { super::ssi::same(a,b,self.tol) } {
                     let (ri,rj) = (root(&mut of,i),root(&mut of,j));
                     of[ri.max(rj)] = ri.min(rj);
                 }
