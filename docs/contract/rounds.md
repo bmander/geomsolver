@@ -970,7 +970,8 @@ sides that no ball covers, within the run's ends and nearest the crease of the f
 straight edge between two planes, the floor's along the band's end 45 mm off, took the blend's end
 for its own, and the construction, rightly, did not (the gate never probes there; the comparison
 over the whole body found it, 8 to 10 points in 3600). Both now say also `distance(p, rolled) <=
-distance(p, centres) + r`, `rolled` the centres of the ball touching both faces: the point's
+distance(p, centres) + r`, `rolled` the centres of the ball touching both faces (the centres' own
+terms and `c distance(<= r)` from each face, read from the nearest centre, [sets.md](sets.md)): the point's
 nearest rolled ball stands no more than a radius further off than its nearest ball of all. Every
 point a rolled ball leaves has its nearest centre on that ball's spine (the difference nothing),
 whatever the faces' angle, and a pocket elsewhere has the spine across the body (`lowering`'s

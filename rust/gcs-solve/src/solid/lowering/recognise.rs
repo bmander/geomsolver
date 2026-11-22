@@ -179,9 +179,9 @@ pub(super) fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Fa
 }
 
 /// The radius of the ball a term keeps the point near where it rolls (`distance(p, rolled) <=
-/// distance(p, centres) + r`): `x` (by `cx`) a ball's centres touching every face — on the
-/// region's side of each, at its surface's distance `r` — and the other where the centre of one
-/// within every face may stand (`ball_centres`); `None` where the term is not that.
+/// distance(p, centres) + r`): `x` (by `cx`) the centres of a ball touching every face — where
+/// one within every face may stand (`ball_centres`), and at most `r` from each face's surface — and
+/// the other where one within every face may stand; `None` where the term is not that.
 fn rolled_by(sk: &Sketch, t: &RegionTerm, x: &[RegionTerm], y: &[RegionTerm], cx: f64,
     faces: &Faces) -> Option<f64> {
     let (touch, centres) = if cx > 0.0 { (x, y) } else { (y, x) };
@@ -189,24 +189,11 @@ fn rolled_by(sk: &Sketch, t: &RegionTerm, x: &[RegionTerm], y: &[RegionTerm], cx
     if t.cmp != Cmp::Le || !(r > 0.0) || !ball_centres(sk, centres, faces, r) {
         return None;
     }
-    let (mut sides, mut at) = (Vec::new(), Vec::new());
-    for u in touch {
-        if let Some((f, c)) = side_of(sk, u) {
-            if (c == Cmp::Le) != faces.within {
-                return None;
-            }
-            sides.push(f);
-            continue;
-        }
-        let (f, c) = crate::solid::faces::measured_face(u)?;
-        let (lo, hi) = (u.lo.read(sk)?, u.hi?);
-        let at_r = lo == hi && (lo - r).abs() <= 1e-12 * r;
-        if c != 1.0 || u.cmp != Cmp::In || u.grow.is_some() || !at_r {
-            return None;
-        }
-        at.push(f);
-    }
-    (faces.all(&sides, false) && faces.all(&at, true)).then_some(r)
+    let near = |u: &RegionTerm| matches!(one_face(sk, u), Some((_, Cmp::Le, d)) if (d - r).abs() <= 1e-12 * r);
+    let (at, within): (Vec<&RegionTerm>, Vec<&RegionTerm>) = touch.iter().partition(|u| near(u));
+    let at: Vec<&FaceRef> = at.iter().filter_map(|u| one_face(sk, u).map(|(f, _, _)| f)).collect();
+    let within: Vec<RegionTerm> = within.into_iter().cloned().collect();
+    (ball_centres(sk, &within, faces, r) && faces.all(&at, true)).then_some(r)
 }
 
 /// Whether a set is where the centre of a ball of radius `r` touching every face may stand: on

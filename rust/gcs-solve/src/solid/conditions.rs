@@ -388,42 +388,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             }
                         }
                     }
-                    // at a distance from it on the side the set holds its point (a ball's centre
-                    // touching a face, `std.rounds`' `rolled`, #994): the side of the face whose
-                    // patch is nearest, signed toward the side held, at that distance — so a
-                    // point on the surface, or a hair within it, steps that way, as the distance's
-                    // size, whose gradient turns over there, does not; on what the surface's offset
-                    // closes onto, where it does (a post's axis within it, a fill's round's
-                    // outside it); and for a chain bulging toward that side, at least that far as
-                    // a ball's centres are read (each face's side carried on past it) and no
-                    // further by the nearest face
-                    if t.cmp == Cmp::In && hi == lo && c > 0.0 {
-                        if let Some(beyond) = side_of(f) {
-                            let off = if beyond { -lo / c } else { lo / c };
-                            if let Some(on) = closed_onto(&r, off) {
-                                return Ok(Some(on));
-                            }
-                            let sigma = if beyond { c } else { -c };
-                            let bulging =
-                                r.convex_pieces().is_none() && r.bulging(beyond).is_some();
-                            let signed = sides(r, false).into_iter().map(move |side| -> Fv {
-                                Arc::new(move |x| {
-                                    let (s, g) = side(x);
-                                    (sigma * s, scale(g, sigma))
-                                })
-                            });
-                            if !bulging {
-                                return Ok(Some(signed.flat_map(held).collect()));
-                            }
-                            let ge = RegionTerm { cmp: Cmp::Ge, hi: None, ..t.clone() };
-                            let mut out =
-                                conditions(sk, &ge, read, sides_of, shell)?.unwrap_or_default();
-                            out.extend(signed.map(|m| {
-                                Cond { f: shift(m, lo + grow, 1.0), eq: false, convex: false }
-                            }));
-                            return Ok(Some(out));
-                        }
-                    }
                     // any other: off the side of the face whose patch is nearest — and, a smooth
                     // chain bulging no one way (a pocket's walls with a reflex corner), off each
                     // face's patch besides (`faces_apart`): what that reading says already, so the
