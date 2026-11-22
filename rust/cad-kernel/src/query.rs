@@ -253,9 +253,16 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
 /// where they lie on it within its stretch. Each crossing's parameter on `a` and its point; `None`
 /// where neither is a line or a conic, or the other runs along the carrier; the refusal where a
 /// reading of it was not proved (#814).
+/// **Two curves on one surface cross where they come within its reach of each other** (#994):
+/// `ON_CURVE` tolerances, the reach a carrier's roots are kept on it within (`on` below) and two
+/// surfaces are one surface within (`tolerant`) — so the closed forms are read to it too. Two
+/// lines on one plane of an arrangement, each an edge of a face drawn on it through rounded points
+/// (a strip's pad leaning `1e-6` rad onto a plate's foot), stand up to that far apart where they
+/// cross; read to the tolerance alone, their crossing was none, the one edge laid across the
+/// other's face as a slit, and the face's cell joined to the outside round it.
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Result<Option<Vec<(f64,V)>>,Refusal> {
     use crate::util::space::cross;
-    if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Ok(Some(found)) }
+    if let Some(found) = curve_curve(a,ta,b,tb,super::tolerant::ON_CURVE*tol) { return Ok(Some(found)) }
     if let Some(found) = screwed_crossings(a,ta,b,tb,tol) { return Ok(Some(found)) }
     // the roots of `other` on a surface carrying `line` (a line or a circle), on it
     let carried = |carrier: &Curve,span: [f64;2],other: &Curve,over: [f64;2]| -> Result<Option<Vec<(f64,V)>>,Refusal> {
