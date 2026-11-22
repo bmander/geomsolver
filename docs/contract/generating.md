@@ -2220,9 +2220,10 @@ one another, and no edge crosses those arcs, so the trim's search missed them. R
 gives on one pose (a tube's trace with it, its rim) where the other pose's signed distance changes
 sign. So the corners are found along the given seams by a certified march (steps no longer than
 the larger of that distance and the tolerance) and kept where neither pose is covered there by more
-than the tolerance. The meeting is traced as the zero set of the end pose's signed distance over
-the start pose's face (`zero_set::trace`, a window about each corner grown until the piece through
-it reaches another corner on each side where it is uncovered). It is cut at the corners, and each
+than the tolerance. The meeting is traced through each corner (`meeting::through`, within a box about it grown until
+the branch through it reaches another corner on each side where it is uncovered), each point
+settled on both surfaces by alternating feet; a corner whose branch is not read gives nothing (the
+torus turned across a block: a zero-set search there asked four million cells for 30 s). It is cut at the corners, and each
 stretch whose middle neither pose covers is given (gated in
 `swept_rings::the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given`). A witness's
 missing meeting is completed at no crossing that membership proves the sweep holds or leaves

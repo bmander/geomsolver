@@ -13,8 +13,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   torus stands beside the start's, and most of their meeting is buried; two arcs of it, each some
   0.02 long, bound the sweep, ending at corners on the tubes' seams with either pose, where the
   other pose's signed distance changes sign. Those corners are found along the given seams, the
-  meeting is traced between them as the zero set of the end pose's signed distance over the start
-  pose's face (`zero_set::trace`), and each stretch is given where both poses are uncovered at its
+  meeting is traced through them (`meeting::through`) and settled on both surfaces by alternating
+  feet, and each stretch is given where both poses are uncovered at its
   middle (`depth::cover`). The trim completes a witness's meeting at no crossing the sweep is proved
   to hold or leave (`trim::completed`): a buried meeting needs no cut. The full turn's refusal stands
   where it was, now without the false claim that search missed the tori's meeting

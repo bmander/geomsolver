@@ -159,18 +159,16 @@ pub fn depths(ring: &Ring,path: &Trajectory,x: V,ts: &[f64]) -> Vec<f64> {
 /// turn's, 0.027 long between the start pose's rim and its cut by the tube near the end, which no
 /// edge crosses and the trim's search did not find. Such an arc ends where its cover changes hands,
 /// at a corner on another seam of the start pose's face (a tube's trace with it, a rim), each
-/// given: so the corners are found where the end pose's signed distance changes sign along the
-/// curves `given` lays on a face of either pose (`corners`), the meeting traced as the zero set of
-/// that distance over the start pose's face (`zero_set::trace`) from them, cut at them, and each
-/// piece between two corners given where both tools are uncovered at its middle (`cover`, the end
-/// pose's point standing off its sheet by the trace's tolerance). Nothing where the poses do not
-/// meet uncovered.
+/// given: so the corners are found where the other pose's signed distance changes sign along the
+/// curves `given` lays on a face of either pose (`corners_along`), the meeting traced through them
+/// (`meeting::through`) and settled on both surfaces, cut at them, and each
+/// piece between two corners given where both tools are uncovered at its middle (`cover`, its point
+/// standing off each sheet by the trace's tolerance). Nothing where the poses do not meet
+/// uncovered, nor from a corner whose branch the tracer does not read.
 pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo::Brep;2],given: &[crate::boolean::Given],tol: f64)
     -> Result<Vec<crate::boolean::Given>,Unbuilt> {
     use crate::util::space::distance;
     let poses = [path.pose(a)?,path.pose(b)?];
-    // (the end pose's signed distance, read off the ring exactly)
-    let g = |x: V| ring.signed(poses[1].inverse().point(x)).0;
     // (whether the point `x` of the pose at the roll's end `e`, standing off its sheet by as much as
     // `off`, is uncovered: on the boundary as the tolerance reads it)
     let uncovered = |x: V,e: usize,off: f64| match cover(ring,path,[a,b],x,[a,b][e],off,tol)? {
@@ -201,32 +199,35 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
             } }
         }
         if corners.len() < 2 { continue }
-        let s = &fs.surface;
-        let at: Vec<crate::geom::Uv> = corners.iter().map(|&x| s.inverse(x)).collect();
-        // the meeting over a window of the start face's parameters about each corner, grown from the
-        // nearest other corner's distance till the piece through it reaches another corner both ways
-        // or the window is the face's whole square
-        let whole = face_rect(ends[0],fs);
-        let field = Met {s,g:&g};
+        // the meeting traced through each corner (`meeting::through`, the kernel's one fallback) within
+        // a box about it, grown from the nearest other corner's distance till the branch through it
+        // reaches another corner each way it is uncovered, or the box holds both poses
+        let (da,db) = (super::general::parameters(ends[0],tol),super::general::parameters(ends[1],tol));
+        let (l0,h0) = ends[0].bounds();
+        let (l1,h1) = ends[1].bounds();
+        let (lw,hw): (V,V) = (std::array::from_fn(|k| l0[k].min(l1[k])),std::array::from_fn(|k| h0[k].max(h1[k])));
         let mut arcs: Vec<Vec<V>> = Vec::new();
-        for (i,c) in at.iter().enumerate() {
-            let near = at.iter().enumerate().filter(|&(j,_)| j != i).map(|(_,p)| (p[0]-c[0]).abs().max((p[1]-c[1]).abs()))
-                .fold(f64::INFINITY,f64::min);
-            // (no narrower than half the digits of the parameters read: the rounding's)
-            let mut grow = near.max(HALF_READ);
+        for (i,&c) in corners.iter().enumerate() {
+            let near = corners.iter().enumerate().filter(|&(j,_)| j != i).map(|(_,&p)| distance(p,c)).fold(f64::INFINITY,f64::min);
+            let mut grow = near.max(tol);
             loop {
-                let rect: crate::zero_set::Rect = std::array::from_fn(|k| [(c[k]-grow).max(whole[k][0]),(c[k]+grow).min(whole[k][1])]);
-                // (a window whose search does not settle — the two poses within the tolerance of one
-                // another over a stretch, as a torus turned across a block's are — gives nothing from this
-                // corner: the trim then meets the two poses by its own search, as it did before)
-                let traced = match crate::zero_set::trace(&field,&crate::zero_set::Question {rect,edges:&[],seeds:&[*c],tol,feature:ring.thickness}) {
+                let (lo,hi): (V,V) = (std::array::from_fn(|k| (c[k]-grow).max(lw[k])),std::array::from_fn(|k| (c[k]+grow).min(hw[k])));
+                let whole = (0..3).all(|k| lo[k] <= lw[k] && hi[k] >= hw[k]);
+                // (a branch the tracer does not read from this corner gives nothing from it: the trim then
+                // meets the two poses by its own search, as it did before)
+                let traced = match crate::meeting::through(&fs.surface,da,&fe.surface,db,&[c],lo,hi,tol) {
                     Ok(t) => t,
-                    Err(e) => { if crate::timing() { eprintln!("ring: the end poses' meeting from {:?} not traced: {e}",corners[i]) } break }
+                    Err(e) => { if crate::timing() { eprintln!("ring: the end poses' meeting from {c:?} not traced: {e}") } break }
                 };
-                let (found,open) = between_corners(&traced.pieces,s,&corners,corners[i],tol);
-                let open = open.iter().map(|xs| Ok::<bool,Unbuilt>(uncovered(xs[xs.len()/2],0,0.)? && uncovered(xs[xs.len()/2],1,tol)?))
+                // (each point settled on the two surfaces' meeting by alternating feet: the traced spline
+                // strays from it between its points by more than the tolerance)
+                let settle = |mut x: V| { for _ in 0..FEET { let y = fe.surface.point(fe.surface.inverse(fs.surface.point(fs.surface.inverse(x))));
+                    if distance(x,y) == 0. { break } x = y } x };
+                let lines: Vec<(Vec<V>,bool)> = traced.iter().filter_map(polyline).map(|(xs,closed)| (xs.into_iter().map(settle).collect(),closed)).collect();
+                let (found,open) = between_corners(&lines,&corners,c,tol);
+                let open = open.iter().map(|xs| Ok::<bool,Unbuilt>(uncovered(xs[xs.len()/2],0,tol)? && uncovered(xs[xs.len()/2],1,tol)?))
                     .collect::<Result<Vec<bool>,_>>()?.into_iter().any(|o| o);
-                if !open || rect == whole {
+                if !open || whole {
                     for xs in found {
                         // (each arc once: traced from either of its corners)
                         let (p,q) = (xs[0],xs[xs.len()-1]);
@@ -241,8 +242,9 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
         }
         let mut curves = Vec::new();
         for xs in arcs {
+            // (a traced point stands off either pose by as much as the trace's tolerance)
             let mid = xs[xs.len()/2];
-            if !(uncovered(mid,0,0.)? && uncovered(mid,1,tol)?) { continue }
+            if !(uncovered(mid,0,tol)? && uncovered(mid,1,tol)?) { continue }
             if crate::timing() { eprintln!("ring: the end poses meet uncovered from {:?} to {:?}, {} points",xs[0],xs[xs.len()-1],xs.len()) }
             curves.push(super::rings::curve_through(xs,tol)?.0);
         }
@@ -258,12 +260,6 @@ fn curve_ends(c: &crate::geom::Curve) -> Vec<V> {
         crate::geom::Curve::Iso(..) => vec![c.point(0.),c.point(1.)],
         _ => Vec::new(),
     }
-}
-
-/// The square of a face's parameters its loops span.
-fn face_rect(b: &crate::topo::Brep,f: &crate::topo::Face) -> crate::zero_set::Rect {
-    let uv: Vec<crate::geom::Uv> = f.loops.iter().flatten().flat_map(|c| b.uv_ends(f,c)).collect();
-    std::array::from_fn(|k| [uv.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min),uv.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max)])
 }
 
 /// Where `g` (1-Lipschitz in space) changes sign along the curve `c`: marched over its span, each
@@ -296,30 +292,25 @@ fn corners_along(c: &crate::geom::Curve,g: &dyn Fn(V) -> f64,tol: f64) -> Vec<V>
     out
 }
 
-/// The end pose's signed distance over the start pose's face, as the zero-set tracer reads it: its
-/// gradient by central differences at the rounding's third root of the place (where their rounding
-/// and their truncation balance), and bounded over a cell as a 1-Lipschitz function in space over
-/// the cell's reach from its middle (the partials' lengths there, half again for their change over
-/// the cell — a face of the tool, so curved no more than its own feature).
-struct Met<'a> { s: &'a crate::geom::Surface,g: &'a dyn Fn(V) -> f64 }
+/// How many alternating feet settle a point on two surfaces' meeting at most: at a crossing at an
+/// angle each halves its distance at least by the cosine's share, so fifty reach the rounding from
+/// the trace's tolerance where the surfaces cross at a sine above a tenth (the arcs given: 0.6).
+const FEET: usize = 50;
 
-impl crate::zero_set::Field for Met<'_> {
-    type At = ();
-    fn least(&self,uv: crate::geom::Uv) -> Option<crate::zero_set::Value<()>> {
-        use crate::util::space::{add,scale,sub,norm};
-        let (x,su,sv) = self.s.d1(uv);
-        let h = f64::EPSILON.cbrt()*(1.+norm(x));
-        let d = |e: V| { let n = norm(e).max(f64::MIN_POSITIVE); ((self.g)(add(x,scale(e,h/n)))-(self.g)(sub(x,scale(e,h/n))))/(2.*h)*n };
-        Some(crate::zero_set::Value {f:(self.g)(x),grad:Some([d(su),d(sv)]),at:()})
-    }
-    fn along(&self,uv: crate::geom::Uv,_: &()) -> Option<crate::zero_set::Value<()>> { self.least(uv) }
-    fn surface(&self,uv: crate::geom::Uv) -> (V,V,V) { self.s.d1(uv) }
-    fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
-        let m = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
-        let (x,su,sv) = self.s.d1(m);
-        let n = crate::util::space::norm;
-        let reach = 0.75*(n(su)*(c[0][1]-c[0][0])+n(sv)*(c[1][1]-c[1][0]));
-        Some(crate::zero_set::Bound::lipschitz((self.g)(x),1.,reach))
+/// A traced meeting's points and whether it closes: a trace's own, a spline's at its knots.
+fn polyline(c: &crate::geom::Curve) -> Option<(Vec<V>,bool)> {
+    match c {
+        crate::geom::Curve::Traced(t) => Some((t.pts.clone(),t.closed)),
+        // (a spline through a trace's points: its knots are the points, each span cut in sixteen, each
+        // point then settled on the meeting)
+        crate::geom::Curve::BSpline(b) => {
+            let mut ts: Vec<f64> = b.knots.windows(2).filter(|w| w[1] > w[0]).flat_map(|w| (0..16).map(move |k| w[0]+(w[1]-w[0])*k as f64/16.)).collect();
+            ts.push(b.domain()[1]);
+            let xs: Vec<V> = ts.iter().map(|&t| c.point(t)).collect();
+            let closed = crate::util::space::distance(xs[0],xs[xs.len()-1]) == 0.;
+            Some((xs,closed))
+        }
+        _ => None,
     }
 }
 
@@ -327,12 +318,12 @@ impl crate::zero_set::Field for Met<'_> {
 /// point of the piece it lies on, within twice the tolerance): each stretch between two corners, its
 /// points in space and the corners its ends; and each stretch from `from` to the window's rim
 /// (the window grown where one is on the boundary).
-fn between_corners(pieces: &[crate::zero_set::Piece<()>],s: &crate::geom::Surface,corners: &[V],from: V,tol: f64) -> (Vec<Vec<V>>,Vec<Vec<V>>) {
+fn between_corners(lines: &[(Vec<V>,bool)],corners: &[V],from: V,tol: f64) -> (Vec<Vec<V>>,Vec<Vec<V>>) {
     use crate::util::space::distance;
     let mut arcs = Vec::new();
     let mut open = Vec::new();
-    for p in pieces {
-        let xs: Vec<V> = p.uv.iter().map(|&u| s.point(u)).collect();
+    for (xs,closed) in lines {
+        let closed = *closed;
         // (each corner on the piece: the index of its nearest point)
         // (each corner on the piece: the index of the chord it lies on, within twice the tolerance —
         // the chord's to the zero set and the corner's to its seam — and its place along the chord)
@@ -346,8 +337,8 @@ fn between_corners(pieces: &[crate::zero_set::Piece<()>],s: &crate::geom::Surfac
         if !cuts.iter().any(|c| c.2 == from) { continue }
         // (from `from`, the first or the last corner, to the window's rim: a stretch not yet ended)
         let k = cuts.iter().position(|c| c.2 == from).unwrap();
-        if k == 0 && p.ends[0] == crate::zero_set::End::Rim { let c = cuts[0]; open.push([&[c.2],&xs[..=c.0]].concat()) }
-        if k+1 == cuts.len() && p.ends[1] == crate::zero_set::End::Rim { let c = cuts[k]; open.push([&[c.2],&xs[c.0+1..]].concat()) }
+        if k == 0 && !closed { let c = cuts[0]; open.push([&[c.2],&xs[..=c.0]].concat()) }
+        if k+1 == cuts.len() && !closed { let c = cuts[k]; open.push([&[c.2],&xs[c.0+1..]].concat()) }
         // (a stretch between two corners on the chords `i` and `j`: the corners and the points between)
         let stretch = |i: usize,ci: V,j: usize,cj: V| -> Vec<V> {
             let mut arc = vec![ci];
@@ -357,7 +348,7 @@ fn between_corners(pieces: &[crate::zero_set::Piece<()>],s: &crate::geom::Surfac
         };
         for w in cuts.windows(2) { arcs.push(stretch(w[0].0,w[0].2,w[1].0,w[1].2)) }
         // (a closed piece: the stretch from its last corner round to its first)
-        if p.closed() && cuts.len() >= 2 {
+        if closed && cuts.len() >= 2 {
             let (l,f) = (cuts[cuts.len()-1],cuts[0]);
             arcs.push(stretch(l.0,l.2,f.0,f.2));
         }
