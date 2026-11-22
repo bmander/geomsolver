@@ -36,6 +36,7 @@ mod block_structure;
 mod booleans;
 mod body_words;
 mod bore;
+mod bosses_on_seams;
 mod boundary;
 mod bounds;
 mod brep;

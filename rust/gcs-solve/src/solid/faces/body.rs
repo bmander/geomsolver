@@ -1069,12 +1069,17 @@ impl BodyFaces {
         -> Vec<(EndBy, f64, Option<V>)> {
         let mut sides: Vec<(EndBy, f64, Option<V>)> = Vec::new();
         let runs = self.runs(es);
+        // (each end of a run that ends on no face there: where it may go on across a seam)
+        let mut going_on: Vec<(&Vec<u32>, V, u32)> = Vec::new();
         let touches = |run: &[u32], vid: u32| {
             run.iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&vid))
         };
         for (v, d, vid) in self.run_ends(es) {
             let Some(run) = runs.iter().find(|run| touches(run, vid)) else { continue };
             let at = self.ends_at(run, faces, v, d, vid, plain);
+            if at.is_empty() && plain {
+                going_on.push((run, v, vid));
+            }
             // a run that ends on no face — its faces going on across seams there, tangent into
             // another or into a piece of the same surface, or every face there one it goes across
             // — ends square there (#962): what a corner's edge reads as its end, where nothing
@@ -1132,7 +1137,96 @@ impl BodyFaces {
                 }
             }
         }
+        // a run going on across a seam into the next edge of its smooth chain ends where that
+        // chain ends (`chain_ends`), read at the seam
+        for (run, v, vid) in going_on {
+            for (c, sign) in self.chain_ends(run, faces, vid) {
+                if !sides.iter().any(|&(y, sy, _)| y == EndBy::Face(c) && sy == sign) {
+                    sides.push((EndBy::Face(c), sign, Some(v)));
+                }
+            }
+        }
         sides
+    }
+
+    /// **Where a run going on across a seam ends** (#994, #962's 127): run `run` (between `faces`)
+    /// ending on no face at vertex `vid`, where a face going on tangent from one of `faces` across
+    /// a seam carries it on (`carries_on`) — an obround's half circle into its flat side — goes on
+    /// along the next edge of its smooth chain: the one edge at `vid` of the same turn, no seam,
+    /// whose faces are each one of `faces` or one going on from one of them tangent there
+    /// (`continues`); and on from that edge's far end in the same way, until the chain ends on
+    /// faces there (`ends_at`, read as that edge's own end) or goes on no further (a closed
+    /// chain, a corner, a branch).  Each face the chain ends on whose solid it is kept out of
+    /// (`kept_out_of`: a boss's cylinder it stands outside, a hole's) is the run's too, on the
+    /// same side: a round never goes into another body's material nor into a hole, so the boss
+    /// standing on the flat side that the round along it ends on keeps the round round the half
+    /// circle off it too, where its wall reaches back over the seam's section — and nowhere else,
+    /// for the round round the half circle lies outside the boss everywhere else.  But not one
+    /// whose surface some edge of the run or of the chain between goes across (`goes_across`): no
+    /// side of it holds the chain; nor one of the chain's own faces (`smooth`), which a chain round
+    /// a loop comes back to (a side leaving at a corner the lobe the run goes on into the other
+    /// way).  The run is one region's and the next edge another's (the half
+    /// circle's and the flat side's), so the field reads the one solid in each, and the pieces of
+    /// the two are cut alike by it at the seam they are glued at (`lowering::assemble`).
+    fn chain_ends(&self, run: &[u32], faces: &[usize], vid: u32) -> Vec<(usize, f64)> {
+        let turn = run.first().and_then(|&e| self.convex(e));
+        let (mut path, mut pair, mut at) = (run.to_vec(), faces.to_vec(), vid);
+        let has = |e: u32, v: u32| self.loc.b.edges[e as usize].v.contains(&v);
+        while path.len() <= self.loc.b.edges.len() {
+            let v = self.back(self.loc.b.vertices[at as usize].p);
+            let own: Vec<usize> = path.iter().filter(|&&e| has(e, at))
+                .flat_map(|&e| self.faces_of(e).iter().copied()).collect();
+            if !self.faces_at(at, &pair).into_iter().any(|c| self.carries_on(c, &pair, &own, turn, v, at)) {
+                return Vec::new();
+            }
+            // the next edge: of the same turn, no seam, between faces each one of the pair or going
+            // on from one of them tangent here
+            let mut next: Vec<u32> = self.faces_at(at, &[]).into_iter()
+                .flat_map(|f| self.edges[f].iter().copied())
+                .filter(|&e| has(e, at) && !path.contains(&e) && !self.closed(e) && !self.seam(e)
+                    && self.convex(e) == turn && self.carried(e)
+                    && self.faces_of(e).iter().all(|&g| pair.contains(&g) || self.continues(g, &pair, v)))
+                .collect();
+            next.dedup();
+            next.sort_unstable();
+            next.dedup();
+            let [e] = next[..] else { return Vec::new() };
+            path.push(e);
+            pair = self.faces_of(e).to_vec();
+            let Some((w, d, wid)) = self.run_ends(&[e]).into_iter().find(|&(_, _, w)| w != at) else {
+                return Vec::new();
+            };
+            if wid == vid {
+                return Vec::new();
+            }
+            let ends = self.ends_at(&[e], &pair, w, d, wid, true);
+            if !ends.is_empty() {
+                // (none of the chain's own faces, the run's and all they go on into across seams:
+                // a chain round a loop ends on a face the run goes on into the other way, the lobe
+                // a side leaves at a corner)
+                let own = self.smooth(faces);
+                return ends.into_iter().filter(|&(c, sign)| {
+                    !own.contains(&c) && self.kept_out_of(c, sign) && !self.goes_across(c, sign, &path)
+                }).collect();
+            }
+            at = wid;
+        }
+        Vec::new()
+    }
+
+    /// Whether a run kept on the side `sign` of face `c` (`σ·side <= 0`) is kept out of the solid
+    /// its surface bounds: a cylinder, a cone or a sphere, the side that holds its axis or its
+    /// centre the far one — a boss's wall the run stands outside, a hole's wall it stands beside.
+    /// A plane's half-space, or a curved face's solid a run is kept within, is no such solid: it
+    /// reaches as far as the surface goes, round a chain and back across it (a side nearly tangent
+    /// to the lobe it leaves, whose plane cuts the arc before the lobe), and bounds the run only at
+    /// its own end (`chain_ends`).
+    fn kept_out_of(&self, c: usize, sign: f64) -> bool {
+        let inner = self.cylinder(c).map(|(o, ..)| o)
+            .or_else(|| self.cone(c).filter(|&(_, _, r, _)| r > 0.0).map(|(o, ..)| o))
+            .or_else(|| self.sphere(c).map(|(o, _)| o));
+        let Some(inner) = inner else { return false };
+        sign * self.side(c, inner) > 0.0
     }
 
     /// The signed distance from what a run ends on, positive away from the material (a square
