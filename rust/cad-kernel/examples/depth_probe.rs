@@ -32,12 +32,23 @@ fn main() {
         let (lo,hi) = uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
         let (lo,hi) = match args.get(5) { Some(w) => { let w: Vec<f64> = w.split(',').map(|v| v.parse().unwrap()).collect(); ([w[0],w[2]],[w[1],w[3]]) } None => (lo,hi) };
         println!("face ({ci}, {fi}) {}: u {:?} t {:?}",f.surface.kind(),[lo[0],hi[0]],[lo[1],hi[1]]);
+        if let Some(x) = args.get(6) {
+            // the face's parameters nearest the point `x` in the window, by a grid of a thousand a side
+            let x: Vec<f64> = x.split(',').map(|v| v.parse().unwrap()).collect();
+            let mut best = (f64::INFINITY,[0.;2]);
+            for i in 0..=1000 { for j in 0..=1000 {
+                let uv = [lo[0]+(hi[0]-lo[0])*i as f64/1000.,lo[1]+(hi[1]-lo[1])*j as f64/1000.];
+                let d = cad_kernel::util::space::distance(f.surface.point(uv),[x[0],x[1],x[2]]);
+                if d < best.0 { best = (d,uv) }
+            } }
+            println!("nearest {best:?}");
+        }
         let rows = cad_kernel::util::par::indices(n+1,|i| {
             let v = hi[1]-(hi[1]-lo[1])*i as f64/n as f64;
             let line: String = (0..=n).map(|j| {
                 let u = lo[0]+(hi[0]-lo[0])*j as f64/n as f64;
                 let x = f.surface.point([u,v]);
-                match cover(&ring,&t.path,t.roll,x,v,t.tol) {
+                match cover(&ring,&t.path,t.roll,x,v,t.tol,t.tol) {
                     Ok(Reading::Near) => 'N',
                     Ok(Reading::Far(c)) => if c.depth < -t.tol { 'F' } else if c.depth < 0. { 'f' } else { '.' },
                     Ok(Reading::Alone) => 'a',
@@ -69,7 +80,7 @@ fn main() {
             order.sort_by(|&i,&j| ds[i].total_cmp(&ds[j]));
             for &j in order.iter().take(4) { println!("a least of the depth {:+.3e} at {:.7}",ds[j],ts[j]) }
             for own in [roll[0],roll[1]] {
-                println!("as a point of the pose at {own}: {:?}",cover(&ring,&path,roll,x,own,tol));
+                println!("as a point of the pose at {own}: {:?}",cover(&ring,&path,roll,x,own,0.,tol));
             }
             return
         }
@@ -81,7 +92,7 @@ fn main() {
             let (x,_) = sheet(&ring,&path,roll,th,t,l).unwrap();
             let ts: Vec<f64> = (0..=k).map(|j| lo+(hi-lo)*j as f64/k as f64).collect();
             for (t,d) in ts.iter().zip(cad_kernel::swept::depth::depths(&ring,&path,x,&ts)) { println!("{t:.8} {d:+.4e}") }
-            println!("{:?}",cover(&ring,&path,roll,x,t,tol));
+            println!("{:?}",cover(&ring,&path,roll,x,t,0.,tol));
             return
         }
         "tail" => {
@@ -134,7 +145,7 @@ fn main() {
                     let t = t0+(t1-t0)*j as f64/nt as f64;
                     let c = match sheet(&ring,&path,roll,th,t,l) {
                         None => '?',
-                        Some((x,_)) => match cover(&ring,&path,roll,x,t,tol) {
+                        Some((x,_)) => match cover(&ring,&path,roll,x,t,0.,tol) {
                             Ok(Reading::Near) => 'N',
                             Ok(Reading::Far(cv)) => { least = least.min(cv.depth); if cv.depth < -tol { 'F' } else { '.' } }
                             Ok(Reading::Alone) => '.',
@@ -166,13 +177,13 @@ fn main() {
                 pose.point([c[0]+r*phi.cos(),c[1]+r*phi.sin(),c[2]+tube_r*psi.sin()])
             };
             let x0 = at(phi,psi);
-            println!("nearest {x0:?} (φ {phi:.6}, ψ {psi:.6}): {:?}",cover(&ring,&path,roll,x0,own,tol));
+            println!("nearest {x0:?} (φ {phi:.6}, ψ {psi:.6}): {:?}",cover(&ring,&path,roll,x0,own,0.,tol));
             let rows = cad_kernel::util::par::indices(n+1,|i| {
                 let ps = psi-half_width+2.*half_width*i as f64/n as f64;
                 let mut least = f64::INFINITY;
                 let line: String = (0..=n).map(|j| {
                     let ph = phi-half_width+2.*half_width*j as f64/n as f64;
-                    match cover(&ring,&path,roll,at(ph,ps),own,tol) {
+                    match cover(&ring,&path,roll,at(ph,ps),own,0.,tol) {
                         Ok(Reading::Near) => 'N',
                         Ok(Reading::Far(cv)) => { least = least.min(cv.depth); if cv.depth < -tol { 'F' } else { '.' } }
                         Ok(Reading::Alone) => 'a',
@@ -189,7 +200,7 @@ fn main() {
             let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
             let l = label_at(&ring,&path,n[0],n[1],n[2]).unwrap();
             let (x,bend) = sheet(&ring,&path,roll,n[0],n[1],l).unwrap();
-            println!("{x:?} s'' {bend:+.3e} {l:?}: {:?}",cover(&ring,&path,roll,x,n[1],tol));
+            println!("{x:?} s'' {bend:+.3e} {l:?}: {:?}",cover(&ring,&path,roll,x,n[1],0.,tol));
             return
         }
         "map" => {
@@ -224,7 +235,7 @@ fn main() {
         for (k,&(th,t,sg)) in c[..at].iter().enumerate() {
             let Some(l) = label_at(&ring,&path,th,t,sg) else { println!("  {k}: no label"); continue };
             let Some((x,bend)) = sheet(&ring,&path,roll,th,t,l) else { println!("  {k}: no point"); continue };
-            let r = cover(&ring,&path,roll,x,t,tol).unwrap();
+            let r = cover(&ring,&path,roll,x,t,0.,tol).unwrap();
             let near_apex = apexes.iter().map(|a| ((a.0-th).powi(2)+(a.1-t).powi(2)).sqrt()).fold(f64::INFINITY,f64::min);
             match r {
                 Reading::Far(cv) => {

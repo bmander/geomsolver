@@ -58,7 +58,7 @@ fn least(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
 }
 
 /// **How the point `x` of a sheet, its own instant `own`, stands under the sweep over `[a, b]`**
-/// (`Reading`), its depth read to `within` (the tolerance: a point held less deep than that is on
+/// (`Reading`), the point standing off its sheet by as much as `off`, its depth read to `within` (the tolerance: a point held less deep than that is on
 /// the boundary as the tolerance reads it). Its distance from the tool `d(τ)` is read along the roll
 /// each way from `own`, the steps growing from the rounding's share of the roll by a quarter each,
 /// and never longer than the stretch over which the point moves the larger of `|d|` and `within`
@@ -66,7 +66,7 @@ fn least(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
 /// certified march) nor a quarter of the ring's thickness (a feature size); the own contact runs
 /// on each side while `d` climbs, its end (the greatest) settled by golden sections, and the least
 /// of `d` past both ends settled the same way about the least sample.
-pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,within: f64) -> Result<Reading,Unbuilt> {
+pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64,within: f64) -> Result<Reading,Unbuilt> {
     let domain = crate::util::interval::Interval::new(a,b).map_err(|_| Unbuilt::Failed("a roll with no extent".into()))?;
     let speed = path.inverse_point_speed_bound(x,domain).map_err(|_| Unbuilt::Failed("a point's speed under the motion unbounded".into()))?;
     let most = if speed > 0. { 0.25*ring.thickness/speed } else { b-a };
@@ -89,7 +89,9 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,within: 
     // (a side whose first depth clear of its rounding — the pose's and the distance's few roundings
     // of the point's place, read at the tool's size — is below nought: its neighbours cover the
     // point. Nearer, `d` is nought to its rounding either way)
-    let rounding = 16.*f64::EPSILON*(crate::util::space::norm(x)+ring.size);
+    // (or, where the point stands off its sheet — a fitted sheet's point, `off` its fit — that:
+    // about its own instant `d` is then nought to it)
+    let rounding = (16.*f64::EPSILON*(crate::util::space::norm(x)+ring.size)).max(off);
     let held = |s: &[(f64,f64)]| s.iter().find(|p| p.1.abs() > rounding).is_some_and(|p| p.1 < 0.);
     if held(&lower) || held(&upper) { return Ok(Reading::Near) }
     // each side's own contact's end: the first sample past which `d` falls
@@ -141,7 +143,7 @@ pub fn label_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> O
 /// else can.
 pub fn far_depth(ring: &Ring,path: &Trajectory,roll: [f64;2],theta: f64,t: f64,l: Label,within: f64) -> Option<Cover> {
     let (x,_) = sheet(ring,path,roll,theta,t,l)?;
-    match cover(ring,path,roll,x,t,within).ok()? { Reading::Far(c) => Some(c),_ => None }
+    match cover(ring,path,roll,x,t,0.,within).ok()? { Reading::Far(c) => Some(c),_ => None }
 }
 
 /// The tool's depth at the point `x` at each of `ts` (a probe of `cover`).

@@ -28,7 +28,7 @@ fn far(ring: &Ring,path: &Trajectory,roll: [f64;2],(th,t,sg): (f64,f64,f64),tol:
     let l = label_at(ring,path,th,t,sg).unwrap();
     let (x,bend) = sheet(ring,path,roll,th,t,l).unwrap();
     assert!(bend > 0.,"({th}, {t}): the sheet touching, s'' {bend}");
-    cover(ring,path,roll,x,t,tol).unwrap()
+    cover(ring,path,roll,x,t,0.,tol).unwrap()
 }
 
 /// **The far cover agrees with the double curve** (#942): two pairs of the half turn's double
@@ -77,14 +77,14 @@ fn where_the_full_turns_end_poses_touch_both_are_buried() {
         path.pose(t).unwrap().point([3.+r*phi.cos(),r*phi.sin(),2.+0.16*psi.sin()])
     };
     let start = at(roll[0],2.355154,-1.569185);
-    match cover(&ring,&path,roll,start,roll[0],tol).unwrap() {
+    match cover(&ring,&path,roll,start,roll[0],0.,tol).unwrap() {
         Reading::Far(c) => assert!(c.depth < -0.04 && c.at > 3.,"the start pose at the touch: {c:?}"),
         other => panic!("the start pose at the touch: {other:?}"),
     }
     let end = at(roll[1],-2.355278,-1.567330);
     // (the angles to six places: the two points within a few millionths of one another)
     assert!(gcs_core::brep::util::space::distance(start,end) < 1e-5,"the poses touch: {start:?} {end:?}");
-    assert!(matches!(cover(&ring,&path,roll,end,roll[1],tol).unwrap(),Reading::Near),"the end pose at the touch");
+    assert!(matches!(cover(&ring,&path,roll,end,roll[1],0.,tol).unwrap(),Reading::Near),"the end pose at the touch");
     let equator = at(roll[0],1.760338,-0.000259);
-    assert!(matches!(cover(&ring,&path,roll,equator,roll[0],tol).unwrap(),Reading::Near),"the start pose's equator");
+    assert!(matches!(cover(&ring,&path,roll,equator,roll[0],0.,tol).unwrap(),Reading::Near),"the start pose's equator");
 }
