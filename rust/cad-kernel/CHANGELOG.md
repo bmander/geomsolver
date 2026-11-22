@@ -8,6 +8,33 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
+  T1d-tori, new `swept::rings::give_way`, `Way`, `fitted_giving_way`, `Fitted::ways`): a narrow
+  pair's bridge ends where `s''` leaves the fold's band, at the depth of its least — a construction
+  line — and a double curve's preimage that starts on the fold at its swallowtail point crosses it as
+  `s''` climbs; where it crosses the sheet's rates are all but one way, and the thin tumbling torus's
+  first curve ran within 8.8e-7 of the end in space (three tolerances) over 9.9e-4 of its length,
+  inside the band (`tolerant::ON_CURVE` tolerances) within which the arrangement takes two curves for
+  one: the strip between was laid as one edge and the check refused a pcurve 8.47e-7 off. Each branch
+  of each double curve (its points between swallowtail points) that comes within that band of the
+  bridge's end nearest it, and spans a stretch's rolls as a graph over the roll, is that end over
+  every stretch it spans: the reader puts the end on the branch's preimage at each roll (a cubic
+  spline of its angle over the roll through the traced points — settled row by row beside the
+  swallowtail point the pair is ill posed, two families 1.5e-6 of an angle apart), the face before
+  the bridge ends on the double curve, and `cut_along` lays that branch as no chord. brep-bench's
+  `tumbling-torus-thin` is built: 28 faces, checked at the call's tolerance, held to membership and
+  agreeing with the sweep's definition at all 20 000 points of its box, its mesh within 1e-5
+  enclosing 0.6962961 (cadrs 0.69630) — and so with the observer's origin moved by one ulp or by
+  1e-6 either way, its mesh's volume the same to 1.2e-6. Each sheet enters with its seams first (new
+  `rings::seams_first`): where the arrangement takes two of a sheet's edges for one it keeps the
+  first and reads the other uses as inverses of it, and the face given way ends on the fold at the
+  swallowtail point, where that inverse is ill posed — with the chord on the other leaf kept
+  instead, the bench's input passed the check by luck and one ulp off it was refused (a pcurve 1.2e-5
+  off, its foot on the leaf folded back). `props::volume` does not read this solid (0.785 where the
+  mesh reads 0.6962): beside each swallowtail point a short piece of a row merged into the seam is
+  read by inversion onto the fold. The half turn gives no way and is unchanged. `depth_probe` reads
+  `ends` and `ratio`; `ring_profile` reads `nudge`, `fluxes` and the misfits after a build.
+
 - **A far cover is read from the top of its own contact's climb** (#942 T1d-tori,
   `swept::depth::cover`): the end of a point's own contact is where its distance from the tool first
   falls a rounding below the greatest sample so far, not below the sample before. Where the own

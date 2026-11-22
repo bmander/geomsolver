@@ -2,8 +2,9 @@
 //! ring road traces read under `swept::depth::cover` — its points' far depth, the instant that covers
 //! them against the partner's — and the far cover read about each swallowtail point.
 //!
-//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z|sliver t…]`
-//! (`sliver`: at each roll, each narrow pair's folds, how far apart, and how deep the sweep holds
+//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z|sliver t…|ends [band] [x,y,z r]|ratio [every]]`
+//! (`ends`: each double curve's points against the bridges' ends on their own rows; `ratio`: their
+//! `s''` against the pair's least's depth, the level a bridge's end is put at; `sliver`: at each roll, each narrow pair's folds, how far apart, and how deep the sweep holds
 //! the leaf between them — over the roll, and by the instants beside its own)
 use cad_kernel::swept::depth::{Reading,cover,far_depth,label_at,sheet};
 use cad_kernel::trajectory::{Screw,Trajectory};
@@ -241,6 +242,69 @@ fn main() {
                         println!("  {i}: dt {:+.3e}, {:.3e} from the row's contact{}",c[i].1-ap.1,f(0.5*(a0+b0)),if f(0.5*(a0+b0)) <= tol { " (within the tolerance)" } else { "" });
                     }
                 }
+            }
+            return
+        }
+        "ends" => {
+            // each double curve's points against the bridges' ends on their own row: the nearest end
+            // of a narrow pair's bridge round the axis, how far apart in space, and whether the point
+            // stands inside the bridge (`ends [band] [x,y,z r]`: each point within `band` tolerances
+            // printed, or within `r` of the place `x`)
+            let band: f64 = args.get(2).map_or(8.,|v| v.parse().unwrap());
+            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let tau = std::f64::consts::TAU;
+            for (ci,c) in curves.iter().enumerate() {
+                let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
+                let mut least = (f64::INFINITY,0);
+                for (k,&(th,t,sg)) in c[..at].iter().enumerate() {
+                    let Some(l) = label_at(&ring,&path,th,t,sg) else { continue };
+                    let Some((x,_)) = sheet(&ring,&path,roll,th,t,l) else { continue };
+                    let Ok(pieces) = cad_kernel::swept::rings::pieces_at(&ring,&path,[t,roll[1]],t) else { println!("  {k}: unread"); continue };
+                    let mut best: Option<(f64,f64,bool,f64)> = None;
+                    for pc in &pieces { for &(from,to,pl,side) in pc {
+                        if side != cad_kernel::swept::rings::Side::Fold { continue }
+                        let inside = { let d = (th-from).rem_euclid(tau); d <= (to-from).abs() };
+                        for e in [from,to] {
+                            let Some((y,_)) = sheet(&ring,&path,roll,e,t,pl) else { continue };
+                            let d = cad_kernel::util::space::distance(x,y);
+                            let dth = { let d = (th-e).rem_euclid(tau); d.min(tau-d) };
+                            if best.is_none_or(|b| d < b.0) { best = Some((d,dth,inside,e)) }
+                        }
+                    } }
+                    let Some((d,dth,inside,e)) = best else { continue };
+                    if d < least.0 { least = (d,k) }
+                    let near = args.get(3).map(|v| { let q: Vec<f64> = v.split(',').map(|z| z.parse().unwrap()).collect();
+                        cad_kernel::util::space::distance(x,[q[0],q[1],q[2]]) <= args[4].parse::<f64>().unwrap() });
+                    if d <= band*tol || near == Some(true) { println!("  curve {ci} point {k}: θ {th:.7} t {t:.7}: {:.2} tol from the end at {e:.7} (dθ {dth:.2e}){}",d/tol,if inside { ", inside" } else { "" }) }
+                }
+                println!("curve {ci}: {at} points; nearest a bridge's end {:.3e} ({:.2} tol) at point {}",least.0,least.0/tol,least.1);
+            }
+            return
+        }
+        "ratio" => {
+            // each double curve's points' `s''` against their row's nearest narrow pair's least: the
+            // level the bridge's end is put at is 1, the swallowtail's normal form puts the curve at 2
+            // (`ratio [every]`)
+            let every: usize = args.get(2).map_or(25,|v| v.parse().unwrap());
+            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let tau = std::f64::consts::TAU;
+            for (ci,c) in curves.iter().enumerate() {
+                let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
+                let (mut lo,mut hi) = ((f64::INFINITY,0),(f64::NEG_INFINITY,0));
+                for (k,&(th,t,sg)) in c[..at].iter().enumerate() {
+                    let Some(l) = label_at(&ring,&path,th,t,sg) else { continue };
+                    let Some((_,bend)) = sheet(&ring,&path,roll,th,t,l) else { continue };
+                    let Ok(pieces) = cad_kernel::swept::rings::pieces_at(&ring,&path,[t,roll[1]],t) else { continue };
+                    let apart = |e: f64| { let d = (th-e).rem_euclid(tau); d.min(tau-d) };
+                    let Some(&(from,to,pl,_)) = pieces.iter().flatten().filter(|p| p.3 == cad_kernel::swept::rings::Side::Fold)
+                        .min_by(|p,q| apart(0.5*(p.0+p.1)).total_cmp(&apart(0.5*(q.0+q.1)))) else { continue };
+                    let least = (0..=400).filter_map(|j| sheet(&ring,&path,roll,from+(to-from)*j as f64/400.,t,pl).map(|s| s.1)).fold(f64::INFINITY,f64::min);
+                    let rho = bend/least.abs();
+                    if rho < lo.0 { lo = (rho,k) }
+                    if rho > hi.0 { hi = (rho,k) }
+                    if k%every == 0 { println!("  curve {ci} point {k}: θ {th:.6} t {t:.6}: s''/|least| {rho:+.4}, bridge [{from:.6}, {to:.6}]") }
+                }
+                println!("curve {ci}: least ratio {:.4} at {}, greatest {:.4} at {}",lo.0,lo.1,hi.0,hi.1);
             }
             return
         }
