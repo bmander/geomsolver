@@ -673,29 +673,11 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         for q in [&mut a,&mut m,&mut z] { q[k] += d; }
                     }
                 }
-                // the edge's inverse read on the branch nearest the line between its ends
-                // (`Pcurve::Inverse`): that is the walk's own only where every point of the walk
-                // keeps within half a period of the line. Between two points read a step apart the
-                // walk moves less than a twelfth of a period, so the farthest it stands from the
-                // line there is the nearer's distance and its step and the line's; across a jump at
-                // the pole, resolved to a hair, the two sides' own. A curve winding unevenly round a
-                // pole — sweeping its half turn at one end of a whole one — does not keep within,
-                // and is refused
+                // (the edge's inverse is read on the branch nearest the line between its ends,
+                // `Pcurve::Inverse`: where its walk strays half a period from that line — a curve
+                // winding unevenly round a pole — the inverse changes branch mid-edge, which `sound`
+                // refuses as a leap of a period, `step_sound::a_use_leaping_a_period_is_refused`)
                 let off = [a[0]-walked[0][0],a[1]-walked[0][1]];
-                let dev = |f: f64,q: Uv,k: usize| (q[k]+off[k]-(a[k]+(z[k]-a[k])*f)).abs();
-                for w in read.windows(2) {
-                    let ((f0,q0),(f1,q1)) = (w[0],w[1]);
-                    if pole_at(s,q0,st.within).is_some() || pole_at(s,q1,st.within).is_some() { continue }
-                    let Some((k,far)) = (0..2).filter_map(|k| periods[k].map(|p| (k,p))).find_map(|(k,p)| {
-                        let step = (q1[k]-q0[k]).abs();
-                        let far = if step > p/12. { dev(f0,q0,k).max(dev(f1,q1,k)) }
-                            else { dev(f0,q0,k).min(dev(f1,q1,k))+step+(z[k]-a[k]).abs()*(f1-f0) };
-                        (far >= 0.5*p).then_some((k,far))
-                    }) else { continue };
-                    return Err(Refusal::unsupported(st.reads[ei].entity,format!("an edge whose curve sweeps round its face's pole \
-                        so unevenly that its parameter {} stands {far:.3} from the line between its ends, past the half period a \
-                        curve inverted between its ends is read within",["u","v"][k])))
-                }
                 // a curve crossing its face's pole between its ends (a meridian over a ball's
                 // top): its collapsed parameter jumps there, which no one inverse curve reads — the
                 // edge cut at the pole (`Cut`), each piece its own inverse to the pole on its own

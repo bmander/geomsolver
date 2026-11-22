@@ -63,7 +63,7 @@ impl Net {
     }
 }
 
-enum Surf { Plane(Fr),Cyl(Fr,f64),Cone(Fr,f64,f64),Sphere(Fr,f64),Torus(Fr,f64,f64),Extr(Box<Crv>,V),Net(Net) }
+enum Surf { Plane(Fr),Cyl(Fr,f64),Cone(Fr,f64,f64),Sphere(Fr,f64),Torus(Fr,f64,f64),Extr(Box<Crv>,V),Rev(Box<Crv>,V,V),Net(Net) }
 #[derive(Clone,Copy)]
 struct Fr { o: V,x: V,y: V,z: V }
 enum Crv { Line(V,V),Circle(Fr,f64),Ellipse(Fr,f64,f64),Spline(Spline) }
@@ -96,6 +96,13 @@ impl Surf {
             Surf::Sphere(f,r) => add(add(f.o,ring(f,r*v.cos(),u)),sc(f.z,r*v.sin())),
             Surf::Torus(f,big,r) => add(add(f.o,ring(f,big+r*v.cos(),u)),sc(f.z,r*v.sin())),
             Surf::Extr(c,d) => add(c.at(u),sc(*d,v)),
+            // (the curve's point at `v` turned by `u` about the axis through `o` along `z`: Rodrigues)
+            Surf::Rev(c,o,z) => {
+                let p = sub(c.at(v),*o);
+                let along = sc(*z,p[0]*z[0]+p[1]*z[1]+p[2]*z[2]);
+                let r = sub(p,along);
+                add(add(*o,along),add(sc(r,u.cos()),sc(cross(*z,r),u.sin())))
+            }
             Surf::Net(n) => n.at(u,v),
         }
     }
@@ -160,6 +167,13 @@ impl<'f,'a> Reader<'f,'a> {
                     let (_,vec) = self.ent(v[2].reference().unwrap());
                     let d = self.g.direction(0,vec[1].reference()).unwrap();
                     Surf::Extr(Box::new(c),sc(d,vec[2].number().unwrap()*l))
+                }
+                "SURFACE_OF_REVOLUTION" => {
+                    let c = self.curve(v[1].reference().unwrap())?;
+                    let (_,ax) = self.ent(v[2].reference().unwrap());
+                    let o = self.pt(ax[1].reference());
+                    let z = ax.get(2).and_then(Value::reference).map_or([0.,0.,1.],|d| self.g.direction(0,Some(d)).unwrap());
+                    Surf::Rev(Box::new(c),o,z)
                 }
                 "B_SPLINE_SURFACE_WITH_KNOTS" => self.net(v[1].number().unwrap() as usize,v[2].number().unwrap() as usize,&v[3],
                     (Self::ints(&v[8]),Self::ints(&v[9]),Self::nums(&v[10]),Self::nums(&v[11])),None),
@@ -226,6 +240,7 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
         "PLANE" => [l,l],
         "CYLINDRICAL_SURFACE" | "CONICAL_SURFACE" => [ang,l],
         "SPHERICAL_SURFACE" | "TOROIDAL_SURFACE" => [ang,ang],
+        "SURFACE_OF_REVOLUTION" => [ang,1.],
         "SURFACE_OF_LINEAR_EXTRUSION" => [1.,1.],
         _ => [1.,1.],
     };
@@ -233,6 +248,7 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
         Surf::Cyl(..) | Surf::Cone(..) => [Some(std::f64::consts::TAU),None],
         Surf::Sphere(..) => [Some(std::f64::consts::TAU),None],
         Surf::Torus(..) => [Some(std::f64::consts::TAU);2],
+        Surf::Rev(..) => [Some(std::f64::consts::TAU),None],
         _ => [None,None],
     };
     let mut out = Vec::new();
