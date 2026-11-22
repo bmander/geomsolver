@@ -86,7 +86,12 @@ impl Out {
             }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
                 | Surface::Affine(..) => unreachable!("written above, or as its face's net (`face_net`)"),
-            Surface::Offset(..) => return Err("an offset read by its signed distance is no face's surface".into()),
+            // a sheet's offset read from a file (`OFFSET_SURFACE` of a net), written so again:
+            // `S + d N`, `N` the unit `S_u × S_v`, as the standard's and the reader's
+            Surface::Offset(_,ref n,d) => {
+                let basis = self.net(n);
+                self.add(format!("OFFSET_SURFACE('',#{basis},{},.F.)",real(d)))
+            }
         },0.))
     }
     /// A B-spline surface, rational where it has weights: the complex entity, its parts in the

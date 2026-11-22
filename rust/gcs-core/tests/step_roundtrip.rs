@@ -850,6 +850,30 @@ fn bench_cross_check() {
     for (k,n) in &tally { eprintln!("BENCH SUMMARY {n:4}  {k}"); }
 }
 
+/// **A solid read on an offset surface is written again and reads to itself** (the writer's
+/// `OFFSET_SURFACE`, which only a reading makes: the kernel builds no face on `Surface::Offset`):
+/// brep-bench's trough thickened (OCCT's and kentron's; kentron's grown ball the reader refuses), from
+/// `$STEP_CORPUS`, each solid read written again, verified, and read to the same solid.
+#[test]
+#[ignore = "needs STEP_CORPUS: offset surfaces read from other writers' files"]
+fn an_offset_read_is_written_again() {
+    let Ok(root) = std::env::var("STEP_CORPUS") else { eprintln!("no STEP_CORPUS"); return };
+    for file in ["brep-bench/occt/thicken/parabolic-trough.step","brep-bench/kentron/thicken/parabolic-trough.step"] {
+        let text = std::fs::read_to_string(std::path::Path::new(&root).join(file)).unwrap();
+        let given = stages(&text).unwrap_or_else(|(by,r,_)| panic!("{file}: refused by {by:?}: {r}"));
+        let mut offsets = 0;
+        for g in &given {
+            offsets += g.brep.faces.iter().filter(|f| matches!(f.surface,Surface::Offset(..))).count();
+            let tol = g.context.uncertainty.unwrap_or(1e-7);
+            let again = write(&g.brep,"again",tol,Fit::Exact).unwrap_or_else(|e| panic!("{file}: not written again: {e}"));
+            verify(&again,&Solid::of(&g.brep)).unwrap_or_else(|e| panic!("{file}: written again, not verified: {e}"));
+            let twice = stages(&again).unwrap_or_else(|(by,r,_)| panic!("{file}: read again, refused by {by:?}: {r}"));
+            same(&g.brep,&measured(&g.brep),&again,&twice[0],Fit::Exact,tol,&mut Found::default()).unwrap_or_else(|d| panic!("{file}: {d}"));
+        }
+        eprintln!("{file}: {} solids, {offsets} faces on offsets, each written again and read to itself",given.len());
+    }
+}
+
 /// Solids the kernel builds directly, each reaching a path of the writer the library's examples
 /// may not: the cone either way and to its apex, a whole sphere and torus (poles and seams of
 /// both parameters), a revolution of a rational spline and an extrusion of a plain one, a traced
@@ -974,6 +998,7 @@ const PATHS: &[&str] = &[
     "edge: bspline",
     "edge: bspline, rational",
     "edge: circle",
+    "edge: affine",
     "edge: degenerate (a pole's)",
     "edge: ellipse",
     "edge: iso",
@@ -1031,6 +1056,7 @@ const PATHS: &[&str] = &[
     "surface: affine image of a cone opening against its axis",
     "surface: affine image of a cylinder",
     "surface: affine image of a extrusion of a bspline",
+    "surface: affine image of a family",
     "surface: affine image of a sphere",
     "surface: affine image of a torus",
     "surface: blend along a screw",
@@ -1070,6 +1096,15 @@ const SAMPLE: &[(&str,&str)] = &[
     ("generation/cam_plate.sv","plate"),
 ];
 
+/// Solids of the library held to the property under a shear (`shear`): a family's rails become
+/// images of curves (`Curve::Affine`), which the writer fits, and its walls images of walls.
+const SHEARED: &[(&str,&str)] = &[("solid_twist.sv","body")];
+
+/// The shear the sample's images are taken under.
+fn shear() -> gcs_core::brep::affine::Affine {
+    gcs_core::brep::affine::Affine::new([[1.,0.4,0.2],[0.,1.,-0.3],[0.1,0.,1.]],[1.,-2.,0.5]).unwrap()
+}
+
 /// **Every solid of the sample reads back to itself** (`holds`) at `tolerances()[which]`, four at
 /// once.
 fn sample_holds(which: &[usize]) {
@@ -1082,9 +1117,10 @@ fn sample_holds(which: &[usize]) {
         let k = next.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let started = Instant::now();
         // (the library's first, the slowest among them, so the kernel's fill in behind)
-        let (name,b) = match SAMPLE.get(k) {
-            Some(&(e,s)) => (format!("{e} `{s}`"),example_solid(e,s)),
-            None => match kernel.get(k-SAMPLE.len()) { Some((n,b)) => (n.to_string(),b.clone()),None => break },
+        let (name,b) = match (SAMPLE.get(k),SHEARED.get(k.wrapping_sub(SAMPLE.len()))) {
+            (Some(&(e,s)),_) => (format!("{e} `{s}`"),example_solid(e,s)),
+            (None,Some(&(e,s))) => (format!("{e} `{s}` sheared"),example_solid(e,s).mapped(&shear())),
+            (None,None) => match kernel.get(k-SAMPLE.len()-SHEARED.len()) { Some((n,b)) => (n.to_string(),b.clone()),None => break },
         };
         let built = started.elapsed();
         if let Err(e) = holds(&name,&b,which) { failed.lock().unwrap().push(e); }
@@ -1196,6 +1232,13 @@ fn a_lofts_file_states_what_its_fits_hold() { known("solid_elbow.sv","body") }
 /// off its net between its knots).
 #[test]
 fn a_files_uncertainty_covers_the_solids_own() { known("solid_sweeps/creased.sv","block") }
+
+/// **A slid torus's contour reads back** (`Curve::Slid` edges and the extrusion of the contour,
+/// both fitted within `step::FIT`): the writer's paths `edge: slid` and `surface: extrusion of a
+/// slid (fitted)`, which the sample leaves here for its time.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, 15 s: a ring's sweep written and read twice")]
+fn a_slid_contour_reads_back() { known("solid_sweeps/leaning_ring.sv","block") }
 
 /// **A face family's wall turning at its stations' joints is written** (`lofts/pipe.sv`'s tube,
 /// refused while its net was fitted smooth across them, 1.7e-2 mm off at the fit's cap).

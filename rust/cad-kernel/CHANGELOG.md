@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
+  face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
+  solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
+  distance, as it was read.
+
 - **A face family's wall and rail that turn at their stations' joints are written** (#993 stage
   1): a family's numbers are a polynomial through six stations a piece, two pieces meeting in value
   only, and `step` fitted its wall and rails smooth across the joints, which no net closes in on
