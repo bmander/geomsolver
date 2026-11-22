@@ -132,6 +132,15 @@ fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Fa
                     let q = f.surface.point(f.surface.inverse(add(m,scale(across,side*ACROSS*hair))));
                     if !located[k].face_holds(i,q) { continue }
                     let on_kept = kept.face_holds(u[0].0,q);
+                    if debug() && on_kept && matches!(read(f,q),Some(None)) {
+                        // (the kept face's loops: where its piece is bounded)
+                        let kf = &out.faces[u[0].0];
+                        for (li,l) in kf.loops.iter().enumerate() { for c in l {
+                            let e = &out.edges[c.edge as usize];
+                            eprintln!("trim: the kept face {} loop {li}: edge {} ({}) from {:?} to {:?}, used {}",u[0].0,c.edge,e.curve.kind(),
+                                out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,uses[c.edge as usize].len());
+                        } }
+                    }
                     match read(f,q) {
                         Some(None) if on_kept => return Some(Witness {face:(k,i),at:[read_at((k,i),q,true),q],
                             said:format!("the boundary is open along a {} edge through {m:?}: the {} piece kept beside it (candidate and \

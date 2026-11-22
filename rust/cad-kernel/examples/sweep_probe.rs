@@ -39,6 +39,26 @@ fn main() {
                 for n in c.on.iter().take(8) { println!("  candidate {} face {} ({} {}) off {:e}",n.candidate,n.face,n.kind,n.name,n.off) }
             }
         }
+        "given" => {
+            // each curve of the given meetings `a` and `b`: its ends, and the nearest the two come
+            let (a,b): (usize,usize) = (args[2].parse().unwrap(),args[3].parse().unwrap());
+            let pts = |c: &cad_kernel::geom::Curve| -> Vec<[f64;3]> { match c {
+                cad_kernel::geom::Curve::BSpline(s) => { let [t0,t1] = s.domain(); (0..=4000).map(|k| c.point(t0+(t1-t0)*k as f64/4000.)).collect() }
+                _ => Vec::new() } };
+            for g in [a,b] { for c in &t.given[g].curves { let p = pts(c); if let (Some(f),Some(l)) = (p.first(),p.last()) { println!("given {g}: a {} from {f:?} to {l:?}",c.kind()) } } }
+            let mut best = (f64::INFINITY,[0.;3]);
+            for c in &t.given[a].curves { for d in &t.given[b].curves { let (p,q) = (pts(c),pts(d));
+                for x in &p { for y in &q { let e = cad_kernel::util::space::distance(*x,*y); if e < best.0 { best = (e,*x) } } } } }
+            println!("nearest {:.3e} at {:?}",best.0,best.1);
+            // (refined: alternating feet on the two curves from there)
+            for c in &t.given[a].curves { for d in &t.given[b].curves {
+                let mut x = c.point(c.inverse(best.1));
+                for _ in 0..200 { let y = d.point(d.inverse(x)); x = c.point(c.inverse(y)); }
+                let y = d.point(d.inverse(x));
+                let e = cad_kernel::util::space::distance(x,y);
+                if e < 1e-2 { println!("refined {e:.3e} at {x:?}") }
+            } }
+        }
         "through" => {
             let p = v3(args.get(2).map_or("",String::as_str));
             let within = args.get(3).map_or(1e-6,|r| r.parse().expect("a distance"));

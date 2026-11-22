@@ -216,8 +216,13 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
             let mut grow = near.max(HALF_READ);
             loop {
                 let rect: crate::zero_set::Rect = std::array::from_fn(|k| [(c[k]-grow).max(whole[k][0]),(c[k]+grow).min(whole[k][1])]);
-                let traced = crate::zero_set::trace(&field,&crate::zero_set::Question {rect,edges:&[],seeds:&[*c],tol,feature:ring.thickness})
-                    .map_err(|e| Unbuilt::Failed(format!("the tool's meeting with itself at the roll's ends not traced: {e}")))?;
+                // (a window whose search does not settle — the two poses within the tolerance of one
+                // another over a stretch, as a torus turned across a block's are — gives nothing from this
+                // corner: the trim then meets the two poses by its own search, as it did before)
+                let traced = match crate::zero_set::trace(&field,&crate::zero_set::Question {rect,edges:&[],seeds:&[*c],tol,feature:ring.thickness}) {
+                    Ok(t) => t,
+                    Err(e) => { if crate::timing() { eprintln!("ring: the end poses' meeting from {:?} not traced: {e}",corners[i]) } break }
+                };
                 let (found,open) = between_corners(&traced.pieces,s,&corners,corners[i],tol);
                 let open = open.iter().map(|xs| Ok::<bool,Unbuilt>(uncovered(xs[xs.len()/2],0,0.)? && uncovered(xs[xs.len()/2],1,tol)?))
                     .collect::<Result<Vec<bool>,_>>()?.into_iter().any(|o| o);
