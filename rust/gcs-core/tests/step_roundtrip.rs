@@ -1213,7 +1213,6 @@ fn known(example: &str,solid: &str) {
 fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 
 #[test]
-#[ignore = "a known defect, reported: sound refuses a use on a surface of revolution whose end it reads on another branch of the pole than its curve (`leaps π along a pole`)"]
 fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
 
 /// **A loop across a closed net's closing line reads back** (`helical_groove`'s block, refused as

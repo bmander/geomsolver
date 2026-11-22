@@ -191,6 +191,23 @@ fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let suv = scale(sub(up_vu,dn_vu),0.5/hv);
     let (a11,a12,a22) = (dot(su,su)+dot(gap,suu),dot(su,sv)+dot(gap,suv),dot(sv,sv)+dot(gap,svv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
+    // a foot held on a spline sheet's domain edge, the nearest point of the sheet past it (an edge
+    // standing off a face whose own edge it runs along: the gap not square to the sheet there):
+    // that parameter stays on the edge, and the other runs alone (CADGenBench 246's face #11343, its
+    // sheet's whole domain, read 6.5e-4 over it where the rate across the edge was the free foot's)
+    if let Surface::BSpline(_,n) = surface {
+        let dom = n.domain();
+        let held: Vec<usize> = (0..2).filter(|&k| {
+            let [lo,hi] = dom[k];
+            let s = [su,sv][k];
+            (uv[k] <= lo || uv[k] >= hi) && dot(gap,s).abs() > 1e-6*norm(gap)*norm(s)
+        }).collect();
+        match held[..] {
+            [k] => { let mut r = [0.;2]; r[1-k] = if k == 0 { b2/a22 } else { b1/a11 }; if r[1-k].is_finite() { return r } }
+            [_,_] => return [0.;2],
+            _ => {}
+        }
+    }
     let det = a11*a22-a12*a12;
     let rate = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
     if det != 0. && rate.iter().all(|r| r.is_finite()) { rate } else { in_parameters(surface,uv,d) }

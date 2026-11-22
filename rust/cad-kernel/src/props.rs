@@ -582,6 +582,23 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
     let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
     let uvs: Vec<Uv> = ts.iter().map(|&t| at(t)).collect();
     let mut out = Vec::new();
+    // (and on a net, where its normal turns over between two points of the use — its area factor
+    // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
+    // are no knots)
+    if let Surface::BSpline(..) = s {
+        let normal = |uv: Uv| { let (_,su,sv) = s.d1(uv); cross(su,sv) };
+        let ns: Vec<V> = uvs.iter().map(|&q| normal(q)).collect();
+        for j in 0..n {
+            if !(dot(ns[j],ns[j+1]) < 0.) { continue }
+            let (mut lo,mut hi) = (ts[j],ts[j+1]);
+            for _ in 0..60 {
+                let m = 0.5*(lo+hi);
+                if dot(normal(at(m)),ns[j]) >= 0. { lo = m } else { hi = m }
+                if hi-lo <= 1e-12*(e.t[1]-e.t[0]).abs() { break }
+            }
+            out.push(0.5*(lo+hi));
+        }
+    }
     for j in 0..n {
         for k in 0..2 {
             let (a,b) = (uvs[j][k],uvs[j+1][k]);
@@ -844,16 +861,37 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             // the loop closed in the face's parameters, each use's end joined straight to the next's
             // start: the kernel's measured gaps between them are small in space, but `G` across a
             // spline face's chart can be large, and Green's theorem needs a closed curve
-            let ends: Vec<(Uv,Uv)> = l.iter().map(|c| {
+            // — and each use's own ends closed to where its curve arrives: an inverse curve's end
+            // is read where the walk put it, on the branch of a pole the next use leaves along,
+            // its curve a hair in from it on the branch it arrives along (its feet swinging round
+            // the pole it passes within its tolerance of); the rule above reads the curve inside,
+            // so the chord between the two is the face's boundary there (`sound`'s `Drawn::leap`
+            // reads the region it closes)
+            let ends: Vec<[Uv;4]> = l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
                 let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
-                if c.reversed { (z,a) } else { (a,z) }
+                let inside = |t: f64,end: Uv,h: f64| {
+                    if !matches!(c.pcurve,Pcurve::Inverse {..}) { return end }
+                    let (q,d) = c.pcurve.at_and_derivative(t+h,e,s,&b.vertices);
+                    // (the curve a hair in where it stands farther from the end than its rate
+                    // carries it there: a leap; else the end itself, so a smooth end adds nothing,
+                    // not even rounding)
+                    let step = (d[0]*h).hypot(d[1]*h);
+                    let gap = (q[0]-end[0]).hypot(q[1]-end[1]);
+                    if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
+                };
+                let h = 1e-9*(e.t[1]-e.t[0]);
+                let (ai,zi) = (inside(e.t[0],a,h),inside(e.t[1],z,-h));
+                if c.reversed { [z,zi,ai,a] } else { [a,ai,zi,z] }
             }).collect();
             for k in 0..ends.len() {
-                let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
-                let dv = q[other]-p[other];
-                if dv == 0. { continue }
-                row[k].1 = gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv);
+                let next = &ends[(k+1)%ends.len()];
+                let path = [ends[k][2],ends[k][3],next[0],next[1]];
+                row[k].1 = path.windows(2).map(|w| {
+                    let (p,q) = (w[0],w[1]);
+                    let dv = q[other]-p[other];
+                    if dv == 0. { 0. } else { gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv) }
+                }).sum();
             }
             out.push(row);
         }
