@@ -1141,10 +1141,9 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
 /// greatest tolerance (or a millionth of the boundary's size), then eight, thirty-two and a
 /// hundred and twenty-eight times, until the point is read off the shell;
 /// inward from the edge twice as far again, so that a point beside a concave edge stands in the
-/// wedge outside it. The probes vote, and the shell faces the way most of them say, or is refused
-/// where they tie (a shell facing both ways bounds no volume). Where none is read, the shell's
-/// signed volume says (what it would say everywhere, but its integral over every face costs more
-/// than the whole read).
+/// wedge outside it. The probes vote, and the shell faces the way most of them say. Where none is
+/// read, or they tie, the shell's signed volume says (what it would say everywhere, but its
+/// integral over every face costs more than the whole read), refused where it is none.
 fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> Result<bool,Unsound> {
     use crate::query::Place;
     use crate::util::space::{add,cross,scale};
@@ -1203,9 +1202,10 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> 
     if out > inward { return Ok(true) }
     if inward > out { return Ok(false) }
     let f = shell[0];
-    if out > 0 { return Err(Unsound::face(f,format!("the shell of face {f} faces both ways ({out} of its faces read outward, as many inward): it bounds no volume"))) }
-    // none read off the shell (a ray along a face, a meeting the queries do not prove): its signed
-    // volume says, its faces' fluxes summed
+    // none read off the shell (a ray along a face, a meeting the queries do not prove), or as many
+    // one way as the other (steps off a small void's faces beside its concave edges, CADGenBench
+    // 217's drilled cavity of three faces read three and three): its signed volume says, its faces'
+    // fluxes summed
     let volume: f64 = shell.iter().map(|&fi| crate::props::terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum::<f64>()).sum::<f64>()/3.;
     let floor = crate::geom::tolerance(extent(b));
     if !(volume.abs() > floor*extent(b).powi(2)) {

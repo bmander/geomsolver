@@ -408,7 +408,81 @@ fn moved(pc: &Pcurve,d: Uv) -> Pcurve {
 
 /// What a face is read in: the edges and vertices read, the tolerances a point is taken to stand
 /// at a pole within and a file's curve to lie on its edge within.
-struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
+struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64,turned: &'r BTreeMap<u32,Turned> }
+
+/// A closed spline sheet's domain turned to start at its faces' seam (`turned`): the parameter `k`
+/// it closes in, where its domain now starts (`at`, the file's seam) and its width: a file's curve
+/// in the face's parameters below `at` lies a width on.
+#[derive(Clone,Copy,Debug)]
+struct Turned { k: usize,at: f64,width: f64 }
+
+impl Turned {
+    /// `q`, a point in the file's parameters of the sheet, in the turned sheet's.
+    fn of(&self,mut q: Uv) -> Uv { if q[self.k] < self.at-1e-6*self.width { q[self.k] += self.width; } q }
+}
+
+/// **A closed spline sheet turned to start at its faces' seam** (CADGenBench 217's face #2586,
+/// a band round a sheet closed in `u` whose file seam stands at `u = 0.0183` and not at the
+/// domain's end): a net has no period, so a face crossing its domain's end is no one region in
+/// its parameters, and a use walked across it leaps the domain's width. The net cut at the seam
+/// and its two pieces put end to end — the piece from the seam to the domain's end, then the
+/// piece from its start to the seam carried a width on — is the same surface exactly (knots put
+/// in, never moved), now starting where the faces' seam runs (`Net::segment`); the join a knot of
+/// full multiplicity, the two pieces' rows kept as they are written. `seams`: the points of each
+/// edge a face on the sheet uses twice. None where the sheet closes in neither parameter, where no
+/// seam runs along one value of the parameter it closes in, or where seams stand at two values.
+fn turned(s: &Surface,seams: &[Vec<V>]) -> Option<(Surface,Turned)> {
+    let Surface::BSpline(frame,n) = s else { return None };
+    if seams.is_empty() { return None }
+    let dom = n.domain();
+    for k in 0..2 {
+        let [lo,hi] = dom[k];
+        let w = hi-lo;
+        let [a,b] = dom[1-k];
+        // closed along `k`: its rows at the domain's two ends one curve, to the rounding of its size
+        let at = |x: f64,y: f64| if k == 0 { s.point([x,y]) } else { s.point([y,x]) };
+        let closed = (0..=8).all(|j| { let y = a+(b-a)*j as f64/8.; distance(at(lo,y),at(hi,y)) <= 1e-7*(1.+norm(at(lo,y))) });
+        if !closed { continue }
+        // each seam at one value of `k`, inside the domain
+        let mut x: Option<f64> = None;
+        for seam in seams {
+            let xs: Vec<f64> = seam.iter().map(|&p| s.inverse(p)[k]).collect();
+            let (min,max) = xs.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(m,z),&v| (m.min(v),z.max(v)));
+            if !(max-min <= 1e-6*w) { return None }
+            let m = 0.5*(min+max);
+            if m-lo <= 1e-6*w || hi-m <= 1e-6*w { return None }
+            match x { Some(y) if (y-m).abs() > 1e-6*w => return None,_ => x = Some(m) }
+        }
+        let x = x?;
+        let (first,second) = if k == 0 { (n.segment([x,hi],[a,b]),n.segment([lo,x],[a,b])) } else { (n.segment([a,b],[x,hi]),n.segment([a,b],[lo,x])) };
+        let mut net = first.clone();
+        let p = if k == 0 { n.du } else { n.dv };
+        let (k1,k2) = if k == 0 { (&first.uknots,&second.uknots) } else { (&first.vknots,&second.vknots) };
+        let knots: Vec<f64> = k1[..k1.len()-1].iter().copied().chain(std::iter::repeat_n(hi,1))
+            .chain(k2[p+1..].iter().map(|t| t+w)).collect();
+        if k == 0 {
+            net.uknots = knots;
+            net.poles.extend(second.poles.iter().cloned());
+            if let (Some(wa),Some(wb)) = (net.weights.as_mut(),second.weights.as_ref()) { wa.extend(wb.iter().cloned()); }
+        } else {
+            net.vknots = knots;
+            for (r,q) in net.poles.iter_mut().zip(&second.poles) { r.extend(q.iter().copied()); }
+            if let (Some(wa),Some(wb)) = (net.weights.as_mut(),second.weights.as_ref()) { for (r,q) in wa.iter_mut().zip(wb) { r.extend(q.iter().copied()); } }
+        }
+        net.check().ok()?;
+        // (the same points: read back at the old parameters either side of the seam)
+        let turned = Surface::BSpline(*frame,Arc::new(net));
+        let same = [0.1,0.37,0.5,0.81,0.99].iter().all(|&f| [0.,0.3,0.7,1.].iter().all(|&g| {
+            let (old,y) = (lo+w*f,a+(b-a)*g);
+            let new = if old < x { old+w } else { old };
+            let (p,q) = if k == 0 { (s.point([old,y]),turned.point([new,y])) } else { (s.point([y,old]),turned.point([y,new])) };
+            distance(p,q) <= 1e-9*(1.+norm(p))
+        }));
+        if !same { return None }
+        return Some((turned,Turned {k,at:x,width:w}))
+    }
+    None
+}
 
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
@@ -440,6 +514,15 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 .map(|(pc,k)| {
                     // (on a spline sheet closed round a parameter, a curve a whole span outside its
                     // domain — a writer's of a periodic sheet — moved by the span into it)
+                    // (on a sheet turned to start at its faces' seam, a curve below the seam a
+                    // width on: `Turned`)
+                    let pc = match st.turned.get(&surface) {
+                        Some(t) => {
+                            let mid = pc.at(0.5*(travel[0]+travel[1]),e,s,&b.vertices);
+                            if t.of(mid) != mid { let mut d = [0.;2]; d[t.k] = t.width; moved(&pc,d) } else { pc }
+                        }
+                        None => pc,
+                    };
                     let pc = match s {
                         Surface::BSpline(_,n) => {
                             let (a,dom) = (pc.at(travel[0],e,s,&b.vertices),n.domain());
@@ -493,7 +576,8 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 // where the walk begins, the vertex read near where the file's curve has it, where
                 // the file gives one (the side of a closed spline's seam)
                 let from = last.unwrap_or_else(|| {
-                    let near = st.reads[ei].pcurves.iter().find(|(id,_)| *id == surface).map(|(_,f)| roughly(f,e,st.reads[ei].rate,travel[0]));
+                    let near = st.reads[ei].pcurves.iter().find(|(id,_)| *id == surface).map(|(_,f)| roughly(f,e,st.reads[ei].rate,travel[0]))
+                        .map(|q| st.turned.get(&surface).map_or(q,|t| t.of(q)));
                     // (else from a step in along the edge, whose foot is the face's own where its
                     // start is on a closed sheet's seam)
                     let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
@@ -1189,8 +1273,26 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         }
         Ok((id,s.seated(id,&on,&seams)?))
     }).collect::<Result<_,Refusal>>()?;
+    // a closed spline sheet whose faces' seam is not its domain's end, turned to start there
+    let mut turns: BTreeMap<u32,Turned> = BTreeMap::new();
+    let sheets: BTreeMap<u32,Sheet> = sheets.into_iter().map(|(id,s)| {
+        if s.seat.is_some() || !matches!(s.surface,Surface::BSpline(..)) { return (id,s) }
+        let mut seams = Vec::new();
+        for f in faces.iter().filter(|f| f.surface == id) {
+            let mut count: BTreeMap<usize,usize> = BTreeMap::new();
+            for bound in &f.bounds { if let Bound::Edges(uses) = bound { for u in uses { *count.entry(u.edge).or_default() += 1; } } }
+            for (&e,_) in count.iter().filter(|(_,&n)| n > 1) {
+                let e = &b.edges[e];
+                seams.push((0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&b.vertices)).collect::<Vec<V>>());
+            }
+        }
+        match turned(&s.surface,&seams) {
+            Some((surface,t)) => { turns.insert(id,t); (id,Sheet {surface,..s}) }
+            None => (id,s),
+        }
+    }).collect();
     let built = {
-        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size)};
+        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),turned:&turns};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
