@@ -2449,8 +2449,8 @@ struct Touches<'s,'a> {
     spread: f64,
     /// the smaller face's size, which a touch read alone is small beside
     least: f64,
-    /// the touches read, as they alone are met there or not, each with the reach it is known over
-    read: Vec<(super::ssi::Touch,bool,f64)>,
+    /// the touches read, as they alone are met there or not, each known over its radius
+    read: Vec<(super::ssi::Touch,bool)>,
 }
 
 impl<'s,'a> Touches<'s,'a> {
@@ -2503,8 +2503,7 @@ impl<'s,'a> Touches<'s,'a> {
             !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out)
         };
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
-        let radius = t.radius;
-        self.read.push((t,lone,radius));
+        self.read.push((t,lone));
         lone
     }
 
@@ -2522,10 +2521,8 @@ impl<'s,'a> Touches<'s,'a> {
     /// where they touch beside an edge they touch along, or outside a face — the cheapest asked
     /// first.
     fn beside(&mut self,p: V) -> bool {
-        let known = self.read.iter().find(|(t,_,reach)| distance(t.at,p) <= *reach).map(|&(_,lone,_)| lone);
-        // (beyond an elliptic touch's reach but within its radius, read already: not beside it)
-        let read = known.is_some() || self.read.iter().any(|(t,..)| t.branches.is_empty() && distance(t.at,p) <= t.radius);
-        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || !read && self.alone(p))
+        let known = self.read.iter().find(|(t,_)| distance(t.at,p) <= t.radius).map(|&(_,lone)| lone);
+        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || known.is_none() && self.alone(p))
     }
 }
 
