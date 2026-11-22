@@ -36,8 +36,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`); a piece touching no side is judged
   beside its longest chord. A chord cut at one of its own points no longer takes a step of no
   length there. The full turn's trim is refused next by the check, at a double curve's edge merged
-  across the cut where the contact changes shape. Reading the end rows costs the half turn 7.5 s and
-  the thin torus 22 s, where they find nothing.
+  across the cut where the contact changes shape. Reading the end rows costs the half turn 60 ms,
+  the 80° torus 26 ms and the thin 1.1 s, where they find nothing (`ring_entered` now marks the
+  road's fit as its own phase: its time had been read as theirs).
 
 - **Where a ring's sheet passes back over itself, read off the depth** (#942 T1d-tori, new
   `swept::depth::passed_back`, `seams_through`, `Seam::own`): over a whole turn the tube late in the

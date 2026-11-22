@@ -1143,6 +1143,7 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
     };
     let (ring,scale,mut fits,curves,cut) = ring_fitted(tool,path,[a,b],tol)?;
+    phase("the road fitted");
     let eps = 0.5*grain(tool,path,[a,b],tol)?;
     // **where the tube passes back over itself** (#942, the full turn: `depth::passed_back`): each
     // crossing an instant inside the roll covers, read from the end rows, laid as a double curve is
