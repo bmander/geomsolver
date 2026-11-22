@@ -17,7 +17,13 @@ fn area(path: &cad_kernel::trajectory::Trajectory,roll: [f64;2],r: f64) -> f64 {
 }
 
 fn main() {
-    let (_,_,path,roll,_,_) = case(CONTROL);
+    let (_,_,mut path,roll,bar,tol) = case(CONTROL);
+    if std::env::var_os("RUNNER").is_some() {
+        path = bench::runner();
+        let tool = cad_kernel::build::prism(&cad_kernel::build::disc([0.,0.,-1.],[0.,0.,1.],2.),0.,1.).unwrap();
+        println!("{:?}",cad_kernel::swept::planar_solid::swept(&tool,&path,roll,bar,tol).map(|b| b.map(|b| cad_kernel::props::volume(&b))));
+        return
+    }
     let n: usize = std::env::args().nth(1).map_or(64,|s| s.parse().unwrap());
     // Gauss–Legendre, 4 points a panel, over the torus's angle
     let g = [(-0.8611363115940526,0.3478548451374538),(-0.3399810435848563,0.6521451548625461),

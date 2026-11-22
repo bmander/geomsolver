@@ -2744,7 +2744,12 @@ points within `ρ(h)` of the path `c` its axis's foot runs, and the swept solid 
 ρ(h)}` — no contact read under the motion's twist, so a face touched whole is no trouble (under a
 translation the flat bottom has `n · v ≡ 0`, and K2's pencil, one sign change a half-plane, read the
 bull nose's contact to 1.92 and no closer: brep-bench's `bull-nose-along-a-looping-spline`, refused
-`Failed` before). Asked before K2 wherever `planar_solid` reads no prism; K2 is asked where it
+`Failed` before; K2 now refuses such a face by name before any fit, `patches::touched_whole`: a flat
+end square to the tool's axis whose `n · v` is nought all over it, the twist turning about nothing
+but the axis and the face's middle moving in its plane, each read within half the rounding's digits
+of the instant's speeds — `Curved` at the face, gated on the mill and a flat-ended cylinder,
+`swept_upright::k2_refuses_by_name_a_flat_end_its_translation_touches_whole`). Asked before K2
+wherever `planar_solid` reads no prism; K2 is asked where it
 refuses, its refusal standing where K2 refuses too. **The sheets**: each piece of the meridian a slab
 over `σ ∈ [0, 1]`; at each `σ` the region (`region::SweptRegion`, the disc its section) runs along the
 path's offsets `c(t) ± ρ N(t)` (the **sides**, by the roll) and the discs at the end poses (the

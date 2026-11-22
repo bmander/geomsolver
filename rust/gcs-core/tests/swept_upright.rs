@@ -151,3 +151,22 @@ fn the_bull_nose_s_closed_sweep_agrees_with_membership() {
     let sweep = gcs_core::brep::swept::upright::swept(&tool,&path,roll,bar,tol).unwrap().expect("the road reads the bull nose");
     crate::swept_closed::agrees_over(&sweep,&tool,&path,roll);
 }
+
+#[test]
+fn k2_refuses_by_name_a_flat_end_its_translation_touches_whole() {
+    // (K2's pencil reads one root a half-plane; a flat end square to the motion's every velocity
+    // has `n · v` nought all over it — refused at the face before any fit, where the bull nose's
+    // sheet was fitted to 1.9 and no closer)
+    use gcs_core::brep::swept::closed::Unbuilt;
+    use gcs_core::brep::swept::patches::{Revolved,fitted};
+    let (_,mill,path,roll,_,tol) = case(CONTROL);
+    let cylinder = gcs_core::brep::build::prism(&gcs_core::brep::build::disc(FOOT,[0.,0.,1.],RADIUS),0.,TOP-FOOT[2]).unwrap();
+    for (name,tool) in [("the bull nose",mill),("a flat-ended cylinder",cylinder)] {
+        let revolved = Revolved::read(&tool).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        match fitted(&revolved,&path,roll,0.1*tol) {
+            Err(Unbuilt::Curved {at}) => assert!((at[2]-FOOT[2]).abs() <= 1e-12 || (at[2]-TOP).abs() <= 1e-12,
+                "{name}: refused at {at:?}, on neither flat end"),
+            other => panic!("{name}: {:?}",other.map(|_| "a sheet fitted")),
+        }
+    }
+}

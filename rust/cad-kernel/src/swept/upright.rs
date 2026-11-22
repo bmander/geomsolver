@@ -104,6 +104,9 @@ pub struct Stand<'a> {
     /// The feet `(t, c(t))` at evenly spaced rolls, and the most the path moves between two.
     feet: Vec<(f64,P)>,
     reach: f64,
+    /// The roll's grain at the tolerance, as a share of the roll (`closed::grain`): a trace's step
+    /// shorter than it moves nothing the tolerance sees.
+    grain: f64,
     tol: f64,
     scale: f64,
 }
@@ -134,7 +137,7 @@ impl<'a> Stand<'a> {
             if !super::region::keeps(&m,g.o,g.z,size) { return Ok(None) }
         }
         let slabs = rev.elements.iter().zip(&rev.faces).map(|(&element,&face)| Slab {element,face}).collect();
-        let mut stand = Stand {path,roll,plane,slabs,tool,ends:[[0.;2];2],heads:[[0.;2];2],feet:Vec::new(),reach:0.,tol,scale:size};
+        let mut stand = Stand {path,roll,plane,slabs,tool,ends:[[0.;2];2],heads:[[0.;2];2],feet:Vec::new(),reach:0.,grain:0.,tol,scale:size};
         let feet: Vec<(f64,P)> = (0..=FEET).map(|i| { let t = roll[0]+(roll[1]-roll[0])*i as f64/FEET as f64; (t,stand.foot(t).0) }).collect();
         if feet.iter().any(|f| !f.1[0].is_finite() || !f.1[1].is_finite()) { return Err(Unbuilt::Failed("the path cannot be read over its roll".into())) }
         stand.reach = feet.windows(2).map(|w| p_len(p_sub(w[1].1,w[0].1))).fold(0.,f64::max);
@@ -142,6 +145,7 @@ impl<'a> Stand<'a> {
         // here as the greatest step sampled grown by the path's own enclosure where it gives one)
         if let Some(s) = match path { Trajectory::General(p) => p.stretch(roll[0],roll[1]),_ => None } { stand.reach = stand.reach.max(s.speed*(roll[1]-roll[0])/FEET as f64) }
         stand.feet = feet;
+        stand.grain = super::closed::grain(tool,path,roll,tol)?/(roll[1]-roll[0]);
         for e in 0..2 {
             let (c,v) = stand.foot(roll[e]);
             stand.ends[e] = c;
@@ -241,9 +245,9 @@ struct Corner { pair: Pair,x: X }
 #[derive(Clone,Copy,Debug)]
 struct Run { sheet: Sheet,p: [f64;2] }
 
-/// One loop of the region at one `σ`: its runs in order, and the area it bounds.
+/// One loop of the region at one `σ`: its runs in order.
 #[derive(Clone,Debug)]
-struct Ring { runs: Vec<Run>,area: f64 }
+struct Ring { runs: Vec<Run> }
 
 /// Solves the `n × n` system `a x = b` by Gaussian elimination with partial pivoting.
 fn solve<const N: usize>(mut a: [[f64;N];N],mut b: [f64;N]) -> Option<[f64;N]> {
@@ -539,7 +543,7 @@ impl Stand<'_> {
                 let last = merged.pop().expect("runs");
                 merged[0].p[0] = last.p[0];
             }
-            out.push(Ring {runs:merged,area:lp.area});
+            out.push(Ring {runs:merged});
         }
         Ok(out)
     }
@@ -626,12 +630,13 @@ impl Stand<'_> {
             let pred = [x[0]+h*w[0],x[1]+h*w[1],x[2]+h*w[2]];
             let Some(y) = self.settle(k,pair,pred,w,dot(w,pred)) else {
                 h *= 0.5;
-                if h < MOST_STEP*1e-9 { return Err(refused("cannot be continued",x)) }
+                if h < self.grain { return Err(refused("cannot be continued",x)) }
                 continue
             };
             let Some(mut w2) = self.way(k,pair,y) else { return Err(refused("loses its way",y)) };
             if dot(w2,w) < 0. { w2 = crate::util::space::scale(w2,-1.) }
-            if dot(w2,w) < MOST_TURN.dcos() && h > MOST_STEP*1e-6 { h *= 0.5; continue }
+            // (a turn within the grain is no turn the tolerance sees)
+            if dot(w2,w) < MOST_TURN.dcos() && h > self.grain { h *= 0.5; continue }
             // past a domain's edge: settled on it
             if let Some((i,bound)) = self.outside(pair,y) {
                 let mut row = [0.;3];

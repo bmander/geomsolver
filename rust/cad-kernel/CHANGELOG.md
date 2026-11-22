@@ -24,6 +24,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (new) says which candidates are edges held at an end pose; `planar_solid::holding` is
   `pub(super)`.
 
+- **K2 refuses a flat end its instant touches whole, by name** (#880 T1f, `patches::touched_whole`):
+  a face square to the tool's axis with `n · v` nought all over it (the twist turning about the
+  axis alone, the face's middle moving in its plane) is `Curved` at that face before any fit; its
+  pencil's sign test on the noughts had put the root at whichever corner the rounding favoured,
+  and the bull nose's sheet was reported fitting to 1.9.
+
 - **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
   (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
   (`query::curve_surface`) and read at one point of each piece, within by more than
