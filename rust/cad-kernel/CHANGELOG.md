@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
+  (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
+  (`query::curve_surface`) and read at one point of each piece, within by more than
+  `tolerant::on_meeting` at the faces' turn, where it was read at 511 samples; a reading not
+  proved refuses.  The bar `dome` and `dome_cut` read a point on a still ball's section, seam or
+  meeting by is named once (`standing_bar`).
+
 - **A face's outward gradient** (`topo::Face::outward_gradient`, new): its surface's `gradient`
   turned where the face is the reversed side — what a run's end faces are read by (`end_at`,
   `beyond_end`), written once.  `fillet::meeting` builds the faces each edge bounds once for a

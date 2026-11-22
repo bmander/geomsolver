@@ -591,7 +591,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
             ek = flat(sub(seam.point(seam.inverse(q)),centre));
         }
         let a = add(centre,scale(ek,r));
-        if distance(seam.point(seam.inverse(a)),a) > 1e3*tol*(1.+norm(a)) {
+        if distance(seam.point(seam.inverse(a)),a) > standing_bar(tol,a) {
             return Err(format!("the ball between {names} stands still, and touches `{}` nowhere on its seam with `{}`",
                 b.faces[sides_faces[k][0]].name,b.faces[going].name));
         }
@@ -606,7 +606,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
             faces:at}});
     }
     if !cut.is_empty() { return dome_cut(b,m,k,centre,ring,foot,r,tol,wedge,beside,&ends,&cut) }
-    let inside = |x: &DomeEnd| x.within > 1e3*tol*(1.+norm(x.pv));
+    let inside = |x: &DomeEnd| x.within > standing_bar(tol,x.pv);
     // the turn about the curve from one end's section to the other's through the edge's middle
     // (the ends put in the order it turns)
     let [a0,a1,am] = [turn_of(ends[0].e),turn_of(ends[1].e),turn_of(sub(*p,centre))];
@@ -627,7 +627,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
     let stops_of: Vec<Stop> = ends.iter().map(|x| Stop {t:0.,..x.stop.clone()}).collect();
     holds_ball(b,uses,sides_faces,chain,&stops_of,&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     // a vertex past its section: the run going on's ball rolled on to the standing ball over face `k`
-    let short = |x: &DomeEnd| x.within < -1e3*tol*(1.+norm(x.pv));
+    let short = |x: &DomeEnd| x.within < -standing_bar(tol,x.pv);
     // a vertex past its section: the run going on's ball rolled on to the standing ball over face
     // `k`; a vertex within it: the piece in two, the stretch's and the run going on's
     match (ends.iter().filter(|x| short(x)).count(),ends.iter().filter(|x| inside(x)).count()) {
@@ -739,6 +739,13 @@ fn dome_piece(mut out: Brep,run: &[usize],corners: [(V,u32);2],keeps: [V;2],m: &
     Ok(out)
 }
 
+/// **How far off a standing ball's section, seam or meeting a point at `q` may stand and be on it**
+/// (`dome`, `dome_cut`): a thousand tolerances, scaled by `q`'s distance from the origin — one bar
+/// for every such reading of a still ball's ends, so `dome_cut` reads a tangent end in its section
+/// where `dome` did.  Not derived from the kernel's tolerance rules (`tolerant::ON_CURVE`,
+/// `on_meeting`) yet: rounds.md, "Not yet".
+fn standing_bar(tol: f64,q: V) -> f64 { 1e3*tol*(1.+norm(q)) }
+
 /// An end of a standing ball's stretch where every face there besides its two cuts across it
 /// (`dome_cut`): its vertex, and what cuts the dome off there.
 struct CutEnd { pv: V,stop: Stop }
@@ -768,10 +775,10 @@ struct CutEnd { pv: V,stop: Stop }
 #[allow(clippy::too_many_arguments)]
 fn dome_cut(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool,
     tangent: &[DomeEnd],cut: &[CutEnd]) -> Result<Rolled,String> {
-    let Meeting {uses,sides_faces,chain,p,concave,sides,surfaces,names,..} = m;
+    let Meeting {uses,sides_faces,chain,p,theta,concave,sides,surfaces,names,..} = m;
     let o = 1-k;
     let touch = add(centre,scale(foot,r));
-    let near = |q: V| 1e3*tol*(1.+norm(q));
+    let near = |q: V| standing_bar(tol,q);
     let crossing = &b.faces[cut[0].stop.faces[0]].name;
     let refused = |why: &str| format!("the ball between {names} stands still, and their meeting ends where `{crossing}` cuts \
         across it: {why}");
@@ -828,12 +835,36 @@ fn dome_cut(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,t
     let (d1,dp) = ((met.inverse(ends[1].pv)-t0).rem_euclid(period),(met.inverse(*p)-t0).rem_euclid(period));
     let (g0,gap) = if dp < d1 { (t0+d1,period-d1) } else { (t0,d1) };
     // nothing of the gap comes back within every face the crease ends on: a cut end's faces, a
-    // tangent end's plane square to the crease (the run's own end, `std.rounds`' `crease.ends`)
+    // tangent end's plane square to the crease (the run's own end, `std.rounds`' `crease.ends`) —
+    // read exactly: the gap split where the meeting meets each of those surfaces
+    // (`query::curve_surface`), each one's side the same between, and read at one point of each
+    // piece; a distance along a curve changes sign only where it meets the surface, so no sample
+    // of the meeting decides it (`reaches`), and a reading not proved is read as coming back
+    // (#814).  Within by more than a point of the meeting stands off it and is still a point of it
+    // (`tolerant::on_meeting` at the faces' turn): at the gap's ends the meeting leaves a vertex
+    // its own end's surface passes through
+    let past = super::tolerant::on_meeting(tol,theta.dsin());
     let within = |q: V| ends.iter().all(|x| match x.going {
-        Some(t) => dot(sub(q,t.pv),t.square) > near(q),
-        None => x.stop.trim.cuts.iter().all(|c| c.kept(q) > near(q)),
+        Some(t) => dot(sub(q,t.pv),t.square) > past,
+        None => x.stop.trim.cuts.iter().all(|c| c.kept(q) > past),
     });
-    if (1..512).any(|i| within(met.point(g0+gap*i as f64/512.))) {
+    let bounds: Vec<Surface> = ends.iter().flat_map(|x| match x.going {
+        Some(t) => vec![Surface::Plane(Frame::about(t.pv,t.square))],
+        None => x.stop.trim.cuts.iter().map(Cut::surface).collect(),
+    }).collect();
+    let over = [g0,g0+gap];
+    let mut at = vec![over[0],over[1]];
+    let mut unproved = false;
+    for s in &bounds {
+        match super::query::curve_surface(&met,over,s,tol) {
+            super::query::Meets::At(roots) => at.extend(roots.into_iter().map(|(t,_)| t)),
+            // (lying on it: on its surface all along, within it nowhere)
+            super::query::Meets::Along => {}
+            super::query::Meets::Refused(_) => unproved = true,
+        }
+    }
+    at.sort_by(f64::total_cmp);
+    if unproved || at.windows(2).any(|w| w[1] > w[0] && within(met.point(0.5*(w[0]+w[1])))) {
         return Err(refused("their meeting comes back within the faces it ends on past it, and halfway there is no section \
             of a ball standing still: not built yet"));
     }
@@ -2110,6 +2141,14 @@ pub enum Cut {
 }
 
 impl Cut {
+    /// The surface it cuts by: a plane's (a section's), or the curved face's own.
+    fn surface(&self) -> Surface {
+        match self {
+            Cut::Plane {o,keep} | Cut::Section {o,keep,..} => Surface::Plane(Frame::about(*o,*keep)),
+            Cut::Solid {surface,..} => surface.clone(),
+        }
+    }
+
     /// How far within the side kept `x` stands (negative beyond it): a plane's distance, a curved
     /// surface's signed distance.
     fn kept(&self,x: V) -> f64 {

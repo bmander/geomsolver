@@ -1257,6 +1257,20 @@ ends on). Every section of a still ball holds its centre and its foot, so none i
 a face the centre stands within: the dome goes on round until the meeting comes back, and
 `fillet::dome_cut` builds it where that is the crease's other end — the meeting past the crease
 stays out of every face it ends on (a cut end's faces, a tangent end's plane square to the crease).
+That is read exactly, as `fillet::reaches` reads an edge's height: the meeting over the gap split
+where it meets each of those surfaces (`query::curve_surface`), each one's side the same between,
+and read at one point of each piece; within by more than `tolerant::on_meeting` at the faces' turn
+(a point of the meeting that far off it is still one of it, the vertex at each end of the gap
+among them); a reading not proved is read as coming back (#814). **Not yet** (#994): how far off
+a still ball's section, seam or meeting a point may stand and be on it (`fillet::standing_bar`,
+one bar for `dome`'s reading of its ends and `dome_cut`'s) is a thousand tolerances scaled by the
+point's distance from the origin, not derived from `ON_CURVE` or `on_meeting`. Over the rounds
+modules (38, 620 tests) every one of its 619 decisions stands at least 10³ tolerances from it
+either way — a vertex in its section, a touch on its seam within 10⁻⁸ of a tolerance, one out of
+its section 3·10⁵ off — so `ON_CURVE tol` would decide them alike; but the same bar is written
+at six more places of the standing and dome constructions (`standing`, `dome_split`,
+`dome_short`, `revolved`), each against its own scale, and deriving it is one change over all of
+them, with a case a hair off a section to hold it.
 Both ends cut across: the whole loop's dome, the two surfaces' meeting in closed form its loop
 (`fillet::hemisphere`, the one `standing` builds), cut off by the faces at both ends (a plane's
 half-space, a curved face's solid, `trimmed`). One end where a face goes on tangent from the
