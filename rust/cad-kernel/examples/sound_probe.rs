@@ -22,17 +22,6 @@ fn main() {
                 s.uknots[0],s.uknots[s.uknots.len()-1],s.vknots[0],s.vknots[s.vknots.len()-1]);
         }
         {
-            // the surface's area over its whole domain [0,1]², midpoint rule
-            let n = 400;
-            let mut a = 0.;
-            for i in 0..n { for j in 0..n {
-                let uv = [(i as f64+0.5)/n as f64,(j as f64+0.5)/n as f64];
-                let (_,su,sv) = f.surface.d1(uv);
-                a += cad_kernel::util::space::norm(cad_kernel::util::space::cross(su,sv))/(n*n) as f64;
-            } }
-            println!("  area over [0,1]^2 {a:.6} ; props {:.6}",cad_kernel::props::area(b,f));
-        }
-        {
             // the face alone held sound: what its loops say (a face alone bounds nothing besides)
             let alone = cad_kernel::topo::Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:vec![f.clone()]};
             println!("  alone: {:?}",cad_kernel::step_read::sound::sound(&alone,&g.context).err().map(|u| u.msg));

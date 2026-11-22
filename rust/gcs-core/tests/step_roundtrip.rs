@@ -39,8 +39,19 @@
 //! written or not read within `BOUND`, or written past `LARGEST`.
 //!
 //! On every push `the_sample_reads_back` holds the property over the kernel's own solids and a
-//! sample of the library's that takes every writer path a solid reading back today takes; each
-//! solid that does not read back today is an ignored test named for its defect.
+//! sample of the library's that takes every writer path a solid reading back today takes. A solid
+//! that does not read back would be an ignored test named for its defect; there is none.
+//!
+//! The switches, each an environment variable: `STEP_ROUNDTRIP_ONLY` (the examples whose name
+//! holds it), `STEP_ROUNDTRIP_FROM` and `STEP_ROUNDTRIP_UPTO` (the examples from one name and
+//! before another), `STEP_ROUNDTRIP_SKIP` (those whose name holds one of a comma's list),
+//! `STEP_ROUNDTRIP_SKIP_SWEPT` and `STEP_ROUNDTRIP_ONLY_SWEPT` (swept bodies left out, or alone),
+//! `STEP_ROUNDTRIP_TOL` (an index of `tolerances()`), `STEP_ROUNDTRIP_PATHS` (each solid's writer
+//! paths printed), `STEP_ROUNDTRIP_VERBOSE` (each stage of a trip printed),
+//! `STEP_ROUNDTRIP_LOOSE` (each edge read looser than its file states laid bare),
+//! `STEP_ROUNDTRIP_DUMP` (a folder each written file is saved in), `STEP_ROUNDTRIP_BENCH_SKIP`
+//! (the rows `bench_cross_check` passes over), and `STEP_ROUNDTRIP_ONE` and `STEP_ROUNDTRIP_FACE`
+//! (the solid and the face `one` lays bare).
 use gcs_core::brep::geom::{Curve,Surface};
 use gcs_core::brep::props::{area,fluxes,volume};
 use gcs_core::brep::step::{face_net,write,Fit,FIT,MOST};
@@ -703,7 +714,6 @@ pub fn library(only: Option<&str>,swept: Option<bool>,unbuilt: &mut Vec<String>,
         if std::env::var("STEP_ROUNDTRIP_SKIP").is_ok_and(|f| f.split(',').any(|x| name.contains(x))) {
             unbuilt.push(format!("{name}: skipped")); continue
         }
-        if std::env::var("STEP_ROUNDTRIP_UPTO").is_ok_and(|f| name.as_str() >= f.as_str()) { continue }
         let Some(e) = fixtures::example(&name) else { continue };
         if !e.ok() { continue }
         eprintln!("EXAMPLE {name}");
