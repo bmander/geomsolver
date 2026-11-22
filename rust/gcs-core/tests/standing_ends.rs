@@ -98,16 +98,19 @@ fn a_lids_rim_cut_across_by_a_cylinder_is_the_dome_kept_outside_it() {
 }
 
 /// **What is refused, and by what words**: a ball a hair over the post's radius, which nothing
-/// holds; a hair under it, which rolls, and whose run's ends against the chord no section is
-/// carried past yet (as before); and a post with a chord each side, its rim two stretches, where
-/// the meeting past one stretch's end comes back within both chords — the other stretch — and
-/// halfway there is no section of a ball standing still.
+/// holds; a hair under it, which rolls round a circle of a thousandth about the axis, its run cut
+/// off at both its ends by the chord, no section carried on round from either cut off whole before
+/// they meet (the whole loop's canal cut off by the chord would be the set, but the field's
+/// nearest centre on that thin a spine is not read yet: built, the gate refused it); and a post
+/// with a chord each side, its rim two stretches, where the meeting past one stretch's end comes
+/// back within both chords — the other stretch — and halfway there is no section of a ball
+/// standing still.
 #[test]
 fn a_standing_ball_cut_across_is_refused_saying_why() {
     let why = refused(&solved(&lidded(&d_plan(3.0), 20.0, "round(r: 5.001mm)")), "drum");
     assert!(why.contains("of radius 5.001, is larger than `post.side` can hold"), "{why}");
     let why = refused(&solved(&lidded(&d_plan(3.0), 20.0, "round(r: 4.999mm)")), "drum");
-    assert!(why.contains("cannot roll on past where `post.flat` and `post.flat` cut it off"), "{why}");
+    assert!(why.contains("cannot roll on past where `post.flat` cuts it off at both its ends"), "{why}");
     let h = 4.0;
     let plan = format!("  o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, {})) a\n  b := point\n  fix((3, {h})) b\n  \
         c := point\n  fix((-3, {h})) c\n  d := point\n  fix((-3, {})) d\n  \
@@ -197,14 +200,17 @@ fn arm_taken_square(c: f64, slope: f64) -> f64 {
 /// side's section, kept on the face's side.  The face past the axis and short of it (the stretch
 /// past a quarter turn), square to y, skewed either way, the bottom slanted 15° and 25°; each
 /// the plain part's volume less what the round takes, the face square in closed form and its
-/// quadrature agreeing.  (Further past the axis — `y = −6` — the field reads the set a few tenths
-/// short of the ball just inside the face, where the crease's end is a point's nearest: the gate
-/// refuses it, "disagrees with the field".)
+/// quadrature agreeing; the field drawing the kernel's boundary about the end and over the whole
+/// part.  The face far past the axis (`y = −6`) read the ball's centres off its axis, the end's
+/// cylinder carried past where the face cuts it by the plane tangent there (`carried_past`, now
+/// its own surface past any edge but a seam); skewed 20° the face cuts the arm's side as well and
+/// leaves its bottom in two pieces, which read as no convex side until one plane's pieces were
+/// that plane's half-space (`BodyFaces::bulging`): the centres' projection alternated and failed.
 #[test]
 fn an_arms_end_rounded_to_its_radius_where_a_hub_cuts_across_it_is_the_dome_kept_out_of_it() {
     let tip = "part.arm.bar.tip";
-    for (c, slope, skew) in [(4.0, 15.0, 0.0), (-3.0, 15.0, 0.0), (0.5, 25.0, 0.0),
-                             (4.0, 15.0, -20.0), (4.0, 15.0, 5.0), (-3.0, 25.0, 10.0)] {
+    for (c, slope, skew) in [(4.0, 15.0, 0.0), (-3.0, 15.0, 0.0), (0.5, 25.0, 0.0), (-6.0, 15.0, 0.0),
+                             (4.0, 15.0, -20.0), (4.0, 15.0, 5.0), (-3.0, 25.0, 10.0), (4.0, 15.0, 20.0)] {
         let plain = props::volume(&exported(&solved(&arm(c, slope, skew, None, tip)), "part"));
         let e = solved(&arm(c, slope, skew, Some("round(r: 10mm)"), tip));
         assert!(e.diags.is_empty(), "{:?}", e.diags);
@@ -212,8 +218,11 @@ fn an_arms_end_rounded_to_its_radius_where_a_hub_cuts_across_it_is_the_dome_kept
         if skew == 0.0 { close(taken, arm_taken_square(c, slope)); }
         close(props::volume(&exported(&e, "part")), plain - taken);
     }
-    let e = solved(&arm(4.0, 15.0, -20.0, Some("round(r: 10mm)"), tip));
-    field_is_the_kernels(&e, "part", [-11.0, -2.0, -16.0], [2.0, 11.0, 2.0], 0.05, 3000);
+    for (c, skew) in [(4.0, -20.0), (-6.0, 0.0), (4.0, 20.0)] {
+        let e = solved(&arm(c, 15.0, skew, Some("round(r: 10mm)"), tip));
+        field_is_the_kernels(&e, "part", [-11.0, -11.0, -16.0], [2.0, 11.0, 2.0], 0.05, 3000);
+        field_is_the_kernels(&e, "part", [-31.0, -31.0, -41.0], [61.0, 31.0, 31.0], 0.05, 3000);
+    }
 }
 
 /// **The arm's bottom edges all rounded** (fixture 133's statement, the edges along its sides
