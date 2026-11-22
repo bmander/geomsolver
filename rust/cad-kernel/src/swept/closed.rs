@@ -1235,10 +1235,12 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
         curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
     }
+    // (each traced from a row's seed joined to its swallowtail point where a stretch finds both)
+    let ends: Vec<super::rings::Apex> = fits.iter().flat_map(|f| f.ends.clone()).collect();
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
         // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
-        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,&ends,tol)?);
     }
     phase(&format!("{} double curves traced",curves.len()));
     // (and the roll cut again at each swallowtail point, the contact's shape the same either side:

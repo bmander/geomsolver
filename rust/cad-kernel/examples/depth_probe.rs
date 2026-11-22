@@ -195,6 +195,29 @@ fn main() {
             for r in rows { println!("{r}") }
             return
         }
+        "birth" => {
+            // a fold pair's birth over `[t0, t1]`: the least `s''` over the angles `[θ0, θ1]` on the
+            // label at the window's middle and the place `σ`, read at `n` angles and settled by
+            // golden sections about the least, halved in the roll to where it passes nought
+            let n: Vec<f64> = args[2..8].iter().map(|v| v.parse().unwrap()).collect();
+            let (th0,th1,t0,t1,sg,k) = (n[0],n[1],n[2],n[3],n[4],n[5] as usize);
+            let l = label_at(&ring,&path,0.5*(th0+th1),0.5*(t0+t1),sg).unwrap();
+            let low = |t: f64| -> (f64,f64) {
+                let s = |th: f64| sheet(&ring,&path,roll,th,t,l).map_or(f64::INFINITY,|s| s.1);
+                let j = (0..=k).min_by(|&i,&j| s(th0+(th1-th0)*i as f64/k as f64).total_cmp(&s(th0+(th1-th0)*j as f64/k as f64))).unwrap();
+                let (mut lo,mut hi) = (th0+(th1-th0)*(j.max(1)-1) as f64/k as f64,th0+(th1-th0)*(j+1).min(k) as f64/k as f64);
+                let g = 0.5*(5f64.sqrt()-1.);
+                for _ in 0..80 { let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo)); if s(x1) < s(x2) { hi = x2 } else { lo = x1 } }
+                (0.5*(lo+hi),s(0.5*(lo+hi)))
+            };
+            for j in 0..=10 { let t = t0+(t1-t0)*j as f64/10.; let (th,v) = low(t); println!("t {t:.8}: least s'' {v:+.3e} at θ {th:.7}") }
+            let (mut lo,mut hi) = (t0,t1);
+            if (low(lo).1 < 0.) != (low(hi).1 < 0.) {
+                for _ in 0..60 { let m = 0.5*(lo+hi); if (low(m).1 < 0.) == (low(lo).1 < 0.) { lo = m } else { hi = m } }
+                println!("least s'' passes nought at t {:.9}, θ {:.7}",0.5*(lo+hi),low(0.5*(lo+hi)).0);
+            }
+            return
+        }
         "at" => {
             // the sheet's point at (θ, t, σ) and its reading
             let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
@@ -225,6 +248,15 @@ fn main() {
         _ => {}
     }
     let clock = std::time::Instant::now();
+    if what == "fit" {
+        let (_,_,fits,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+        println!("{} stretches {:?}, in {:?}",fits.len(),fits.iter().map(|f| f.roll).collect::<Vec<_>>(),clock.elapsed());
+        for c in &curves {
+            let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
+            println!("a curve of {at} points from {:?} to {:?}, swallowtail points {:?}",c[0],c[at-1],&c[at+1..]);
+        }
+        return
+    }
     let (ring,_,fits,curves,cut) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
     println!("{} stretches, {} curves, cut {cut}, in {:?}",fits.len(),curves.len(),clock.elapsed());
     for (ci,c) in curves.iter().enumerate() {
