@@ -10,6 +10,8 @@ use crate::vocab::Cmp;
 use std::f64::consts::FRAC_PI_2;
 
 type V = [f64; 3];
+/// A set's distance, read once and shared by the terms measuring from it.
+type Set = std::sync::Arc<crate::solid::conditions::SetDistance>;
 
 /// Region solid `solid` read point by point (`solid::field::RegionField`): its terms in general
 /// position, each the exact signed distance from its surface.  Its support is the box of the
@@ -64,6 +66,10 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
     let signed = |f: std::sync::Arc<dyn Fn(V) -> f64 + Send + Sync>| {
         Term { measure: Measure::Signed(Signed(f)), cmp: Cmp::Le, lo: 0.0, hi: None, grow: 0.0 }
     };
+    // each set measured from, read once across the terms: one distance, and the nearest point it
+    // remembers (`conditions::Conds`), for every term measuring from the same set (`std.rounds`'
+    // `centres`, from which `rolled` is measured too)
+    let mut sets_read: Vec<(&[RegionTerm], Result<Set, String>)> = Vec::new();
     for t in terms {
         let (lo, grow) = t.value(sk).map_err(named)?;
         let reach = t.hi.unwrap_or(lo).max(lo);
@@ -71,14 +77,24 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
         reads_faces |= crate::solid::faces::reads_faces(&t.shape);
         let measure = match t.shape {
             RegionShape::Measured { ref of } => {
-                // each set measured from, read once
-                let sets: Vec<Option<Result<crate::solid::conditions::SetDistance, String>>> = of.iter()
-                    .map(|(t, _)| match t {
-                        crate::model::Target::Set { terms, .. } => {
-                            Some(crate::solid::conditions::SetDistance::of(sk, terms, read))
+                // the sets it measures from, each read once (`sets_read`)
+                let mut sets: Vec<Option<Result<Set, String>>> = Vec::new();
+                for (target, _) in of {
+                    let crate::model::Target::Set { terms: inner, .. } = target else {
+                        sets.push(None);
+                        continue;
+                    };
+                    let set = match sets_read.iter().find(|(k, _)| *k == &inner[..]) {
+                        Some((_, set)) => set.clone(),
+                        None => {
+                            let set = crate::solid::conditions::SetDistance::of(sk, inner, read)
+                                .map(std::sync::Arc::new);
+                            sets_read.push((inner, set.clone()));
+                            set
                         }
-                        _ => None,
-                    }).collect();
+                    };
+                    sets.push(Some(set));
+                }
                 if t.cmp != Cmp::In && never(of, &sets, t.cmp) {
                     return Ok(crate::solid::field::RegionField::empty());
                 }
@@ -420,8 +436,7 @@ fn ent_measure(sk: &Sketch, e: crate::model::EntRef) -> Result<crate::solid::fie
 /// A sum of measurements of a point (`RegionShape::Measured`), divided through by the sum of its
 /// numbers' sizes so it is one-Lipschitz as every term of the field is: each the distance from a
 /// point, a line produced or an axis, or a plane.
-fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
-            sets: &[Option<Result<crate::solid::conditions::SetDistance, String>>],
+fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)], sets: &[Option<Result<Set, String>>],
             read: &mut crate::solid::faces::Read)
     -> Result<crate::solid::field::region::Measure, String> {
     use crate::model::Target;
@@ -505,13 +520,12 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
 
 /// Whether a sum of measurements can hold nowhere: it bounds from above a distance from a set
 /// that is empty (faces that do not meet), with nothing to take it back.
-fn never(of: &[(crate::model::Target, f64)],
-         sets: &[Option<Result<crate::solid::conditions::SetDistance, String>>], cmp: Cmp) -> bool {
+fn never(of: &[(crate::model::Target, f64)], sets: &[Option<Result<Set, String>>], cmp: Cmp) -> bool {
     use crate::solid::conditions::SetDistance;
-    let empty = |s: &Option<Result<SetDistance, String>>| match s {
-        Some(Ok(SetDistance::Edges { edges, .. })) => edges.is_empty(),
-        Some(Ok(SetDistance::Points(ps))) => ps.is_empty(),
-        Some(Ok(SetDistance::Patch(r))) => r.faces.is_empty(),
+    let empty = |s: &Option<Result<Set, String>>| match s.as_ref().and_then(|s| s.as_deref().ok()) {
+        Some(SetDistance::Edges { edges, .. }) => edges.is_empty(),
+        Some(SetDistance::Points(ps)) => ps.is_empty(),
+        Some(SetDistance::Patch(r)) => r.faces.is_empty(),
         _ => false,
     };
     let up = |c: f64| if cmp == Cmp::Ge { -c } else { c };

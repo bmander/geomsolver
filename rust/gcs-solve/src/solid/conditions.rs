@@ -41,7 +41,7 @@ pub enum SetDistance {
     /// One face's patch.
     Patch(Arc<Reading>),
     /// Anything else, as conditions.
-    Conditions(Vec<Cond>),
+    Conditions(Conds),
     /// The nearest of several: a set within a body's faces where the body is in pieces, each
     /// shell's conditions apart (within all of them at once is within none).
     Nearest(Vec<SetDistance>),
@@ -53,6 +53,44 @@ pub enum SetDistance {
 }
 
 pub use super::faces::Read;
+
+/// A set's conditions, and which they are: a number of their own, shared by their clones (the same
+/// conditions), by which the last nearest point found on a thread is remembered (`nearest`).
+#[derive(Clone)]
+pub struct Conds {
+    cs: Vec<Cond>,
+    id: u64,
+}
+
+thread_local! {
+    /// The last nearest point found on this thread: of which conditions (`Conds::id`), from which
+    /// point (its bits), and the point found.
+    static LAST: std::cell::Cell<Option<(u64, [u64; 3], Option<V>)>> = const { std::cell::Cell::new(None) };
+}
+
+impl Conds {
+    fn new(cs: Vec<Cond>) -> Conds {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        Conds { cs, id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) }
+    }
+
+    /// The point keeping every condition nearest `p` (`nearest`).  A region's terms ask it twice
+    /// from one point — `std.rounds`' `distance(p, centres) >= r` and `distance(p, rolled) <=
+    /// distance(p, centres) + r`, which reads `rolled` from `centres`' nearest point (#994) — so
+    /// the last answer on each thread is remembered against the conditions and the point, bit for
+    /// bit: the same steps from the same start onto the same conditions, taken once.
+    fn nearest(&self, p: V) -> Option<V> {
+        let at = p.map(f64::to_bits);
+        if let Some((id, from, q)) = LAST.get() {
+            if id == self.id && from == at {
+                return q;
+            }
+        }
+        let q = nearest(&self.cs, p);
+        LAST.set(Some((self.id, at, q)));
+        q
+    }
+}
 
 /// The face `f` names, as its patch (`F`, not `F.surface`).
 fn patch(f: &crate::model::FaceRef) -> crate::model::FaceRef {
@@ -233,7 +271,7 @@ impl SetDistance {
                 let terms = terms.iter().map(|t| conditions(sk, t, read, &sides_of, Some((body, k))))
                     .collect::<Result<Vec<_>, String>>()?;
                 if let Some(conds) = terms.into_iter().collect::<Option<Vec<_>>>() {
-                    each.push(SetDistance::Conditions(conds.into_iter().flatten().collect()));
+                    each.push(SetDistance::Conditions(Conds::new(conds.into_iter().flatten().collect())));
                 }
             }
             return Ok(SetDistance::Nearest(each));
@@ -242,7 +280,7 @@ impl SetDistance {
         for t in terms {
             conds.extend(conditions(sk, t, read, &sides_of, None)?.expect("every term holds somewhere unsplit"));
         }
-        Ok(SetDistance::Conditions(conds))
+        Ok(SetDistance::Conditions(Conds::new(conds)))
     }
 
     /// The distance from the set (infinite from an empty one).
@@ -251,7 +289,7 @@ impl SetDistance {
             SetDistance::Edges { body, edges, .. } => body.nearest_edge(edges, p).map_or(f64::INFINITY, |e| e.2),
             SetDistance::Points(ps) => ps.iter().map(|q| norm(sub(p, *q))).fold(f64::INFINITY, f64::min),
             SetDistance::Patch(r) => r.distance(p, false),
-            SetDistance::Conditions(cs) => nearest(cs, p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
+            SetDistance::Conditions(cs) => cs.nearest(p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
             SetDistance::Nearest(each) => each.iter().map(|s| s.distance(p)).fold(f64::INFINITY, f64::min),
             SetDistance::Body { body, beyond } => {
                 let v = body.signed_distance(p).0;
@@ -268,7 +306,7 @@ impl SetDistance {
     /// The set's point nearest `p`, where it is read as conditions.
     pub fn nearest(&self, p: V) -> Option<V> {
         match self {
-            SetDistance::Conditions(cs) => nearest(cs, p),
+            SetDistance::Conditions(cs) => cs.nearest(p),
             SetDistance::Nearest(each) => each.iter().filter_map(|s| s.nearest(p))
                 .min_by(|a, b| norm(sub(p, *a)).total_cmp(&norm(sub(p, *b)))),
             _ => None,
