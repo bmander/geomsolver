@@ -1718,8 +1718,9 @@ speed along it: a thread's helix of sixteen turns read by chords was no turn at 
 sweeping more than a twelfth of a period halved. The file's curve in the face's parameters is the
 use's pcurve where its image is the edge's — at the edge's own parameter, or as a set within the
 tolerance the edge measures anyway — and never widens a tolerance; otherwise the edge inverted
-between the walk's ends (`Pcurve::Inverse`), refused naming the edge where a point of its walk
-stands half a period from the line between them. A file without pcurves reads the same. The outer
+between the walk's ends (`Pcurve::Inverse`) — where a point of its walk stands half a period from
+the line between them the inverse changes branch mid-edge, which `sound` refuses as a leap of a
+period. A file without pcurves reads the same. The outer
 loop is the one enclosing the most of the face's parameters, never FACE_OUTER_BOUND. A sphere's
 file curve a whole turn off in `v` (OCCT's habit) is moved back. At a pole the collapsed
 parameter's branch keeps the face on the loop's left; a use's end there is its curve's own where
@@ -1741,8 +1742,9 @@ pole, an edge two seams would cut, are refused `Unsupported` naming the entity. 
 (`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
 collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the
 measure. Its edges' rules are settled stretch by stretch and cut where a pcurve crosses a sheet's
-knot line or an area's turning line; a spindle torus's area is the closed form of
-`∫|R + r cos v|`. A solid farther from the origin than ten times its size is measured moved to its
+knot line or an area's turning line (on a net, where its normal turns over along the use); a
+spindle torus's area is the closed form of `∫|R + r cos v|`. Each use's ends are closed to where
+its curve arrives, a hair in, so the region read is the one `sound` judges. A solid farther from the origin than ten times its size is measured moved to its
 middle (`props::volume`). Gates: `step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
 `a_spindle_torus_reads_to_its_closed_form`.
 
