@@ -86,7 +86,7 @@ impl Conds {
                 return q;
             }
         }
-        let q = nearest(&self.cs, p);
+        let q = nearest(&self.cs, p, p);
         LAST.set(Some((self.id, at, q)));
         q
     }
@@ -144,6 +144,12 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
 /// A face far from the point holds with no gradient, no row of a step's program (`nearest`), so a
 /// step chooses among the faces near the point.  Empty for one face, and for chains apart.
 fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
+    /// How far a face of the chain is read from the point, in the distance held (`d`): a face whose
+    /// box is farther says nothing without reading its patch.  Within `d` alone is all the set
+    /// needs, but a face whose foot lies on its patch a little past `d` gives a row that holds
+    /// where the step stands and keeps the next step from landing past it; twice `d` is the reach
+    /// the gate holds (`docs/contract/sets.md`, "Not yet one rule").
+    const SEEN: f64 = 2.0;
     if !r.smooth || r.faces.len() < 2 || !r.chains.is_empty() {
         return Vec::new();
     }
@@ -160,16 +166,16 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
             .flat_map(|&e| r.body.faces_of(e).to_vec()).filter(|&h| h != fi && chain.contains(&h))
             .collect();
         Arc::new(move |x| {
-            // far from its patch and from every face it goes on into, by their boxes, nothing:
-            // where the set's point is, a face holding it back is within `d` (#994), so a chain
-            // grown with a body is read only where the point is
-            let far = |h: usize| body.patch_gap(h, x) > 2.0 * d;
+            // far from its patch and from every face it goes on into, by their boxes (`SEEN` times
+            // `d`), nothing: where the set's point is, a face holding it back is within `d` (#994),
+            // so a chain grown with a body is read only where the point is
+            let nothing = (c * d, [0.0; 3]);
+            let far = |h: usize| body.patch_gap(h, x) > SEEN * d;
             if far(fi) && beside.iter().all(|&h| far(h)) {
-                return (c * d, [0.0; 3]);
+                return nothing;
             }
             let (past, (s, g)) = body.carried_past(fi, x);
             let side = (c * sigma * s, scale(g, c * sigma));
-            let nothing = (c * d, [0.0; 3]);
             let Some((e, off, at)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
             let next = body.faces_of(e).iter().copied().find(|&h| h != fi && chain.contains(&h));
             match next {
@@ -300,6 +306,25 @@ impl SetDistance {
                 let v = region.value([x, y]);
                 (if *beyond { -v } else { v }).max(0.0)
             }
+        }
+    }
+
+    /// The distance from the set, its nearest point sought from `start` where it is read as
+    /// conditions (`nearest`'s steps linearised there first): a set within another, from the
+    /// other's point nearest `p` (`std.rounds`' `rolled` within `centres`, #994).  Of two points of
+    /// the set found, the nearer `p`: that one, and the set's point nearest `start` — each a point
+    /// of the set, so no nearer than the set's nearest, and the second found where steps toward a
+    /// far `p` do not settle (a set of no inside, a ball's centre where it closes onto a point).
+    pub fn distance_from(&self, p: V, start: V) -> f64 {
+        match self {
+            SetDistance::Conditions(cs) => {
+                let found = [nearest(&cs.cs, p, start), cs.nearest(start)];
+                found.into_iter().flatten().map(|q| norm(sub(p, q))).fold(f64::INFINITY, f64::min)
+            }
+            SetDistance::Nearest(each) => {
+                each.iter().map(|s| s.distance_from(p, start)).fold(f64::INFINITY, f64::min)
+            }
+            _ => self.distance(p),
         }
     }
 
@@ -562,8 +587,8 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
     })
 }
 
-/// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
-/// conditions linearised where the last one stood.  Where every condition is convex its
+/// The point satisfying every condition nearest `p`: from `start` (`p` itself, or a point near the
+/// set), each step the nearest point of the conditions linearised where the last one stood.  Where every condition is convex its
 /// linearisation holds all of its points, so a step's point keeping every condition is the
 /// nearest: the steps stop there.  (Their own fixed point is no steadier: a step onto a surface
 /// curved tightly about a point far off — a ball's centres a hair short of closing onto a pocket
@@ -577,16 +602,16 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
 /// its distance no less than the nearest's: a centre found, never a set read as empty.  And where
 /// the conditions read where a step landed have no point in common, the step is taken back half
 /// way, a few times, before the nearest point stood on is all there is.
-fn nearest(cs: &[Cond], p: V) -> Option<V> {
+fn nearest(cs: &[Cond], p: V, start: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
     let kept = 1e-9 * (1.0 + norm(p));
     let bar = 1e-7 * (1.0 + norm(p));
     let convex = cs.iter().all(|c| c.convex);
-    let mut x = p;
+    let mut x = start;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
     // the nearest point stood on keeping every condition, and how far
     let mut kept_at: Option<(f64, V)> = None;
-    let (mut last, mut halved) = (p, 0);
+    let (mut last, mut halved) = (start, 0);
     for k in 0..80 {
         rows.clear();
         let mut off: f64 = 0.0;

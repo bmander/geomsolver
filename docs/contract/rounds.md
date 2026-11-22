@@ -620,7 +620,12 @@ rim and its outline rounded). A face a run ends on is a half-space, read whereve
 region is, so four rules keep it to the end it stands at, each in `BodyFaces::end_faces`, which
 the field (`conditions::ends`, through `end_sides`) and the lowering (`piece::ends_at`) both read
 — and only where every edge of the set is one the lowering carries a section along
-(`BodyFaces::carried`): a ball rolled along a traced run is cut by `fillet::end_at`'s own reading.
+(`BodyFaces::carried`): a ball rolled along a traced run is cut by `fillet::end_at`'s own reading,
+and the field reads that run's end faces by the same rule (#994, `BodyFaces::cutting`: the faces at
+the end besides the run's sides, `fillet::others_at`, but those going on from a side, `1 − |n·m|`
+within a billionth, `fillet::goes_on`; then `beyond_end`) — not by `faces::TANGENT`, a millionth on
+`|n − m|`, which left a face turned between `1e-6` and `4.5e-5` rad an end in the field and a
+seam gone on across in the kernel. A carried run's ends keep the body's reading (`TANGENT`).
 What a run ends on is a face, or a plane square to an edge where its run ends on none
 (`faces::EndBy`): where an edge a run-out goes along ends on none, and ([0.226], #962) a straight
 run's own end where it ends on no face (its faces going on across seams there, or every face there
@@ -1061,7 +1066,8 @@ straight edge between two planes, the floor's along the band's end 45 mm off, to
 for its own, and the construction, rightly, did not (the gate never probes there; the comparison
 over the whole body found it, 8 to 10 points in 3600). Both now say also `distance(p, rolled) <=
 distance(p, centres) + r`, `rolled` the centres of the ball touching both faces (the centres' own
-terms and `c distance(<= r)` from each face, read from the nearest centre, [sets.md](sets.md)): the
+terms and `c distance(<= r)` from each face, its nearest point sought from the nearest centre,
+[sets.md](sets.md)): the
 point's nearest rolled ball stands no more than a radius further off than its nearest ball of all.
 Every point a rolled ball leaves has its nearest centre on that ball's spine (the difference
 nothing), whatever the faces' angle, and a pocket elsewhere has the spine across the body

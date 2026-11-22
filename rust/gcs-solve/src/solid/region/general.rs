@@ -459,17 +459,17 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)], sets: &[Option<Resu
             }
         }
     }
-    // a set stated as another's terms and more (`E` within `M`), measured less that one: the
-    // distance from `M`'s point nearest the point to `E`, `d(p, E) − d(p, M)` at most (#994,
-    // `std.rounds`' `rolled` within `centres`) — nothing where that point is of `E` (a ball rolled
-    // along the edge), however each set's own nearest point is found, and where `M` is found
+    // a set stated as another's terms and more (`E` within `M`), measured less that one:
+    // `d(p, E) − d(p, M)` as written, `E`'s nearest point sought from `M`'s nearest `p` (#994,
+    // `std.rounds`' `rolled` within `centres`) — so nothing where that point is of `E` (a ball
+    // rolled along the edge), and `E`'s steps start on the set they lie in; where `M` is found
     // nowhere, nothing to say
     let mut within: Vec<Option<(usize, usize)>> = vec![None; of.len()];
+    let same = |a: &RegionTerm, b: &RegionTerm| a.shape == b.shape && a.cmp == b.cmp && a.lo == b.lo
+        && a.hi == b.hi && a.grow == b.grow;
     for (i, (ti, ci)) in of.iter().enumerate() {
         for (j, (tj, cj)) in of.iter().enumerate() {
             let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
-            let same = |a: &RegionTerm, b: &RegionTerm| a.shape == b.shape && a.cmp == b.cmp && a.lo == b.lo
-                && a.hi == b.hi && a.grow == b.grow;
             let holds = e.len() > m.len() && m.iter().all(|t| e.iter().any(|u| same(t, u)));
             if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && holds && rest[j].is_none()
                 && within.iter().all(|w| w.is_none_or(|(a, b)| a != j && b != i)) {
@@ -481,14 +481,14 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)], sets: &[Option<Resu
     for (k, (target, c)) in of.iter().enumerate() {
         let d: Dist = match target {
             Target::Set { .. } if within[k].is_some() => {
-                let (e, m) = within[k].expect("checked");
-                if k == m {
-                    Box::new(|_| 0.0)
+                let (ie, im) = within[k].expect("checked");
+                let (Some(Ok(e)), Some(Ok(m))) = (sets[ie].clone(), sets[im].clone()) else {
+                    return Err("a set's distance, read".to_string());
+                };
+                if k == im {
+                    Box::new(move |p| m.nearest(p).map_or(0.0, |q| crate::space::norm(sub(p, q))))
                 } else {
-                    let (Some(Ok(e)), Some(Ok(m))) = (sets[e].clone(), sets[m].clone()) else {
-                        return Err("a set's distance, read".to_string());
-                    };
-                    Box::new(move |p| m.nearest(p).map_or(0.0, |q| e.distance(q)))
+                    Box::new(move |p| m.nearest(p).map_or(0.0, |q| e.distance_from(p, q)))
                 }
             }
             Target::Set { .. } if rest[k].is_some() => {

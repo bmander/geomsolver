@@ -542,7 +542,19 @@ sheet (`bulging`, a block's side flush with a deck's) is read this way as well; 
 add is every wall meeting at a corner of the offset in each step, where the closing axis (a floor or
 a rim rounded to a convex corner's own radius) is met as a corner of conditions, as in a convex
 chain. A condition holding with no gradient is no row of the step's program (`nearest`), so a step
-chooses among the faces near the point, not the whole chain. Read about the nearest face alone —
+chooses among the faces near the point, not the whole chain. **Not yet one rule** (#994, the
+second review's altitude 9): how far is "near" is `faces_apart`'s `SEEN`, twice the distance on the
+face's box, a reach and no bound the set states. The set needs only the faces within the distance,
+and every reading past the box test says nothing past it but one: a face whose foot lies on its
+patch says its own distance, a holding row, however far. Read as nothing past the distance there
+too, and the box test at the distance (one rule, the set's), four `tests/round_onto_round.rs`
+cases are refused by the gate ("`filled[0]` … leaves out what the field reads beside its edge",
+the boss across a filled edge or a tray's filled wall): the step lands past a face whose row it no
+longer sees. The box test at the distance alone, the foot's row kept, passes `round_onto_round`
+(the rest of the suite not run), but is no rule either — which faces keep a row then depends on
+their boxes' shapes. What a step needs is the faces within the distance of where it can land, a
+reach the projection would have to bound from its own step; until then the reach stays `SEEN`.
+Read about the nearest face alone —
 that face and its bulging neighbours, slots changing with the face — a 56° corner as tight as the
 ball was still refused by the gate (`tests/tight_corners.rs`, six walls): which walls a step sees
 there hangs on which face the step stands nearest. A chain that bulges one way is read whole, as
@@ -564,13 +576,21 @@ than the nearest's; and where the conditions read where a step landed have no po
 chain read through another face a hair inside the body), the step is taken back half way, a few
 times, first. **A set stated as another's terms and more, measured less that one** (`d(p, E) − d(p,
 M)`, `E` within `M`: `std.rounds`' `rolled` within `centres`, [rounds.md](rounds.md); #994,
-`region::general`'s `measured`) is read as the distance from `M`'s point nearest `p` to `E`, at
-least the difference: nothing where that point is of `E` (a ball rolled along the edge), however
-each set's own nearest point is found, and nothing to say where `M`'s is found nowhere. Read as two
-projections, `E`'s a set of no inside — the centres of a ball touching both faces, two points where
-a boss crosses a filled edge — its own steps did not settle under a chain read through its faces'
-own surfaces past their creases (a fill's round cut across by the boss), and half the gate's probes
-of the boss's fill went wrong (`tests/round_onto_round.rs`). **A face standing between the point and
+`region::general`'s `measured`) is read as written, `d(p, E)` the distance to the nearer `p` of
+two points of `E` found: its point nearest `p` sought from `M`'s point nearest `p`
+(`SetDistance::distance_from`, `conditions::nearest`'s `start`), and its point nearest that point of
+`M` — each a point of `E`, so `d(p, E)` at most, the second found where steps toward a far `p` do
+not settle (`E` a point, the centre of a ball a round pocket's floor closes onto: sought from `p`
+alone, half `tests/tight_corners.rs`'s probes read `E` as empty). So nothing where `M`'s point is
+of `E` (a ball rolled along the edge), and nothing to say where `M`'s is found nowhere.
+Sought from `p` itself, `E` a set of no inside — the centres of a ball touching both faces, two
+points where a boss crosses a filled edge — its steps did not settle under a chain read through its
+faces' own surfaces past their creases (a fill's round cut across by the boss), and half the gate's
+probes of the boss's fill went wrong (`tests/round_onto_round.rs`); from `M`'s point they start on
+the set `E` lies in. (Read instead as the distance from `M`'s point to `E`, an upper bound of the
+difference by the triangle inequality, the field read a smaller set than the definition states.)
+The lowering reads the term by the section it builds (`recognise::rolled_by`: within a rolled
+ball's section the nearest centre is that ball's, the difference nothing). **A face standing between the point and
 the chain's nearest patch is gone round only where it bounds the chain nearer the point than any
 face not of the chain does** (#994, `BodyFaces::nearest_face`): past a band's floor's rim at its
 bowed side, the side bounds the clevis's eye 36 mm off at its far end, its own end and top nearer,
