@@ -2050,14 +2050,19 @@ pub fn beyond_end(b: &Brep,by: &[Vec<usize>],sides: &[usize],v: u32,m: [V;2],lea
 }
 
 /// **Whether faces `f` and `g` of `b` lie on one surface the same way out** (#994): their surfaces
-/// one (`ssi::same`, to `tol`) and their outward normals one where `f` lies — a face split at its
-/// seam, a plate's top in the pieces a union of its operands leaves it, each its own face of the
-/// one surface.  What a ball rolls on (`meeting`'s sides) and what the field reads as one surface
-/// (`BodyFaces::same_surface`) are this.
+/// one by the rule a Boolean joins faces into one surface by (`tolerant::one_surface`, over the
+/// faces' boxes; two of two kinds, the same to `tol`, `ssi::same`) and their outward normals one
+/// where `f` lies — a face split at its seam, a plate's top in the pieces a union of its operands
+/// leaves it, each its own face of the one surface, keeping its own operand's surface, which may
+/// lean off the others' within the reach.  What a ball rolls on (`meeting`'s sides) and what the
+/// field reads as one surface (`BodyFaces::same_surface`) are this.
 pub fn one_surface(b: &Brep,f: usize,g: usize,tol: f64) -> bool {
     let (a,c) = (&b.faces[f],&b.faces[g]);
     if f == g { return true }
-    if !super::ssi::same(&a.surface,&c.surface,tol) { return false }
+    let one = if a.surface.kind() == c.surface.kind() {
+        super::tolerant::one_surface(&a.surface,super::flush::face_box(b,a),&c.surface,super::flush::face_box(b,c),tol)
+    } else { super::ssi::same(&a.surface,&c.surface,tol) };
+    if !one { return false }
     // (a point of `f`: its first edge's middle, else its surface's origin of parameters)
     let at = a.loops.iter().flatten().find_map(|co| match &b.edges[co.edge as usize] {
         ed @ super::topo::Edge { curve: EdgeCurve::Curve(cv),.. } => Some(cv.point(0.5*(ed.t[0]+ed.t[1]))),

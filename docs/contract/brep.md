@@ -917,7 +917,17 @@ they lean apart less than the arrangement resolves a meeting at, and two otherwi
 laid. Read over that line alone, any two planes crossing along it within `1e-3` rad were one there —
 a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one class, the plate's
 top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
-off it. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
+off it. **That reading is the one rule of a surface onto a surface, and what reads a Boolean's result
+reads it too** (#994, `tolerant::one_surface`): `classed` joins two faces by it, and two faces of one
+body are one surface the same way out to a ball's sides and to the field (`fillet::one_surface`,
+`BodyFaces::same_surface`) by it over their own boxes — each face a Boolean keeps carries its own
+operand's surface, which may lean off the class's within the reach, so read as the same surface to
+the tolerance alone (`ssi::same`, axes parallel to `1e-12`) two pieces of a plate's top the union
+made one surface were two to the ball rolled along them and to the field after it
+(`faces_a_union_made_one_surface_are_one_surface_after_it`). Not yet read by it: `Shared::one` (two indices of two kinds, a
+sheet lying in a plane, or not given a class) and `Surfaces::one` for a face a trim met with nothing
+read over what the boxes share without the reach past it, and two faces whose boxes share nothing as
+not one; routing them through `tolerant::one_surface` moves what a Boolean reads, and was not tried. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
 eighth of it, is on that face** (`tolerant::along_boundary`, a rule of tolerant topology beside
 its siblings, read by `Arrangement::kept`): the edge it lies along, as the vertex-onto-edge rule
 reads a point so near, merged into it in step 4, the other face cut along it, where phase 1 did not

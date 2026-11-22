@@ -44,8 +44,25 @@
 //!
 //! Each is applied once, in that order, so the same two features are never merged by one rule in
 //! one call and parted by another in the next.
-use super::geom::{around,Curve,V};
+use super::geom::{around,Box3,Curve,Surface,V};
 use crate::util::space::{distance,dot,Grid};
+
+/// **A surface onto a surface** (the rule's own reading, #961, #994): whether the surfaces `a` and
+/// `b` of two faces filling the boxes `box_a` and `box_b` are one surface — the same surface, or,
+/// where the boxes share some of space, within `ON_CURVE tol` of each other over what they share
+/// and as far past it as a point near both is read onto their meeting at the least sine
+/// (`on_meeting` at `LEAST_SINE`); where they share none, the same to `tol` (`ssi::same`). What a
+/// Boolean joins faces into one class by (`boolean`'s `Arrangement::classed`) and what a ball
+/// rolls on as one side of it and the field reads as one surface (`fillet::one_surface`) are this,
+/// so faces a Boolean made one surface are one surface to what reads its result.
+pub fn one_surface(a: &Surface,box_a: Box3,b: &Surface,box_b: Box3,tol: f64) -> bool {
+    if a == b { return true }
+    let region = super::meeting::common(box_a,box_b,tol);
+    if !(0..3).all(|k| region.0[k] <= region.1[k]) { return super::ssi::same(a,b,tol) }
+    let past = on_meeting(tol,LEAST_SINE);
+    let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
+    super::ssi::same_over(a,b,ON_CURVE*tol,around)
+}
 
 /// A vertex onto a curve, and an edge onto an edge: within this many tolerances.
 pub const ON_CURVE: f64 = 8.;

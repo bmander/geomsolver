@@ -1346,19 +1346,13 @@ impl<'a> Arrangement<'a> {
             }
         }
         let surface = |k: usize| &self.solids[faces[k].0].faces[faces[k].1].surface;
-        // (read as far past the part of space the two boxes share as a point near both is read
-        // onto their meeting at the least sine)
-        let past = super::tolerant::on_meeting(self.tol,super::tolerant::LEAST_SINE);
         // each class rooted at its lowest face, the lower root kept where two are joined
         let mut of = crate::util::union_find::UnionFind::new(faces.len());
         for i in 0..faces.len() {
             for j in i+1..faces.len() {
                 let (a,b) = (surface(i),surface(j));
                 if a.kind() != b.kind() || of.find(i) == of.find(j) { continue }
-                let region = super::meeting::common(faces[i].2,faces[j].2,self.tol);
-                let near = (0..3).all(|k| region.0[k] <= region.1[k]);
-                let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
-                if a == b || if near { super::ssi::same_over(a,b,reach,around) } else { super::ssi::same(a,b,self.tol) } {
+                if super::tolerant::one_surface(a,faces[i].2,b,faces[j].2,self.tol) {
                     let (ri,rj) = (of.find(i),of.find(j));
                     of.union(ri.min(rj),ri.max(rj));
                 }

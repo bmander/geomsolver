@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **One rule of a surface onto a surface, before a Boolean and after it** (#994):
+  `tolerant::one_surface`, new, is the reading `Arrangement::classed` joins faces into one surface
+  by (within `ON_CURVE` tolerances over what the faces' boxes share and as far past it as
+  `on_meeting` at `LEAST_SINE`; the same to the tolerance where they share nothing), and
+  `fillet::one_surface` reads two faces of a body by it over their boxes, where it read them by
+  `ssi::same` to the tolerance: faces a union made one surface, each kept on its own operand's
+  surface leaning a hair off the others', are one side to a ball and one surface to the field.
+
 - **Two curves on one surface cross within the reach in every reading of `query::crossings_in`**
   (#994): `curve_curve` is read at the reach in every test it makes (its doc says each is a test
   of two curves coming within it of one another); two cuts of screwed sheets and a carrier's
