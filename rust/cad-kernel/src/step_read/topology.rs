@@ -1181,6 +1181,24 @@ struct Built { face: Face,laid: Vec<Edge>,poles: Vec<V>,cuts: Vec<Cut>,names: Ve
 
 const LAID: u32 = u32::MAX;
 
+/// The edge or vertex `x` a face lays (named from `LAID` down) numbered from `base`, as the `Brep`
+/// it joins numbers it; any other as it is.
+fn laid_id(x: u32,base: u32) -> u32 { if x > LAID-16 { base+(LAID-x) } else { x } }
+
+/// **A face read against the boundary with what it lays**: the edges `laid` and the vertices
+/// `poles` numbered after the boundary's (`laid_id`), its uses of them so too, and the file's edges
+/// a seam it lays cuts (`cuts`) read to the cut.
+fn with_laid(b: &Brep,f: &Face,laid: &[Edge],poles: &[V],cuts: &[Cut]) -> (Brep,Face) {
+    let mut x = b.clone();
+    for c in cuts { x.edges[c.edge].t[1] = c.t; }
+    let (e0,p0) = (x.edges.len() as u32,x.vertices.len() as u32);
+    x.edges.extend(laid.iter().cloned().map(|mut e| { for v in &mut e.v { *v = laid_id(*v,p0); } e }));
+    x.vertices.extend(poles.iter().map(|&p| Vertex {p,tol:0.}));
+    let mut g = f.clone();
+    for c in g.loops.iter_mut().flatten() { c.edge = laid_id(c.edge,e0); }
+    (x,g)
+}
+
 /// A face read: its loops walked, the outer one first and the others moved into its span.
 fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     let b = st.b;
@@ -1331,16 +1349,11 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     if f.loops.len() > 1 {
         // (a face laying an edge read against the boundary with what it lays, its laid edges and
         // pole numbered after the boundary's)
-        let with_laid;
+        let with;
         let (at,mut g) = if laid.is_empty() { (b,f.clone()) } else {
-            let mut x = b.clone();
-            let (e0,p0) = (x.edges.len() as u32,x.vertices.len() as u32);
-            x.edges.extend(laid.iter().cloned().map(|mut e| { for v in &mut e.v { if *v > LAID-16 { *v = p0+(LAID-*v); } } e }));
-            x.vertices.extend(poles.iter().map(|&p| Vertex {p,tol:0.}));
-            let mut g = f.clone();
-            for c in g.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = e0+(LAID-c.edge); } }
-            with_laid = x;
-            (&with_laid,g)
+            let (x,g) = with_laid(b,&f,&laid,&poles,&[]);
+            with = x;
+            (&with,g)
         };
         let areas: Vec<f64> = g.loops.iter().map(|l| at.loop_area(&g,l).abs()).collect();
         let outer = (0..areas.len()).max_by(|&i,&j| areas[i].total_cmp(&areas[j])).unwrap_or(0);
@@ -1376,16 +1389,7 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
     let dom = match &r.sheet { Surface::BSpline(_,m) | Surface::Offset(_,m,_) => m.domain(),_ => return None };
     // (the face's own and the laid edges and vertices, as `face` reads its outer loop with them, a
     // file's edge a seam laid cuts read to the cut)
-    let with: Option<(Brep,Face)> = (!laid.is_empty() || !poles.is_empty()).then(|| {
-        let mut x = b.clone();
-        for c in cuts { x.edges[c.edge].t[1] = c.t; }
-        let (e0,p0) = (x.edges.len() as u32,x.vertices.len() as u32);
-        x.edges.extend(laid.iter().cloned().map(|mut e| { for v in &mut e.v { if *v > LAID-16 { *v = p0+(LAID-*v); } } e }));
-        x.vertices.extend(poles.iter().map(|&p| Vertex {p,tol:0.}));
-        let mut g = f.clone();
-        for c in g.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = e0+(LAID-c.edge); } }
-        (x,g)
-    });
+    let with: Option<(Brep,Face)> = (!laid.is_empty() || !poles.is_empty()).then(|| with_laid(b,f,laid,poles,cuts));
     let (at,g): (&Brep,&Face) = match &with { Some((x,g)) => (x,g),None => (b,&*f) };
     // each loop's reach along each parameter, its uses read at seventeen points (an inverse
     // curve's on the branch of the periods nearest the line between its ends, as it is read)
@@ -1451,8 +1455,7 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
     let whole = (0..2).all(|k| {
         let Some(w) = r.widths[k] else { return true };
         f.loops.iter().flatten().all(|c| {
-            let i = if c.edge > LAID-16 { b.edges.len()+(LAID-c.edge) as usize } else { c.edge as usize };
-            let Some(e) = at.edges.get(i) else { return false };
+            let Some(e) = at.edges.get(laid_id(c.edge,b.edges.len() as u32) as usize) else { return false };
             let q: Vec<Uv> = (0..=32).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/32.,e,&surface,&at.vertices)).collect();
             q.windows(2).all(|x| (x[1][k]-x[0][k]).abs() < 0.5*w)
         })
@@ -1929,8 +1932,8 @@ impl Prepared {
         let mut named: Vec<(usize,u32)> = Vec::new();
         for (fi,mut x) in built.into_iter().enumerate() {
             let (at,pole) = (b.edges.len() as u32,b.vertices.len() as u32);
-            for c in x.face.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = at+(LAID-c.edge); } }
-            for e in &mut x.laid { for v in &mut e.v { if *v > LAID-16 { *v = pole+(LAID-*v); } } }
+            for c in x.face.loops.iter_mut().flatten() { c.edge = laid_id(c.edge,at); }
+            for e in &mut x.laid { for v in &mut e.v { *v = laid_id(*v,pole); } }
             cuts.extend(x.cuts.iter().map(|c| (fi,Cut {vertex:pole+(LAID-c.vertex),laid:at+(LAID-c.laid),..*c})));
             named.extend(x.names.iter().enumerate().map(|(k,&e)| (at as usize+k,e)));
             b.edges.extend(x.laid.drain(..));
