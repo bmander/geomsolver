@@ -408,42 +408,51 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
 /// own key holds.
 #[derive(Clone, Debug, Default)]
 pub struct MemoKey {
-    reads: Vec<f64>,
+    /// Shared, so a key a reading held still remembers (`Sketch::held`) is handed out and compared
+    /// by identity first: what every region of a body rounded all over asks of that body.
+    reads: std::sync::Arc<Vec<f64>>,
     strata: Vec<std::sync::Arc<super::faces::BodyFaces>>,
 }
 
 impl PartialEq for MemoKey {
     fn eq(&self, o: &MemoKey) -> bool {
-        self.reads == o.reads && self.strata.len() == o.strata.len()
+        (std::sync::Arc::ptr_eq(&self.reads, &o.reads) || self.reads == o.reads)
+            && self.strata.len() == o.strata.len()
             && self.strata.iter().zip(&o.strata).all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
     }
 }
 
 impl MemoKey {
-    /// Everything solid `si` reads (`reads`).
-    pub fn of(sk: &Sketch, si: usize) -> MemoKey {
-        MemoKey { reads: reads(sk, si, 0.0), strata: Vec::new() }
+    fn read(reads: Vec<f64>, strata: Vec<std::sync::Arc<super::faces::BodyFaces>>) -> MemoKey {
+        MemoKey { reads: std::sync::Arc::new(reads), strata }
     }
 
-    /// What solid `si` reads, at the unit it is faceted at (`reads`).
+    /// Everything solid `si` reads (`reads`): walked once a reading held still (`Sketch::held`).
+    pub fn of(sk: &Sketch, si: usize) -> MemoKey {
+        MemoKey::at(sk, si, 0.0)
+    }
+
+    /// What solid `si` reads, at the unit it is faceted at (`reads`): walked once a reading held
+    /// still (`Sketch::held`), where every region of a body rounded all over asks it of a key
+    /// that reads the whole body.
     pub fn at(sk: &Sketch, si: usize, unit: f64) -> MemoKey {
-        MemoKey { reads: reads(sk, si, unit), strata: Vec::new() }
+        sk.caches.held.key(si, unit, || MemoKey::read(reads(sk, si, unit), Vec::new()))
     }
 
     /// What solid `si` reads of its own (`reads_own`), and the strata it reads.
     pub fn own(sk: &Sketch, si: usize, strata: Vec<std::sync::Arc<super::faces::BodyFaces>>) -> MemoKey {
-        MemoKey { reads: reads_own(sk, si, 0.0), strata }
+        MemoKey::read(reads_own(sk, si, 0.0), strata)
     }
 
     /// What solid `si` reads but the solids `skip` says and what only they reach (`reads_where`),
     /// asked of each it reaches: what a stratum reads (`faces::cached`).
     pub fn except(sk: &Sketch, si: usize, skip: &dyn Fn(usize) -> bool) -> MemoKey {
-        MemoKey { reads: reads_where(sk, si, 0.0, skip), strata: Vec::new() }
+        MemoKey::read(reads_where(sk, si, 0.0, skip), Vec::new())
     }
 
     /// This key and `more`'s as one: what a construction made of several solids reads.
     pub fn and(mut self, more: MemoKey) -> MemoKey {
-        self.reads.extend(more.reads);
+        std::sync::Arc::make_mut(&mut self.reads).extend(more.reads.iter());
         self.strata.extend(more.strata);
         self
     }
@@ -533,17 +542,33 @@ fn near(a: &[f64], b: &[f64], reach: f64) -> bool {
 /// **A result per solid, remembered against what it was built from** (`MemoKey`):
 /// `curve_polyline`'s bargain, built again only where what it reads has moved.  Interior, so
 /// `&Sketch` readers share it; a cache and not state, since a miss builds what a hit remembers.
-#[derive(Clone, Debug)]
-pub struct Memo<V>(std::cell::RefCell<std::collections::BTreeMap<usize, (MemoKey, V)>>);
+/// A clone copies what is remembered (`Clone`), and remembers apart; a drawing changed only in
+/// what some solids read shares it instead (`shared`, #994), each entry being read only where
+/// its key holds.
+#[derive(Debug)]
+#[allow(clippy::type_complexity)]
+pub struct Memo<V>(std::rc::Rc<std::cell::RefCell<std::collections::BTreeMap<usize, (MemoKey, V)>>>);
 
 impl<V> Default for Memo<V> {
     fn default() -> Memo<V> { Memo(Default::default()) }
+}
+
+impl<V: Clone> Clone for Memo<V> {
+    fn clone(&self) -> Memo<V> {
+        Memo(std::rc::Rc::new(self.0.as_ref().clone()))
+    }
 }
 
 impl<V> Memo<V> {
     /// Forget everything remembered.
     pub fn clear(&self) {
         self.0.borrow_mut().clear();
+    }
+
+    /// This memo itself, for a drawing changed only in what some solids read to remember into
+    /// (`Caches::shared`, #994): what either works out is the other's wherever its key holds.
+    pub(crate) fn shared(&self) -> Memo<V> {
+        Memo(self.0.clone())
     }
 }
 

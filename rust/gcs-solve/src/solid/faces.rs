@@ -100,6 +100,10 @@ pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut:
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
 fn without(sk: &Sketch, readers: &BTreeSet<usize>) -> Result<Sketch, String> {
     let mut out = sk.clone();
+    // what it builds of the bodies beneath is the drawing's own (#994): its memos are shared, each
+    // entry read only where its solid reads as it does in the drawing — a body's lists of terms
+    // are read by every key reaching it, so nothing reached through one changed here is shared
+    out.caches = sk.caches.shared();
     for (i, s) in out.solids.iter_mut().enumerate() {
         // a reader is none of the stratum: what it stands on is its own
         if readers.contains(&i) {
@@ -309,11 +313,15 @@ impl Layered {
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    // each solid the walk reaches asked whether it reads `body`'s faces, rather than every solid
-    // of the drawing gathered into a set first: a body rounded all over is asked this by each of
-    // its rounds
-    let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
-    sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+    // where the drawing is held still the stratum is read once for the reading (#994), its key
+    // walked once rather than by every region of every edge and corner over the body
+    sk.caches.held.stratum(body, || {
+        // each solid the walk reaches asked whether it reads `body`'s faces, rather than every
+        // solid of the drawing gathered into a set first: a body rounded all over is asked this
+        // by each of its rounds
+        let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
+        sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+    })
 }
 
 /// **The stratum of `body` as its rounds' reading made it** (#996): the written terms of the body

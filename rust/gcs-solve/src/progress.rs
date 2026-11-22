@@ -270,12 +270,33 @@ pub fn seconds(s: f64) -> String {
     if s < 0.1 { format!("{:.0} ms", s * 1e3) } else { format!("{s:.1} s") }
 }
 
+/// **What a run made that is dear to make again** (#994): told to a listener as it is made, so a
+/// test holds a run to making each once — by counting, never by the clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Made {
+    /// A solid's exact B-rep built (`solid::exact::build`), whoever asked.
+    Built,
+    /// A region of the lowering table built and gated against its field (`lowering::lowered`):
+    /// the dear part of a round, a region for each edge and corner of a body rounded all over.
+    Lowered,
+}
+
 /// Whoever is told about work on this thread.  `begin` and `end` nest: every `end` closes the
 /// latest `begin` not yet closed.
 pub trait Listener {
     fn begin(&self, work: &Work);
     /// `total` seconds from its begin, `own` of them not inside work it started.
     fn end(&self, work: &Work, total: f64, own: f64);
+    /// `what` was made of the solid whose key is `subject` (`Made`): heard by a test.
+    fn made(&self, _what: Made, _subject: &str) {}
+}
+
+/// Tell whoever listens that `what` was made of the solid keyed `subject`: only made when
+/// somebody does.
+pub fn made(what: Made, subject: impl FnOnce() -> String) {
+    if let Some(listener) = LISTENER.with(|l| l.borrow().clone()) {
+        listener.made(what, &subject());
+    }
 }
 
 thread_local! {

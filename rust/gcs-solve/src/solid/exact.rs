@@ -85,6 +85,8 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
 /// goes on from (#996).  Only the reading of a body with rounds offers one.
 pub(crate) fn build_stratum(sk: &Sketch, si: usize, offer: bool)
     -> Result<(Exact, Option<crate::brep::recipe::Offered>), String> {
+    let _holding = sk.caches.held.open();
+    crate::progress::made(crate::progress::Made::Built, || sk.solids[si].name.clone());
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = cad::recipe_about(sk, si, origin.map(|x| x * mm))?;
