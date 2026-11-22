@@ -357,8 +357,10 @@ pub struct Given {
     digest: u64,
 }
 
-/// What a given body's face names start with: `#` opens no name a document can write.
-pub const GIVEN_FACE: &str = "#given.";
+/// What a given body's face names start with, the face's index following: `#` opens no name a
+/// document can write, and the name is one segment of a path (no `.`), whose `#` and letters are
+/// no statement's use (`#17`, `rim#17`) a route reads.
+pub const GIVEN_FACE: &str = "#given";
 
 impl Given {
     /// `brep` as `brep::step_read` gives it: millimetres and radians, about the world origin.

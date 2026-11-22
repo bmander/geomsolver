@@ -1242,3 +1242,28 @@ placement carries inside the blank; CLI test readers zero the offset.
 recipe refuses it once (`cad.rs`: its exact ruled walls are not yet written to STEP), and the field
 refuses it (`field/document.rs`). Its refusals are the panel's, in the core's words, said at the
 solid once (`solid::refusal`); the messages carry no solid name, which `refusal`'s callers add.
+
+**A body a file gives is its B-rep, untouched** (#993 stage 2). `SolidDef::Given(Arc<Given>)`
+holds a B-rep `brep::step_read` read — millimetres and radians about the world's origin, whatever
+the document's unit — and a digest of the file's text; it is made of nothing in the drawing, has
+no face of the drawing and no frame (`frame_origin` is the world's), and is held sound where it was
+read (`validate_at` checks nothing more). `Given::new` names face `k` `#given` and `k`
+(`Given::face_name`, `GIVEN_FACE`): one segment, distinct, no statement's use and no name a written
+path reaches; the file's own `ADVANCED_FACE` names are dropped, since equal names would make two
+faces one in `from_brep` and drop the edges between them, and face `k` stays face `k`. The recipe
+hands it through as `recipe::Node::Given` — the same faces in the same order, each on its own
+surface, its tolerances as measured, moved only where a recipe is written about another origin —
+so `own_exact`, a body's build and `brep::export::exact` take one path, and `solid(bracket)`, a body
+whose stock it is and nothing else, builds to it untouched too; the export's `check`,
+`self_touching`, `pinches` and `step_check` hold it as they hold a built solid. Its `Debug`, and
+`recipe::Given`'s, is its digest and its size, never its faces; its memo key (`solid/reads.rs`) is
+tag 16 and the digest in two 32-bit halves. Everything that reads a solid through its B-rep reads it
+(display mesh, measures, claims, sections, glTF); its facet term, what `mesh_unit` and a refused
+build read, is its B-rep's mesh (`evaluated::brep_facets`, shared with `from_brep`), never an empty
+term. Its material field is `BuiltField` where every face's surface has an exact foot, else refused
+naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
+reaches them; stage 3 chooses them by predicate). The OCCT route refuses `Node::Given`, naming
+`--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate: `tests/given_solids.rs` —
+`its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
+file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,
+`a_given_body_is_meshed_edged_and_cut`, `a_model_in_inches_reads_the_millimetre_b_rep`.
