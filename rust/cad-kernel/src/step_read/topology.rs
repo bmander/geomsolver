@@ -37,7 +37,7 @@ use crate::geom::{Curve,Frame,Surface,Uv,V};
 use crate::nurbs::{BSpline,Net};
 use crate::step_file::{File,Value};
 use crate::topo::{pole_at,poleless as topo_poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
-use crate::util::space::{add,cross,distance,norm,scale,sub};
+use crate::util::space::{add,cross,distance,dot,norm,scale,sub};
 use std::collections::{BTreeMap,BTreeSet};
 use std::f64::consts::TAU;
 use std::sync::Arc;
@@ -460,12 +460,40 @@ fn moved(pc: &Pcurve,d: Uv) -> Pcurve {
 /// What a face is read in: the edges and vertices read, the tolerances a point is taken to stand
 /// at a pole within and a file's curve to lie on its edge within, and the closed spline sheets
 /// rolled out (`Rolled`), by their surfaces' entities.
-struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64,rolled: &'r BTreeMap<u32,Rolled> }
+struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64,rolled: &'r BTreeMap<u32,Rolled>,other: Option<bool> }
 
 impl Setting<'_> {
     /// The periods the face on the surface `id` is walked with: the surface's own, or a closed
     /// spline sheet's widths where it closes (`Rolled`).
     fn periods(&self,id: u32,s: &Surface) -> [Option<f64>;2] { self.rolled.get(&id).map_or(s.periods(),|r| r.widths) }
+}
+
+/// **A point's other foot on a closed sheet covering its points twice, facing the other way**: for
+/// `p`, whose foot `q` is, the parameters half a width along a parameter the sheet closes in
+/// (`periods`) and wherever along the other at which the sheet stands at `p` too, its normal there
+/// turned against the one at `q` — a whole curve turned a whole turn about an axis it is
+/// symmetric about (kentron's oblate spheroid: each point once on the profile's near half, once on
+/// its far half turned half a turn on). None where the sheet has no such second sheet at `p`.
+fn other_foot(s: &Surface,periods: [Option<f64>;2],q: Uv,p: V,within: f64) -> Option<Uv> {
+    let normal = |uv: Uv| { let (_,su,sv) = s.d1(uv); let n = cross(su,sv); let l = norm(n); if l > 0. { Some(scale(n,1./l)) } else { None } };
+    let nq = normal(q)?;
+    let dom = match s { Surface::BSpline(_,n) | Surface::Offset(_,n,_) => n.domain(),_ => return None };
+    for k in 0..2 {
+        let Some(w) = periods[k] else { continue };
+        let x = q[k]+0.5*w;
+        let [lo,hi] = match periods[1-k] { Some(w2) => [q[1-k]-0.5*w2,q[1-k]+0.5*w2],None => dom[1-k] };
+        let at = |y: f64| if k == 0 { [x,y] } else { [y,x] };
+        let (mut best,mut y) = (f64::INFINITY,lo);
+        for j in 0..=128 {
+            let z = lo+(hi-lo)*j as f64/128.;
+            let d = distance(s.point(at(z)),p);
+            if d < best { (best,y) = (d,z); }
+        }
+        let r = s.inverse_near(p,at(y));
+        if !(distance(s.point(r),p) <= within) || (r[k]-q[k]).abs() < 0.25*w { continue }
+        if normal(r).is_some_and(|n| dot(n,nq) < -0.5) { return Some(r) }
+    }
+    None
 }
 
 /// **A closed spline sheet rolled out** (`rolled`): the sheet as the file gives it (`sheet`), and
@@ -577,6 +605,7 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
     let mut out = Vec::with_capacity(uses.len());
     let mut crossed = Vec::new();
     let mut last: Option<Uv> = None;
+    let mut before: Option<Uv> = None;
     let mut first = None;
     for &(ei,rev) in uses {
         let e = &b.edges[ei];
@@ -662,7 +691,15 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     let near = st.reads[ei].pcurves.iter().find(|(id,_)| *id == surface).map(|(_,f)| roughly(f,e,st.reads[ei].rate,travel[0]));
                     // (else from a step in along the edge, whose foot is the face's own where its
                     // start is on a closed sheet's seam)
-                    let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
+                    let step = e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices);
+                    let q = near.unwrap_or_else(|| s.inverse(step));
+                    // (the face read on a sheet covering its points twice set out on the sheet's
+                    // other half, `other_foot`, from the step in, which stands at no pole: which
+                    // of the two it is, the solid says, `twice`)
+                    let q = match (st.other == Some(true)).then(|| other_foot(s,periods,q,step,st.within.max(1e-9*(1.+norm(step))))).flatten() {
+                        Some(r) => r,
+                        None => q,
+                    };
                     let q = unwrap(s.inverse_near(begin,q),q,periods);
                     // (a loop on a closed sheet rolled out set out from its middle copy, so the
                     // walk, which may reach a width round, stays on it)
@@ -683,7 +720,24 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     let turn = (0..2).filter_map(|k| periods[k].map(|p| length/(norm([su,sv][k])*p))).filter(|x| x.is_finite()).fold(0.,f64::max);
                     (plain.max((48.*turn).ceil().min(4096.) as usize)+1)/2*2
                 };
-                let (mut walked,mut read) = track(s,periods,e,&b.vertices,travel,from,steps,st.within,reversed,&|_,at| at);
+                // (on a sheet covering its points twice, `twice`'s readings: each use's first step
+                // sought from where the loop stands on its half of the sheet — the first use's from
+                // the step in's foot on the half asked for, a use leaving a pole from the side of it
+                // the loop arrived on — not from the pole, where both halves meet)
+                let lead: Option<Uv> = st.other.and_then(|o| match last {
+                    Some(l) => { let k = pole_at(s,l,st.within)?; let p = before?; let mut h = l; h[1-k] = p[1-k]; Some(h) }
+                    None => {
+                        let step = e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices);
+                        let q = s.inverse(step);
+                        let q = if o { other_foot(s,periods,q,step,st.within.max(1e-9*(1.+norm(step))))? } else { q };
+                        // (on the rolled sheet's middle copy, as `from` is, by the same widths)
+                        let d = st.rolled.get(&surface).map_or([0.;2],|r| r.home(q));
+                        let q = [q[0]+d[0],q[1]+d[1]];
+                        Some(std::array::from_fn(|k| periods[k].map_or(q[k],|p| q[k]+((from[k]-q[k])/p).round()*p)))
+                    }
+                });
+                let (mut walked,mut read) = track(s,periods,e,&b.vertices,travel,from,steps,st.within,reversed,&|j,at| if j == 1 { lead.unwrap_or(at) } else { at });
+                before = walked.len().checked_sub(2).map(|k| walked[k]);
                 // a seam of a sheet closed without a period: walked again, every point of it on the
                 // domain's edge sought on the one side — the side its other use is not on, or for
                 // the first, the side the face lies left of (`seam_side`)
@@ -1121,6 +1175,7 @@ fn span(b: &Brep,f: &Face,l: &[Coedge]) -> [[f64;2];2] {
 /// A face built, the edges it lays (a whole torus's seams, a pole's seam, a band's seam and the
 /// far piece of an edge it cuts), which its loops name from `LAID` down, the vertices it lays (a
 /// pole, a seam's end on a cut edge), which those edges name so, and the file's edges it cuts.
+#[derive(Clone)]
 struct Built { face: Face,laid: Vec<Edge>,poles: Vec<V>,cuts: Vec<Cut>,names: Vec<u32> }
 
 const LAID: u32 = u32::MAX;
@@ -1505,8 +1560,248 @@ fn witness(msg: &str,given: &Given) -> Option<u32> {
     None
 }
 
+/// Whether the face `w` lies on a closed sheet covering its points twice facing opposite ways, with
+/// no curve of the file's in it to say which of the two it is on: the point halfway along its first
+/// edge has another foot on the sheet, its normal turned (`other_foot`).
+fn doubled(st: &Setting,sheet: &Sheet,w: &Walked) -> bool {
+    let s = &sheet.surface;
+    let periods = st.periods(w.surface,s);
+    if periods == [None;2] || !matches!(s,Surface::BSpline(..) | Surface::Offset(..)) { return false }
+    let uses: Vec<usize> = w.bounds.iter().flat_map(|x| match x { Bound::Edges(u) => u.iter().map(|u| u.edge).collect(),Bound::Vertex(..) => Vec::new() }).collect();
+    if uses.iter().any(|&e| st.reads[e].pcurves.iter().any(|(id,_)| *id == w.surface)) { return false }
+    let Some(&e) = uses.first() else { return false };
+    let e = &st.b.edges[e];
+    let p = e.point(0.5*(e.t[0]+e.t[1]),&st.b.vertices);
+    other_foot(s,periods,s.inverse(p),p,st.within.max(1e-9*(1.+norm(p)))).is_some()
+}
+
+/// The material normal of a face read at the middle of its use of the file's edge `e`, and the
+/// direction square to the edge into the face (the face lies on its use's left): none where the
+/// face does not use it once, or where the edge has no curve.
+fn side(b: &Brep,f: &Face,e: usize) -> Option<(V,V)> {
+    let mut uses = f.loops.iter().flatten().filter(|c| c.edge as usize == e);
+    let c = uses.next()?;
+    if uses.next().is_some() { return None }
+    let ed = &b.edges[e];
+    let EdgeCurve::Curve(curve) = &ed.curve else { return None };
+    let t = 0.5*(ed.t[0]+ed.t[1]);
+    let d = curve.d1(t).1;
+    let d = if c.reversed { scale(d,-1.) } else { d };
+    let (_,su,sv) = f.surface.d1(c.pcurve.at(t,ed,&f.surface,&b.vertices));
+    let n = cross(su,sv);
+    let n = scale(n,if f.reversed { -1. } else { 1. }/norm(n));
+    let into = cross(n,d);
+    let l = norm(into);
+    (l > 0. && l.is_finite()).then(|| (n,scale(into,1./l)))
+}
+
+/// Whether two faces' readings may meet along the edge `e`: where they meet tangent there, they
+/// lie on opposite sides of it (a face read on a doubled sheet's wrong half lies on the same side
+/// as its neighbour, over it); none where they do not meet tangent (anything may then meet).
+fn meet(b: &Brep,f: &Face,g: &Face,e: usize) -> Option<bool> {
+    let ((n,d),(m,c)) = (side(b,f,e)?,side(b,g,e)?);
+    (dot(n,m).abs() >= 0.9).then(|| dot(d,c) < 0.)
+}
+
+/// **A face on a closed sheet covering its points twice, facing opposite ways, is the one of its
+/// two readings the solid needs** (`doubled`). On such a sheet (a whole curve turned a whole turn
+/// about an axis it is symmetric about) every point is the sheet's twice, its normal turned, so a
+/// face's sense says nothing of which way it faces, and its bound reads two faces on it — on one
+/// half the region on its left with the normal one way, on the other the rest of the sheet with the
+/// normal the other way — each a face of its own: which, the walk's first foot decided (kentron's
+/// oblate spheroid with its profile started half a turn on was refused inside out; a spheroid cut by
+/// two meridians read as its small wedge twice, facing both ways, volume nought). Each such face is
+/// read on both; faces of it meeting tangent along an edge are read so that they lie on opposite
+/// sides of it, as they must with any neighbour they meet tangent (`meet`) — which leaves each group
+/// of them two readings, one the other turned — and of those the one the solid is sound with
+/// (`sound`: its shells facing out, a void in) is taken. Refused naming the face where both are, or
+/// where no reading of a group meets its neighbours.
+fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walked],built: Vec<Built>,
+    finish: &dyn Fn(Vec<Built>) -> Result<Given,Refusal>,context: &super::context::Context) -> Result<Vec<Built>,Refusal> {
+    let amb: Vec<usize> = (0..faces.len()).filter(|&i| doubled(st,&sheets[&faces[i].surface],&faces[i])).collect();
+    if amb.is_empty() { return Ok(built) }
+    let b = st.b;
+    // each read on the half of the sheet its first foot is on, and on the other
+    let on: [BTreeMap<usize,Built>;2] = [st,other].map(|x| amb.iter().filter_map(|&i| face(x,&sheets[&faces[i].surface],&faces[i]).ok().map(|f| (i,f))).collect());
+    let reading = |i: usize,o: u8| -> Option<&Face> { on[o as usize].get(&i).map(|x| &x.face) };
+    let edges = |f: &Face| -> BTreeSet<usize> { f.loops.iter().flatten().map(|c| c.edge as usize).filter(|&e| e < b.edges.len()).collect() };
+    let shared: Vec<BTreeSet<usize>> = built.iter().map(|x| edges(&x.face)).collect();
+    // the groups: faces of a doubled sheet meeting tangent along an edge
+    let tangent = |i: usize,j: usize,e: usize| side(b,&built[i].face,e).zip(side(b,&built[j].face,e)).is_some_and(|((n,_),(m,_))| dot(n,m).abs() >= 0.9);
+    let mut group: BTreeMap<usize,usize> = BTreeMap::new();
+    for (g,&i) in amb.iter().enumerate() {
+        if group.contains_key(&i) { continue }
+        let mut stack = vec![i];
+        group.insert(i,g);
+        while let Some(x) = stack.pop() {
+            for &j in &amb {
+                if group.contains_key(&j) { continue }
+                if shared[x].intersection(&shared[j]).any(|&e| tangent(x,j,e)) { group.insert(j,g); stack.push(j); }
+            }
+        }
+    }
+    let mut chosen: BTreeMap<usize,u8> = amb.iter().map(|&i| (i,0)).collect();
+    let groups: BTreeSet<usize> = group.values().copied().collect();
+    for g in groups {
+        let members: Vec<usize> = amb.iter().copied().filter(|i| group[i] == g).collect();
+        // the group's two readings: from each reading of its first face, its others set by meeting
+        let mut options: Vec<BTreeMap<usize,u8>> = Vec::new();
+        'seed: for o in [0u8,1] {
+            let mut pick: BTreeMap<usize,u8> = BTreeMap::new();
+            if reading(members[0],o).is_none() { continue }
+            pick.insert(members[0],o);
+            let mut stack = vec![members[0]];
+            while let Some(x) = stack.pop() {
+                let fx = reading(x,pick[&x]).expect("a reading picked");
+                for &j in &members {
+                    let es: Vec<usize> = shared[x].intersection(&shared[j]).copied().filter(|&e| tangent(x,j,e)).collect();
+                    if j == x || es.is_empty() { continue }
+                    let fits = |p: u8| reading(j,p).is_some_and(|fj| es.iter().all(|&e| meet(b,fx,fj,e) != Some(false)));
+                    match pick.get(&j) {
+                        Some(&p) => if !fits(p) { continue 'seed },
+                        None => match (fits(0),fits(1)) {
+                            (true,false) => { pick.insert(j,0); stack.push(j); }
+                            (false,true) => { pick.insert(j,1); stack.push(j); }
+                            _ => continue 'seed,
+                        },
+                    }
+                }
+            }
+            // and each meets the faces off doubled sheets it meets tangent
+            for &i in &members {
+                let fi = reading(i,pick[&i]).expect("a reading picked");
+                for j in (0..faces.len()).filter(|j| !chosen.contains_key(j)) {
+                    if shared[i].intersection(&shared[j]).any(|&e| meet(b,fi,&built[j].face,e) == Some(false)) { continue 'seed }
+                }
+            }
+            options.push(pick);
+        }
+        let entity = faces[members[0]].entity;
+        let with = |pick: &BTreeMap<usize,u8>| -> Vec<Built> {
+            (0..faces.len()).map(|i| match pick.get(&i).or(chosen.get(&i)) {
+                Some(&o) => on[o as usize].get(&i).cloned().unwrap_or_else(|| built[i].clone()),
+                None => built[i].clone(),
+            }).collect()
+        };
+        let sound: Vec<bool> = options.iter().map(|pick| finish(with(pick)).is_ok_and(|x| super::sound::sound(&x.brep,context).is_ok())).collect();
+        match (options.len(),&sound[..]) {
+            (0,_) => return Err(Refusal::unsupported(entity,"a face on a surface covering its points twice, read on neither of them meeting its \
+                neighbours as a solid's faces do: not read")),
+            (2,[true,true]) => return Err(Refusal::unsupported(entity,"a face on a surface covering its points twice facing opposite ways, the \
+                solid sound with it read on either: which it is, nothing says")),
+            _ => {
+                let k = sound.iter().position(|&x| x).unwrap_or(0);
+                for (&i,&o) in &options[k] { chosen.insert(i,o); }
+            }
+        }
+    }
+    Ok((0..faces.len()).map(|i| chosen.get(&i).and_then(|&o| on[o as usize].get(&i).cloned()).unwrap_or_else(|| built[i].clone())).collect())
+}
+
+/// **A use of an edge lying along a row of its sheet's domain from end to end, read on that row**:
+/// the row `k` (the parameter held) at `at`, the other parameter's feet `y` of the edge's points
+/// at its parameters `t`, each within `tau` of the row's point there and running one way. None
+/// where any stands farther, or where they turn back.
+fn along_row(f: &Face,e: &Edge,vs: &[Vertex],k: usize,at: f64,tau: f64) -> Option<(Vec<f64>,Vec<f64>,f64)> {
+    let Surface::BSpline(_,n) = &f.surface else { return None };
+    let [a,z] = n.domain()[1-k];
+    let with = |y: f64| if k == 0 { [at,y] } else { [y,at] };
+    // (a row collapsed to a point is a pole's, no row an edge lies along)
+    if distance(f.surface.point(with(a)),f.surface.point(with(z))) <= tau && distance(f.surface.point(with(a)),f.surface.point(with(0.5*(a+z)))) <= tau { return None }
+    let foot = |p: V,y0: f64| -> (f64,f64) {
+        let mut y = y0;
+        for _ in 0..60 {
+            let (x,su,sv) = f.surface.d1(with(y));
+            let d = if k == 0 { sv } else { su };
+            let g = dot(sub(x,p),d)/dot(d,d);
+            if !g.is_finite() { break }
+            let next = (y-g).clamp(a,z);
+            if (next-y).abs() <= 1e-15*(1.+(z-a).abs()) { y = next; break }
+            y = next;
+        }
+        (y,distance(f.surface.point(with(y)),p))
+    };
+    const N: usize = 64;
+    let ts: Vec<f64> = (0..=N).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/N as f64).collect();
+    let p0 = e.point(ts[0],vs);
+    let y0 = (0..=256).map(|j| a+(z-a)*j as f64/256.).min_by(|&x,&y| distance(f.surface.point(with(x)),p0).total_cmp(&distance(f.surface.point(with(y)),p0)))?;
+    let (mut ys,mut worst) = (Vec::with_capacity(N+1),0f64);
+    let mut y = y0;
+    for &t in &ts {
+        let (x,d) = foot(e.point(t,vs),y);
+        if !(d <= tau) { return None }
+        worst = worst.max(d);
+        ys.push(x);
+        y = x;
+    }
+    let up = ys[N] >= ys[0];
+    if ys.windows(2).any(|w| if up { w[1] < w[0] } else { w[1] > w[0] }) || (ys[N]-ys[0]).abs() <= 1e-12*(z-a) { return None }
+    Some((ts,ys,worst))
+}
+
+/// **A face whose uses lie along its sheet's domain's rows, read on them** (`solid`, where `sound`
+/// refuses the face read by its edges' nearest feet): each use of a file's edge lying along a row of
+/// the face's spline sheet at its domain's edge (`along_row`, within `tau`), its pcurve along that
+/// row — a line where the row's feet run linear in the edge's parameter, else through the feet at
+/// 65 of its parameters — the rest as read. The foot of an edge is where its face is: a sheet
+/// folding back under itself near its domain's edge (benchy's #27487, its corner crumpled, its
+/// normal turning over) holds points nearer the edge than the row the face ends at, and read by
+/// them the edge's curve in the face's parameters leaps into the fold and back. Its tolerance is
+/// then measured against the row, as any edge's is. None where no use lies along a row, or none
+/// reads otherwise there.
+fn rows(b: &Brep,f: &Face,tau: f64) -> Option<Face> {
+    let Surface::BSpline(_,n) = &f.surface else { return None };
+    let dom = n.domain();
+    let mut g = f.clone();
+    let mut changed = false;
+    for c in g.loops.iter_mut().flatten() {
+        let Some(e) = b.edges.get(c.edge as usize) else { continue };
+        if !matches!(e.curve,EdgeCurve::Curve(_)) { continue }
+        let best = (0..2).flat_map(|k| dom[k].map(|at| (k,at))).filter_map(|(k,at)| along_row(f,e,&b.vertices,k,at,tau).map(|x| (k,at,x)))
+            .min_by(|x,y| x.2.2.total_cmp(&y.2.2));
+        let Some((k,at,(ts,ys,_))) = best else { continue };
+        let uv = |y: f64| if k == 0 { [at,y] } else { [y,at] };
+        // (a use read on the row already stays as it is)
+        if (0..=8).all(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; (c.pcurve.at(t,e,&f.surface,&b.vertices)[k]-at).abs() <= 1e-9*(1.+at.abs()) }) { continue }
+        let m = ys.len()-1;
+        let linear = (0..=m).all(|j| (ys[j]-(ys[0]+(ys[m]-ys[0])*j as f64/m as f64)).abs() <= 1e-9*(dom[1-k][1]-dom[1-k][0]));
+        c.pcurve = if linear { Pcurve::Line {a:uv(ys[0]),b:uv(ys[m])} } else {
+            let mut knots = vec![ts[0]];
+            knots.extend(&ts);
+            knots.push(ts[m]);
+            let poles = ys.iter().map(|&y| { let q = uv(y); [q[0],q[1],0.] }).collect();
+            let Ok(polyline) = BSpline::new(1,knots,poles) else { continue };
+            Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(polyline))))
+        };
+        changed = true;
+    }
+    changed.then_some(g)
+}
+
 /// The solid `found` names, read; refused naming the entity that could not be.
-pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
+pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> { read_solid(file,found,&[]) }
+
+/// **The solid `found` names, read and sound** (`sound`), or refused. Where `sound` refuses a face
+/// read by its edges' nearest feet, the solid is read again with that face's uses along its
+/// sheet's domain's rows laid on them (`rows`), and taken where that is sound — again for the next
+/// face it then refuses, up to eight; else the first refusal stands. A face sound as first read is
+/// never read again.
+pub fn sound_solid(file: &File,found: &Found) -> Result<Given,Refusal> {
+    let given = solid(file,found.clone())?;
+    let face = |u: &super::sound::Unsound,g: &Given| u.face.or_else(|| u.edge.and_then(|e| g.brep.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize == e))));
+    let u = match super::sound::sound(&given.brep,&given.context) { Ok(()) => return Ok(given),Err(u) => u };
+    let refusal = u.refusal(&given);
+    let (mut rowed,mut at) = (Vec::new(),face(&u,&given));
+    while let Some(fi) = at.filter(|f| !rowed.contains(f) && rowed.len() < 8) {
+        rowed.push(fi);
+        let Ok(g) = read_solid(file,found.clone(),&rowed) else { break };
+        match super::sound::sound(&g.brep,&g.context) { Ok(()) => return Ok(g),Err(u) => at = face(&u,&g) }
+    }
+    Err(refusal)
+}
+
+/// `solid`, the faces `rowed` read on their sheets' rows (`rows`).
+fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal> {
     let g = Geometry {file,context:found.context};
     let mut w = Walk {g:&g,edges:BTreeMap::new(),written:Vec::new(),vertices:BTreeMap::new(),points:Vec::new()};
     let mut faces = Vec::new();
@@ -1531,7 +1826,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let within = (1e-9*size).max(uncertainty);
     let reads = crate::util::par::indices(w.written.len(),|i| read_edge(&g,&w.written[i],&points,within.max(1e-7*size)))
         .into_iter().collect::<Result<Vec<_>,_>>()?;
-    let mut b = Brep {vertices:points.iter().map(|&p| Vertex {p,tol:0.}).collect(),edges:reads.iter().map(|r| r.edge.clone()).collect(),faces:Vec::new()};
+    let b = Brep {vertices:points.iter().map(|&p| Vertex {p,tol:0.}).collect(),edges:reads.iter().map(|r| r.edge.clone()).collect(),faces:Vec::new()};
     // the surfaces, each read once
     let ids: Vec<u32> = faces.iter().map(|f| f.surface).collect::<BTreeSet<_>>().into_iter().collect();
     let sheets: BTreeMap<u32,Sheet> = ids.iter().copied().zip(crate::util::par::indices(ids.len(),|i| g.surface(ids[i],Some(ids[i])))
@@ -1577,97 +1872,110 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         rolls.insert(id,Rolled {sheet:s.surface.clone(),widths});
         (id,Sheet {surface,..s})
     }).collect();
+    let setting = |other: Option<bool>| Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),rolled:&rolls,other};
     let built = {
-        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),rolled:&rolls};
+        let st = setting(None);
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
-    let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
-    let mut vertices = w.points.clone();
-    let mut cuts: Vec<(usize,Cut)> = Vec::new();
-    let mut named: Vec<(usize,u32)> = Vec::new();
-    for (fi,mut x) in built.into_iter().enumerate() {
-        let (at,pole) = (b.edges.len() as u32,b.vertices.len() as u32);
-        for c in x.face.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = at+(LAID-c.edge); } }
-        for e in &mut x.laid { for v in &mut e.v { if *v > LAID-16 { *v = pole+(LAID-*v); } } }
-        cuts.extend(x.cuts.iter().map(|c| (fi,Cut {vertex:pole+(LAID-c.vertex),laid:at+(LAID-c.laid),..*c})));
-        named.extend(x.names.iter().enumerate().map(|(k,&e)| (at as usize+k,e)));
-        b.edges.extend(x.laid.drain(..));
-        for p in x.poles { b.vertices.push(Vertex {p,tol:0.}); vertices.push(0); }
-        b.faces.push(x.face);
-    }
-    // a file's edge a band's seam meets, cut there: the edge keeps its first piece, its far piece
-    // laid on its curve, and every other face's use of it walked along both
-    let mut laid_of: Vec<(usize,usize)> = Vec::new();
-    for &(fi,c) in &cuts {
-        if laid_of.iter().any(|&(e,_)| e == c.edge) {
-            return Err(Refusal::unsupported(w.written[c.edge].entity,"an edge two bands' seams meet: not read"))
+    // the solid of the faces built: the edges a seam cuts cut, the poles closed, the tolerances
+    // measured, and the boundary checked
+    let finish = |built: Vec<Built>| -> Result<Given,Refusal> {
+        let mut b = b.clone();
+        let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
+        let mut vertices = w.points.clone();
+        let mut cuts: Vec<(usize,Cut)> = Vec::new();
+        let mut named: Vec<(usize,u32)> = Vec::new();
+        for (fi,mut x) in built.into_iter().enumerate() {
+            let (at,pole) = (b.edges.len() as u32,b.vertices.len() as u32);
+            for c in x.face.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = at+(LAID-c.edge); } }
+            for e in &mut x.laid { for v in &mut e.v { if *v > LAID-16 { *v = pole+(LAID-*v); } } }
+            cuts.extend(x.cuts.iter().map(|c| (fi,Cut {vertex:pole+(LAID-c.vertex),laid:at+(LAID-c.laid),..*c})));
+            named.extend(x.names.iter().enumerate().map(|(k,&e)| (at as usize+k,e)));
+            b.edges.extend(x.laid.drain(..));
+            for p in x.poles { b.vertices.push(Vertex {p,tol:0.}); vertices.push(0); }
+            b.faces.push(x.face);
         }
-        let whole = b.edges[c.edge].clone();
-        for (gi,g) in b.faces.iter_mut().enumerate() {
-            if gi == fi { continue }
-            for l in &mut g.loops {
-                let mut out = Vec::with_capacity(l.len()+1);
-                for co in l.drain(..) {
-                    if co.edge as usize != c.edge { out.push(co); continue }
-                    let m = co.pcurve.at(c.t,&whole,&g.surface,&b.vertices);
-                    let (near,far) = cut_pcurve(&co.pcurve,m);
-                    let (a,z) = (Coedge {edge:c.edge as u32,reversed:co.reversed,pcurve:near},Coedge {edge:c.laid,reversed:co.reversed,pcurve:far});
-                    if co.reversed { out.push(z); out.push(a); } else { out.push(a); out.push(z); }
+        // a file's edge a band's seam meets, cut there: the edge keeps its first piece, its far piece
+        // laid on its curve, and every other face's use of it walked along both
+        let mut laid_of: Vec<(usize,usize)> = Vec::new();
+        for &(fi,c) in &cuts {
+            if laid_of.iter().any(|&(e,_)| e == c.edge) {
+                return Err(Refusal::unsupported(w.written[c.edge].entity,"an edge two bands' seams meet: not read"))
+            }
+            let whole = b.edges[c.edge].clone();
+            for (gi,g) in b.faces.iter_mut().enumerate() {
+                if gi == fi { continue }
+                for l in &mut g.loops {
+                    let mut out = Vec::with_capacity(l.len()+1);
+                    for co in l.drain(..) {
+                        if co.edge as usize != c.edge { out.push(co); continue }
+                        let m = co.pcurve.at(c.t,&whole,&g.surface,&b.vertices);
+                        let (near,far) = cut_pcurve(&co.pcurve,m);
+                        let (a,z) = (Coedge {edge:c.edge as u32,reversed:co.reversed,pcurve:near},Coedge {edge:c.laid,reversed:co.reversed,pcurve:far});
+                        if co.reversed { out.push(z); out.push(a); } else { out.push(a); out.push(z); }
+                    }
+                    *l = out;
                 }
-                *l = out;
+            }
+            b.edges[c.edge].t[1] = c.t;
+            b.edges[c.edge].v[1] = c.vertex;
+            laid_of.push((c.edge,c.laid as usize));
+        }
+        // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
+        // there: what `close_poles` reads the pole within
+        let pole = 1e-7*(1.+size);
+        let mut at_poles = Vec::new();
+        for f in &b.faces {
+            for c in f.loops.iter().flatten() {
+                let ends = b.uv_ends(f,c);
+                for (k,uv) in ends.into_iter().enumerate() {
+                    let Some(along) = pole_at(&f.surface,uv,pole) else { continue };
+                    let (_,su,sv) = f.surface.d1(uv);
+                    // (and as far as twice the farthest the uses' ends there stand from it, so two
+                    // of them are one point of it)
+                    let v = b.ends(c)[k] as usize;
+                    let off = f.loops.iter().flatten().flat_map(|d| { let e = b.uv_ends(f,d); let w = b.ends(d); [(w[0],e[0]),(w[1],e[1])] })
+                        .filter(|&(w,_)| w as usize == v).map(|(_,uv)| distance(f.surface.point(uv),b.vertices[v].p)).fold(0.,f64::max);
+                    at_poles.push((v,(std::f64::consts::PI*norm([su,sv][along])).max(2.*off)*(1.+1e-9)));
+                }
             }
         }
-        b.edges[c.edge].t[1] = c.t;
-        b.edges[c.edge].v[1] = c.vertex;
-        laid_of.push((c.edge,c.laid as usize));
-    }
-    // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
-    // there: what `close_poles` reads the pole within
-    let pole = 1e-7*(1.+size);
-    let mut at_poles = Vec::new();
-    for f in &b.faces {
-        for c in f.loops.iter().flatten() {
-            let ends = b.uv_ends(f,c);
-            for (k,uv) in ends.into_iter().enumerate() {
-                let Some(along) = pole_at(&f.surface,uv,pole) else { continue };
-                let (_,su,sv) = f.surface.d1(uv);
-                // (and as far as twice the farthest the uses' ends there stand from it, so two
-                // of them are one point of it)
-                let v = b.ends(c)[k] as usize;
-                let off = f.loops.iter().flatten().flat_map(|d| { let e = b.uv_ends(f,d); let w = b.ends(d); [(w[0],e[0]),(w[1],e[1])] })
-                    .filter(|&(w,_)| w as usize == v).map(|(_,uv)| distance(f.surface.point(uv),b.vertices[v].p)).fold(0.,f64::max);
-                at_poles.push((v,(std::f64::consts::PI*norm([su,sv][along])).max(2.*off)*(1.+1e-9)));
-            }
+        for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
+        b.close_poles();
+        // (twice: a vertex's tolerance, measured, is how far an inverse curve's end reads as on a pole
+        // there, which the edges' tolerances are then measured with)
+        b.measure_tolerances();
+        b.measure_tolerances();
+        // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
+        // the next: the gap measured is held to a billionth more)
+        for e in &mut b.edges { e.tol *= 1.+1e-9; }
+        edges.resize(b.edges.len(),0);
+        // (a cut edge's far piece the file's one entity)
+        for &(e,l) in &laid_of { edges[l] = edges[e]; }
+        // (a seam laid where the file writes it as a point, named by that edge)
+        for &(k,e) in &named { if let Some(x) = edges.get_mut(k) { *x = e; } }
+        let given = Given {name:found.name.clone(),entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
+        // an edge standing off its faces (or its vertices off it) farther than a hundred times the
+        // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a
+        // loop's foot clamped at a closed sheet's seam it crosses, a curve the file gives that is not
+        // its face's: refused, not measured into a tolerance
+        let far = (100.*uncertainty).max(1e-3*size);
+        if let Some((i,e)) = given.brep.edges.iter().enumerate().find(|(_,e)| e.tol > far) {
+            return Err(Refusal::new(Why::Unsound,Some(given.edges[i]).filter(|&x| x != 0).or(Some(r)),
+                format!("an edge stands {:.3e} mm off its faces or its vertices, past the {far:.3e} mm the reader accepts",e.tol)))
         }
+        if let Err(e) = given.brep.check(within) {
+            let why = match e.kind { crate::Kind::Open => Why::Open,crate::Kind::NotManifold => Why::NotManifold,_ => Why::Unsound };
+            let entity = witness(&e.msg,&given).or(Some(r));
+            return Err(Refusal::new(why,entity,e.msg))
+        }
+        Ok(given)
+    };
+    let mut built = twice(&setting(Some(false)),&setting(Some(true)),&sheets,&faces,built,&finish,&found.context)?;
+    for &fi in rowed {
+        let face = built.get(fi).and_then(|x| rows(&b,&x.face,(100.*uncertainty).max(1e-3*size)))
+            .ok_or_else(|| Refusal::unsupported(faces.get(fi).map_or(r,|f| f.entity),"a face with no use along its sheet's rows read otherwise"))?;
+        built[fi].face = face;
     }
-    for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
-    b.close_poles();
-    // (twice: a vertex's tolerance, measured, is how far an inverse curve's end reads as on a pole
-    // there, which the edges' tolerances are then measured with)
-    b.measure_tolerances();
-    b.measure_tolerances();
-    // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
-    // the next: the gap measured is held to a billionth more)
-    for e in &mut b.edges { e.tol *= 1.+1e-9; }
-    edges.resize(b.edges.len(),0);
-    // (a cut edge's far piece the file's one entity)
-    for &(e,l) in &laid_of { edges[l] = edges[e]; }
-    // (a seam laid where the file writes it as a point, named by that edge)
-    for &(k,e) in &named { if let Some(x) = edges.get_mut(k) { *x = e; } }
-    let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
-    // an edge standing off its faces (or its vertices off it) farther than a hundred times the
-    // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a
-    // loop's foot clamped at a closed sheet's seam it crosses, a curve the file gives that is not
-    // its face's: refused, not measured into a tolerance
-    let far = (100.*uncertainty).max(1e-3*size);
-    if let Some((i,e)) = given.brep.edges.iter().enumerate().find(|(_,e)| e.tol > far) {
-        return Err(Refusal::new(Why::Unsound,Some(given.edges[i]).filter(|&x| x != 0).or(Some(r)),
-            format!("an edge stands {:.3e} mm off its faces or its vertices, past the {far:.3e} mm the reader accepts",e.tol)))
-    }
-    if let Err(e) = given.brep.check(within) {
-        let why = match e.kind { crate::Kind::Open => Why::Open,crate::Kind::NotManifold => Why::NotManifold,_ => Why::Unsound };
-        let entity = witness(&e.msg,&given).or(Some(r));
-        return Err(Refusal::new(why,entity,e.msg))
-    }
-    Ok(given)
+    finish(built)
 }

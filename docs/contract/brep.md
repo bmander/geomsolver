@@ -1866,6 +1866,26 @@ above at 7e-2). Gates: `step_sound::a_loop_crossing_itself_is_refused`,
 `a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet`,
 `tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`.
 
+**The foot of an edge is where its face is: a face whose edges lie along its sheet's domain's rows
+is bounded by those rows** (`topology::sound_solid`, `rows`, `along_row`). Where `sound` refuses a
+face read by its edges' nearest feet, the solid is read again with each use of that face lying along
+a row of its spline sheet at the domain's edge — the row not a pole's, every one of 65 points of the
+edge within the reader's bound for an edge off its faces (max(100 × the stated uncertainty, 1e-3 ×
+the solid's size)) of the row at its foot on the row, the feet running one way — its pcurve laid
+along that row (a line where the feet run linear in the edge's parameter, else through them), and
+taken where that reading passes `Brep::check` and `sound`; again for the next face `sound` then
+refuses, up to eight; else the first refusal stands. A face sound as first read is never read again,
+so no trimmed face near a row changes. What is newly accepted: a face whose nearest-foot reading is
+not a boundary (its uses leap) read as bounded by the rows its edges stand along, their tolerances
+measured against those rows as any edge's are, and held to `sound::LOOSE` as any. Benchy's face
+#27487 is its sheet's whole domain, the net's corner crumpled (its normal turning over within 0.06
+of `u` and 0.0012 of `v` of it): its edges stand up to 4.4e-3 off the rows and within 1e-4 of the
+crumple, and read by those feet their curves in the face's parameters leapt into the crumple and
+back; read on the rows, their tolerances measure 4.2e-3 to 4.4e-3 (OCCT's 5.8e-3) and every one of
+benchy's 1385 faces is within its bar of both references. Gate:
+`step_kinds::a_face_whose_edges_lie_along_its_sheets_rows_is_bounded_by_them` (a slab under that face,
+refused before, its faces their sheets' whole domains after), the corpus row.
+
 **A use is one curve in its face's parameters, its region what its leaps close, and the shells nest
 by their senses** (`sound`'s `Drawn::leap` and `reach`, `shells`). A face's region is its uses
 closed across each leap by the chord between the leap's two sides in the face's parameters — `props`
@@ -1971,10 +1991,24 @@ edges — the sheet cut where no loop crosses and its pieces put end to end, hel
 points; its loops' ends within 1e-9 of the window's edges are put on them. A face reaching round
 farther than a hair more than once, or a use whose points read on the window leap half its width (a
 foot past an edge read on the far one: 217's band, its window starting at the least its loop
-reached, was measured at half its area), is refused naming it. A sheet closed in both parameters
-whose points are covered twice (an ellipse about its axis turned whole, kentron's oblate spheroid)
-is read on the branch its walk sets out on; on the other the face's normal turns, its shell inside
-out, refused, never read wrong. Not read yet: a closing line that is a crease past a thousandth of a
+reached, was measured at half its area), is refused naming it. **A face on a sheet covering its
+points twice facing opposite ways is the one of its two readings the solid needs**
+(`topology::twice`, `doubled`, `other_foot`). On a whole curve turned a whole turn about an axis it
+is symmetric about (kentron's oblate spheroid) every point is the sheet's twice, its normal turned
+on the second, so a face's sense says nothing of which way it faces and its bound reads two faces:
+on one half the region on its left facing one way, on the other the rest of the sheet facing the
+other. The walk took whichever its first foot found — kentron's spheroid with its profile started
+half a turn on, the same surface, was refused inside out, and a spheroid cut by two meridians read
+as its small wedge twice, facing both ways, volume nought: read wrong. Where the sheet holds another
+foot of a face's point half a width along one of its periods, its normal turned, and no curve of
+the file's is in the face, the face is read on both halves (each use's first step sought from the
+half asked for, a use leaving a pole from the side the loop arrived on); faces meeting tangent along
+an edge are read on opposite sides of it, as with any neighbour they meet tangent, which leaves each
+group two readings, one the other turned; and of those the one the solid is sound with is taken.
+Refused naming the face where both are sound or no reading meets its neighbours. A face's sense on
+such a sheet is no statement: a whole spheroid written with either sense, or about its axis turned
+over, is the spheroid. Gate: `step_kinds::a_face_on_a_sheet_covering_its_points_twice_is_the_one_the_solid_needs`.
+Not read yet: a closing line that is a crease past a thousandth of a
 radian (no period: a loop across it leaps, refused); an extrusion or a revolution of a closed spline
 curve, which `Curve::period` gives none, is not rolled. A sheet crossing itself is no closed sheet:
 springrep's ring pushed in past its fold extrudes a profile through itself (`C(1.9013)` and

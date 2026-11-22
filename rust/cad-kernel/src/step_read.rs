@@ -108,8 +108,7 @@ pub fn reading(text: &str) -> Result<Reading,Refusal> {
     if shapes.solids.is_empty() { return Err(Refusal::new(Why::Empty,None,"the file represents no solid")) }
     let solids = shapes.solids.into_iter().map(|f| {
         let placed = f.placed;
-        let mut given = topology::solid(&file,f)?;
-        sound::sound(&given.brep,&given.context).map_err(|u| u.refusal(&given))?;
+        let mut given = topology::sound_solid(&file,&f)?;
         if let Some(p) = placed { given.brep = given.brep.moved(&p.motion); }
         Ok(given)
     }).collect::<Result<_,_>>()?;
