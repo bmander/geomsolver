@@ -375,31 +375,21 @@ impl<'a> Drawn<'a> {
                     let (by,tau) = (dist(from,to),self.runs[r].tau+e.v.iter().map(|&v| self.b.vertices[v as usize].tol).fold(0.,f64::max));
                     let apart = distance(surface.point(from),surface.point(to));
                     let period = (0..2).find(|&k| periods[k].is_some_and(|t| ((to[k]-from[k]).abs()/t-1.).abs() < 1e-3));
-                    // how far the surface's greater speed carries the leap, and whether it
-                    // collapses there (a pole, a spline sheet's collapsed row)
-                    // the surface's greater speed and its least (the Jacobian's least singular
-                    // value) across the leap, and whether it collapses there (a pole, a spline
-                    // sheet's collapsed row)
-                    let (mut fast,mut slow,mut least) = (0f64,0f64,f64::INFINITY);
-                    for x in [from,[(from[0]+to[0])/2.,(from[1]+to[1])/2.],to] {
-                        let (_,su,sv) = surface.d1(x);
-                        let f = norm(su).max(norm(sv));
-                        let a = norm(crate::util::space::cross(su,sv));
-                        fast = fast.max(f);
-                        slow = slow.max(a/f);
-                        least = least.min(a/(f*f));
-                    }
+                    // **What the leap does to the face's region**: the face is read as the use
+                    // closed across the leap by the chord between its two sides (`props` closes a
+                    // use's ends so), and a chord whose image in space keeps within twice the
+                    // tolerance of the leap's start adds to or takes from the region only points
+                    // within that disc — the most a use's feet swinging round a pole it passes
+                    // within its tolerance of can (`reach`, the farthest the chord's image goes);
+                    // a chord a period long, or across a closed sheet's seam, or whose ends stand
+                    // apart in space, adds a strip
+                    let reach = self.reach(from,to);
                     let how = if let Some(k) = period { format!("a period of its {}",["u","v"][k]) }
                         else if apart > 2.*tau { format!("{apart:e} mm in space, past twice its tolerance") }
-                        // (within the tolerance in space and no wider in the parameters than
-                        // `check` lets a corner's two ends stand apart: a tolerant corner's slop)
-                        else if by <= 1e-3_f64.max(2.*tau/fast) { continue }
-                        else if least <= 1e-3 { "along a pole, one point in space: the use's end read on another branch of the pole than its curve".to_string() }
-                        // (where the surface is regular, a leap its least speed carries no
-                        // farther than twice the tolerance is that slop too, read across a
-                        // surface faster one way than the other)
-                        else if by*slow <= 2.*tau { continue }
-                        else { format!("{apart:e} mm in space, its ends {by:e} apart in the parameters of a surface that meets itself there: across a closed sheet's seam") };
+                        else if reach <= 2.*tau { continue }
+                        else { format!("its ends {apart:e} mm apart in space, but the parameters between them reach {reach:e} mm from them, \
+                            past twice its tolerance {tau:e} mm: across a closed sheet's seam, or round a pole it passes farther from \
+                            than that") };
                     return Err(at_uv(self.fi,&format!("edge {}'s curve in its parameters leaps {by:e} ({how}) at {s:.6} of its use's way: it is no one curve there",
                         self.runs[r].c.edge),from))
                 }
@@ -431,6 +421,23 @@ impl<'a> Drawn<'a> {
             if dist(a,x) >= dist(x,z) { s[1] = m; z = x } else { s[0] = m; a = x }
         }
         (dist(a,z) > self.tol(p,p)).then_some(((s[0]+s[1])/2.,a,z))
+    }
+
+    /// **How far the chord from `from` to `to` in the face's parameters reaches in space** from its
+    /// start's point: the farthest of its points read at 256 steps, each with half a step at the
+    /// speed it is run at there (so a bound on every point of it between). A chord along a pole's
+    /// line reaches nothing; a chord across a closed sheet's domain reaches round the sheet.
+    fn reach(&self,from: Uv,to: Uv) -> f64 {
+        let s = &self.b.faces[self.fi].surface;
+        let o = s.point(from);
+        let d = [to[0]-from[0],to[1]-from[1]];
+        const N: usize = 256;
+        (0..=N).map(|j| {
+            let x = j as f64/N as f64;
+            let (p,su,sv) = s.d1([from[0]+x*d[0],from[1]+x*d[1]]);
+            let rate = norm([su[0]*d[0]+sv[0]*d[1],su[1]*d[0]+sv[1]*d[1],su[2]*d[0]+sv[2]*d[1]]);
+            distance(p,o)+0.5*rate/N as f64
+        }).fold(0.,|m: f64,x| if x.is_finite() { m.max(x) } else { f64::INFINITY })
     }
 
     /// A new joint at `vertex`.

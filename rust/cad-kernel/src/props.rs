@@ -844,16 +844,34 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             // the loop closed in the face's parameters, each use's end joined straight to the next's
             // start: the kernel's measured gaps between them are small in space, but `G` across a
             // spline face's chart can be large, and Green's theorem needs a closed curve
-            let ends: Vec<(Uv,Uv)> = l.iter().map(|c| {
+            // — and each use's own ends closed to where its curve arrives: an inverse curve's end
+            // is read where the walk put it, on the branch of a pole the next use leaves along,
+            // its curve a hair in from it on the branch it arrives along (its feet swinging round
+            // the pole it passes within its tolerance of); the rule above reads the curve inside,
+            // so the chord between the two is the face's boundary there (`sound`'s `Drawn::leap`
+            // reads the region it closes). A hair in, carried back to the end by the curve's rate,
+            // so a smooth end adds nothing
+            let ends: Vec<[Uv;4]> = l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
                 let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
-                if c.reversed { (z,a) } else { (a,z) }
+                let inside = |t: f64,end: Uv,h: f64| {
+                    if !matches!(c.pcurve,Pcurve::Inverse {..}) { return end }
+                    let (q,d) = c.pcurve.at_and_derivative(t+h,e,s,&b.vertices);
+                    let back = [q[0]-h*d[0],q[1]-h*d[1]];
+                    if back.iter().all(|x| x.is_finite()) { back } else if q.iter().all(|x| x.is_finite()) { q } else { end }
+                };
+                let h = 1e-9*(e.t[1]-e.t[0]);
+                let (ai,zi) = (inside(e.t[0],a,h),inside(e.t[1],z,-h));
+                if c.reversed { [z,zi,ai,a] } else { [a,ai,zi,z] }
             }).collect();
             for k in 0..ends.len() {
-                let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
-                let dv = q[other]-p[other];
-                if dv == 0. { continue }
-                row[k].1 = gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv);
+                let next = &ends[(k+1)%ends.len()];
+                let path = [ends[k][2],ends[k][3],next[0],next[1]];
+                row[k].1 = path.windows(2).map(|w| {
+                    let (p,q) = (w[0],w[1]);
+                    let dv = q[other]-p[other];
+                    if dv == 0. { 0. } else { gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv) }
+                }).sum();
             }
             out.push(row);
         }
