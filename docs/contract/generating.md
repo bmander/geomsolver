@@ -2358,9 +2358,28 @@ its row, and a preimage leaving the stretch there and coming back across the row
 laid as one line with it, joined along the row — the thin torus's second preimage dips below its
 point's row by up to 4.5e-3 of the roll and crosses it again 0.0316 of an angle along, standing up
 to 2.3e-5 off the row's contact in space between, a lens of the sheet, and the double curve was laid
-on the row's own edge. `tumbling-torus-thin` is now refused at its second swallowtail point, where
-the lens the second curve's dip cuts off below its row is not entered and the dip's edge has one
-face.
+on the row's own edge. **A far cover is read from the top of its own contact's climb**
+(`depth::cover`): the own contact ends where the point's distance from the tool first falls a
+rounding below the greatest sample so far. Read against the sample before, a climb barely past the
+rounding followed by a slow fall had no two neighbours a rounding apart, and the point was read
+`Alone`: the lens the thin torus's second double curve's dip cuts off below its swallowtail point's
+row climbed to 3.1e-8 against the fit's 3e-8 and is held 2.2e-6 deep 0.018 of the roll on, and was
+kept as boundary where the tail above the row was dropped — the trim then refused with the dip's
+edge used by one face (`swept_depth::a_far_cover_past_an_own_contact_that_barely_climbs_is_read_from_its_climbs_top`).
+So read, the lens is wholly tail, bounded by the dip and the row, as the swallowtail's normal form
+puts it (the double curve's parabola, `x = −2τ²`, dips three times as far below the point as the
+folds', `x = −6τ²`, whose lowest is the birth: 3.46e-3 of the roll against the 1.15e-3 from birth to
+point, the dip read to 1.1370). The thin's folds are thicker than the tolerance, unlike the half
+turn's — held by the instants beside their own 6.3e-7 to 1.4e-6 deep at the first pair, 2.5e-7 to
+8.1e-7 at the second, from an eighth of the way from birth to point up to it (`depth_probe
+sliver`), against 3e-7 — but lie wholly in that tail, held by the neighbours (`Near`) or by a later
+instant, so a pair read unborn still bounds nothing kept. `tumbling-torus-thin` is now refused at
+the check: beside the first swallowtail point the bridge's end — a construction line, where the
+contact's `s''` leaves the band a fold is read in — grazes the first double curve, which runs within
+8.8e-7 of it (three tolerances) over 9.9e-4 of its length before crossing it at (3.96004, 1.50408,
+1.64131), so the double curve's point on the row (3.96007, 1.50335, 1.64197) stands within the
+arrangement's band (eight tolerances) of that seam; the arrangement laid the strip of the bridge's
+face between the two as one edge on both faces, a pcurve 8.47e-7 off it.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
