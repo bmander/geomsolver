@@ -61,6 +61,8 @@ pub enum Outcome {
     SecondTrip(String),
     /// A panic, its message.
     Panicked(String),
+    /// Not read within `BOUND` (what it was).
+    Slow(String),
     /// The same point set and every written entity read, but the reader lays fewer degenerate
     /// edges than the solid held (laid, built): which ones it should lay is the convention.
     Degenerate(usize,usize),
@@ -81,6 +83,7 @@ impl Outcome {
             Outcome::Different(_) => "read to a different solid".into(),
             Outcome::SecondTrip(_) => "a second trip differs".into(),
             Outcome::Panicked(_) => "panicked".into(),
+            Outcome::Slow(_) => format!("not read within {BOUND:?}"),
             Outcome::Degenerate(..) => "same but for degenerate edges".into(),
         }
     }
@@ -88,7 +91,7 @@ impl Outcome {
         match self {
             Outcome::Same => String::new(),
             Outcome::Degenerate(l,b) => format!("{l} degenerate edges laid, {b} built"),
-            Outcome::NotWritten(m) | Outcome::Different(m) | Outcome::SecondTrip(m) | Outcome::Panicked(m) => m.clone(),
+            Outcome::NotWritten(m) | Outcome::Different(m) | Outcome::SecondTrip(m) | Outcome::Panicked(m) | Outcome::Slow(m) => m.clone(),
             Outcome::Refused {refusal,unsound,..} => {
                 let mut s = format!("{:?} {refusal}",refusal.why);
                 if let Some(Err(d)) = unsound { s += &format!(" [read without sound: {d}]"); }
@@ -385,6 +388,11 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
     match refused { Some(r) => Err((Stage::Sound,r,Some(out))),None => Ok(out) }
 }
 
+/// The longest a file the kernel writes may take to read: a minute. The slowest of the library
+/// read in under half a second on this machine; a file past this is a defect of its size or of
+/// the reader's pace, said apart.
+pub const BOUND: Duration = Duration::from_secs(60);
+
 /// The message of a panic.
 fn said(p: Box<dyn std::any::Any + Send>) -> String {
     p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "a panic".into())
@@ -399,11 +407,30 @@ pub fn trip(b: &Brep,name: &str,tol: f64,fit: Fit) -> (Outcome,Found) {
 }
 
 fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
+    let say = |what: &str| if std::env::var_os("STEP_ROUNDTRIP_VERBOSE").is_some() { eprintln!("  {name}: {what}") };
+    say("writing");
     let started = Instant::now();
     let text = match write(b,name,tol,fit) { Ok(t) => t,Err(e) => return Outcome::NotWritten(e) };
     found.write = started.elapsed();
+    say(&format!("written in {:?}, {} bytes; reading",found.write,text.len()));
+    if let Ok(dir) = std::env::var("STEP_ROUNDTRIP_DUMP") {
+        let file: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+        let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{file}.step")),&text);
+    }
     let started = Instant::now();
-    let read = stages(&text);
+    // (read on a thread of its own, waited on no longer than `BOUND`: one past it is said slow, its
+    // thread left to run)
+    let read = {
+        let (tx,rx) = std::sync::mpsc::channel();
+        let owned = text.clone();
+        std::thread::spawn(move || { let _ = tx.send(std::panic::catch_unwind(|| stages(&owned))); });
+        match rx.recv_timeout(BOUND) {
+            Ok(Ok(r)) => r,
+            Ok(Err(p)) => return Outcome::Panicked(said(p)),
+            Err(_) => return Outcome::Slow(format!("a file of {} bytes, written in {:.1?}, not read within {BOUND:?}",text.len(),found.write)),
+        }
+    };
+    say(&format!("read in {:?}; measuring",started.elapsed()));
     found.read = started.elapsed();
     let started = Instant::now();
     let mb = measured(b);
@@ -417,8 +444,10 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
         }
     };
     if given.len() != 1 { return Outcome::Different(format!("{} solids read, one written",given.len())) }
+    say("compared; held to the property");
     if let Err(d) = same(b,&mb,&text,&given[0],fit,tol,found) { return Outcome::Different(d) }
     // the second trip: the solid read, written again, is a file of itself and reads to itself
+    say("the second trip");
     let r = &given[0].brep;
     let again = match write(r,name,tol,fit) { Ok(t) => t,Err(e) => return Outcome::SecondTrip(format!("not written again: {e}")) };
     if let Err(e) = verify(&again,&Solid::of(r)) { return Outcome::SecondTrip(format!("written again, not verified: {e}")) }
@@ -520,6 +549,7 @@ pub fn library(only: Option<&str>,swept: Option<bool>,unbuilt: &mut Vec<String>,
     for (name,e) in fixtures::examples() {
         if only.is_some_and(|o| !name.contains(o)) { continue }
         if std::env::var("STEP_ROUNDTRIP_FROM").is_ok_and(|f| name.as_str() < f.as_str()) { continue }
+        if std::env::var("STEP_ROUNDTRIP_UPTO").is_ok_and(|f| name.as_str() >= f.as_str()) { continue }
         if std::env::var("STEP_ROUNDTRIP_SKIP").is_ok_and(|f| f.split(',').any(|x| name.contains(x))) {
             unbuilt.push(format!("{name}: skipped")); continue
         }
@@ -613,7 +643,7 @@ fn census() {
         let cause = match &outcome {
             Outcome::Refused {by,refusal,..} => format!("{by:?} {:?}: {}",refusal.why,generic(&refusal.msg)),
             Outcome::Different(d) | Outcome::SecondTrip(d) => generic(d),
-            Outcome::NotWritten(m) | Outcome::Panicked(m) => generic(m),
+            Outcome::NotWritten(m) | Outcome::Panicked(m) | Outcome::Slow(m) => generic(m),
             Outcome::Same | Outcome::Degenerate(..) => String::new(),
         };
         if !cause.is_empty() { *causes.entry(format!("{}: {cause}",outcome.label())).or_default() += 1; }
