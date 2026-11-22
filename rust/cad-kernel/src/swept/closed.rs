@@ -1148,6 +1148,12 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
     // stretch it passes (`rings::cut_along`), its tail dropped there
     let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    // (each built outward from its swallowtail point where a stretch finds one, #942 T1d-tori — a
+    // seed on a curve so built is no other)
+    for apex in fits.iter().flat_map(|f| f.apexes.clone()) {
+        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
+        curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
+    }
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
         // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }

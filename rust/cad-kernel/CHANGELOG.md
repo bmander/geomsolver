@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A fold pair's double curve is built from its swallowtail point** (#942 T1d-tori,
+  `swept::rings`, `swept::closed`): where a stretch's rows find no pair of a narrow pair's leaves
+  crossing — beside a pair's birth one preimage lies in the stretch before the cut, the other within
+  the bridge — the swallowtail point is found where a fold runs along the kernel of the sheet's
+  rates (`rings::swallowtails`, `Fitted::apexes`), and the curve built outward from it, its first
+  pair from the swallowtail's normal form (`rings::double_curve_from_apex`). A double curve's march
+  takes no pair whose preimages have met, and seeks the next pair from the last two where the last
+  alone does not settle it. A tube's tail is read above its double curve over the angle round the
+  axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`; a tube's seams are
+  laid as edges between each two of their places, and a trace along a seam is the seam's own edges.
+  `tumbling-torus-half-turn` gets past its double curve beside the birth and is refused, by name,
+  where the sheet's kernel through the swallowtail point stands within the tolerance of it and a
+  sliver of the leaf is narrower than the tolerance. The `ring_profile` example builds the half turn.
+
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
