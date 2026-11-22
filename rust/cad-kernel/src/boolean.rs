@@ -3786,10 +3786,13 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
         for _ in 0..40 {
             let m = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
             let fm = value(m);
-            if fm.abs() <= tol { a = m; break }
+            if fm.abs() <= tol { seeds.push(f.surface.point(m)); return }
             if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
         }
-        seeds.push(f.surface.point(a));
+        // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): halved
+        // forty times, a root stands within the tolerance; where the distance does not come to it
+        // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
+        // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing)
     };
     for i in 0..=N { for j in 0..=N {
         if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }

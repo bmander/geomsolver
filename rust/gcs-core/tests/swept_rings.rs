@@ -549,3 +549,36 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
     }
     assert!(read >= 8,"{read} places read");
 }
+
+/// **A double curve ending on a tube's crossing with the tool is one vertex with it** (#942
+/// T1d-tori): the thin tumbling torus's double curve, where its tube passes back through itself,
+/// ends at the end pose on the tube's rim, which touches the tool there, and on the leaf it passes
+/// through it ends where that leaf crosses the tool — a chord ending on another inside the face's
+/// square. That end is the tube's own place, by construction: put on the crossing's polyline
+/// instead, it stood 1e-6 (3.5 tolerances) from the rim's corner it is, two vertices of the tube on
+/// the tool, the touching rim a slit in the tool's face and the trim refused where it read the
+/// face's piece both ways. No two of the tubes' vertices on the tool where it stops stand a few
+/// tolerances apart, within ten of one another and not one place.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the thin tumbling torus entered and sewn")]
+fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it() {
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
+    use gcs_core::brep::trajectory::Screw;
+    use gcs_core::brep::util::space::distance;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
+        ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let tol = 0.015/50_000.;
+    let RingEntered {ends,sheets,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
+    let stop = &ends[1].faces[0].surface;
+    let on: Vec<[f64;3]> = sheets.iter().flat_map(|s| s.vertices.iter().map(|v| v.p)).filter(|&p| stop.implicit(p).abs() <= tol).collect();
+    assert!(on.len() > 4,"the tubes' vertices on the tool where it stops: {}",on.len());
+    for (i,&p) in on.iter().enumerate() { for &q in &on[i+1..] {
+        let d = distance(p,q);
+        assert!(d <= tol || d > 10.*tol,"two of the tubes' vertices on the tool {d:e} apart: {p:?} and {q:?}");
+    } }
+}

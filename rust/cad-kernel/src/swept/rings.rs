@@ -2129,19 +2129,23 @@ fn pieces_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt
 
 /// **A square's chords split where they cross or one ends on another** (#880 T1d: a double curve
 /// ending on a tube's meeting with the tool at an end pose): each chord cut at every place another
-/// crosses it, and at every end of another standing within `SNAP_ON` of it (that end put there),
-/// each piece keeping its chord's kind. A trace's end is placed to its step (`MET_STEP`), so an end
-/// within a step of another chord ends on it (#942 F6). A double curve's end stays where it is, and
-/// the chord it stands on is cut there (#942 T1d-tori, by construction): it ends where one leaf
-/// reaches the end of the roll, on the tool posed there, so on the other leaf's meeting with that
-/// tool — put on that trace's polyline instead, the full turn's stood 2.4e-6 inside the tool, two
-/// tolerances from the same point on the leaf whose rim it is, and the two never met.
+/// crosses it, and at every end of another standing within `SNAP_ON` of it, each piece keeping its
+/// chord's kind. A trace's end is placed to its step (`MET_STEP`), so an end within a step of another
+/// chord ends on it (#942 F6), put there. **A double curve's end is the tube's own place** (#942
+/// T1d-tori, by construction): where one of its preimages reaches the roll's end, on the tool, it
+/// ends there on the other's face too, so it stays, and the trace it ends on is cut at it — put on
+/// the trace's polyline instead, it stood 1e-6 off the vertex its other preimage ends at on the rim
+/// (the thin torus: the touching rim and the crossing beside it two vertices, the rim a slit in the
+/// tool's face; the full turn's 2.4e-6 inside the end torus, two tolerances from the same point on
+/// the leaf whose rim it is, and the two never met).
 fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
     const SNAP_ON: f64 = MET_STEP;
     let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
     let mut lines: Vec<(usize,Vec<P2>)> = chords.to_vec();
     // each chord's cuts: (segment, fraction along it, place)
     let mut cuts: Vec<Vec<(usize,f64,P2)>> = vec![Vec::new();lines.len()];
+    // (each end left where it stands on a trace, and the trace: their crossing beside it is that end)
+    let mut kept: Vec<(usize,usize,P2)> = Vec::new();
     for i in 0..lines.len() {
         // an end of `i` inside the square standing on another chord: put there, and that chord cut
         let ends: Vec<usize> = [0,lines[i].1.len()-1].into_iter().filter(|&e| !on_rim(lines[i].1[e])).collect();
@@ -2155,7 +2159,9 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
                 ((q[0]-p[0]).hypot(q[1]-p[1]),j,k,f,q)
             }).min_by(|x,y| x.0.total_cmp(&y.0));
             if let Some((dist,j,k,f,q)) = best { if dist <= SNAP_ON {
-                if lines[i].0 == 2 { cuts[j].push((k,f,p)) } else { lines[i].1[e] = q; cuts[j].push((k,f,q)) }
+                // (a double curve's on a trace: the trace cut at the end itself)
+                if lines[i].0 == 2 && lines[j].0 < 2 { cuts[j].push((k,f,p)); kept.push((i,j,p)) }
+                else { lines[i].1[e] = q; cuts[j].push((k,f,q)) }
             } }
         }
     }
@@ -2170,6 +2176,7 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
             // (strictly inside both: an end on the other is cut above)
             if t > 1e-9 && t < 1.-1e-9 && u > 1e-9 && u < 1.-1e-9 {
                 let x = [a[0]+r[0]*t,a[1]+r[1]*t];
+                if kept.iter().any(|&(m,n,p)| ((m,n) == (i,j) || (m,n) == (j,i)) && (p[0]-x[0]).hypot(p[1]-x[1]) <= SNAP_ON) { continue }
                 cuts[i].push((k,t,x));
                 cuts[j].push((l,u,x));
             }
