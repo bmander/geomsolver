@@ -1319,10 +1319,16 @@ fn wanted(
     let said = say_ahead(sk, &measured, "--where");
     let all = report::positions_where(sk, map, &asked);
     for &i in &measured {
-        let Some(Ok(solid)) = sk.built_solid(i, gcs_core::solid::ApproximationPolicy::Report) else { continue };
-        if let Some(u) = solid.unbuilt() {
-            let line = gcs_core::report::unbuilt_text(sk, i, u);
-            if !said.contains(&line) { eprintln!("solventc: --where: {line}"); }
+        match sk.built_solid(i, gcs_core::solid::ApproximationPolicy::Report) {
+            Some(Ok(solid)) => if let Some(u) = solid.unbuilt() {
+                let line = gcs_core::report::unbuilt_text(sk, i, u);
+                if !said.contains(&line) { eprintln!("solventc: --where: {line}"); }
+            },
+            // a stand-in that could not be made either measures nothing: why, rather than a name
+            // the source seems not to hold (#996)
+            Some(Err(why)) if sk.field_meshed_ahead(i).is_some() => eprintln!("solventc: --where: {why}"),
+            Some(Err(_)) => {}
+            None => {}
         }
     }
     if names.is_empty() {

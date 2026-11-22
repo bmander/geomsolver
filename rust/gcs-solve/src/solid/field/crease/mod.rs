@@ -94,6 +94,10 @@ pub enum End {
     Budget,
     /// It walked onto crease `n` of those already traced, at a point of it.
     Met(usize),
+    /// It walked back onto its own path, at a point of it (#996): a crease it was handed on to
+    /// runs round a loop its start is not on, and following it further would go round again until
+    /// the point budget ran out.
+    Looped,
 }
 
 /// About how many of a first pass's vertices a symmetry is checked at (`MaterialField::symmetries`).

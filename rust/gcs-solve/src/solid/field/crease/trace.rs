@@ -4,6 +4,7 @@
 use crate::fmath::Det;
 use super::{Crease,CreaseOptions,CreaseSource,End,LEAST_DIHEDRAL,OperandId,Reading,P};
 use super::graph::{meets,Segments};
+use crate::space::{closest_on_segment,segment_distance};
 use crate::space::{dot,cross,norm,distance,lerp};
 use crate::roots::{bisect,newton_onto};
 
@@ -110,6 +111,9 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
     if !(norm(tangent0) > LEAST_DIHEDRAL.dsin()*norm(ra.gradient)*norm(rb.gradient)) { return None; }
     let mut halves: [Vec<P>;2] = [Vec::new(),Vec::new()];
     let mut ends = [End::Budget;2];
+    // this trace's own path so far, side by side from the start, by where it lies (#996): a walk
+    // back onto it is a loop gone round again
+    let mut own = Segments::new(options.step,0.5*options.step);
     'direction: for (side,sign) in [(0usize,1f64),(1,-1.)] {
         let (mut p,mut ops,mut tangent) = (p0,first,tangent0.map(|x| x*sign/norm(tangent0)));
         let mut step = options.step;
@@ -208,6 +212,15 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
                 halves[side].push(x);
                 break End::Met(k);
             }
+            // back onto its own path, short of the last few steps: what it was handed on to is a
+            // loop it has gone round, and going round again finds nothing more.  It ends where it
+            // came back, a point its path then has twice
+            if let Some(x) = looped(&own,side,&halves[side],p0,q,options.step) {
+                halves[side].push(x);
+                break End::Looped;
+            }
+            let n = halves[side].len();
+            own.add_segment(side,n,if n == 0 { p0 } else { halves[side][n-1] },q);
             halves[side].push(q);
             (p,ops,tangent) = (q,trial,t);
             step = (step*1.5).min(options.step);
@@ -223,3 +236,17 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
     Some(Crease {points,closed,operands:first,ends:[ends[1],ends[0]]})
 }
 
+
+/// **Where a walk comes back onto its own path** (#996): the point of `path` (side `side` of a trace,
+/// from `start`; segment `j` from point `j − 1`, the start for the first) nearest `q` where that is
+/// within a quarter of a step, read in `own`, the path's segments by where they lie — but for the
+/// last few, which `q` has only just left.  `None` where it has not come back.
+fn looped(own: &Segments,side: usize,path: &[P],start: P,q: P,step: f64) -> Option<P> {
+    const RECENT: usize = 4;
+    let at = |j: usize| if j == 0 { start } else { path[j-1] };
+    own.near(q).into_iter().filter(|&(k,j)| k == side && j+RECENT < path.len())
+        .map(|(_,j)| (j,segment_distance(q,at(j),path[j])))
+        .filter(|&(_,d)| d < 0.25*step)
+        .min_by(|a,b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+        .map(|(j,_)| closest_on_segment(q,at(j),path[j]))
+}

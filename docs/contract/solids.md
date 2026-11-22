@@ -727,7 +727,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   `Sketch::field_meshed_ahead`: the `Unbuilt` the evaluation will carry, from what it asks first —
   validation and the routes' refusals — never the mesh): the refinement is what such a look waits
   on, and a slow one is then told from a hang with its cause known at once
-  (`refused_look::a_refused_round_is_said_before_its_field_is_meshed`).  The other way round (#904 A15): an exact
+  (`refused_look::a_refused_round_is_said_before_its_field_is_meshed`).  `--where` says it too,
+  before the measures (#996: a casting's measures waited minutes on a stand-in said nowhere), and
+  where the stand-in could not be made says why rather than that the name measures nothing; and
+  the time is the stand-in's — `progress::Work::stand_in`, `meshed part from its material field,
+  its exact build refused` (or `faceted … from its facet term`), within the evaluation, so
+  `--progress` and `--timings` never give it to a build
+  (`cli::a_measure_of_a_solid_not_built_says_so_before_it_is_measured`).  The other way round (#904 A15): an exact
   export refused never writes the field in its place — its file is the build held to the
   tolerance, and a field's mesh is neither — but where the solid's boundary is its field's
   (`Sketch::is_swept`) an exact STL refused is followed by what writes that reading, in the core's

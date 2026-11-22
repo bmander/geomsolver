@@ -402,8 +402,68 @@ impl BodyFaces {
         if self.loc.face_place(fi, foot) != Place::Out {
             return distance(q, foot) / self.mm;
         }
-        self.edges[fi].iter().map(|&e| self.loc.nearest(e, q).1).fold(f64::INFINITY, f64::min)
-            / self.mm
+        // (a distance no number is read as none, as a fold of the least reads it)
+        self.nearest_of_edges(&self.edges[fi], q).map(|(_, (_, d))| d).filter(|d| !d.is_nan())
+            .map_or(f64::INFINITY, |d| d / self.mm)
+    }
+
+    /// **The edge of `es` nearest `q` (millimetres), and its nearest point's parameter and
+    /// distance** (#996): what reading every edge in order chooses — the least distance, the first
+    /// edge of `es` among equals — read only where an edge's box comes within the best so far
+    /// (`Located::edge_gap`, less the boundary's tolerance: no point of the edge is nearer).  A
+    /// field read off a body's faces asks this at every step of every query, and an edge traced
+    /// rather than drawn in closed form is a search to invert; read edge by edge, the cost of a
+    /// query grew with the edges of the faces it reads, however far.  `None` where `es` is empty.
+    fn nearest_of_edges(&self, es: &[u32], q: V) -> Option<(u32, (f64, f64))> {
+        if !q.iter().all(|x| x.is_finite()) {
+            // (a point no box orders: every edge read, as the scan reads them)
+            return es.iter().map(|&e| (e, self.loc.nearest(e, q))).min_by(|a, b| a.1 .1.total_cmp(&b.1 .1));
+        }
+        let mut order: Vec<(f64, usize)> =
+            es.iter().enumerate().map(|(k, &e)| (self.loc.edge_gap(e, q) - self.loc.tol, k)).collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut best: Option<(usize, (f64, f64))> = None;
+        for (gap, k) in order {
+            if best.is_some_and(|(_, (_, d))| gap > d) {
+                break;
+            }
+            let at = self.loc.nearest(es[k], q);
+            let better = match best {
+                None => true,
+                Some((j, (_, d))) => at.1.total_cmp(&d).then(k.cmp(&j)).is_lt(),
+            };
+            if better {
+                best = Some((k, at));
+            }
+        }
+        best.map(|(k, at)| (es[k], at))
+    }
+
+    /// **Of `faces`, the one whose patch is nearest `p`, and that distance** (model units): what
+    /// reading every face's `patch_distance` in order chooses — the least, the first of `faces`
+    /// among equals — read only where a face's box comes within the best so far
+    /// (`Located::face_gap`, less the boundary's tolerance: no point of the face or its edges is
+    /// nearer).  A smooth chain's or a named group's nearest face is asked at every step of every
+    /// query of a field that reads the body's faces (#996).  `None` where `faces` is empty.
+    pub fn nearest_patch(&self, faces: &[usize], p: V) -> Option<(f64, usize)> {
+        let q = self.q(p);
+        if faces.len() < 2 || !q.iter().all(|x| x.is_finite()) {
+            return faces.iter().map(|&fi| (self.patch_distance(fi, p), fi)).min_by(|a, b| a.0.total_cmp(&b.0));
+        }
+        let mut order: Vec<(f64, usize)> = faces.iter().enumerate()
+            .map(|(k, &fi)| ((self.loc.face_gap(fi, q) - self.loc.tol) / self.mm, k)).collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut best: Option<(f64, usize)> = None;
+        for (gap, k) in order {
+            if best.is_some_and(|(d, _)| gap > d) {
+                break;
+            }
+            let d = self.patch_distance(faces[k], p);
+            if best.is_none_or(|(b, j)| d.total_cmp(&b).then(k.cmp(&j)).is_lt()) {
+                best = Some((d, k));
+            }
+        }
+        best.map(|(d, k)| (d, faces[k]))
     }
 
     /// Where `p`'s foot on face `fi`'s surface lies off the face: the edge of the face nearest it
@@ -433,12 +493,9 @@ impl BodyFaces {
     /// The point of edges `es` nearest `p`: its edge, its place (millimetres), and its distance
     /// (model units).
     pub fn nearest_edge(&self, es: &[u32], p: V) -> Option<(u32, V, f64)> {
-        let q = self.q(p);
-        es.iter().map(|&e| {
-            let (t, d) = self.loc.nearest(e, q);
-            let at = self.loc.b.edges[e as usize].point(t, &self.loc.b.vertices);
-            (e, at, d / self.mm)
-        }).min_by(|a, b| a.2.total_cmp(&b.2))
+        let (e, (t, d)) = self.nearest_of_edges(es, self.q(p))?;
+        let at = self.loc.b.edges[e as usize].point(t, &self.loc.b.vertices);
+        Some((e, at, d / self.mm))
     }
 
     /// Face `fi`'s edges, once each.
@@ -644,8 +701,8 @@ impl BodyFaces {
     /// lie apart (`chains_apart`), the chain of the piece nearest `p`.
     pub fn nearest_named<'a, T>(&self, p: V, alts: &'a [T], named: impl Fn(&T) -> &[usize])
         -> Option<&'a T> {
-        let near = |fs: &[usize]| fs.iter().map(|&fi| self.patch_distance(fi, p))
-            .fold(f64::INFINITY, f64::min);
+        let near = |fs: &[usize]| self.nearest_patch(fs, p).map(|(d, _)| d).filter(|d| !d.is_nan())
+            .unwrap_or(f64::INFINITY);
         alts.iter().map(|a| (near(named(a)), a)).min_by(|x, y| x.0.total_cmp(&y.0)).map(|(_, a)| a)
     }
 
@@ -1229,8 +1286,7 @@ impl Reading {
         if let [fi] = self.faces[..] {
             return Some(fi);
         }
-        let near = |fs: &[usize]| fs.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
-            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let near = |fs: &[usize]| self.body.nearest_patch(fs, p);
         if !self.chains.is_empty() {
             let (_, chain) = self.body.nearest_named(p, &self.chains, |c| &c.0[..])?;
             return near(chain).map(|(_, fi)| fi);
@@ -1244,9 +1300,11 @@ impl Reading {
         if self.smooth && surface {
             return self.side(p).abs();
         }
-        self.faces.iter().map(|&fi| {
-            if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
-        }).fold(f64::INFINITY, f64::min)
+        if !surface {
+            return self.body.nearest_patch(&self.faces, p).map(|(d, _)| d).filter(|d| !d.is_nan())
+                .unwrap_or(f64::INFINITY);
+        }
+        self.faces.iter().map(|&fi| self.body.side(fi, p).abs()).fold(f64::INFINITY, f64::min)
     }
 
     /// Where the faces' side reaches `v`, read surface by surface (`BodyFaces::level`): the one
