@@ -894,8 +894,11 @@ face was asked first for its surface: a foot's pad leaning `1e-7` rad about its 
 first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
 the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
 two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
-come within `ON_CURVE` tolerances (`query::crossings_in` reads `curve_curve`'s closed forms so, as
-it keeps a carrier's roots), so an edge of a face leaning within the reach crosses the edges of the
+come within `ON_CURVE` tolerances, inside both stretches by as much (`query::crossings_in`:
+`curve_curve`'s closed forms read at that reach in every test they make, each a test of two curves
+coming within it of one another; two cuts of screwed sheets and a carrier's roots kept on the other
+curve within it, inside its stretch by it, the carrier's roots and whether two sheets, screws or
+planes are one read to the tolerance), so an edge of a face leaning within the reach crosses the edges of the
 face it lies on, where read to the tolerance it lay across the face as a slit; a vertex standing on
 an edge within the reach of its end is that end, the two made one in step 3b (`tolerant::at_end`,
 `collapsed`), where it was neither cut at nor joined and one point was two vertices; and the box a
@@ -914,7 +917,17 @@ they lean apart less than the arrangement resolves a meeting at, and two otherwi
 laid. Read over that line alone, any two planes crossing along it within `1e-3` rad were one there —
 a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one class, the plate's
 top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
-off it. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
+off it. **That reading is the one rule of a surface onto a surface, and what reads a Boolean's result
+reads it too** (#994, `tolerant::one_surface`): `classed` joins two faces by it, and two faces of one
+body are one surface the same way out to a ball's sides and to the field (`fillet::one_surface`,
+`BodyFaces::same_surface`) by it over their own boxes — each face a Boolean keeps carries its own
+operand's surface, which may lean off the class's within the reach, so read as the same surface to
+the tolerance alone (`ssi::same`, axes parallel to `1e-12`) two pieces of a plate's top the union
+made one surface were two to the ball rolled along them and to the field after it
+(`faces_a_union_made_one_surface_are_one_surface_after_it`). Not yet read by it: `Shared::one` (two indices of two kinds, a
+sheet lying in a plane, or not given a class) and `Surfaces::one` for a face a trim met with nothing
+read over what the boxes share without the reach past it, and two faces whose boxes share nothing as
+not one; routing them through `tolerant::one_surface` moves what a Boolean reads, and was not tried. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
 eighth of it, is on that face** (`tolerant::along_boundary`, a rule of tolerant topology beside
 its siblings, read by `Arrangement::kept`): the edge it lies along, as the vertex-onto-edge rule
 reads a point so near, merged into it in step 4, the other face cut along it, where phase 1 did not
@@ -1155,7 +1168,12 @@ closed traces whose points are the graph's, on both surfaces to rounding, no cho
 quarter of the branches' gap at its ends, so a projection between two never crosses a neck to the
 other loop (marched, the trace jumped between the loops at a neck, a cylinder's pieces not closing);
 and where `D` falls below nothing (a loop turning back: the lesser cutting into the other's side, or
-one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced as before. **Whether `D`
+one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced. **The lean's bound is
+the meeting's, not the closed form's**: the graph keeps within the tolerance of both surfaces down
+to a lean's sine of about `ε (r + s) / tol`, but two rods whose axes cross meet at the lean itself
+where the lesser's normal lies along the plane of both axes (`n_a · n_b = ± cos θ` there), so
+under `SHALLOW` the meeting is as ill-conditioned somewhere as `SHALLOW` bounds every meeting by,
+a trace's included. **Whether `D`
 keeps above nothing is proved, not sampled**: `D` is one formula over the angle, its roots isolated
 from its own enclosures (`util::isolate`), so a dip below nothing narrower than any sampling (a
 neck `√(2 e / r)` wide where the axes pass `e` apart) is never missed, and a dip to within its
@@ -1185,7 +1203,12 @@ a fraction of `tol` long, which a small `λ` does not let it reach. An indefinit
 against a rod, two vaults' crown) is two branches crossing at the point, which the trace starts
 from, as before. An edge whose search is refused where a surface of its own rests on the other (a
 blend's seam circle through the point where a torus rests on the blend) meets it there alone within
-the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`). And in
+the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`).
+Where the two surfaces' least distance has a closed form, the touch `ssi::apart` reads is kept as
+their known meeting — no curve, and that point (`ssi::meeting_resting`, `meeting::Shared::known`) —
+and an edge lying in either is read against it by #990's one rule (`boolean`'s `on_known`): a touch
+where it passes through the point, nothing elsewhere, no sample and no search; `resting_on` reads
+only pairs whose meeting has no closed form (a torus on a blend). And in
 closed form, a ball whose centre stands its radius or more from a cylinder or a torus meets it in no
 curve where its touch is alone, by the one rule above (`ssi::apart`). The gates are
 `resting_touches`: rods across and at 60°, a

@@ -22,6 +22,28 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   run (`end_at` and `dome` take it), and `dome` reads the face going on from either side by
   `goes_on`.  The results are the same to the last bit.
 
+- **One rule of a surface onto a surface, before a Boolean and after it** (#994):
+  `tolerant::one_surface`, new, is the reading `Arrangement::classed` joins faces into one surface
+  by (within `ON_CURVE` tolerances over what the faces' boxes share and as far past it as
+  `on_meeting` at `LEAST_SINE`; the same to the tolerance where they share nothing), and
+  `fillet::one_surface` reads two faces of a body by it over their boxes, where it read them by
+  `ssi::same` to the tolerance: faces a union made one surface, each kept on its own operand's
+  surface leaning a hair off the others', are one side to a ball and one surface to the field.
+
+- **Two curves on one surface cross within the reach in every reading of `query::crossings_in`**
+  (#994): `curve_curve` is read at the reach in every test it makes (its doc says each is a test
+  of two curves coming within it of one another); two cuts of screwed sheets and a carrier's
+  roots are kept where they lie within the reach of the other curve inside its stretch by as
+  much, where the stretch was read by the tolerance; whether two sheets, screws or planes are
+  one, and a carrier's roots, are still read to the tolerance.
+
+- **Two surfaces resting on one another at a point, their least distance in closed form, are
+  known to meet there alone** (#994): `ssi::meeting_resting`, new, is `intersect` with the point
+  `apart` finds them resting at, which `meeting::Shared::known` gives as their meeting (no curve
+  and that touch), so an edge lying in either is read against it as every known meeting is
+  (`boolean`'s `on_known`), where it was searched and, refused, sampled at 64 points for the touch
+  (`resting_on`, which now reads only pairs whose meeting has no closed form).
+
 - **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
   curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
   one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,
@@ -35,7 +57,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (the two meet about the sphere's own axis) is gone.
 
 - **A span of a meeting along a face's boundary is a rule of tolerant topology**
-  (`tolerant::along_boundary`, `tolerant::ALONG`, new), and whether the edge it lies along was laid
+  (`tolerant::along_boundary`, new), and whether the edge it lies along was laid
   in the other face is phase 1's answer (`Meets::Along`), looked up, where it was read again from
   samples at the reach and disagreed with it (116 spans in `brep_coincident`'s strips, two in
   `composed_rounds`, the results the same to the last bit).

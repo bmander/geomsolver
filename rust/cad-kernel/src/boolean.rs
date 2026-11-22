@@ -1346,19 +1346,13 @@ impl<'a> Arrangement<'a> {
             }
         }
         let surface = |k: usize| &self.solids[faces[k].0].faces[faces[k].1].surface;
-        // (read as far past the part of space the two boxes share as a point near both is read
-        // onto their meeting at the least sine)
-        let past = super::tolerant::on_meeting(self.tol,0.);
         // each class rooted at its lowest face, the lower root kept where two are joined
         let mut of = crate::util::union_find::UnionFind::new(faces.len());
         for i in 0..faces.len() {
             for j in i+1..faces.len() {
                 let (a,b) = (surface(i),surface(j));
                 if a.kind() != b.kind() || of.find(i) == of.find(j) { continue }
-                let region = super::meeting::common(faces[i].2,faces[j].2,self.tol);
-                let near = (0..3).all(|k| region.0[k] <= region.1[k]);
-                let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
-                if a == b || if near { super::ssi::same_over(a,b,reach,around) } else { super::ssi::same(a,b,self.tol) } {
+                if super::tolerant::one_surface(a,faces[i].2,b,faces[j].2,self.tol) {
                     let (ri,rj) = (of.find(i),of.find(j));
                     of.union(ri.min(rj),ri.max(rj));
                 }
@@ -2535,10 +2529,11 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// of its own faces' surfaces, so where one of those touches `surface` at a point and the two
 /// rest on one another there (`ssi::alone_over`: a definite touch, nothing but the point their
 /// meeting within its radius), the edge meets `surface` within that radius only at that point, a
-/// touch. Read where the search over its stretch `t` is refused — a double root it cannot prove,
-/// a blend's seam circle through the point where a round's torus rests on the blend — from the
-/// edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
-/// the rest of the stretch either side of the reach searched as before (`search`). `None` where no
+/// touch. Read where the two surfaces' meeting has no closed form — where it has, the touch is
+/// their known meeting (`ssi::meeting_resting`), read by `on_known` — and the search over its
+/// stretch `t` is refused: a double root it cannot prove, a blend's seam circle through the point
+/// where a round's torus rests on the blend. Read from the edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
+/// the rest of the stretch either side of the reach searched by `search`. `None` where no
 /// such touch is found, or the rest is refused again.
 fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,search: &dyn Fn([f64;2]) -> Meets) -> Option<Meets> {
     const N: usize = 64;
@@ -2552,12 +2547,11 @@ fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,s
             let Some(p) = super::ssi::touch_near(own,surface,c.point(at(k)),tol) else { continue };
             let Some(touch) = super::ssi::touch(own,surface,p) else { continue };
             if !super::ssi::alone_over(own,surface,&touch) { continue }
-            let reach = touch.radius;
             let x = c.inverse(p);
             let x = match c.period() { Some(period) => around(x,t[0],period),None => x };
             if !(t[0] <= x && x <= t[1]) || distance(c.point(x),p) > ON_CURVE*tol { continue }
             // along the edge, the stretch within the reach
-            let half = reach/c.speed().max(1e-300);
+            let half = touch.radius/c.speed().max(1e-300);
             if !touches.iter().any(|&(y,_)| (y-x).abs() <= half) { touches.push((x,half)) }
         }
     }

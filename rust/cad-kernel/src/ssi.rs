@@ -557,7 +557,18 @@ fn recognised<T>(form: Recognised,found: impl FnOnce() -> Option<T>) -> Option<T
 }
 
 /// Where two surfaces meet (`tol` a length).
-pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi { meeting_resting(a,b,tol).0 }
+
+/// **`intersect`, and where the two rest on one another at a point alone, that point** (#994,
+/// `apart`): a meeting in no curve that is the whole of it but for the touch, which an edge lying
+/// in either surface meets the other at alone (`meeting::Shared::known`). `None` beside every
+/// other meeting.
+pub fn meeting_resting(a: &Surface,b: &Surface,tol: f64) -> (Ssi,Option<V>) {
+    let mut rest = None;
+    (meeting_of(a,b,tol,&mut rest),rest)
+}
+
+fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
     if let Some(met) = pulled_back(a,b,tol,true) { return met }
     if same(a,b,tol) { return Ssi::Same }
     let (f,g) = (*a.frame(),*b.frame());
@@ -738,10 +749,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         }
         // two surfaces clear of one another, or resting on one another at a point alone, whose
         // least distance has a closed form: no curve (`apart`)
-        _ if apart(a,b,tol) => Ssi::Curves(vec![]),
+        _ if let Some(touch) = apart(a,b,tol) => { *rest = touch; Ssi::Curves(vec![]) }
         // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
         // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if let Some(curves) = crossed_cylinders(a,&f,r,b,&g,s,tol) =>
+        (Surface::Cylinder(..),Surface::Cylinder(..)) if let Some(curves) = crossed_cylinders(a,b,tol) =>
             Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
@@ -1072,11 +1083,13 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
 /// `2 SHALLOW (r + s) / sin² θ` and the rods part only linearly past `(r + s) / sin θ`, slower
 /// than its second order says from `2√2 (r + s) / sin θ` on), a ball a hair off a tube's axis, a
 /// ring all but level on a plane — it is not, and the meeting is read as a touch along a curve.
-fn apart(a: &Surface,b: &Surface,tol: f64) -> bool {
-    let Some((gap,[a,b],p)) = least(a,b) else { return false };
-    if gap > tol { return true }
-    if gap < -tol { return false }
-    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t))
+/// `Some` where they meet in no curve, with the point they rest on one another at where they do
+/// (on the first of `least`'s order, within `tol` of the other); `None` where they are read on.
+fn apart(a: &Surface,b: &Surface,tol: f64) -> Option<Option<V>> {
+    let (gap,[a,b],p) = least(a,b)?;
+    if gap > tol { return Some(None) }
+    if gap < -tol { return None }
+    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t)).then_some(Some(p))
 }
 
 /// **The least distance between two surfaces, in closed form where it has one**: the distance,
@@ -1101,11 +1114,9 @@ fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
             let n = cross(za,zb);
             if !(norm(n) > 1e-12) { return None }
             let n = unit(n);
-            let w = sub(g.o,f.o);
-            let apart = dot(w,n);
+            let apart = dot(sub(g.o,f.o),n);
             // the foot of the common normal on the first's axis, and its point toward the other
-            let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
-            let foot = add(f.o,scale(za,(d1-k*d2)/(1.-k*k)));
+            let foot = add(f.o,scale(za,axes_feet(f,g)[0]));
             Some((apart.abs()-r-s,[x,y],add(foot,scale(n,r*apart.signum()))))
         }
         (Surface::Sphere(c,r),x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..)
@@ -1163,35 +1174,57 @@ fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
 /// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
 ///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: `None`, the meeting
 ///   traced (`Ssi::Traced`).
-fn crossed_cylinders(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+///
+/// **The lean's bound is the meeting's, not the closed form's.** The graph's own conditioning
+/// is far finer: `h` is read over `A = sin² θ` from `B` and `√D`, each rounded to about
+/// `ε (r + s)` away from a neck, and a point off by `δh` along the lesser's axis stands `δh sin θ`
+/// off the other, so the graph keeps within the tolerance of both down to `sin θ` of about
+/// `ε (r + s) / tol`. What a lean
+/// under `SHALLOW` bounds is the angle the two meet at along their loops: where the lesser's
+/// normal lies along the plane of both axes, it is the lean itself for axes crossing (there
+/// `n_a · n_b = ± cos θ`), so somewhere along the meeting a point within `tol` of both is
+/// `tol / sin θ` off it — the ill-conditioning `SHALLOW` bounds every meeting by, a trace's
+/// included, and a curve given exactly does not take away. The same bound, then, for the same
+/// reason: the meeting is left to the trace, which refuses it where it marches that shallow
+/// ("nearly touching").
+fn crossed_cylinders(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
     let (za,zb) = (unit(f.z),unit(g.z));
     let lean = cross(za,zb);
     if !(norm(lean) >= SHALLOW) { return None }
     let (r,s) = (r.abs(),s.abs());
     // the axes' nearest points, their gap and its middle
-    let w = sub(g.o,f.o);
-    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
-    let den = 1.-k*k;
-    let (t1,t2) = ((d1-k*d2)/den,(k*d1-d2)/den);
+    let [t1,t2] = axes_feet(&f,&g);
     let (p1,p2) = (add(f.o,scale(za,t1)),add(g.o,scale(zb,t2)));
     if (r-s).abs() <= tol && distance(p1,p2) <= tol {
         let o = scale(add(p1,p2),0.5);
         let mut out = Vec::new();
         for m in [sub(za,zb),add(za,zb)] {
             let m = unit(m);
-            out.extend(plane_cylinder(m,dot(m,o),f,r,tol));
+            out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
         }
         return Some(out)
     }
     // the graph over the lesser
-    let ((ga,fa,ra),(gb,fb,rb)) = if r <= s { ((a,f,r),(b,g,s)) } else { ((b,g,s),(a,f,r)) };
-    cylinder_loops(ga,fa,ra,gb,fb,rb,tol)
+    if r <= s { cylinder_loops(a,b,tol) } else { cylinder_loops(b,a,tol) }
+}
+
+/// The feet of the common normal of two cylinders' axes (frames `f` and `g`, leaning apart): how
+/// far along each axis, from its frame's origin, it stands.
+fn axes_feet(f: &Frame,g: &Frame) -> [f64;2] {
+    let (za,zb) = (unit(f.z),unit(g.z));
+    let w = sub(g.o,f.o);
+    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
+    let den = 1.-k*k;
+    [(d1-k*d2)/den,(k*d1-d2)/den]
 }
 
 /// `crossed_cylinders`' loops: the graph of the meeting of cylinder `a` (frame `f`, radius `r`) with
-/// `b` (frame `g`, radius `s`) over the angle round `a`, as closed traces.
-fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+/// cylinder `b` (frame `g`, radius `s`) over the angle round `a`, the lesser, as closed traces.
+fn cylinder_loops(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     use std::f64::consts::TAU;
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
+    let (r,s) = (r.abs(),s.abs());
     let (z,wz) = (unit(f.z),unit(g.z));
     let aa = 1.-dot(z,wz)*dot(z,wz);
     let rim = |u: f64| { let (sn,cs) = u.dsin_cos(); add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))) };

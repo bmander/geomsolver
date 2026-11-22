@@ -163,3 +163,32 @@ rail union beam
         assert!((v-want).abs() <= 1e-9*want,"{what}: {v} against {want}");
     }
 }
+
+/// **Two rods resting on one another are known to meet at their touch alone**
+/// (`ssi::meeting_resting`, `meeting::Shared::known`): within the tolerance of resting either
+/// way, no curve and the point they touch at, on both to the tolerance; clear of one another, no
+/// curve and no point; so an edge lying in either is read against that point alone, as every
+/// known meeting is (`boolean`'s `on_known`).
+#[test]
+fn rods_resting_on_one_another_are_known_to_meet_at_their_touch() {
+    use gcs_core::brep::ssi::{meeting_resting,Ssi};
+    use gcs_core::space::distance;
+    for (r,s) in RADII {
+        for lean in LEANS {
+            for (apart,rests) in [(r+s,true),(r+s+0.5*TOL,true),(r+s-0.5*TOL,true),(r+s+1e-3,false),(r+s+5.,false)] {
+                let (a,b) = rods(r,s,[-3.,3.],[-3.,3.],lean,apart);
+                let (x,y) = (side(&a),side(&b));
+                for (p,q) in [(&x,&y),(&y,&x)] {
+                    let what = format!("{r} on {s} at {lean}°, {apart} apart");
+                    let (met,at) = meeting_resting(p,q,TOL);
+                    assert_eq!(met,Ssi::Curves(vec![]),"{what}");
+                    assert_eq!(at.is_some(),rests,"{what}: {at:?}");
+                    if let Some(at) = at {
+                        assert!(p.implicit(at).abs() <= TOL && q.implicit(at).abs() <= TOL,"{what}: {at:?}");
+                        assert!(distance(at,[0.,0.,r]) <= 1e-6,"{what}: {at:?}");
+                    }
+                }
+            }
+        }
+    }
+}

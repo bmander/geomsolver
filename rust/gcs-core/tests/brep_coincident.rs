@@ -114,6 +114,35 @@ fn flush_blocks_overlapping_in_part_are_united() {
     } }
 }
 
+/// **Faces a union made one surface are one surface to what reads its result** (#994,
+/// `tolerant::one_surface`): the flush blocks' tops, and their feet, each kept on its own
+/// operand's plane leaning a hair off the other's, are one surface the same way out to a ball's
+/// sides and the field (`fillet::one_surface`), as the union read them.
+#[test]
+fn faces_a_union_made_one_surface_are_one_surface_after_it() {
+    use gcs_core::brep::fillet::one_surface;
+    let a = block([0.,0.,0.],[10.,10.,1.]);
+    for &theta in &LEANS { for &axis in &ABOUT {
+        let b = block([5.,2.,0.],[15.,8.,1.]).moved(&Rigid::turn([10.,5.,0.5],axis,theta));
+        let what = format!("a block leaning {theta:e} about {axis:?}");
+        for (x,y) in [(&a,&b),(&b,&a)] {
+            let u = built(x,y,Op::Union,&what);
+            let tol = tolerance(u.size());
+            for (level,up) in [(1.,true),(0.,false)] {
+                let on: Vec<usize> = (0..u.faces.len()).filter(|&f| match u.faces[f].surface {
+                    Surface::Plane(fr) => (fr.z[2].abs()-1.).abs() <= 1e-6 && (fr.o[2]-level).abs() <= 1e-6
+                        && ((fr.z[2] > 0.) != u.faces[f].reversed) == up,
+                    _ => false,
+                }).collect();
+                assert!(on.len() >= 2,"{what}: {on:?}");
+                for &f in &on { for &g in &on {
+                    assert!(one_surface(&u,f,g,tol),"{what}: faces {f} and {g} at {level}");
+                } }
+            }
+        }
+    } }
+}
+
 /// **Two rods of one radius on one axis, one leaning a hair, are one rod where they overlap**: their
 /// walls coincide over the length both cover, and the union is the rod from the lower's foot to the
 /// upper's top.
