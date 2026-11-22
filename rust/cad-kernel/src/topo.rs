@@ -149,24 +149,11 @@ pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) 
 
 /// `inverse_at`, the point sought from `seed` where one is given (finite) and not from the line
 /// between the ends, its branch on a periodic surface still the one nearest that line.
-///
-/// A foot carried from a seed that stands farther from the edge's point than the edge's own gap
-/// (`Edge::tol`) is sought again from the line, and the nearer kept: a carried seed can leave the
-/// curve where it bends away from its rate — the thin tumbling torus's double curve dipping below
-/// a swallowtail point's row, its foot carried onto the face's top row and held there by the
-/// domain's edge, 1.7e-3 of the roll off, and the face's flux read 0.22 of itself wrong.
 fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
     let s = fraction(t,edge);
     let near = along(a,b,s);
     let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
-    let mut uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
-    if from != near {
-        let off = |uv: Uv| crate::util::space::distance(surface.point(uv),x);
-        if off(uv) > edge.tol {
-            let again = unwrap(surface.inverse_near(x,near),near,surface.periods());
-            if off(again) < off(uv) { uv = again }
-        }
-    }
+    let uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
     if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
 }
 
@@ -180,23 +167,12 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
     let d = in_parameters(surface,uv,c.tangent(t));
-    if d.iter().all(|x| x.is_finite()) && !folded(surface,uv) { return d }
+    if d.iter().all(|x| x.is_finite()) { return d }
     let h = 1e-3*(edge.t[1]-edge.t[0]);
     let (lo,hi) = ((t-h).max(edge.t[0]),(t+h).min(edge.t[1]));
     if !(hi > lo) { return [0.;2] }
     let [a,b] = [lo,hi].map(|x| surface.inverse_near(c.point(x),uv));
     [(b[0]-a[0])/(hi-lo),(b[1]-a[1])/(hi-lo)]
-}
-
-/// **Whether `surface`'s two rates at `uv` stand one way to half the digits** (`HALF_READ`): the
-/// square of the sine between them — the least squares' determinant over the product of its
-/// diagonal — below the part of its scale a value read by cancellation keeps unread, so the solve
-/// in parameters loses half its digits (#942 T1d-tori: beside a swept sheet's swallowtail point,
-/// the sine 7.5e-5, an edge's rate in `v` read −0.997 against its feet's −5e-6).
-fn folded(surface: &Surface,uv: Uv) -> bool {
-    let (_,su,sv) = surface.d1(uv);
-    let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
-    a11*a22-a12*a12 <= crate::util::fmath::HALF_READ*a11*a22
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
