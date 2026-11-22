@@ -2048,11 +2048,11 @@ impl<'a> Arrangement<'a> {
     /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
     /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
     /// along it — where that edge does not itself lie in the other face's surface all its stretch,
-    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
-    /// the meeting that led up to it as a slit: a lip's foot turned `1e-3` rad across its pad, its end
-    /// within the foot's pad by half a micrometre, crosses the side of a strip abutting it a
-    /// tolerance and a half under that strip's foot, and the lip's foot was left one face whose two
-    /// sides were one shell — refused as kept on one side of a plane and dropped on another.
+    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. So the
+    /// other face is cut through, not left with the meeting leading up to it as a slit: a lip's
+    /// foot turned `1e-3` rad across its pad, its end within the foot's pad by half a micrometre,
+    /// crossing the side of a strip abutting it a tolerance and a half under that strip's foot, is
+    /// cut along that side, its two sides two shells.
     fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
         let m = c.point((t[0]+t[1])/2.);
         let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
@@ -2071,12 +2071,12 @@ impl<'a> Arrangement<'a> {
             // an edge lying in the other face's surface all its stretch is laid on it as it is
             // (phase 1's `Meets::Along`): the span beside it would be a second edge a hair off it
             let other = surfaces[1-k];
-            let laid = near.iter().all(|&e| {
+            let laid = || near.iter().all(|&e| {
                 let edge = &sol.edges[e as usize];
                 (0..=8).all(|j| { let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/8.,&sol.vertices);
                     distance(other.point(other.inverse(p)),p) <= reach })
             });
-            if along && !laid { places[k] = Place::On }
+            if along && !laid() { places[k] = Place::On }
         }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }
