@@ -1833,18 +1833,51 @@ refused. Whether faces that are not neighbours cross in space is not decided yet
 `step_sound::a_use_leaping_a_period_is_refused`, `a_use_swinging_round_a_pole_it_ends_at_is_read`,
 `shells_inside_out_or_apart_are_refused`, `step_mutants::an_empty_shell_is_refused`.
 
-**A face bounded by points alone is the whole of its closed surface** (`topology::whole_sheet`,
-`whole_torus`, `Walk::points_only`). A closed spline sheet collapsed to a point at both ends of
-the parameter it does not close round (an ellipsoid's net), bounded by `VERTEX_LOOP`s at its
-poles, is its whole domain, its seam the net's own end row laid from pole to pole; a loop of edges
-each running from one vertex to itself along a `LINE` of no length (brepkit's torus seams) is that
-point, its edges naming the seams the reader lays for a whole ring torus. A whole spindle torus
-bounded by a point is refused: which of its apple and lemon the face is, nothing says. Measures
-read a net's face cut where its normal turns over along a use (its area factor's kink, a spindle
-torus's net crossing its axis), and an inverse curve's foot held on a sheet's domain edge — the
-edge standing off its face past it — runs along that edge alone (CADGenBench 246's whole-domain
-face read 6.5e-4 over it). Gates: the corpus rows (occt ellipsoid, nurbs-sphere, brepkit torus,
-occt torus-grown-past-its-hole), `step_corpus::nothing_is_read_wrong`.
+**A face bounded by vertices alone is the whole of a surface that closes**
+(`topology/closed.rs::whole`, called once from `topology::face`; a sphere and a ring torus keep
+`whole_sphere` and `whole_torus`). ISO 10303-42 lets a face's bounds be `VERTEX_LOOP`s. Whether
+the surface closes is read from the surface — its points at a parameter's two ends agreeing, or
+its period — never from the file's `u_closed`, and the face is laid in one of two shapes: closed
+round one parameter with both end rows of the other collapsed to points (a spheroid's net, a
+revolution of a half ellipse), its seam along the closed parameter's start and its poles each the
+file's vertex where one stands there, laid otherwise; or closed round both and pinched nowhere (a
+torus's net), with both seams. A vertex standing on a seam the reader lays cuts it there, and a
+period starts at a vertex. Refused naming the face: a surface that does not close round its
+vertices; a vertex on neither a pole nor a seam laid; and a surface pinched to a point inside its
+domain (`pinched`) — a whole spindle torus, a circle crossing its axis turned, an ellipse about
+its own axis turned twice over — which touches itself and is the face of no manifold solid, one
+vertex saying nothing of which part is meant. **An edge on a line of no length is a point only at
+its vertex** (`Walk::points_only`): a loop of edges each running from one vertex to itself along a
+`LINE` whose point stands at that vertex within the stated uncertainty (brepkit's torus seams) is
+that point, its edges naming the seams the reader lays; a line of no length between two vertices,
+or off its vertex, is refused as malformed. Measures read a net's face cut where its normal turns
+over along a use (its area factor's kink, a spindle torus's net crossing its axis), and an inverse
+curve's foot held on a sheet's domain edge — the edge standing off its face past it — runs along
+that edge alone (CADGenBench 246's whole-domain face read 6.5e-4 over it). Gates:
+`step_kinds::a_face_bounded_by_vertices_alone_is_the_whole_of_a_surface_that_closes` (a spheroid's
+rational net bounded by its south pole, the spheroid as a revolution, a ring torus by a vertex on
+its equator, to 1e-9, and both refusals), `an_edge_that_is_a_point_reads_as_one`.
+
+**A closed conic turned across its axis is the revolution of its arc on its faces' side**
+(`geometry::Seat::Crossing`, `crossing_side`): each point of its faces is carried round into the
+conic's plane, the side is the one where `±ρ` lies on the conic, and the surface is the
+`Revolution` of the exact rational arc between the two crossings of the axis (a lemon, or the
+apple, of a spindle torus written as a circle turned); where its faces lie on both sides or on
+neither, the whole turn's net is kept. **A net the reader made takes no curve of the file's in
+its parameters** (`geometry::UNMAPPED`): a turned, swept, throat or crossing net's rational arcs
+meet the file's angle only at their knots, and a file's curve read past the clamped net's domain
+was taken for on its edge, point and foot both at the domain's edge (springrep's coin, 3.55 mm).
+A turned net's seam goes wherever a face's seam runs at one angle (`Sheet::seated`; springrep
+writes it at `u = π`). A file's curve lying wholly past a closed spline sheet's domain is moved by
+its width, and one leaving it otherwise is dropped for the walk's own (`closed::onto_net`). **A
+closed edge's vertex may stand anywhere on its closed spline** (`geometry::restarted`,
+`closed::restarted`, in `read_edge`): the spline is cut at the vertex and its two pieces put end
+to end by knot insertion, the same points, the vertex taken for a knot within 1e-9 of the domain
+of one; that edge's curves in its faces' parameters are then the walk's. Gates:
+`step_kinds::a_conic_turned_across_its_axis_is_its_arc_on_its_faces_side` (the lemon, and the
+apple by Pappus, to 1e-9), `a_closed_edge_on_a_spline_runs_round_from_its_vertex`; the nets' three
+rules by their corpus rows (springrep coin-turned-about-a-line-through-its-rim,
+bull-nose-carried-along-a-spline, v-wheel-turned-once-round-rod).
 
 **A surface closed on itself is periodic whether or not its form has a period, and a loop on it is
 walked as on any periodic surface** (`topology::Rolled`, `closes`, `rolled`, `unrolled`, `window`).
