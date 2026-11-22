@@ -2333,10 +2333,8 @@ fn a_module_file_is_read_lossily_if_an_exchange_file_and_said_if_it_does_not_rea
 
 /// **A document that only names a file exports its body** (#993 stage 2): `bracket.step` beside
 /// the document, `use bracket`, `part := solid(bracket)`, written as STEP; and a drawing over that
-/// model renders.  The hosts' half — finding the file and handing its text over — is this
-/// branch's; the body is the language's, so this waits on the merge.
+/// model renders.
 #[test]
-#[ignore = "needs the language's given module (#993 stage 2), merged by the orchestrator"]
 fn a_document_naming_a_step_file_beside_it_exports_its_body() {
     let dir = std::env::temp_dir().join(format!("solventc-given-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

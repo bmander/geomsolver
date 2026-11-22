@@ -249,14 +249,6 @@ fn push_given(prog: &mut Program, name: String, via: Span, given: Arc<Given>) {
     });
 }
 
-/// **Whether a module's text is an ISO 10303-21 exchange file** (a STEP file, #993 stage 2): its
-/// first token, after an optional byte-order mark and whitespace, is `ISO-10303-21;`.  The one
-/// test, which a host may ask too (what it found for `use NAME`).
-pub fn is_step(text: &str) -> bool {
-    let t = text.strip_prefix('\u{feff}').unwrap_or(text);
-    t.trim_start().starts_with("ISO-10303-21;")
-}
-
 /// **A digest of a text**, the same on every target (a worker matches builds by it): a hash over
 /// its bytes, little-endian eight at a time, under fixed keys — no seed of the process's, no
 /// dependency.
