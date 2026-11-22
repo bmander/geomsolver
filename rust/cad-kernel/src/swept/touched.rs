@@ -379,7 +379,11 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
     let mut us = vec![(0..=8).map(|i| FRAC_PI_2*i as f64/8.).collect::<Vec<_>>(),(0..=8).map(|i| FRAC_PI_2*i as f64/8.).collect(),
         (0..=8).map(|i| i as f64/8.).collect()];
     let mut vs: Vec<f64> = (0..=16).map(|i| a+(b-a)*i as f64/16.).collect();
-    let nets = fitted(&[&c0,&c1,&cs],&mut us,&mut vs,fit)?;
+    // (a meridian read touched whole within the rounding, `Ring::touched_whole`, but not exactly —
+    // a ring moved 1e-9 off the symmetric case — leaves `n · v` a residual on it, which divided by
+    // `sin(α − θ)` is a pole there that no fit holds, here or in an end piece: refused by name at
+    // the meridian, as the road refuses the ring moved further)
+    let nets = fitted(&[&c0,&c1,&cs],&mut us,&mut vs,fit).map_err(|e| match e { Unbuilt::Failed(_) => refused(first),e => e })?;
     lap("the leaves and the strip fitted");
     // **each end piece of a leaf not kept**: from its rim at the end pose to where it crosses that
     // pose's tool again, read as a graph over the angle from the meridian
@@ -472,7 +476,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
             };
             let mut uu = vec![(0..=8).map(|i| i as f64/8.).collect::<Vec<_>>()];
             let mut vv: Vec<f64> = (0..=8).map(|i| FRAC_PI_2*i as f64/8.).collect();
-            let net = fitted(&[&column],&mut uu,&mut vv,fit)?.remove(0);
+            let net = fitted(&[&column],&mut uu,&mut vv,fit).map_err(|e| match e { Unbuilt::Failed(_) => refused(first),e => e })?.remove(0);
             // read for depth at its own instants, inside and along its rim and its crossing
             for i in 0..=6 { for k in 0..=6 {
                 let (s,u) = (0.05+0.9*i as f64/6.,FRAC_PI_2*(0.05+0.9*k as f64/6.));

@@ -17,7 +17,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   piece's leaf rim and its crossing, its torus framed so neither seam crosses a face. The bench's
   ring along a spline builds to the same volume (10696.461766118806 against …784) with the same
   seventeen faces and no tie left for the fitted tie alone. `complex` says, under
-  `SOLVENT_BREP_DEBUG`, each pair of ways in a fitted surface's tie alone ties.
+  `SOLVENT_BREP_DEBUG`, each pair of ways in a fitted surface's tie alone ties. A ring a hair off
+  the symmetric case (its centre moved 1e-9 along the path), still read touched whole within the
+  rounding, is refused `Curved` at the meridian rather than `Failed` in its fit.
 
 - **brep-bench's 80° tumbling torus is built at every spelling of its motion** (#942, `complex`):
   it built only where its observer's origin was (0, 0.5, 0.5) exactly. An end pose's seam stands

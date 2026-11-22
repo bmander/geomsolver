@@ -2433,7 +2433,17 @@ strip, half a turn apart, and no order rests on a rounding. A branch whose kept 
 side beyond the meridian with no end piece there, or an end piece on the quadrant's side, is
 refused by name. The cells are classified by membership as before; the candidates no longer close
 on themselves, but every place of the sweep's boundary in the blank lies in one of them, so no
-cell straddles it (the judge would refuse one that did). Refused by name, `Curved`
+cell straddles it (the judge would refuse one that did). Moved by an ulp or a millionth — a control
+point, the radii, the centre's height, the block's top, the roll's ends within the curve's domain
+— it builds the same seventeen faces, each volume within what the move sweeps
+(`swept_rings::the_ring_along_a_spline_builds_at_its_inputs_moved_by_an_ulp_and_a_millionth`, slow
+tier). **The symmetric limit.** A meridian is touched whole where its normal velocity reads nought
+within the rounding (`Ring::touched_whole`, `HALF_READ` of its scale), not the tolerance: the ring
+moved along the path's tangent by 1e-6 touches none and the road refuses at its outer equator; by
+1e-9 or 1e-10 it is still read touched whole, and the residual `n · v` on the meridian, divided by
+`sin(α − θ)`, is a pole no fit holds — refused by name at the meridian (`Curved`), not `Failed`;
+by 1e-12 or an ulp it builds. A build there would read the residual as the rounding it is (the
+sweep stands within 1e-9 of the symmetric one, under the tolerance): not done. Refused by name, `Curved`
 where it reads so, wherever this is not what depth says (the tool no torus, the far meridian or a
 leaf's equator in the blank, the contact not two parallels, a leaf kept on both sides or neither,
 any kept sheet's place held from beyond by more than the tolerance); with no blank, the road's

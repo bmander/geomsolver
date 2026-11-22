@@ -553,6 +553,54 @@ fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_bloc
     assert!(pushed.touched_whole(&gcs_core::brep::trajectory::Twist::body(Trajectory::Twist(slide).at(1.).unwrap())).is_none());
 }
 
+/// **The ring along a spline builds at its inputs moved by an ulp and by a millionth** (#942, the
+/// ring's ends kept): its build stood on the order of the strip and the end pose's torus beside the
+/// meridian, tangent to second order and read a thousandth of a tolerance apart, until each end
+/// was entered as only what depth keeps of it. A control point's coordinate, the ring's radii, its
+/// centre's height, the block's top, the roll's start and end — each moved alone, by an ulp or a
+/// millionth — build the same seventeen faces, each volume within what the move itself sweeps (the
+/// move times the cut's area) and the gate's own 1e-5 of the case's. The roll's start moved before
+/// nought and its end past one (the curve's domain) and the ring moved off its symmetric place are
+/// not here: those refuse, the latter by name.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, about three minutes: fourteen builds of the ring along a spline")]
+fn the_ring_along_a_spline_builds_at_its_inputs_moved_by_an_ulp_and_a_millionth() {
+    use gcs_core::brep::nurbs::BSpline;
+    let ulp = |x: f64,k: i64| f64::from_bits((x.to_bits() as i64+k) as u64);
+    let moved: [(&str,f64,f64);13] = [("p1y",0.,1e-6),("p2y",20.,20.+1e-6),("p3x",30.,30.+1e-6),("major",1.5,ulp(1.5,1)),
+        ("major",1.5,ulp(1.5,-1)),("major",1.5,1.5+1e-6),("minor",0.5,ulp(0.5,1)),("minor",0.5,ulp(0.5,-1)),("minor",0.5,0.5+1e-6),
+        ("cz",0.5,ulp(0.5,1)),("cz",0.5,ulp(0.5,-1)),("top",0.,-1e-6),("t0",0.,1e-6)];
+    for (name,was,x) in moved.into_iter().chain([("t1",1.,1.-1e-6)]) {
+        let m = |n: &str,v: f64| if n == name { x } else { v };
+        let block = crate::brep::block([-6.,-6.,-8.],[36.,26.,m("top",0.)]);
+        let tool = gcs_core::brep::build::torus([0.,0.,m("cz",0.5)],[0.,1.,0.],m("major",1.5),m("minor",0.5)).unwrap();
+        #[derive(Debug)]
+        struct Runner(BSpline);
+        impl gcs_core::brep::trajectory::Path for Runner {
+            fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
+                let (point,d,dd) = self.0.d2(t);
+                let speed2 = d[0]*d[0]+d[1]*d[1];
+                let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
+                let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
+                let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
+                let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
+                Ok(gcs_core::brep::trajectory::Motion::of_parts(r,dr,point,d))
+            }
+        }
+        let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,m("p1y",0.),0.],[20.,m("p2y",20.),0.],
+            [m("p3x",30.),20.,0.]]).unwrap();
+        let path = Trajectory::General(std::sync::Arc::new(Runner(curve)));
+        let tol = gcs_core::brep::geom::tolerance(block.size().max(tool.size()));
+        let cut = gcs_core::brep::swept::closed::cut_from(&block,&tool,&path,[m("t0",0.),m("t1",1.)],0.005,tol)
+            .unwrap_or_else(|e| panic!("{name} {x:e}: {e:?}"));
+        cut.check(tol).unwrap();
+        let v = gcs_core::brep::props::volume(&cut);
+        let area: f64 = cut.faces.iter().map(|f| gcs_core::brep::props::area(&cut,f)).sum();
+        assert_eq!(cut.faces.len(),17,"{name} {x:e}");
+        assert!((v-10696.461766).abs() <= 1e-5+(x-was).abs()*area,"{name} moved {:e}: volume {v}",x-was);
+    }
+}
+
 /// **A frame carried along a spline is written whole** (#942 T1d-ring, `swept::dump`): a trim's
 /// trajectory that is a frame along a B-spline (`trajectory::Along`) — refused by name by F5's dump,
 /// read only by evaluating it — is written as its curve exactly, its home, which frame and its name,
