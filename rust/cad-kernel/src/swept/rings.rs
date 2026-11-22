@@ -473,11 +473,22 @@ impl Ring {
         if let Some(i) = read.iter().position(|r| r.len() != m) { return Err(read[i].first().map_or_else(witness,|r| r.1.x)) }
         let nf = self.elements.len() as f64;
         let apart = |a: f64,b: f64| { let d = (a-b).rem_euclid(nf); d.min(nf-d) };
+        // **a contact followed from angle to angle by its label first** (#880 T1f): on an arc each
+        // branch's root is one continuous function of `θ` wherever `A` and `B` are not both nought,
+        // and each label holds one root at an angle, so a contact keeping its label is the same one
+        // — read by its place round the meridian alone, a contact whose `ψ` turns fast beside a
+        // meridian all but touched whole (the crossed tori's, half a turn within 1/256 of one)
+        // was taken for the other branch. Its place decides only where the label changes, the
+        // contact passing from piece to piece — and wherever the instant touches a meridian whole
+        // (`touched_whole`, to its rounding): `A` and `B` pass through nought there, and the
+        // branch's label turns over where the contact runs on through the meridian (#942 T1d-ring)
+        let labelled = self.touched_whole(&w).is_none();
+        let along = |p: &(Label,Root),q: &(Label,Root)| if labelled && p.0 == q.0 { 0. } else { apart(p.1.sigma,q.1.sigma) };
         // the turn round the meridian carrying each angle's contacts onto the next's
         let shifts: Vec<usize> = (0..AROUND).map(|i| {
             let (p,q) = (&read[i],&read[(i+1)%AROUND]);
             (0..m).min_by(|&s,&t| {
-                let cost = |s: usize| (0..m).map(|j| apart(p[j].1.sigma,q[(j+s)%m].1.sigma)).sum::<f64>();
+                let cost = |s: usize| (0..m).map(|j| along(&p[j],&q[(j+s)%m])).sum::<f64>();
                 cost(s).total_cmp(&cost(t))
             }).unwrap()
         }).collect();
@@ -504,8 +515,11 @@ impl Ring {
                 if idx == start { break }
             }
             let span = TAU*turn as f64;
-            let at = |th: f64,sigma: f64| -> Option<(Label,Root)> {
+            // (the root at `th` on the label `l` where it holds one and no meridian is touched whole,
+            // else nearest the place `σ`)
+            let at = |th: f64,sigma: f64,l: Label| -> Option<(Label,Root)> {
                 let rs = self.roots(&w,th.rem_euclid(TAU));
+                if labelled { if let Some(r) = rs.iter().find(|r| r.0 == l) { return Some(*r) } }
                 rs.into_iter().min_by(|a,b| apart(a.1.sigma,sigma).total_cmp(&apart(b.1.sigma,sigma)))
             };
             let raw: Vec<Kind> = samples.iter().map(|&(_,i,j)| kind(thetas[i],&read[i][j])).collect();
@@ -516,7 +530,7 @@ impl Ring {
             let mut kinds = raw.clone();
             // the narrow pairs found (see below): each its stretch of angles, the branch of the samples
             // across it, the side about it, and its least and where
-            let mut narrow: Vec<([f64;2],Vec<(f64,f64)>,f64,f64,f64)> = Vec::new();
+            let mut narrow: Vec<([f64;2],Vec<(f64,f64,Label)>,f64,f64,f64)> = Vec::new();
             match (0..s).find(|&i| raw[i].1 != Side::Fold) {
                 None => {
                     let side = if self.bend(&w,&dw,thetas[samples[0].1],&read[samples[0].1][samples[0].2].1) > 0. { Side::Touching } else { Side::Buried };
@@ -544,13 +558,13 @@ impl Ring {
                                 if last <= first { last += span }
                                 // (each angle's root the one nearest the branch its nearest sample is
                                 // on: the curve followed, not the other root at a far angle)
-                                let near: Vec<(f64,f64)> = (0..(j+s-k)%s+3).map(|x| {
+                                let near: Vec<(f64,f64,Label)> = (0..(j+s-k)%s+3).map(|x| {
                                     let (th,ia,ja) = samples[(k+s-1+x)%s];
-                                    (if th < first { th+span } else { th },read[ia][ja].1.sigma)
+                                    (if th < first { th+span } else { th },read[ia][ja].1.sigma,read[ia][ja].0)
                                 }).collect();
                                 let value = |th: f64| {
-                                    let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
-                                    at(th,sigma).map_or(f64::INFINITY,|r| sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1))
+                                    let Some(&(_,sigma,l)) = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())) else { return f64::INFINITY };
+                                    at(th,sigma,l).map_or(f64::INFINITY,|r| sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1))
                                 };
                                 let looks = 64*((j+s-k)%s+3);
                                 let step = (last-first)/looks as f64;
@@ -595,7 +609,7 @@ impl Ring {
                 let mut lo = samples[i].0;
                 let hi = if i+1 < s { samples[i+1].0 } else { span };
                 let (_,ia,ja) = samples[i];
-                let sig0 = read[ia][ja].1.sigma;
+                let (l0,sig0) = (read[ia][ja].0,read[ia][ja].1.sigma);
                 // each change between the two angles in turn: a narrow stretch (a fold's bridge)
                 // may stand wholly between them
                 // (the sheet's side read only where the two stretches' differ)
@@ -605,12 +619,12 @@ impl Ring {
                 while a != b {
                     let mut missed = None;
                     let (l,h) = crate::util::roots::bisect(lo,hi,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
-                        |mid| match at(mid,sig0) {
+                        |mid| match at(mid,sig0,l0) {
                             Some(r) => seen(mid.rem_euclid(TAU),&r) == a,
                             None => { missed.get_or_insert(mid); true }
                         });
                     if missed.is_some() { return Err(read[ia][ja].1.x) }
-                    let Some(next) = at(h,sig0).map(|r| seen(h.rem_euclid(TAU),&r)) else { return Err(read[ia][ja].1.x) };
+                    let Some(next) = at(h,sig0,l0).map(|r| seen(h.rem_euclid(TAU),&r)) else { return Err(read[ia][ja].1.x) };
                     if next == a { return Err(read[ia][ja].1.x) }
                     joins.push((0.5*(l+h),next));
                     (a,lo) = (next,h);
@@ -623,8 +637,8 @@ impl Ring {
             let mut bridges: Vec<[f64;3]> = Vec::new();
             for ([first,last],near,sign,mid,least) in &narrow {
                 let value = |th: f64| {
-                    let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
-                    at(th,sigma).map(|r| (r.0,sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1)))
+                    let &(_,sigma,l) = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs()))?;
+                    at(th,sigma,l).map(|r| (r.0,sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1)))
                 };
                 let depth = least.abs();
                 let edge = |from: f64,to: f64| -> Option<f64> {
@@ -2177,12 +2191,17 @@ pub fn seams_first(mut b: Brep) -> Brep {
 const ADMITTED_AT: usize = 65;
 
 /// **Whether the ring road takes `tool` under `path` over `[a, b]`**, read before anything is
-/// fitted: the tool a ring (`Ring::read`), and at `ADMITTED_AT` rolls the instant's contacts the
-/// first's, curve by curve and piece by piece (`Curved` where not).
+/// fitted: the tool a ring (`Ring::read`), no meridian touched whole for an instant inside the
+/// roll (`Ring::touched_once`), and at `ADMITTED_AT` rolls the instant's contacts the first's,
+/// curve by curve and piece by piece (`Curved` where not).
 pub fn admits(tool: &Brep,path: &Trajectory,[a,b]: [f64;2]) -> Result<(),Unbuilt> {
     let ring = Ring::read(tool)?;
     let reader = Reader::new(&ring,path,[a,b])?;
     if runs(&reader.first).is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
+    // (a meridian touched whole for an instant inside the roll, refused by name: `Ring::touched_once`)
+    if let Some(&(t,theta,k)) = ring.touched_once(path,[a,b])?.first() {
+        return Err(Unbuilt::Curved {at:path.pose(t)?.point(ring.meridian_point(theta,k))})
+    }
     let ts: Vec<f64> = (0..ADMITTED_AT).map(|k| a+(b-a)*k as f64/(ADMITTED_AT-1) as f64).collect();
     for r in crate::util::par::map(&ts,|&t| reader.read(t).map(|_| ())) { r? }
     Ok(())
@@ -3475,6 +3494,64 @@ impl Ring {
         })
     }
 
+    /// **The instants inside the roll `[a, b]` at which a meridian is touched whole for an
+    /// instant** (#880 T1f): each with the meridian's angle and its arc. On an arc the contact's
+    /// two branches are `ψ = atan2(∓A, ±B)`, one continuous function of `θ` and the roll each
+    /// wherever `A` and `B` are not both nought; where they are, at one angle `θ*` and one roll
+    /// `t*`, the instant touches that meridian all round, and on the contact surface
+    /// `A cos ψ + B sin ψ = 0` in `(θ, ψ, t)` the roll has two saddles at once, on that meridian
+    /// half a turn apart: the two branches meet there and exchange the meridian's halves (before
+    /// it one tube's contact runs along one half and the other's along the other; after it, the
+    /// other way about), no curve's kinds changing. Found exactly: `A` vanishes at the two angles
+    /// `θ = atan2(−P₁, P₂) (+ π)` (`terms`), each followed along the roll by continuity, and `B`
+    /// there, as a part of the terms' scale, is read at `SHAPE_LOOKS` rolls and halved to the
+    /// rounding of the roll where it changes sign — a sign read clearly, beyond the half digits
+    /// its cancellation leaves (`HALF_READ`), on both sides: a meridian touched whole at every
+    /// instant (a ring carried in a plane its axis lies in) reads `B` nought throughout and has
+    /// none.
+    pub fn touched_once(&self,path: &Trajectory,[a,b]: [f64;2]) -> Result<Vec<(f64,f64,usize)>,Unbuilt> {
+        let mut out = Vec::new();
+        for (k,e) in self.elements.iter().enumerate() {
+            let Element::Arc {c,..} = *e else { continue };
+            // (at the roll `t`, `B` as a part of the scale at each of the two angles `A` vanishes at)
+            let read = |t: f64| -> Result<[(f64,f64);2],Unbuilt> {
+                let (pp,q,qq,size) = self.terms(&Twist::body(path.at(t)?),c);
+                let base = (-pp[0]).datan2(pp[1]);
+                Ok([base,base+std::f64::consts::PI].map(|st| { let (ss,cs) = st.dsin_cos(); (st,(q+qq[0]*cs+qq[1]*ss)/size) }))
+            };
+            // (the angle at `t` nearer `theta`, of the two, and `B` there: followed by continuity,
+            // the two swapping where `P` passes nought)
+            let near = |t: f64,theta: f64| -> Result<(f64,f64),Unbuilt> {
+                let r = read(t)?;
+                let way = |x: f64| { let d = (x-theta).rem_euclid(TAU); d.min(TAU-d) };
+                Ok(if way(r[0].0) <= way(r[1].0) { r[0] } else { r[1] })
+            };
+            let at = |i: usize| if i == SHAPE_LOOKS { b } else { a+(b-a)*i as f64/SHAPE_LOOKS as f64 };
+            for j in 0..2 {
+                let mut here = read(a)?[j];
+                for i in 1..=SHAPE_LOOKS {
+                    let (lo,hi) = (at(i-1),at(i));
+                    let there = near(hi,here.0)?;
+                    if (here.1 < 0.) != (there.1 < 0.) && here.1.abs() > HALF_READ && there.1.abs() > HALF_READ {
+                        let (mut x,mut y,mut theta) = (lo,hi,here.0);
+                        loop {
+                            let m = 0.5*(x+y);
+                            if !(m > x && m < y) { break }
+                            let r = near(m,theta)?;
+                            if (r.1 < 0.) == (here.1 < 0.) { x = m } else { y = m }
+                            theta = r.0;
+                        }
+                        let t = 0.5*(x+y);
+                        if t > a && t < b { out.push((t,near(t,theta)?.0.rem_euclid(TAU),k)) }
+                    }
+                    here = there;
+                }
+            }
+        }
+        out.sort_by(|x,y| x.0.total_cmp(&y.0));
+        Ok(out)
+    }
+
     /// **Whether the ring holds the point `x`** (its own coordinates): its `(ρ, z)` within the
     /// meridian loop, read against the loop drawn finely (each piece in 512 chords) by its winding.
     pub fn holds(&self,x: V) -> bool {
@@ -3547,4 +3624,36 @@ fn interpolated_by(grid: &[Vec<V>],us: &[f64],ts: &[f64],counts: &[usize]) -> Re
     let net = Net {du:5,dv:cols[0].degree,uknots,vknots:cols[0].knots.clone(),poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
     net.check().map_err(Unbuilt::Failed)?;
     Ok(net)
+}
+
+/// **Each contact curve's pieces at roll `t`, read against the scale at the roll's start** (a probe
+/// of the shape `changes` compares): each piece's angles round the axis and its kind, or the point
+/// of the tool where the number of contacts changes round the axis.
+pub fn shape_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64) -> Result<Vec<Vec<(f64,f64,Label,Side)>>,Unbuilt> {
+    let scale = ring.scale_at(path,roll[0],roll)?;
+    let (w,dw) = rates(path,t,roll)?;
+    let pose = path.pose(t)?;
+    let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+    Ok(i.curves.iter().map(|c| c.iter().map(|p| (p.from,p.to,p.label,p.side)).collect()).collect())
+}
+
+/// **How far each arc's meridian is from being touched whole at the instant `w`** (a probe):
+/// for each arc `k`, at each of the two angles `θ` where `A` vanishes, `B` there as a part of the
+/// terms' scale — nought where the meridian at `θ` is touched whole, the two branches meeting.
+pub fn whole_gap(ring: &Ring,w: &Twist) -> Vec<(usize,f64,f64)> {
+    ring.elements.iter().enumerate().flat_map(|(k,e)| {
+        let Element::Arc {c,..} = *e else { return Vec::new() };
+        let (pp,q,qq,size) = ring.terms(w,c);
+        let base = (-pp[0]).datan2(pp[1]);
+        [base,base+std::f64::consts::PI].into_iter().map(|st| { let (ss,cs) = st.dsin_cos(); (k,st.rem_euclid(TAU),(q+qq[0]*cs+qq[1]*ss)/size) }).collect()
+    }).collect()
+}
+
+/// **The meridian at `θ` read at roll `t` as a contact all round** (a probe of a meridian an
+/// instant touches whole): at each of `psis` round its first arc, the point in space, `n · v` there
+/// and its `s''`.
+pub fn meridian_read(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,theta: f64,psis: &[f64]) -> Result<Vec<(f64,V,f64,f64)>,Unbuilt> {
+    let (w,dw) = rates(path,t,roll)?;
+    let pose = path.pose(t)?;
+    Ok(psis.iter().filter_map(|&psi| ring.on_arc(theta,0,psi).map(|r| (psi,pose.point(r.x),dot(r.n,w.velocity(r.x)),ring.bend(&w,&dw,theta,&r)))).collect())
 }

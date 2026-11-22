@@ -34,6 +34,22 @@ pub fn thin() -> (Brep,Trajectory,[f64;2],f64) {
     (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.015/50_000.)
 }
 
+/// brep-bench's crossed tumbling tori (`tumbling-torus-crossed-forward` at `observer` 1,
+/// `-reverse` at −1): a torus of tube 0.22 turned 0.7 a radian about the vertical line through
+/// (2, 0, 0), seen from a frame turning by `observer` a radian about the line through
+/// (0, h cos 45°, h sin 45°), `h` 0.7071, along (cos 20°, sin 20° cos 45°, sin 20° sin 45°), over
+/// ±100°, at the bench's tolerance, a 50 000th of the tube.
+pub fn crossed(observer: f64) -> (Brep,Trajectory,[f64;2],f64) {
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.22).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let (sa,ca) = 20f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.7,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],
+        ratio:observer,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    (tool,path,[-100f64.to_radians(),100f64.to_radians()],0.22/50_000.)
+}
+
 /// The cubic brep-bench's ring is carried along, in the plane `z = 0`.
 pub fn cubic() -> BSpline {
     let points = vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]];

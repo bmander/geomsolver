@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's contact followed by its label, and a meridian touched whole for an instant refused
+  by name** (#880 T1f): `Ring::instant` follows each contact from angle to angle by its label
+  first (an arc's branch is continuous where `A` and `B` are not both nought), its place round
+  the meridian only where the label changes — read by place alone, a contact turning fast beside
+  a meridian all but touched whole was taken for the other branch and the instant refused.
+  `Ring::touched_once`, new, finds each instant inside the roll at which a meridian is touched
+  whole for that instant alone (the tube's two branches meeting and exchanging its halves), and
+  `closed::ring`'s road and `rings::admits` refuse there (`Curved` at the meridian's outer point)
+  before anything is fitted.  Probes: `rings::shape_at`, `whole_gap`, `meridian_read`.
+
 - **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
   (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
   (`query::curve_surface`) and read at one point of each piece, within by more than

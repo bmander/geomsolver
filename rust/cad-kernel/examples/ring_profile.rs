@@ -16,6 +16,12 @@
 //! the bench's); `fluxes sag` reads each face's flux against its mesh's and the volume off the mesh;
 //! `agree n sag` holds the solid to the sweep's definition point by point.
 //!
+//! `crossed-forward` and `crossed-reverse` are brep-bench's crossed tumbling tori (#880 T1f), built
+//! so; `shape crossed-forward|crossed-reverse|… [looks]` reads their contact's shape over the roll
+//! and each meridian touched whole for an instant (`Ring::touched_once`), with `n · v`, `s''` and the
+//! depth round it; `event-map crossed-forward|crossed-reverse t* θ* dθ dt n` maps how each branch's
+//! sheet stands under the sweep about such an instant.
+//!
 //! `cargo run --release -p cad-kernel --example ring_profile -- full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline`
 use cad_kernel::trajectory::{Screw,Trajectory};
 #[path = "support/bench.rs"]
@@ -44,9 +50,14 @@ fn main() {
         let by: f64 = args[3].parse().expect("a number");
         return as_the_bench_runs_it(Some((args[1].clone(),args[2] == "ulps",by)))
     }
+    if args.first().map(String::as_str) == Some("shape") { return shape(&args[1..]) }
+    if args.first().map(String::as_str) == Some("event-map") { return event_map(&args[1..]) }
     let (tube,(tool,path),half) = match args.first().map(String::as_str) {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
+        // (brep-bench's crossed pair: `tumbling-torus-crossed-forward` and `-reverse`)
+        Some("crossed-forward") => (0.22,tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.),100.),
+        Some("crossed-reverse") => (0.22,tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.),100.),
         Some("thin") => (0.015,tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.),
         // (brep-bench's 80° `tumbling-torus`, as it spells it: about the line through (0, 0.5, 0.5)
         // along x, built at a bar of 0.002 and a tolerance of 1e-5)
@@ -290,5 +301,137 @@ fn as_the_bench_runs_it(moved: Option<(String,bool,f64)>) {
     match cad_kernel::swept::closed::cut_from(&stock,&ring,&path,roll,0.005,tol) {
         Ok(b) => println!("built: {} faces, volume {}, in {:?}",b.faces.len(),cad_kernel::props::volume(&b),clock.elapsed()),
         Err(e) => println!("refused: {e:?}, in {:?}",clock.elapsed()),
+    }
+}
+
+/// **`shape crossed-forward|crossed-reverse|near-orthogonal|thick [looks]`: the contact's shape over
+/// the roll as the road reads it** (#880 T1f): at `looks` rolls each curve's pieces (`T` touching,
+/// `F` a fold or bridge, `B` buried; a curve running round twice says so), and each meridian's gap
+/// from being touched whole (`rings::whole_gap`: `B` where `A` vanishes, nought where the two
+/// branches of the tube's contact meet); between two rolls that differ the change halved to the
+/// rounding and named.
+fn shape(args: &[String]) {
+    use cad_kernel::swept::rings;
+    let (tool,path,half) = match args.first().map(String::as_str) {
+        Some("crossed-forward") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.); (t,p,100.) }
+        Some("crossed-reverse") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.); (t,p,100.) }
+        Some("near-orthogonal") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.08,1.01,1.,89.,0.,1.); (t,p,180.) }
+        Some("thick") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.16,1.01,1.,89.,0.,1.); (t,p,180.) }
+        Some("half-turn") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.); (t,p,90.) }
+        Some("full-turn") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.); (t,p,180.) }
+        Some("thin") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.); (t,p,75.) }
+        Some("eighty") => { let (t,p) = bench::tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.); (t,p,75.) }
+        _ => { eprintln!("ring_profile shape crossed-forward|crossed-reverse|near-orthogonal|thick [looks]"); std::process::exit(2) }
+    };
+    let looks: usize = args.get(1).map_or(400,|x| x.parse().expect("a count"));
+    let roll = [-(half as f64).to_radians(),(half as f64).to_radians()];
+    let ring = rings::Ring::read(&tool).unwrap();
+    let word = |t: f64| -> String {
+        match rings::shape_at(&ring,&path,roll,t) {
+            Ok(cs) => cs.iter().map(|c| {
+                let span = c.last().map_or(0.,|p| p.1)-c.first().map_or(0.,|p| p.0);
+                let turns = (span/std::f64::consts::TAU).round();
+                let kinds: String = c.iter().map(|p| match p.3 { rings::Side::Touching => 'T',rings::Side::Fold => 'F',rings::Side::Buried => 'B' }).collect();
+                // (each curve's kinds from its least rotation, the curves in order: the shape
+                // `same_shape` compares, not where the curve's reading starts)
+                let n = kinds.len();
+                let kinds = (0..n.max(1)).map(|r| format!("{}{}",&kinds[r.min(n)..],&kinds[..r.min(n)])).min().unwrap_or_default();
+                if turns > 1. { format!("{kinds}x{turns}") } else { kinds }
+            }).collect::<Vec<_>>().tap_sorted().join("|"),
+            Err(e) => format!("refused {e:?}"),
+        }
+    };
+    let gap = |t: f64| -> f64 {
+        let w = cad_kernel::trajectory::Twist::body(path.at(t).unwrap());
+        rings::whole_gap(&ring,&w).iter().map(|g| g.2.abs()).fold(f64::INFINITY,f64::min)
+    };
+    let ts: Vec<f64> = (0..=looks).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/looks as f64).collect();
+    let words: Vec<String> = ts.iter().map(|&t| word(t)).collect();
+    println!("at {:.6}: {} (least whole-touch gap {:.3e})",ts[0],words[0],gap(ts[0]));
+    for k in 1..ts.len() {
+        if words[k] == words[k-1] { continue }
+        // halved to the rounding between the two rolls that differ
+        let (mut x,mut y) = (ts[k-1],ts[k]);
+        while y-x > 1e-13 { let m = 0.5*(x+y); if word(m) == words[k-1] { x = m } else { y = m } }
+        println!("at {:.12}: {} -> {} (least whole-touch gap {:.3e} there)",0.5*(x+y),word(x),word(y),gap(0.5*(x+y)));
+    }
+    for (t,theta,k) in ring.touched_once(&path,roll).unwrap() { println!("touched once (Ring::touched_once): t {t:.12}, θ {theta:.9}, arc {k}") }
+    // each sign change of the whole-touch gap (`B` where `A` vanishes, signed), halved to the rounding
+    let signed = |t: f64,j: usize| -> (f64,f64) {
+        let w = cad_kernel::trajectory::Twist::body(path.at(t).unwrap());
+        let g = rings::whole_gap(&ring,&w);
+        (g[j].2,g[j].1)
+    };
+    for j in 0..2 {
+        for k in 1..ts.len() {
+            let (g0,g1) = (signed(ts[k-1],j).0,signed(ts[k],j).0);
+            if (g0 < 0.) == (g1 < 0.) { continue }
+            // (the angle `A` vanishes at jumps half a turn where `P` passes nought: a sign change there is none)
+            if (signed(ts[k-1],j).1-signed(ts[k],j).1).abs() > 0.5 && ((signed(ts[k-1],j).1-signed(ts[k],j).1).abs()-std::f64::consts::TAU).abs() > 0.5 { continue }
+            let (mut x,mut y) = (ts[k-1],ts[k]);
+            while y-x > 1e-14 { let m = 0.5*(x+y); if (signed(m,j).0 < 0.) == (g0 < 0.) { x = m } else { y = m } }
+            let t = 0.5*(x+y);
+            let (_,theta) = signed(t,j);
+            let m = ring.meridian_point(theta,0);
+            println!("the meridian at θ {theta:.9} touched whole at t {t:.12} ({:.3}°): its outer point {:?} on the tool, {:?} in space",
+                t.to_degrees(),m,path.pose(t).unwrap().point(m));
+            // where each branch arrives at the meridian either side, and the pieces about it
+            for branch in [true,false] {
+                for side in [-1e-7,1e-7] {
+                    let r = rings::branch_at(&ring,&path,roll,t,branch,&[theta+side]).unwrap();
+                    let psi = { let l = ring.frame.local(path.pose(t).unwrap().inverse().point(r[0].1)); (l[2]-2.).atan2(l[0].hypot(l[1])-1.) };
+                    println!("  branch {branch} at θ*{side:+e}: ψ {:.6}, s'' {:+.4e}, at {:?}",psi.rem_euclid(std::f64::consts::TAU),r[0].2,r[0].1);
+                }
+            }
+            for dt in [-1e-3,0.,1e-3] {
+                let cs = rings::shape_at(&ring,&path,roll,t+dt).unwrap();
+                for c in &cs { let held: Vec<String> = c.iter().filter(|p| { let x = theta-p.0; x.rem_euclid(std::f64::consts::TAU) < p.1-p.0 }).map(|p| format!("{:?} [{:.4}, {:.4}]",p.3,p.0,p.1)).collect(); println!("  at t*{dt:+e} the piece over θ*: {held:?}") }
+            }
+            // round it: `n · v` (nought to the rounding), `s''` and how deep the sweep's other instants hold it
+            let scale = 1.;
+            let psis: Vec<f64> = (0..24).map(|i| std::f64::consts::TAU*i as f64/24.).collect();
+            for (psi,x,nv,bend) in rings::meridian_read(&ring,&path,roll,t,theta,&psis).unwrap() {
+                let cover = cad_kernel::swept::depth::cover(&ring,&path,roll,x,t,0.,4.4e-6*scale);
+                let said = match cover { Ok(cad_kernel::swept::depth::Reading::Far(c)) => format!("far {:+.3e} at {:.4}",c.depth,c.at),Ok(r) => format!("{r:?}"),Err(e) => format!("{e:?}") };
+                println!("  ψ {psi:.3}: n·v {nv:+.1e}, s'' {bend:+.4e}, {said}");
+            }
+        }
+    }
+}
+
+/// A list sorted, as a word for the probe's shapes.
+trait Sorted { fn tap_sorted(self) -> Self; }
+impl Sorted for Vec<String> { fn tap_sorted(mut self) -> Self { self.sort(); self } }
+
+/// **`event-map crossed-forward|crossed-reverse t* θ* dθ dt n`: how the sheets stand about a
+/// meridian touched whole** (#880 T1f): over `θ* ± dθ` and `t* ± dt`, `n` a side, each branch's
+/// contact read as the depth reads it — `#` its far cover deeper than the tolerance (covered),
+/// `n` held by the instants beside its own (`Near`), `o` on the boundary (`Alone`, or its far cover
+/// within the tolerance), lowercase where `s''` is below nought.
+fn event_map(args: &[String]) {
+    use cad_kernel::swept::{depth,rings};
+    let observer = if args[0] == "crossed-forward" { 1. } else { -1. };
+    let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,observer);
+    let x: Vec<f64> = args[1..5].iter().map(|a| a.parse().unwrap()).collect();
+    let n: usize = args[5].parse().unwrap();
+    let roll = [-100f64.to_radians(),100f64.to_radians()];
+    let ring = rings::Ring::read(&tool).unwrap();
+    let tol = 0.22/50000.;
+    for branch in [true,false] {
+        println!("branch {branch}: θ across, t down from {:.6} to {:.6}",x[0]+x[3],x[0]-x[3]);
+        for j in (0..=n).rev() {
+            let t = x[0]-x[3]+2.*x[3]*j as f64/n as f64;
+            let thetas: Vec<f64> = (0..=2*n).map(|i| x[1]-x[2]+2.*x[2]*i as f64/(2*n) as f64).collect();
+            let row: String = rings::branch_at(&ring,&path,roll,t,branch,&thetas).unwrap().iter().map(|&(_,p,bend)| {
+                let c = match depth::cover(&ring,&path,roll,p,t,0.,tol) {
+                    Ok(depth::Reading::Near) => 'n',
+                    Ok(depth::Reading::Far(c)) if c.depth < -tol => '#',
+                    Ok(_) => 'o',
+                    Err(_) => '?',
+                };
+                if bend < 0. { c } else { c.to_ascii_uppercase() }
+            }).collect();
+            println!("{t:+.5} {row}");
+        }
     }
 }

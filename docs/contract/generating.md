@@ -2507,6 +2507,37 @@ entered it (below); any other tool keeps K2's
 refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
 its two meridians square to the motion touched whole, is `Curved` so).
 
+**A meridian touched whole for an instant, refused by name** (#880 T1f, `Ring::touched_once`):
+on an arc the contact's two branches are `ψ = atan2(∓A, ±B)`, each one continuous function of the
+angle round the axis and the roll wherever `A` and `B` are not both nought. Where they are, at one
+angle `θ*` and one roll `t*`, the instant touches that meridian all round; on the contact surface
+`A cos ψ + B sin ψ = 0` in `(θ, ψ, t)` the roll has two saddles at once, on that meridian half a
+turn apart (forced: the surface is odd under `ψ → ψ + π`), and the two branches meet there and
+exchange the meridian's halves — before it one tube's contact runs along one half and the other's
+along the other, after it the other way about — no curve's kinds changing, so `changes` does not
+see it. Over the angle and the roll each tube's sheet blows its point up into the whole meridian,
+and no net over `(u, t)` holds it: brep-bench's crossed tumbling tori (`swept/tumbling-torus-crossed-
+forward` at `t*` 1.3264280599, `θ*` 5.97116466; `-reverse` at 0.9003349192, 2.10298891) refined
+the fit toward the instant without end. Found exactly — `A` vanishes at two angles, each followed
+along the roll by continuity, and `B` there, as a part of the terms' scale, read at `SHAPE_LOOKS`
+rolls and halved to the rounding where it changes sign clearly beyond `HALF_READ` (a meridian
+touched whole at every instant reads `B` nought throughout and has none) — and refused before
+anything is fitted, `Curved` at the meridian's outer point (`closed::ring`'s road and `admits`).
+The meridian's touching half is the sweep's boundary (`depth::cover` reads it `Alone`), each branch
+arriving on it touching on one side of `θ*` and leaving buried on the other (`s''` ±0.611 forward,
+±0.470 reverse), a fold through the instant on each tube
+(`swept_rings::a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name`).
+**Not yet**: the instant built — the roll cut there, the cut's row four arcs (each tube's curve
+and the meridian's two halves) meeting at the two saddles, the tubes' faces beside it read over a
+chart the saddle does not blow up, and the fold and the double curve that run through it. **A
+contact is followed from angle to angle by its label first** (`Ring::instant`): on an arc each
+label holds one root at an angle, continuous where `A` and `B` are not both nought, so a contact
+keeping its label is the same one, and its place round the meridian decides only where the label
+changes. Followed by its place alone, the crossed tori's contact beside such a meridian — `ψ`
+turning half a turn within a 256th of a turn of the angle — was taken for the other branch and the
+instant refused (forward at 1.32689, reverse at 0.47042: the bench's `Curved` before the road
+began), or read as one curve round twice.
+
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
 `depth::cover`'s certified march is the reading): the sweep is the union of

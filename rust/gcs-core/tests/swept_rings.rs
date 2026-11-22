@@ -10,7 +10,7 @@ use gcs_core::brep::swept::rings::{Corner,Ring,Side,admits,contacts};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::model::SolidDef;
-use crate::common::bench::{Runner,cubic,runner,thin,tumbling};
+use crate::common::bench::{Runner,crossed,cubic,runner,thin,tumbling};
 
 /// The sweep `name` of `text` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
 fn sweep(text: &str,name: &str) -> (Brep,Trajectory,[f64;2]) {
@@ -1205,4 +1205,61 @@ fn a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it() {
     let inner: f64 = pieces.iter().filter(|p| p.len() == 1 && p[0].iter().all(|q| (q[0]-c[0]).hypot(q[1]-c[1]) <= r+1e-12))
         .map(|p| area(&p[0])).sum();
     assert!((inner-(-area(hole))).abs() <= 1e-12,"the circle's halves fill the hole: {inner} against {}",-area(hole));
+}
+
+/// **A meridian touched whole for an instant is found exactly and refused by name** (#880 T1f,
+/// `Ring::touched_once`): brep-bench's crossed tumbling tori. Where `A` and `B` vanish together at
+/// one angle and one roll, the instant touches that meridian all round — `n · v` within the
+/// rounding of nought at every point of it — and the tube's two branches meet there and exchange
+/// its halves, the sheet over the angle and the roll blowing its point up into the whole meridian.
+/// Each member has one such instant inside its roll (the forward 1.3264280599, the reverse
+/// 0.9003349192), and the road refuses there, `Curved` at the meridian's outer point, before
+/// anything is fitted (it had refined its fit toward the instant without end). Its half that
+/// touches is the sweep's boundary: no other instant covers it. The cases already built touch no
+/// meridian whole. And each instant's contact is read over the whole roll — followed from angle
+/// to angle by its label (`Ring::instant`): read by its place round the meridian alone, the
+/// crossed tori's contact, its `ψ` turning half a turn within a 256th of a turn beside such a
+/// meridian, was taken for the other branch and the instant refused (the forward at 1.32689, the
+/// reverse at 0.47042, as `Curved` before the road began).
+#[test]
+fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name() {
+    use gcs_core::brep::swept::{depth,rings};
+    for (observer,at,theta,point) in [(1.,1.326428059908,5.971164660,[3.5915533579712884,1.9979569251726716,1.5194116132740945]),
+        (-1.,0.900334919170,2.102988913,[1.9673972992433895,0.2632173866369367,1.7258088475516893])] {
+        let (tool,path,roll,tol) = crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let once = ring.touched_once(&path,roll).unwrap();
+        assert_eq!(once.len(),1,"{observer}: {once:?}");
+        let (t,th,k) = once[0];
+        assert!((t-at).abs() < 1e-11 && (th-theta).abs() < 1e-8 && k == 0,"{observer}: {once:?}");
+        // the whole meridian in contact at that instant, its touching half on the boundary
+        let psis: Vec<f64> = (0..24).map(|i| std::f64::consts::TAU*i as f64/24.).collect();
+        let round = rings::meridian_read(&ring,&path,roll,t,th,&psis).unwrap();
+        assert_eq!(round.len(),24);
+        for &(psi,x,nv,bend) in &round {
+            assert!(nv.abs() < 1e-13,"{observer}: n · v {nv:e} at ψ {psi}");
+            if bend > 0.1 {
+                let r = depth::cover(&ring,&path,roll,x,t,0.,tol).unwrap();
+                assert!(matches!(r,depth::Reading::Alone),"{observer}: ψ {psi} touching ({bend}) read {r:?}");
+            }
+        }
+        assert!(round.iter().any(|r| r.3 > 0.1) && round.iter().any(|r| r.3 < -0.1));
+        match gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.22/250.,tol) {
+            Err(Unbuilt::Curved {at}) => assert!(gcs_core::brep::util::space::distance(at,point) < 1e-9,"{observer}: {at:?}"),
+            other => panic!("{observer}: {:?}",other.map(|b| b.faces.len())),
+        }
+        assert!(matches!(admits(&tool,&path,roll),Err(Unbuilt::Curved {..})));
+    }
+    // (the contact read at every roll the shape changes are sought at: the forward's fold pairs born
+    // and dying, its curves keeping their kinds through the meridian touched whole)
+    let (tool,path,roll,_) = crossed(1.);
+    let ring = Ring::read(&tool).unwrap();
+    let (_,cuts) = rings::changes(&ring,&path,roll).unwrap_or_else(|u| panic!("{u:?}"));
+    let known = [0.257430212274,0.612894065505,1.224039779171,1.383259823825];
+    assert_eq!(cuts.len(),known.len(),"{cuts:?}");
+    for (c,k) in cuts.iter().zip(known) { assert!((c-k).abs() < 1e-9,"{cuts:?}") }
+    // (and no case already built touches a meridian whole for an instant)
+    for (tool,path,roll,_) in [tumbling(90.),tumbling(180.),thin()] {
+        assert!(Ring::read(&tool).unwrap().touched_once(&path,roll).unwrap().is_empty());
+    }
 }

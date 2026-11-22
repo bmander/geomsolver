@@ -1274,6 +1274,15 @@ fn fitted_from(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64,ring: super
         let (t,theta,k) = touched[0];
         return Err(Unbuilt::Curved {at:path.pose(t)?.point(ring.meridian_point(theta,k))})
     }
+    // **a meridian touched whole for an instant is refused by name** (#880 T1f, `Ring::touched_once`):
+    // there the two branches of the tube's contact meet and exchange the meridian's halves, and each
+    // tube's sheet, read over the angle round the axis and the roll, blows its point up into the
+    // whole meridian — no net over `(u, t)` holds it (brep-bench's crossed tumbling tori, the fit
+    // refining toward the instant without end). Read before anything is fitted; `Curved` at the
+    // meridian's outer point at that instant
+    if let Some(&(t,theta,k)) = ring.touched_once(path,[a,b])?.first() {
+        return Err(Unbuilt::Curved {at:path.pose(t)?.point(ring.meridian_point(theta,k))})
+    }
     // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
     // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
     // own, its rows half the roll's grain clear of the cuts (where the pair has no width; the two rows
