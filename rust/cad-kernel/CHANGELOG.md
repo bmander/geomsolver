@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
+  `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
+  the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
+  minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
+  seeded from the boundary, the caller and a halving search that proves cells free or monotone where
+  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not.
+
 - **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
   `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
   by search misses an arc between the two points where they touch. A given curve a face holds as
