@@ -894,8 +894,11 @@ face was asked first for its surface: a foot's pad leaning `1e-7` rad about its 
 first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
 the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
 two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
-come within `ON_CURVE` tolerances (`query::crossings_in` reads `curve_curve`'s closed forms so, as
-it keeps a carrier's roots), so an edge of a face leaning within the reach crosses the edges of the
+come within `ON_CURVE` tolerances, inside both stretches by as much (`query::crossings_in`:
+`curve_curve`'s closed forms read at that reach in every test they make, each a test of two curves
+coming within it of one another; two cuts of screwed sheets and a carrier's roots kept on the other
+curve within it, inside its stretch by it, the carrier's roots and whether two sheets, screws or
+planes are one read to the tolerance), so an edge of a face leaning within the reach crosses the edges of the
 face it lies on, where read to the tolerance it lay across the face as a slit; a vertex standing on
 an edge within the reach of its end is that end, the two made one in step 3b (`tolerant::at_end`,
 `collapsed`), where it was neither cut at nor joined and one point was two vertices; and the box a

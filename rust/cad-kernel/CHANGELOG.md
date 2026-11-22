@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two curves on one surface cross within the reach in every reading of `query::crossings_in`**
+  (#994): `curve_curve` is read at the reach in every test it makes (its doc says each is a test
+  of two curves coming within it of one another); two cuts of screwed sheets and a carrier's
+  roots are kept where they lie within the reach of the other curve inside its stretch by as
+  much, where the stretch was read by the tolerance; whether two sheets, screws or planes are
+  one, and a carrier's roots, are still read to the tolerance.
+
 - **Two surfaces resting on one another at a point, their least distance in closed form, are
   known to meet there alone** (#994): `ssi::meeting_resting`, new, is `intersect` with the point
   `apart` finds them resting at, which `meeting::Shared::known` gives as their meeting (no curve
