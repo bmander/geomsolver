@@ -36,6 +36,13 @@ pub(super) fn solids(
     }
     faces(sk, res, map, body, skip, probes, diags);
     build_solids(sk, res, map, body, skip, probes, diags);
+    // solids named whole kept within sets that read no face — the hull in water — are the body over
+    // those solids, kept in common with a region of the rest (#953), that region pushed past every
+    // solid the document declares: never between two of them, where every solid declared after
+    // would stand one further on than the terms already read of it say (#993's review, D1)
+    for i in 0..sk.solids.len() {
+        crate::solid::defined::trimmed(sk, i);
+    }
     body_rule(sk, res, map, body, skip, diags);
     layers(sk, map, diags);
     derived(sk, res, map, body, skip, diags);
@@ -120,19 +127,9 @@ fn build_solids(
         match build_solid(sk, res, d, st, probes, diags) {
             Some(i) => {
                 let e = EntRef::solid(i);
-                // the solids declared after it stand where the solids built so far end: a solid
-                // that made more than itself (a body kept within a half-space makes the
-                // half-space's region past itself, `defined::trimmed`, #953) puts them as many
-                // further on, one refused before it one nearer — so a second body kept within
-                // the water is not read as the first's region
-                if let Some(was) = res.of.get(&name).copied().filter(|w| w.kind == EntKind::Solid) {
-                    let by = sk.solids.len() as i64 - (was.idx as i64 + 1);
-                    for x in res.of.values_mut() {
-                        if x.kind == EntKind::Solid && x.idx > was.idx {
-                            x.idx = (x.idx as i64 + by) as u32;
-                        }
-                    }
-                }
+                // where phase 1 put it: a solid makes nothing past itself while the solids are
+                // built (a body kept within a half-space pushes its region once all are,
+                // `solids`), and one refused before it shifted the resolver (`res_forget`)
                 res.of.insert(name.clone(), e);
                 map.bind(&name, e, d.name.named());
                 // a given body (#993 stage 2) is no statement's: the document's `use` names it

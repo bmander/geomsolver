@@ -94,7 +94,9 @@ fn boolean(terms: &[RegionTerm]) -> Option<SolidDef> {
 /// over those solids, kept in common with a region of the other terms, which is pushed as a solid
 /// of the same name (as `Sketch::as_body` pushes a sweep's own stock), so its faces are named from
 /// it with no step of their own: the hull's `immersed.low`, the waterplane's `immersed.water`.
-/// The region alone may be unbounded — a half-space is — and is bounded by the material it is
+/// It is pushed past the last solid, so the elaborator asks this once every solid the document
+/// declares is built: between two, it would move every solid after it one on from where the
+/// terms already read of them say they stand.  The region alone may be unbounded — a half-space is — and is bounded by the material it is
 /// kept with (`kept_half`), as a prism through everything is by what it is cut from.  `false`,
 /// leaving `i` as it is, for any other set.
 pub fn trimmed(sk: &mut Sketch, i: usize) -> bool {

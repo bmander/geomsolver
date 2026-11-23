@@ -389,17 +389,22 @@ placement carries inside the blank; CLI test readers zero the offset.
   what it cuts — two bodies at different heights, a copy through its own — the retired labels naming the set), and `tests/extrude.rs`'s
   `a_family_saying_a_prism_is_resized_by_its_set` the gestures'.
 - **A body kept within half-spaces is the body in common with them** (#953, [0.221],
-  `solid::defined::trimmed`, called from `program/solids/build.rs` once the solid is made).  A
+  `solid::defined::trimmed`, called from `program/solids.rs` once every solid is built).  A
   region whose terms keep it within one solid named whole or more (`p in hull`), outside any
   others named whole, and within terms that read no face — `p in water`, `water :=
   std.sets.HalfSpace(keel, std.z, d: T)` — is the body over those solids, kept in common with a
   region of the other terms pushed as a solid **of the same name** (as `Sketch::as_body` pushes a
   sweep's own stock), so its faces are named from it with no step of their own: the hull's
-  `immersed.hull.side`, the waterplane's `immersed.water`.  That region is pushed past the body,
-  so every solid declared after it stands one further on than the names were counted to: as each
-  solid is built its name takes it and the later ones follow (`solids::build_solids`), so a
-  second body kept within the water is read as itself, not as the first's region
-  (`tests/hydrostatics.rs`, `two_bodies_kept_within_the_water_are_two`).  Through 0.220 such a region was read
+  `immersed.hull.side`, the waterplane's `immersed.water`.  That region is pushed past **every**
+  solid the document declares, once all are built, never between two: every solid declared after
+  the body then stands where phase 1 counted it, so a second body kept within the water is read as
+  itself, not as the first's region (`tests/hydrostatics.rs`,
+  `two_bodies_kept_within_the_water_are_two`), and a later region's terms — read before any solid
+  was built — name the solid they were read of: a cap of a ball declared after a body kept above a
+  plane is that ball's cap, not the plane's half-space within a box (#993's review, D1,
+  `tests/region_solids.rs`, `a_body_kept_within_a_half_space_moves_no_later_solid`; through
+  0.230 the region was pushed between them, the resolver's names shifted past it and the terms
+  already read were not).  Through 0.220 such a region was read
   by the field alone and no exact construction made of it, so nothing could measure it.  A region
   of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read
   with none (`region::general`, never folded about an axis, where it would be refused for having
