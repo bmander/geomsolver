@@ -2600,6 +2600,39 @@ fn folds_between(s: &Surface,p: V,q: V) -> bool {
     })
 }
 
+/// EXPERIMENT (#880 T1f): the points one seed's marches have passed, on a grid of cells the
+/// march's greatest step `h0` wide (each step no longer, so a point within a step of another is in
+/// its cell or one beside it), each with its arc from the seed and the half (the way) it was
+/// marched in.
+struct Met { cell: f64,grid: std::collections::BTreeMap<[i64;3],Vec<(V,f64,usize)>> }
+
+impl Met {
+    fn new(h0: f64) -> Met { Met {cell:h0,grid:std::collections::BTreeMap::new()} }
+    fn key(&self,p: V) -> [i64;3] { p.map(|x| (x/self.cell).floor() as i64) }
+    fn add(&mut self,p: V,arc: f64,half: usize) {
+        let k = self.key(p);
+        self.grid.entry(k).or_default().push((p,arc,half))
+    }
+    /// The nearest point passed within `h` of `q`, a step of length `h` at arc `along` in `half`:
+    /// not one within two steps of the seed along its own march (the start, which closure reads),
+    /// nor, on this march, one within two steps of `q` behind it — the march turns no more than a
+    /// few degrees a step, so on a regular curve every point more than two steps behind stands
+    /// more than a step off.
+    fn meets(&self,q: V,h: f64,along: f64,half: usize,h0: f64) -> Option<V> {
+        let [i,j,k] = self.key(q);
+        let mut best: Option<(f64,V)> = None;
+        for di in -1..=1 { for dj in -1..=1 { for dk in -1..=1 {
+            let Some(cell) = self.grid.get(&[i+di,j+dj,k+dk]) else { continue };
+            for &(x,arc,m) in cell {
+                if arc < 2.*h0 || (m == half && along-arc <= 2.*h) { continue }
+                let d = distance(x,q);
+                if d <= h && best.is_none_or(|(e,_)| d < e) { best = Some((d,x)) }
+            }
+        }}}
+        best.map(|(_,x)| x)
+    }
+}
+
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
@@ -2686,7 +2719,11 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
         }
         let mut halves: Vec<Vec<V>> = Vec::new();
         let mut closed = false;
-        for sense in [1.,-1.] {
+        // EXPERIMENT (#880 T1f): this seed's points, both ways, hashed on a grid of the march's own
+        // greatest step, each with its arc from the seed and the way it was marched
+        let mut met = Met::new(h0);
+        met.add(p0,0.,0);
+        for (half,sense) in [1.,-1.].into_iter().enumerate() {
             // from a touch, one way only: out along its half-branch
             if leaving.is_some() && sense < 0. { halves.push(vec![p0]); continue }
             let mut pts = vec![p0];
@@ -2694,6 +2731,7 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
             // (a seed where the two touch has no tangent to march along: refused as nearly touching)
             let mut t = match leaving { Some(d) => d,None => match tangent(p0) { Some(t) => scale(t,sense),None => return Err(shallow(p0)) } };
             let mut h = h0;
+            let mut arc = 0.;
             // a march from a touch steps out along its branch before it reads the meeting's tangent
             if leaving.is_some() {
                 let mut r = h0;
@@ -2704,6 +2742,8 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                 };
                 let Some(tq) = tangent(first) else { return Err(shallow(first)) };
                 pts.push(first);
+                arc = distance(p0,first);
+                met.add(first,arc,half);
                 p = first;
                 t = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
             }
@@ -2821,7 +2861,23 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                         break
                     }
                 }
+                // EXPERIMENT (#880 T1f): **a march ends where it meets itself.** A regular meeting
+                // curve is simple, so a step landing within its own length of a point this seed's
+                // marches passed before — not the points just behind it, nor the seed's own start,
+                // which closure reads — has come back on itself: through a singular point of a
+                // sheet's parametrization (a fitted net's stand-in, where its feet leap between
+                // preimages and the march goes round a loop back to it) or a self-crossing. The march
+                // ends at that earlier point; what lies beyond is another march's
+                let along = arc+distance(p,q);
+                if let Some(x) = met.meets(q,h,along,half,h0) {
+                    if super::debug() { eprintln!("brep:   a march met itself after {} points at {x:?}",pts.len()) }
+                    drop_crowding(&mut pts,x,0.25*h0,tol);
+                    if distance(x,*pts.last().unwrap()) > tol { pts.push(x) }
+                    break
+                }
                 pts.push(q);
+                arc = along;
+                met.add(q,arc,half);
                 if !inside(q,h) { break }
                 p = q;
                 t = tq;

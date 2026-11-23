@@ -1099,6 +1099,66 @@ fn a_trace_ends_at_a_fold_of_its_sheet() {
 }
 
 #[test]
+fn a_trace_ends_where_it_meets_itself() {
+    // EXPERIMENT (#880 T1f): the net `(s³, t³, st)`, `s, t` over [−1, 1] — `S_u × S_v` vanishing at
+    // its middle alone, an isolated singular point of its parametrization where the sheet itself
+    // comes to a point — cut by the plane `x + 0.1 y + 0.2 z = 0` through that point, which meets
+    // it in a curve through the point twice. Marched from either side, the march came back to the
+    // point and ran on through it (one closed curve through it twice, 111 points); it ends there,
+    // the first time it comes within its own step of a point it passed, each piece open and one
+    // end at the singular point
+    use gcs_core::brep::geom::Surface;
+    let f = |u: f64,v: f64| { let (s,t) = (2.*u-1.,2.*v-1.); [s*s*s,t*t*t,s*t] };
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,8,8,1e-12).unwrap();
+    let sheet = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let n = 1.05f64.sqrt();
+    let plane = Surface::Plane(Frame::about([0.;3],[1./n,0.1/n,0.2/n]));
+    let tol = 1e-6;
+    for seeds in [vec![f(0.5,0.8)],vec![f(0.5,0.8),f(0.2,0.2),f(0.9,0.3)]] {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&seeds,[-6.;3],[6.;3],tol).unwrap();
+        assert!(!curves.is_empty() && curves.len() <= 2,"{} curves",curves.len());
+        for c in &curves {
+            let span = span(c);
+            let (a,z) = (c.point(span[0]),c.point(span[1]));
+            assert!(gcs_core::space::distance(a,z) > 0.1,"a closed curve, through the singular point twice");
+            // an end at the point, to within the step it came back within (the march's first, a
+            // twelfth of the sheet's least feature at most)
+            let near = gcs_core::space::norm(a).min(gcs_core::space::norm(z));
+            assert!(near <= 0.02,"no end at the singular point: ends {a:?}, {z:?}");
+        }
+    }
+}
+
+#[test]
+fn a_figure_eight_is_traced_whole_ending_at_its_crossing() {
+    // EXPERIMENT (#880 T1f), beside the march's ending where it meets itself: Viviani's figure
+    // eight, a ball of radius 2 and a cylinder of radius 1 through its centre, tangent at (2, 0, 0)
+    // and meeting in two loops crossing there. Each loop is traced, ending at the crossing, and
+    // together they are the whole meeting: `(1 + cos θ, sin θ, 2 sin(θ/2))` over θ in [0, 4π]
+    use gcs_core::brep::geom::Surface;
+    let ball = Surface::Sphere(Frame::WORLD,2.);
+    let cylinder = Surface::Cylinder(Frame::about([1.,0.,0.],[0.,0.,1.]),1.);
+    let tol = 1e-7;
+    let at = |th: f64| [1.+th.cos(),th.sin(),2.*(th/2.).sin()];
+    let crossing = [2.,0.,0.];
+    for seeds in [vec![at(std::f64::consts::PI)],vec![at(1.),at(3.*std::f64::consts::PI),at(5.)]] {
+        let curves = gcs_core::brep::ssi::trace(&ball,&cylinder,&seeds,[-3.;3],[3.;3],tol).unwrap();
+        assert_eq!(curves.len(),2,"{seeds:?}");
+        for c in &curves {
+            let span = span(c);
+            for x in [span[0],span[1]] {
+                assert!(gcs_core::space::distance(c.point(x),crossing) <= 16.*tol,"an end at {:?}",c.point(x));
+            }
+        }
+        for k in 0..400 {
+            let p = at(4.*std::f64::consts::PI*k as f64/400.);
+            let off = curves.iter().map(|c| gcs_core::space::distance(c.point(c.inverse(p)),p)).fold(f64::MAX,f64::min);
+            assert!(off <= 1e-5,"{k}: {p:?} {off:e} off the meeting traced");
+        }
+    }
+}
+
+#[test]
 fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
     use gcs_core::brep::geom::Surface;
     // a curved sheet over [0, 10] × [0, 10], cut by the plane x = 4: the meeting runs from the sheet's
