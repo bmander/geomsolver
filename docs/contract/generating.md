@@ -2535,6 +2535,493 @@ entered it (below); any other tool keeps K2's
 refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
 its two meridians square to the motion touched whole, is `Curved` so).
 
+**A meridian touched whole for an instant, refused by name** (#880 T1f, `Ring::touched_once`):
+on an arc the contact's two branches are `ψ = atan2(∓A, ±B)`, each one continuous function of the
+angle round the axis and the roll wherever `A` and `B` are not both nought. Where they are, at one
+angle `θ*` and one roll `t*`, the instant touches that meridian all round; on the contact surface
+`A cos ψ + B sin ψ = 0` in `(θ, ψ, t)` the roll has two saddles at once, on that meridian half a
+turn apart (forced: the surface is odd under `ψ → ψ + π`), and the two branches meet there and
+exchange the meridian's halves — before it one tube's contact runs along one half and the other's
+along the other, after it the other way about — no curve's kinds changing, so `changes` does not
+see it. Over the angle and the roll each tube's sheet blows its point up into the whole meridian,
+and no net over `(u, t)` holds it: brep-bench's crossed tumbling tori (`swept/tumbling-torus-crossed-
+forward` at `t*` 1.3264280599, `θ*` 5.97116466; `-reverse` at 0.9003349192, 2.10298891) refined
+the fit toward the instant without end. Found exactly — `A` vanishes at two angles, each followed
+along the roll by continuity, and `B` there, as a part of the terms' scale, read at `SHAPE_LOOKS`
+rolls and halved to the rounding where it changes sign clearly beyond `HALF_READ` (a meridian
+touched whole at every instant reads `B` nought throughout and has none) — and refused before
+anything is fitted, `Curved` at the meridian's outer point (`closed::ring`'s road and `admits`).
+The meridian's touching half is the sweep's boundary (`depth::cover` reads it `Alone`), each branch
+arriving on it touching on one side of `θ*` and leaving buried on the other (`s''` ±0.611 forward,
+±0.470 reverse), a fold through the instant on each tube
+(`swept_rings::a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name`).
+**Not yet**: the instant built — the roll cut there, the cut's row four arcs (each tube's curve
+and the meridian's two halves) meeting at the two saddles, the tubes' faces beside it read over a
+chart the saddle does not blow up, and the fold and the double curve that run through it. **A
+contact is followed from angle to angle by its label first** (`Ring::instant`): on an arc each
+label holds one root at an angle, continuous where `A` and `B` are not both nought, so a contact
+keeping its label is the same one, and its place round the meridian decides only where the label
+changes. Followed by its place alone, the crossed tori's contact beside such a meridian — `ψ`
+turning half a turn within a 256th of a turn of the angle — was taken for the other branch and the
+instant refused (forward at 1.32689, reverse at 0.47042: the bench's `Curved` before the road
+began), or read as one curve round twice; the reverse's near miss (`B` within 7e-4 of the scale
+over 0.44–0.52, never through nought) reads the same changes with the observer's origin moved by an
+ulp or a millionth (`swept_rings::the_crossed_tori_are_read_at_every_roll_by_their_contacts_labels`,
+slow tier). The cases already built read alike: none touches a meridian whole for an instant. **Not
+built either side of the instant yet**: the forward is built over the roll up to 72° (40 faces,
+checked at the call's tolerance) and refused `Folded` at 74.5°, its rows 0.026 short of the instant
+already bending too sharply; the reverse is refused before its near miss and before its first fold
+pair is born (`Wrong` at a roll's end of 5°, a face's boundary through its own point at 6.5°,
+`Folded` from 24°), refusals of the trim and the arrangement of their own: the meridian touched
+whole (0.9003) lies outside those rolls. At 5° (one stretch, each tube in four faces, 12 s) the
+arrangement finds three cells and keeps only the start pose's torus (a cell of 5 faces); the cell of
+37 faces the tubes bound is classified out, and the judge's witness (2.4408, −1.0338, 2.1265) lies
+0.058 deep in the sweep (the tool at roll −0.0707 holds it) and 2.95 from the solid kept.
+**The collar about a meridian touched whole for an instant** (#880 T1f, `rings::Collar`): where the
+Jacobian of `(A, B)` by `(θ, t)` is regular at the instant (forward det −1.06, reverse 0.37),
+`(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` is solved for `(θ, t)` by Newton's method given `(ψ, ρ)` and the
+contact there is the arc's point at `ψ`: one smooth annulus holding both tubes and the meridian about
+the instant (`ρ > 0` the branch `atan2(−A, B)`, `ρ < 0` the other, `ρ = 0` the meridian at `t*`, each
+place `(θ, t)` met once from either branch, its `ψ` turning once round as the place goes round the
+instant). It is cadrs's pinch chart (`pinch_at`). S, the surface the ring's core circle sweeps, is
+singular there (`S_t = μ S_θ`, μ 1.929 and 1.122) and a Whitney umbrella (`det(S_θ, g_uv, g_vv)` over
+its norms −0.278 and 0.412, its double line leaving the pinch toward a saddle's `ψ`). **Measured on it
+(`ring_profile collar`, and independently by the least over the roll of the core circle's
+closed-form distance), the boundary is one strip across the meridian**: on the meridian the arc
+between `ψ` 257.127° and 72.883° forward (175.333° to 337.210° reverse) where the far cover passes the
+tolerance below nought; each end a double curve's preimage crossing the meridian square-on, its `ψ`
+within a degree over `|ρ| ≤ 0.4`, covered beyond by an instant 0.06–0.4 of the roll away, the fold
+following it 2e-3 to 4e-3 further on and buried. Each double curve's two preimages are both on the
+collar, one curve through a swallowtail point off the meridian, where its partner's instant passes
+its own (forward `ρ` ≈ +0.07 and +0.09, the roll ≈ t* ± 0.03; reverse ≈ −0.22 and −0.135), the fold
+tangent to it there alone. So nothing of the boundary's structure stands at the event: the
+meridian's touching half, the two saddles and the instant lie inside one smooth piece of the collar,
+and the "fold and double curve through `(θ*, t*)`" a tube's `(θ, t)` shows are these two curves
+crossing the meridian, which that chart blows down to the point
+(`swept_rings::the_collar_about_a_meridian_touched_whole_charts_both_tubes_and_holds_one_strip_of_boundary`).
+**The face structure it asks** (not yet built): the collar a candidate sheet over
+`(ψ, ρ) ∈ [0, 2π) × [−ρ₀, ρ₀]`, `ρ₀` clear of the swallowtail points, its rims `ρ = ±ρ₀` closed
+curves inside one stretch's tubes, holes in them; the strip cut from it by its two double curves,
+each laid as a swallowtail's is and running out across the rims into the tubes' own; vertices at
+those crossings and at the swallowtail points; the meridian no edge.
+**The tubes fitted through the instant with a hole** (#880 T1f, `rings::Hole`,
+`closed::ring_fitted_holed`; not yet the road's, which refuses the instant by name until the collar
+fills the hole): the roll is cut at `t*` — the pieces' kinds do not change there, but the bridges'
+ends, read from the sign of `s''` along the curve, which the branches exchange, jump across it (tube
+`−`'s bridge [5.4478, 6.3607] → [5.6925, 5.9700], tube `+`'s touching end 5.9723 → 5.5436, forward)
+— and each tube's net over `(u, t)` is fitted over its whole rectangle, read inside the hole
+`|(A, B)| < ρ₀` about the instant (its reach the rim's box doubled, so a near miss elsewhere is no
+hole) as its stand-in `c + r (B, −A)/h(ρ)`, `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)`, `β(s) = e^(1 − 1/(1 − s²))`:
+smooth through the instant, the contact itself from `ρ₀/2` out, so the net fits the very sheet
+across the rim the trim is to cut it along; its folds are not read in the hole. **A pair's end
+through the swing**: at the instant `s''` is odd about the meridian (±0.611 forward), and tube
+`+`'s pair has its least 0.044 of a turn past the meridian at a depth (0.614) all but that `s''`
+beside it, so its end, where `s''` climbs back to the depth, was found from roll to roll at the
+swing (5.9719) or along the flat stretch beside it (5.9282, 5.9025), and the fit refined to 1e-11
+of the roll there. Within the hole an end is pulled onto the swing — the row's least `|(A, B)|`
+(`Hole::least`), one smooth line through the instant — by the smooth step's weight: wholly over the
+hole's inner half and nothing at its rim, wholly where it stands beyond the swing from the least and
+nothing from halfway to the least on, and only where the least stands clear of the swing by twice
+its width (tube `−`'s least lies in the swing, and its ends are its own); no decision on a
+threshold, each weight `C^∞`. **A pair born or vanishing at a cut is read unborn up to its
+swallowtail point before the stretch is fitted** (`rings::pairs_over`, on a road with a hole): at
+the cut the pair has no width and the sheet goes as the square root of the roll from it, so the
+stretch beside the cut fits only by luck — the forward's `Folded` at a roll's end of 74.5° was tube
+`+`'s pair born at 1.2240, its rows refined to a millionth of the roll and flipped there, not the
+instant. Its point is the earliest (latest) on the curve whose pairs change in number, matched by
+the curve's labels, the pair dropped by its label (`Apex::label`): forward tube `+`'s at (6.0508,
+1.28159), `ρ` 0.087, and (5.9103, 1.35616), `ρ` 0.071 — the predecessor's two. In a stretch with a
+hole the gauge is read at the fit's first rows and not at a fold in the hole: tube `−`'s fold runs
+into the instant, and its change of sign 2.3e-4 short of it hid tube `+`'s point between the
+stretch's ends. **Measured, ρ₀ = 0.03 forward**: fitted from −100° through 1.28159 to `t*` (the
+stretch holding tube `+`'s pair from its swallowtail point 219 rows); refused `Folded` in
+[`t*`, 1.38326] at its last rows: tube `−`'s pair vanishing at 1.3833 has no swallowtail point
+outside the hole in that stretch — its fold is the one through the instant — so nothing yet reads it
+unborn toward the cut. Not yet: that, `ρ₀`'s rule, the rim as a chord and the hole's piece dropped
+by construction, the collar's net and its trim.
+
+**The tube road: a torus's sweep as the offset of its core circle's sweep** (#880 T1f,
+`swept::tube`; it builds every ring case the old road builds, not yet called by `closed::ring`): a
+torus is the set of points within its tube `r` of its core circle, so its sweep's boundary lies on
+the offset at `r` of the surface `S(θ, t)` the circle sweeps, its two sheets `X± = S ± r N`
+(`Tube::point`, `S`'s rates in closed form but `S_tt`, one central difference) each one map over
+the whole rectangle wherever `S` is regular, plus the end poses' tori (`Chart::End`, over `(θ,
+ψ)`). A sheet's fold is a cuspidal edge of the map, the zero set of its Jacobian against the
+spine's `J = 1 − 2rH + r²K`
+(`tube::edges`, its metric the spine's), and `J`'s sign is the far cover's: `J ≤ 0` is `Near`
+(the half turn, every point of a 32 × 15 grid on both sheets,
+`swept_tube::the_half_turns_sheets_are_maps_with_one_cuspidal_edge_and_the_ring_roads_swallowtail_point`).
+An end pose's own edge is its contact circles, where `n · v` passes nought (`Tube::side`). The
+swallowtail points are where the sheet's kernel runs along its cuspidal edge (`tube::swallowtails`,
+Newton on `(J, ∇J · k)`): the half turn's one, on the sheet `−`, is the ring road's apex to 1e-6.
+**Measured on the half turn** (`tube_profile half-turn`): each sheet fitted as a map by
+`nurbs::fit_net` (quintic, no fold check) to 6.3e-8 against a bar of 3.2e-7, 257 × 65 poles, in
+0.15 s; the sheet `+` has no cuspidal edge, the sheet `−` one, a sliver from the roll's end across
+`θ ≡ 0` (from `θ` 6.2518 to 0.1386 at `t = b`, down to 1.4839 at the swallowtail point
+(0.0656162, 1.4839292)); each end pose's contact circles traced in 0.3 s. The far cover's depth
+over a chart (`tube::Depth`, `tube::seams`) is traced by `zero_set::trace` over the rectangle cut in
+two across each whole turn (`tube::round`: the search halves a cell across its longer way read
+between its sides' ends, and over a whole turn those are one point, so it halved one way only and
+never settled; `zero_set` now halves such a cell across the turn, below). Its bound reads the cell's
+middle alone: each instant's depth is 1-Lipschitz in space, so where the same basins of the roll
+cover the cell the far cover's depth lies within the cell's reach of its middle's — one certified
+cover a cell where nine were read, the half turn's sheet `−` traced in 13.6 s, not 32.7, and the
+half turn built in 19 s, not 39. Where nothing else covers the middle (`Alone`) the nine are read
+and a cell whose nine are all `Alone` is read clear: sampled evidence, not proof. **What the
+trim's completeness is:** a curve through a point found exactly — a swallowtail point (its disc's
+rim), a crossing of a rim or a cut, a corner, an end pose's contact circle — is certain; a closed
+double curve touching none of them is found where the search does not clear its cell, so one born
+and dying in a region nothing else covers, between a cell's nine points, is missed, and one in a
+covered region is found wherever its basins hold over the cell. What remains of the time is the
+march: `zero_set` reads the certified least at each step and chord's quarters (a third instant
+undercutting the branch, a triple point), and `depth::cover`'s certified march creeps where the far
+depth is near nought — all along a seam — its steps the larger of the depth and the tolerance over
+the point's speed (some 2.7 ms a cover on the sheet `−`, 0.36 ms on the sheet `+`). Not yet: the
+least read only at checkpoints with a switch bisected where one is found, or a second-order step
+(the depth's rate in the roll bounded) in the cover's march. **`zero_set`'s whole turn** (#880 T1f):
+a cell's longer way is read along its path through its middle (both half-chords), so a cell spanning
+a whole turn, whose sides' ends are one point, is halved across it
+(`zero_set::a_cell_spanning_a_whole_turn_is_halved_across_it`, a loop on a cylinder: without it
+the search never settles); `tube::round`'s halves stay, for its seeds across the cuts. `Depth::along`, continuing a cover held at an end of the
+roll, reads that end too: past the point's own contact `d` is no single basin over the stretch, and
+the golden section settled on the climb, 7e-6 off. A piece leaving one part across a cut seeds
+the part beside it (`round`): beside a seam the far cover may be read on one side only, so the cut's
+own sign changes missed both curves' continuations across `θ ≡ 0`. **About a swallowtail point a
+disc** (`tube::disc`, `Disc`) is cut from the depth's domain, its rim an inner edge, its radius (in
+the spine's metric) halved from the feature until every far cover read on its rim is within the
+tolerance: there the far cover is all but invisible (points read `Alone`, the few `Far` covered
+1e-9 deep), the double curve ends tangent to the cuspidal edge where the sheet's metric is singular,
+and the march stalled 5e-4 from the point. Measured (`tube_profile half-turn … trace`, gated in the
+slow tier by `swept_tube::the_half_turns_seams_are_traced_from_the_depth_on_every_chart`): no seam
+on the sheet `+` nor on the start pose; on the sheet `−` a disc of 0.01 and the double curve's two
+preimages, one from the disc's rim across `θ ≡ 0` (at `t` 1.52384) to the roll's end at `θ`
+6.22418, covered at τ 1.4626–1.4726, the other from the disc's rim to (0.13929, 1.56981), its cover
+passing to the end pose; on the end pose one seam from its contact circle at `θ` 6.22420 across
+`θ ≡ 0` to its contact circle at 0.13633. The two charts' crossings of their shared rim are one
+crossing read twice, 1.64e-5 apart (five tolerances: the end pose touches the sheet along that rim,
+so a crossing of it is ill-conditioned along it) — such a vertex is to be found once, on the rim.
+**The faces sewn** (`tube::faces::solid`): each sheet's zero set is read as runs by what covers
+it — a double curve of the sheets is traced on both its preimages and kept on the later one (its
+own instant past its cover's), its partner read off the cover and settled on the sheet; a double
+curve with an end pose is traced on the sheet alone, the end pose's seam its image — and every end
+of a run is an event found once, one vertex of everything meeting there: a **rim crossing**,
+solved on the rim as the root along it of the far cover's depth (one curve read in two charts:
+`Tube::on_end` gives the end pose's place in closed form), its partner on the covering instant the
+**switch** where the partner preimage's cover passes to the end pose; a **swallowtail point**, the
+run joined to it from its disc's rim along the normal form by the ring road's rule
+(`rings::joined_by_normal_form`, lifted out of `rings::joined`, which calls it); a **corner**, where
+the cuspidal edge reaches the roll's end (`Tube::corner`, `J`'s root along the rim, (0.1386336,
+`b`) on the half turn), the run joined to it straight in the sheet's parameters, every point of the
+join within the tolerance of the end pose (about it every far cover is within the rounding, and the
+trace stops short). Each run and join is fitted as a curve with both pcurves on one parameter, a
+traced run's points settled on the double curve (`X₁(u₁) = X₂(u₂)`), the joins held to the
+tolerance alone on their partner. The charts are cut across their angle at two angles clear of
+every trim (the windows) and from each swallowtail point to the rim it opens away from (so no face
+meets itself along its double curve); each window is walked as a planar graph whose nodes are a
+vertex at each of its places on the chart (a double curve's point has two on one sheet), and each
+part kept where its inner point bounds the sweep; a sheet's face lies on a net fitted over its
+window, an end pose's on its torus; sewn by `sew::sewn`. **The half turn builds**: 9 faces, `check`
+at the call's tolerance, volume 12.2377154879 against the old road's 12.2377154283 (4.9e-9 of
+itself), its mesh's volume within its bar, and 19 119 of 20 000 seeded points read clear of the
+boundary each a member of the solid exactly where the depth is below nought, in some 40 s, nearly
+all of it the sheet `−`'s trace (`swept_tube::the_half_turn_builds_by_the_tube_road`, slow tier).
+**Each edge's bar:** a traced run, a rim and a cut are fitted to a tenth of the tolerance on both
+their charts (their curve within it of each chart's point through its pcurve); a join's partner
+pcurve is held to the tolerance itself. That is sound because the join is what the two charts agree
+to only to the tolerance: inside a swallowtail point's disc every far cover is within the tolerance
+(the disc's own definition), so the double curve's two leaves stand within it of one another and
+no reading places the curve closer; the corner's join is checked within the tolerance of the end
+pose at every chord's point and middle. The sewing measures each edge's gap as its tolerance, and
+`check` allows it. On the half turn the normal-form join reads 2.29e-6 (of 3.2e-6), the corner's
+straight join 7.0e-9, the windows' cuts 1.06e-7 (the nets' fit), every other edge under 6.1e-8;
+`Brep::misfits` lists nothing at the call's tolerance nor at the size's (`geom::tolerance`, 7.9e-9
+over its diagonal): each edge's own measured tolerance is what `check` holds it to.
+**The two end poses' meeting** is the depth's zero set on the start pose where the cover is
+the end pose, as every other seam — `seams` on `Chart::End(0)` reads it, the certified cover
+marching the whole roll to its far end — read as trims between the poses (below, `faces::met`).
+`closed::ring` calls the old road, and the tube road where the old refuses a meridian touched whole for an instant (below, the crossed pair). **The next cases, as checks:** the crossed reverse
+member with its roll's end at 5° (no pinch; the old road misclassifies a cell and refuses `Wrong`)
+builds in 0.4 s — 8 faces, `check`, volume 1.5608532821, no volume known apart, held to its mesh and
+to membership by the depth at 18 988 of 20 000 points
+(`swept_tube::the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road`). The 80° torus,
+the thin and the full turn are not yet built in a time worth a road: the 80° torus's sheet `−` has
+fold pairs running the whole roll and no swallowtail point, and its depth's trace had not ended in
+twenty minutes; the full turn's sheet `+` alone asked 57 000 sampled cells of its edges' search
+(8 s) before its depth's; the thin's edges had not ended — each the cover's creeping march
+and the march's least at every step (above).
+**The tube's own cover** (#880 T1f, `swept::tube::cover`, `Tube::cover`): at the roll `τ` a
+point stands at `q(τ) = M(τ)⁻¹ x` in the tool's frame and the torus's depth there is
+`d = g(q) − r`, `g` the distance from the core circle, so `d'' = ∇g · q'' + q'ᵀ H q'` and, `H`'s
+eigenvalues in the ring's cylindrical frame being `0`, `1/g` and `g_ρ/ρ`,
+`|d''| ≤ A + V² max(1/g, 1/ρ)` — `V` and `A` the motion's bounds on `q`'s speed and acceleration
+(`Trajectory::point_jet_bound_over`: a constant twist's `|ratio|ᵏ ρ`, a relative motion's by
+Leibniz's rule through its second node's spin, `spin_bound`; gated by
+`swept_tube::the_motions_rate_bounds_hold`), `g` and `ρ` their least over the stretch read, the
+speed local (`|q'| + A w`). The point's own contact is marched to its top by steps over which the
+bound keeps `d` above the greatest read less the tolerance (the steps no feature size caps), the
+least past each top found best-first over halved stretches, each floored by
+`d(m) − |d'(m)| w − M w²/2` or the Lipschitz floor, until every floor stands within the tolerance
+of the least read, then settled by the secant (Illinois) on `d'` in closed form. It reads as
+`depth::cover` does to the tolerance (`swept_tube::the_tubes_cover_reads_as_the_depths`), but where
+the sampled march stepped over a fall past the own contact's top it reads the far cover (above
+nought) the march read `Alone`; some 80 reads and 40 µs a cover against 0.5 ms (2.7 ms along a
+seam). Where the motion gives no bound (a pace, a path evaluated) `depth::cover` is read.
+**The charts' sides proved over cells** (`Tube::jacobian_bound`, `Tube::contact_bound`, the bounds
+of `tube::edges`'s search, gated by `swept_tube::the_charts_sides_are_bounded_over_cells`): on a
+sheet `J = det Q / w⁴`, `Q = w I − s r II'` (`n = S_θ × S_t`, `w = |n|`, `II'` read against `n`),
+read at the cell's middle in the parameters scaled by `diag(1/R, 1/|S_t|)`; each entry's move over
+the cell is bounded by its rates from the circle's (`Tube::rates`: `|S_θ…| = R`, `|S_θt| ≤ ΩR`,
+`|S_θtt| ≤ Ω²R`, `|S_t|, |S_tt|, |S_ttt|` the circle's speed, acceleration and jerk, each from the
+middle's own), and `Q`'s eigenvalues by that move's Frobenius norm (Weyl): definite proves `J > 0`,
+indefinite `J < 0`; or, where the tube is thin beside the spine's bending, `λ_min(I) ≥ W/(E + G)`
+standing above `r |II'|/w`. The middle's `S_tt`, a central difference, is off by its truncation
+`h² J₄/6` and its rounding, both counted. An end pose's side `± n · v` moves by at most
+`(|v| + Ω(R + r)) Δθ + (|v| + Ω r) Δψ`. What no bound proves is sampled as before. **Measured**
+(`tube_profile … build`): the half turn builds in 3.9 s where it took 28 s (on this machine; 19 s
+on the last), 9 faces, volume 12.2377154879 to the digit, its edges' search 0.7 and 1.9 s where it
+sampled 29 000 cells a sheet for 3 and 4.5 s; the 80° torus (`tumbling(80)`) builds in 2.2 s,
+8 faces, volume 10.9393141712 against the old road's 10.9393141414 (2.7e-9 of itself).
+**Read beyond the half turn** (each change keeping it at 12.2377154879): the depth's bound has a
+top where the middle is covered deeper than the reach (its covering instant holds the whole cell,
+so it lies past each point's own contact), so a rim covered for a stretch is cleared, where the
+full turn's rim at its start was halved to the tolerance and every leaf of it touched (some
+32 000 leaves, 64 covers each); a swallowtail point every far cover about whose feature's disc is
+covered deeper than the tolerance is held inside by another instant and given no disc; a disc's
+rim counts a cover clear above nought only from an instant inside the disc's span of the roll (an
+end pose's, far off, is another basin's: the full turn's second swallowtail point, read 0.85 above
+by the start pose, had no disc); and two runs' ends on one cut are one point where they stand within
+the tolerance in space (each the root along the cut its own part's trace read: 2e-6 apart in `t` on
+the full turn). **Every ring case the old road builds, built** (#880 T1f; each change keeping the half turn at
+12.2377154879 to 1e-10, the 80° torus at 10.9393141712, and the half turn's time):
+* **A far cover continued into the point's own contact ends** (`Depth::along`; gated by
+  `swept_tube::a_far_cover_continued_into_the_points_own_contact_ends`): its stretch is cut half
+  the way toward the point's own instant, and a least found at that cut, to the rounding of the
+  roll, is the own contact's slope — `d` falling there toward the own instant — no basin of another
+  instant: the double curve's two instants have met (its end, beside a swallowtail point), and the
+  cover ends. Read on, each corrector's pass halved the way again and the cover slid into the own
+  contact, nought everywhere on the sheet: on the full turn's sheet `−` a phantom branch ran along
+  `t` 2.24599 to the cut `θ = π`, where the depth is 1.28. It costs nothing: the half turn's ordinary
+  branches never settle at that cut (reading the climb between the instants instead slowed it
+  fivefold).
+* **A point is traced where it is so in the chart** (`zero_set`'s near test; gated by
+  `zero_set::a_loop_whose_image_crosses_a_traced_curve_is_found`): a seed, or a search cell's
+  middle, is answered as on a traced curve where a traced chord stands within the radius of it in
+  space *and*, by the metric at the point, in the parameters. A sheet meets itself along its double
+  curve, so another place of the chart comes to the same point: on the full turn the preimage
+  seeded across the cut `θ ≡ 0` stood in space on its other preimage, traced already in that part,
+  and was never traced.
+* **A switch solved where it falls** (`faces::switched`): where a run's cover passes from the sheet
+  `B`'s point at an instant inside the roll to the end pose `k`, the event is where `B`'s preimage
+  reaches its rim at `k` — a rim crossing on `B`. Where the run covered by `B` is the one kept (its
+  own instant the later), `B`'s run is not, and the crossing is solved there, on `B`'s rim, from
+  `B`'s point covered at the run's own instant; else it is `B`'s own run's rim crossing, read once
+  every run's ends are (the half turn's). Both runs beside a switch end at its one vertex.
+* **The two end poses' meeting** (`faces::met`, the old road's `depth::ends_met`): the start
+  pose's seams (`seams` on `Chart::End(0)`, its contact circles inner edges) where the end pose
+  covers it are trims of the start pose against the end pose, the partner of each point the end
+  pose's place in closed form (`Tube::on_end`). Each end of such a run is an event already found, a
+  vertex standing on both poses: on the start pose's contact circle the sheet's rim crossing at
+  the start covered by the end pose; where the start pose's cover passes to the end pose from the
+  instants before it, the sheet's rim crossing at the end covered by the start pose — the nearest
+  such vertex, held within the trace's longest step of the run's end, its parameters put there.
+  The full turn's are two short arcs, as the old road's; tracing the start pose costs the half turn
+  some 0.4 s (it builds in 4.3 s, the old road in 6.6; the 80° torus in 2.3 against 6.2).
+* **The cut from a swallowtail point ends at the first trim it meets** (`faces::met_by_cut`): it
+  runs at the point's angle toward the rim the swallowtail opens away from, and a trim's polyline
+  crossed before the rim (its own or its partner's on the chart) is met there — the point settled
+  on the double curve with its angle held, a vertex of both its charts, and the trim split there
+  into two. On the full turn's sheet `−` the cut from the second swallowtail point ran to the start
+  and crossed a double curve with the end pose with no vertex there, and one face used a trim on
+  both its sides.
+* **A window's island is a hole** (`faces::faces`): a loop of a window's graph turning clockwise is
+  the outside of its part of the graph — the window's own, or, where it meets no node of a loop
+  turning counter-clockwise and stands inside it, an island in that part, a hole of the least
+  such; a face is its outer loop and its holes, its inner point read clear of them (the full turn's
+  sheet `+` holds a lens bounded by a double curve with the sheet `−` and one with the end pose).
+* **Each chart its own windows** (`faces::windows`): the cuts split the largest gap of angle the
+  trims' uses *on that chart* leave free, in order within the turn; a sheet's rim is split at its
+  own cuts and its end pose's (one vertex where they coincide). On the bench's tumbling torus the
+  sheet `−`'s double curves with the end pose run near its rim over 2.5 of a turn's angle, their
+  partners on the end pose over the rest: no angle was free on every chart at once.
+* **A shallow crossing of a side read twice is no piece** (`zero_set`; gated by
+  `zero_set::a_rim_crossed_at_two_readings_of_one_place_is_no_piece`): a piece every point of which
+  lies on the one side it started on (on an inner edge, of two points) is that side's crossing read
+  twice. The far cover's depth is read to the cover's tolerance, and where the zero set crosses a
+  rim shallowly that changes sign twice about the one root: on the thin's sheet `−` two rim seeds
+  2.5 tolerances apart, the march from one arriving at the other, a piece along the rim the run
+  joined and doubled back on past its crossing (the misfit of 3.3e-7 against 3e-8 at its start).
+  Neither settling the trace's first point with the crossing nor holding that end to the tolerance
+  is true to it: the curve meets the rim once, at the crossing, which replaces the trace's own
+  reading of it.
+* **A curve run to the edge of its field's domain ends there** (`zero_set::End::Undefined`; gated
+  by `zero_set::a_curve_running_to_where_its_field_is_undefined_ends_there`): a march that can
+  step no farther — its step halved under the rounding — and finds the field undefined within a
+  tolerance of where it stands (ahead, or across its curve either way) ends there, where it was
+  refused as stalled. On the bench's tumbling torus the sheet `−`'s double curve with the end pose
+  runs into a corner of the cuspidal edge and the roll's end where the two stand within 1e-12 of
+  one another: there its zero set is the very edge of where the end pose is a cover past the point's
+  own contact (beyond, its basin has merged into the own contact and nothing covers the point), so
+  no chord keeps inside the field; the run ends there and is joined straight to the corner, every
+  point of the join within the tolerance of the end pose (`cornered`, the half turn's).
+
+**Measured** (`tube_profile … build` against `… old`, on a quiet machine): the full turn builds in
+25.8 s where the old road takes 36.6 (14 faces, volume 23.6738858153 against the old road's
+23.6738852805, 2.3e-8 of itself), the thin in 63.0 s against 45.7 (10 faces, 0.6963027945 against
+0.6963027896, 6.5e-9; the sheet `−`'s seams 33 s of it, its edges' search most of the rest, where
+`jacobian_bound` is weak with `S_θ` and `S_t` near parallel), the bench's tumbling torus in 9.5 s
+against 5.9 (8 faces, 25.2750727786 against the volume made apart, 25.2750727653 —
+`swept_rings::the_tumbling_torus_as_the_bench_spells_it_is_built_closed` — 5e-10; the old road at
+this spelling of the motion reads 25.2750392926, 1.3e-6 below, and its solid's faces carry surface
+covered by other instants: nine points of its mesh at 0.003 covered 1e-5 to 3.4e-3 deep, on three
+faces, the tube road's none: gated in `swept_tube::the_tumbling_torus_builds_by_the_tube_road`). Each passes `check` at the call's tolerance with no misfit at the
+size's tolerance, and each is held to its mesh and to membership by the depth in the slow tier
+(`swept_tube::the_full_turn_builds_by_the_tube_road`, `…the_thin_…` at 160 000 points, a tube of
+0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **Read again at moved inputs**
+(the observer's origin moved by an ulp and by 1e-6): every case builds by both roads with the same
+faces; at the ulp the tube road's volumes are the same to the digit, at 1e-6 both roads' move
+alike (the tumbling torus by 1.07e-5 each), and the tube road's misfits stay none where the old
+road's are 10 to 43 at the size's tolerance. **Not yet answered:** on the half turn and the thin
+both roads' faces reach past a double curve beside a swallowtail point — mesh points 1.5e-5 to
+7e-5 past an edge whose own points stand on the depth's zero set (to 6e-11), covered 0.6e-6 to
+1.4e-5 deep (the tube road's one on the half turn at 1.35e-5, seven on the thin; the old road's six
+and eight, to 1.2e-4), where the sheet's map is near singular — and on the thin's end pose one
+point 3.7e-4 inside its contact circle held 2.5e-6 deep by the instants beside its own; the full turn, the 80° torus and
+the tumbling torus have none on the tube road. **What `closed::ring`
+would need to call it first** (not switched): the tool a torus (`Tube::new`, else the old road);
+no meridian touched whole over the roll until the collar chart is built (`Ring::touched_once`; the
+tube road has no pinch); the motion's rate bounds given (`Tube::rates`, else every cover is
+`depth::cover`'s and every edge's cell sampled, at a time unmeasured); any refusal by name read as
+a fall back to the old road, never a wrong solid; and its time no worse — today the thin (63 s
+against 45.7) and the tumbling torus (9.5 against 5.9) are slower, the sheet `−`'s seams and the
+edges' search where `S_θ` and `S_t` near parallel weaken `jacobian_bound`. Gates pinned to the old
+road's digits through `closed::ring` move with it: the tumbling torus by 1.3e-6, toward the volume
+made apart. **The old march's step
+over a shallow fall** (asked of the tube's cover, `swept_tube::the_tubes_cover_reads_as_the_depths`):
+on the half turn's sheet `+` at (θ = 2.5π/12, t = −0.9163) the own contact climbs to 2.2120598518 at τ
+1.568359 and falls 2.96e-6 — under the tolerance, over the rounding — to the end pose's
+2.2120568897: `depth::cover` steps from below the top to the roll's end and reads `Alone`, the
+tube's cover the far cover at the end. Within `depth::cover`'s contract (no stretch held deeper
+than the tolerance is stepped over, so the sign of a cover is never misread), not #998's fall
+(which read a covered point `Alone`); the old road's `covered`, `ends_met` and `passed_back` decide
+on that sign alone.
+**The collar as the tube road's third chart** (#880 T1f, `Tube::pinched`, `Chart::Collar`,
+`tube::Pinch`; gated by `swept_tube::the_collar_charts_the_crossed_members_pinch`): where an
+instant inside the roll touches a meridian whole (`Ring::touched_once`) the spine is singular —
+`n = S_θ × S_t = R (B e_r − A e_z)`, so the sheets' normal is `(B e_r − A e_z)/|(A, B)|` and both
+sheets turn half round the meridian across `(θ*, t*)` — and the collar `(ψ, ρ)`,
+`(A, B)(θ, t) = ρ (−sin ψ, cos ψ)`, charts them as one annulus: `ρ > 0` the sheet `+`, `ρ < 0` the
+sheet `−` (each collar point the sheet's point at its place to 1e-15), `ρ = 0` the meridian. Its
+point is the tool's `c + r (cos ψ, sin ψ)` at the place posed, its rates by the chain rule through
+the place's (`D ∂(θ, t)/∂ψ = ρ (−cos ψ, −sin ψ)`, `D ∂(θ, t)/∂ρ = (−sin ψ, cos ψ)`, `D` the
+Jacobian of `(A, B)`); its side `−sgn(D) (X_ψ × X_ρ) · n` over the rates' lengths has the sheets'
+`J`'s sign at every place and is smooth through the meridian, where `J` is not read; its cuspidal
+edges are traced on a regular metric (the tool's own way round its tube posed and the rate in `ρ`:
+the collar's own rates are parallel on its edges, and the march stalled there).
+**`ρ₀` by its rule**: the collar's reach is the terms' scale halved until its rim is read whole
+(beyond it `(A, B)` folds over the roll: the reverse's rim is not read all round past 0.135);
+within it the collar's cuspidal edges are traced and their swallowtail points read
+(`swallowtails_on`), and `ρ₀` is half the least `|ρ|` of those and of the reach, so the collar
+holds no swallowtail point and its rim stands at most halfway out to each. Forward: the reach
+0.1742 holds the two at `ρ` 0.0710 and 0.087, so `ρ₀` 0.0355; reverse: the reach 0.1091 holds
+none (its nearest, −0.135, lies past it), so 0.0545. **The hole**: the sheets' points with
+`|(A, B)| < ρ₀` about the instant (within the rim's box doubled) are the collar's; its rim is one
+curve read in three charts (the collar's `ρ = ±ρ₀`, each sheet's `place(ψ, ±ρ₀)`), an inner edge of
+the sheets' edges and depth, which read on across it to `ρ₀/2` (`Pinch::deep`) so the tracer's
+exit settles on the field; inside, the sheet is filled by a smooth stand-in, `S + s r (B e_r −
+A e_z)/h`, `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)` (`Tube::net_point`, the old road's `Hole::stand_in` on the
+tube), which is also the depth's metric there: the sheet's own map is a cone point at the pinch,
+and a cell holding it kept a reach of the tube's size however halved (the forward's search asked
+four million cells). **The sheets' nets about the hole**: a uniform net over a window's whole
+roll holds its bar outside the hole only from `ρ₀` 0.14 forward and 0.12 reverse (at 1024 × 512 and
+3.5 s a sheet) — past the forward's swallowtail points and at the reverse's reach — so a window
+holding the hole is fitted with its parameters graded toward where it misses (`faces::sheet_net`,
+each interval over the bar halved, neighbours within a factor two), read against the sheet
+outside the hole: forward 241 × 230 poles in 1.3 s. **Measured on the collar**: the reverse's
+depth gives two trims rim to rim at `ψ` 175.5° and 337.9° (the meridian's 175.333° and
+337.210°), the sheet `+`'s runs ending on the hole's rim at the same own instants (0.867, 0.970);
+the forward's gives its trim at 72.83°, its other (257.1°) and the sheets' runs into the hole not
+yet found: there each double curve runs within 0.6° of the cuspidal edge it folds beside (a
+covered sliver 2.3e-3 across, at most 6.5e-5 deep), between the rim's samples; the collar's rim is
+read beside each edge's end (`beside_edges`, evidence). **The faces' side** (`faces::solid`, in place, not yet
+building either member): the collar is traced first and its runs' ends on the rim seed the sheets';
+every run's end on the rim, kept or not, is one vertex in three charts (`faces::rim_vertex`,
+solved on the rim as the root in `ψ` of the far cover's depth on the collar, `hole_crossing`), so a
+kept trim whose partner passes into the collar switches there; a cover whose place lies in the hole
+is the collar's (`Tube::in_collar`, `ψ` in closed form from the tool's point, `ρ` square to
+`(A, B)`, settled); the collar's windows are cut in `ψ` clear of its trims and the sheets' clear of
+the hole too (`chart_cuts`); the rim is an edge on each sign between its vertices (`Kind::Hole`,
+the collar's use and the sheet's). **The reverse's next refusal**: a run of the sheet `+` ends at
+the cut `θ = 2π` (t 1.4597, covered at −0.072) with no piece across it: at `θ = 0` its seed lies
+within the tolerance in space of the run from (0, 0.6988) (covered at 1.4613, own 0.699), a triple
+point of the sheet with itself, and `zero_set`'s duplicate test (`near_traced`) read in space alone,
+so it dropped a second preimage there (`zero_set::through` from the same seed traces it to the
+roll's end at (0.9046, b)); it now reads the parameters too, by the metric (the tube road's sibling's
+change, merged), and the sheet `+` traces 7 pieces. The build
+then stops at the sheet `−`'s stall below. **Not yet**: three readings off the pinch — the reverse's near miss of a second whole-touch
+(`|(A, B)|` 6.3e-4, 3.6e-4 of the terms' scale, at (1.0764, 0.4611), no root, where the sheets fold
+through within a few ten-thousandths and a graded net asks 866 × 855 poles), and the sheet `−`'s
+stalls of each member (forward at (2.9903, 0.6355), 0.02 from its swallowtail point (2.9730,
+0.6227), where the far cover is born within the tolerance of nought; reverse at (1.4390, 0.1605)
+on a cuspidal edge with nothing covering either side).
+
+**The crossed pair built, and `closed::ring` dispatching to it** (#880 T1f; gated by
+`swept_tube::the_crossed_forward_member_builds_by_the_tube_road` and
+`swept_tube::the_crossed_reverse_member_builds_by_the_tube_road`, both slow): where the old road
+refuses `Curved` at a meridian touched whole for an instant (`Ring::touched_once`) and no two
+instants touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`,
+`tube::faces::solid`); nowhere else, and cut from a blank (`ring_cut_from`) it stays refused. The
+forward: 14 faces, volume 16.6109998153 against cadrs's 16.6109997999, about 15 s; the reverse: 15
+faces, 13.7898471844 against 13.7898472784 (13.7898471917 before `props::crossings` crossed a knot a step
+lands on exactly), about a minute, most of it the two graded nets about
+its near miss of a second whole-touch. Each is held to `check`, no misfit at the size's tolerance,
+membership by the depth at 20 000 points, none of its mesh's points covered deeper than the
+tolerance, its boundary audited by the depth (`audited`: each point of its mesh at 1e-3 stepped
+`δ` out along its face's normal stands outside by the depth, stepped in, inside, at `δ` 2e-5 and
+twice the tolerance, none apart), and built again with the observer's origin one ulp and 1e-6 off
+to the same volume (forward 16.6109998154 and 16.6110018019; reverse 13.7898471715 and
+13.7898510440). **The forward's 3.8e-5 was the volume's reading, not the solid**: no point of its
+boundary stood under another instant, and its mesh's volume, extrapolated to no sag, read
+16.6109994 — but the face holding the pinch's hole read its flux 6.6e-4 off at any bar. `G`, read
+along a use by Green's theorem, is smooth only between the use's crossings of its net's knot lines,
+and the graded net crowds hundreds of them across one stretch of a trim: each use on a net is now cut
+at its crossings too (`props::crossings`). An audit by a mesh's membership (`member::Solid`, its
+sag the bar's) cannot read a step below its bar: at 2e-5 against a mesh at 1e-4 it read points
+apart both ways where the solid was right. **The reverse one ulp off**: its trim against the end
+pose had stopped at the cuspidal edge 6.9e-4 short of the corner and been joined straight; one ulp
+off it ran on to the rim 2.2e-5 beside the corner and fitted only to 1.2e-5. Beside the rim the end
+pose stands from the sheet's point by half its depth's second rate in the instant times the square
+of the instant's way to the end, nought only on the cuspidal edge: a run against the end pose `k`
+reaches the rim at `k` at the corner alone, and about it the two touch, so its points there stand on
+the double curve to the rounding only. Such a run's tail is the straight join to the corner
+(`cornered`, `join_holds`), from the farthest of its points the join holds the end pose from.
+**The forward one ulp off**: the collar's trim began with the tracer's seed on the pinch's rim and
+its exit settled on the rim 7e-15 from it, one crossing read twice; the walk read the way out of the
+vertex from that segment, lost the collar's face and was not sewn. A trim does not run along the
+rim: of a run's points on the rim at an end only the end is kept. **The pair's Booleans** (union,
+difference and intersection of the two members, the ordinary `boolean::boolean`; probe:
+`tube_profile crossed-forward pair`) **are not yet built**: each refuses after about 13 minutes,
+"a bspline has a hole in no piece" (`boolean.rs`, a face's hole held by no outer cycle once split
+— most likely the pinch's hole, an island on a sheet's graded net). **Read**: the union refuses
+after 941 s on the forward member's face 1 (its net graded about the pinch), where the split leaves
+slivers near (3.16, 0.909, 1.744) and an edge of a meeting walked out and back, its end on the
+window's edge 6.7e-5 off the surface (within the march's landing, 16 tolerances); the arrangement's
+reads are 41 s, the rest marches held at the least step (a ten-thousandth of the first): the forward
+sheet's meeting with the reverse's end pose made 149 986 points and its fit 2.2 million, 239 s
+alone, stalled at a seed where its step lands back 6e-6 from where it began. There, within 2.5e-3,
+the net has two feet with opposite normals: **each face's surface is its window's whole net**,
+fitted as a map over `(θ, t)`, so it runs on past the face's cuspidal edges and folds back (and
+inside the pinch's rim carries the stand-in), and the Boolean reads a B-spline face's surface as its
+whole net — implicit and gradient by the nearest foot — so beside a fold its projections leap
+between the layers. Either the road fits each face on a net that does not fold (over its kept part,
+cut at its cuspidal edges: a reparametrisation, since the fold is a curve in `(θ, t)`), or the
+Boolean reads a trimmed net as its face (T4, the meetings); neither is built. **The reverse's near
+miss** (`|(A, B)|` 6.3e-4 at (1.0764, 0.4611), most of its build's minute in two nets graded to
+944 × 849 poles) is not buried: the sheet `−` reads there with nothing but its own instant on it
+(`Alone`, `J` ≈ 4e5), the sheet `+` held by its neighbours (`Near`), so the sheet `−` is the solid's
+own boundary and no window may stop short of it; and `|(A, B)|` runs low along a valley, not to a
+point — `(A, B)` folds over `(θ, t)` there — so no collar `(ψ, ρ)` offset from its least is regular
+either: a chart regular across that fold is what it asks.
+
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
 `depth::cover`'s certified march is the reading): the sweep is the union of
@@ -2763,6 +3250,91 @@ carrying the boundary before and after stand that side apart. Held
 (`swept_patches::a_box_along_a_spline_frame_is_its_sections_planar_sweep`) to membership and to
 1e-7 of the area the definition sweeps in the plane, read on lines turned 0.3 rad off every end
 pose's side (1.3e-9 off).
+
+**An upright tool of revolution under a motion that keeps its plane, swept closed (#880 T1f,
+`brep::swept::upright`):** a convex tool of revolution with flat ends (`patches::Revolved`) whose axis
+stands along the normal of a plane every pose keeps (`region::keeps`) has, at each height, a disc
+for its section, which a turn about the axis leaves where it is: the section at height `h` sweeps the
+points within `ρ(h)` of the path `c` its axis's foot runs, and the swept solid is `{(p, h) : d(p) ≤
+ρ(h)}` — no contact read under the motion's twist, so a face touched whole is no trouble (under a
+translation the flat bottom has `n · v ≡ 0`, and K2's pencil, one sign change a half-plane, read the
+bull nose's contact to 1.92 and no closer: brep-bench's `bull-nose-along-a-looping-spline`, refused
+`Failed` before; K2 now refuses such a face by name before any fit, `patches::touched_whole`: a flat
+end square to the tool's axis whose `n · v` is nought all over it, the twist turning about nothing
+but the axis and the face's middle moving in its plane, each read within half the rounding's digits
+of the instant's speeds — `Curved` at the face, gated on the mill and a flat-ended cylinder,
+`swept_upright::k2_refuses_by_name_a_flat_end_its_translation_touches_whole`). Asked before K2
+wherever `planar_solid` reads no prism; K2 is asked where it
+refuses, its refusal standing where K2 refuses too. **The sheets**: each piece of the meridian a slab
+over `σ ∈ [0, 1]`; at each `σ` the region (`region::SweptRegion`, the disc its section) runs along the
+path's offsets `c(t) ± ρ N(t)` (the **sides**, by the roll) and the discs at the end poses (the
+**ends**, by the angle, each over the half its sweep leaves behind it, between its two **joins** where
+a side meets it); a sheet is boundary where no other instant comes nearer than `ρ` less the
+tolerance (the **cover**: the path's nearest point, its feet sampled and every stretch whose bound —
+the nearer foot less half the farthest the path moves between two — does not clear the best read by
+a golden section). **Double curves**: the region's corners at the stations (16 over a curved slab)
+lifted through the slab by continuation in `(p₁, p₂, σ)` (a step settled on the plane square to the
+way, halved past a tenth of a radian's turn), a seed on a curve traced already skipped; a pair on one
+side is read in its chart `(m, h, σ)`, the residual divided by `2h` — every place of a sheet is its
+own double point at `h = 0`, a plane of roots Newton's method fell onto beside a birth. A curve ends on
+a rim, on a join, where a third instant covers it — **the triple point**, its pair and the third foot
+settled together (`|q − c(t₃)| = ρ`, `(q − c(t₃)) · c'(t₃) = 0`), its third foot read where the cover is
+plain (at the bracket's end the three tie to the rounding), each other curve reaching it snapped to
+its feet — or where its two instants on a side merge: **a swallowtail's birth**, its stretch into the
+birth read in its normal form, `m` and `σ` quadratics in `h²` by least squares through the divided
+form settled at halvings of the parting while its part along the normal reads to half its digits
+(`h³` past `√ε` of the roll's: that part is `O(h²)`, read with the rounding's `ε|P|/h`, and at a
+smaller parting `m` was noise, its interpolant through 0.42 reading 3.8), the birth its limit, and
+held where its points are the double points they stand for within the fit. A curve turning back in
+`σ` (an island's apex) is traced through its turn. **The parts**: on each sheet the curves, its rims
+and joins, and from each birth a cut straight across to the rim the swallowtail opens away from (so
+no face meets itself along its double curve) are walked as a planar graph; a curve ending meeting
+nothing, a curve closing inside the domain, or a curve whose two sides are not one kept and one
+dropped (a cut's both kept) is refused by name. A side's part is a net fitted over its box grown by a
+trace's step (the apex lies between traced points: read off them, the box stopped short of it, an
+edge 2.1e-6 off), each edge on it with its own pcurve — a double curve's place on it fitted on the
+same parameter, any other edge a line in `(p, σ)` — since an inverse seeded across a swallowtail's
+folded tongue landed on its inner leaf (6.5e-6 off); an end's part the tool's own face posed, its
+frame turned about its axis so its seam stands opposite the half's middle, its loop unwrapped in
+every parameter the surface repeats in through each edge's middle (its rims span half a turn; the
+torus's `v` read its bottom rim at 3π/2 and the join's middle at −π/4, and the mesher, asked such a
+loop, refused at a coarse sag and ran on past fifteen minutes at a fine one) and turned by its
+places' area. A net grows each way by its own misses (a wall, linear along `σ`, keeps 8 rows). A double curve is laid in pieces, each where one coordinate of `(p₁, p₂, σ)` the curve leans
+at least 30° off its plane, read with that coordinate its parameter — settled on the plane where it
+has its value, the implicit function's own smooth chart; projected across a polyline's chords the
+curve's rate jumped at each, and across a spline the read was only as smooth as the spline. A
+piece is fitted whole where 64 spans hold it, else halved at its middle traced point: a piece whose
+coordinate's chart turns just past its end (the island's apex) took 2048 spans whole, and each face it
+bounds read its area in 6.9 s (`props::area`; 0.55 s halved — brep-bench's runner, its build, area,
+volume, check, mesh and STEP, 17.3 s then and 4.9 s now). Every curve and sheet is fitted within a
+tenth of the tolerance, as K2's and `planar_solid`'s are: a shared edge then stands within a fifth of
+it of both faces it bounds. Caps
+are the regions at their height; the faces sewn (`sew::sewn`), the solid judged (`closed::judge`)
+and cut from the blank. **Built**: brep-bench's bull nose along a looping spline through the bench's
+own call (`swept_upright::the_bull_nose_along_a_looping_spline_is_its_bench_volume`: 24 faces,
+10956.986456, 2.5 s, most of it the corner slab's curves and the judge; its corner slab's six double curves, one
+triple point at `σ` 0.47039, births at `t` 0.42333 and 0.57667, `σ` 0.39746, where the path's radius
+of curvature passes the corner's), its volume within 2e-6 of the regions' areas integrated apart
+over the corner (`bull_probe`) and 4.0e-6 of cadrs's 10956.9424 (whose reading is that much low),
+its mesh's volume within a tenth of its sag over its area (+0.036 at a sag of 1e-3, +0.003 at
+1e-4), its points agreeing with the definition read with no kernel and its groove counted to it
+(`…_agrees_with_its_definition`: 20 000 points), its closed sweep with membership
+(`the_bull_nose_s_closed_sweep_agrees_with_membership`), and built again with a pole moved by an
+ulp (the same volume to the digit) and by 1e-6 (within 3e-9), the births then parted
+(`the_bull_nose_builds_with_its_poles_moved`, slow tier). **Its edges, under the same path**: a
+motion turning about the plane's normal is read (the mill carried by `trajectory::Along`, the frame
+along a cubic turning with its tangent: 10 faces, 1036.41 for the closed sweep), but a path that
+encloses nothing — read only by evaluating, as brep-bench's runner frame is — is refused by the
+region's reading itself (`region::Keep::outside`: a point is kept outside the section between two
+grid poses by the point's speed bound, `Trajectory::inverse_point_speed_bound`, which only a path's
+own enclosure, `Path::stretch`, gives; with none, no stretch is kept and the loop is the box's, "reaches
+past the box held about it", as `planar_solid` refuses a disc prism under the same frame). A meridian
+meeting its axis other than in a flat end (a ball end, a pointed taper) is not read: the region of a
+disc of no radius is the path, no region, and the end's sheet closes to a point. Under the looping
+path the ball end then goes to K2 and is refused `Curved` at its flat top (touched whole); the pointed
+taper is read by `planar_solid` and refused by its own judge (`Wrong`, nothing returned); a concave
+meridian is refused `Curved` by K2's reading of the tool; a flat step is a prism's slabs, built by
+`planar_solid`.
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

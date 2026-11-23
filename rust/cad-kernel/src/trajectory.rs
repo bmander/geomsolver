@@ -625,6 +625,40 @@ impl Trajectory {
         self.inverse_point_speed_bound_over(point,domain)
     }
 
+    /// **Upper bounds on the first four rates of `M(t) · x`** (forward) or of `inverse(M(t)) · x`,
+    /// per unit of `t`, for every `x` in the box `point` and every `t` in `domain`, with
+    /// `inverse_point_speed_bound`'s reading of the nodes: a constant twist carries a point at
+    /// `|ratio| ρ + |advance|/τ` and `|ratio|ᵏ ρ` its `k`-th rate after (`ρ` its distance from the
+    /// axis; the advance steady), the same forward and inverse; a placement moves nothing; a relative motion
+    /// `z = F₂(t, F₁(t, x))`, `F₂` rigid in its point, has `z⁽ᵏ⁾ = Σⱼ C(k, j) ∂ₜᵏ⁻ʲ F₂,y[y⁽ʲ⁾]`, each
+    /// term at most the second node's spin `Ω₂` (`spin_bound`) to the `k − j` times `|y⁽ʲ⁾|` but the
+    /// first (`j = 0`), the second node's own rate at its point. A pace (whose rate's rates no node
+    /// reads), a path evaluated or a path of pieces is no bound (`InvalidBounds`).
+    pub fn point_jet_bound_over(&self, point: [Interval; 3], domain: Interval, forward: bool) -> Result<[f64; 4], IntervalError> {
+        let mut bound = Bound {tau:Interval::point(std::f64::consts::TAU)?,
+            reach:{ let [lo,hi] = domain.bounds(); Interval::point(lo.abs().max(hi.abs()))? },domain,read:Vec::new()};
+        bound.read_all(self)?;
+        Ok(bound.jet(self,point,forward)?.map(|j| j.bounds()[1]))
+    }
+
+    /// `point_jet_bound_over`'s acceleration of `inverse(M(t)) · x`, at one point.
+    pub fn inverse_point_acceleration_bound(&self, point: V3, domain: Interval) -> Result<f64, IntervalError> {
+        let point = [Interval::point(point[0])?,Interval::point(point[1])?,Interval::point(point[2])?];
+        Ok(self.point_jet_bound_over(point,domain,false)?[1])
+    }
+
+    /// **How fast the motion turns a direction**: its rotation's angular speed, at most a constant
+    /// twist's `|ratio|`, a relative motion's its two nodes' summed — and its rotation's `k`-th rate
+    /// at most that to the `k` (each node's rotation's being its `|ratio|` to the `k`, a product's
+    /// by Leibniz's rule). No bound for any other node (`InvalidBounds`).
+    pub fn spin_bound(&self) -> Result<f64, IntervalError> {
+        match self {
+            Trajectory::Relative {source,observer} => Ok(source.spin_bound()?+observer.spin_bound()?),
+            Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => Ok(s.ratio.abs()),
+            _ => Err(IntervalError::InvalidBounds),
+        }
+    }
+
     /// **The same trajectory read in units `k` (positive) times as small** — a model's motion in
     /// millimetres: each part scaled as it is (a twist's origin and advance, a placement's offset,
     /// each piece, both sides of a relative), its structure kept; a path evaluated scaled as it is
@@ -846,6 +880,45 @@ impl Bound {
             }
             _ => self.image(node,b),
         }
+    }
+
+    /// **The first four rates of the points of `b` under `node`**, forward or inverse
+    /// (`Trajectory::point_jet_bound_over`).
+    fn jet(&self,node: &Trajectory,b: [Interval;3],forward: bool) -> Result<[Interval;4],IntervalError> {
+        let i = Interval::point;
+        match node {
+            Trajectory::Relative {source,observer} => {
+                let (first,second) = if forward { (source,observer) } else { (observer,source) };
+                let y = self.jet(first,b,true)?;
+                let mut z = self.jet(second,self.image_of(first,b,true)?,false)?;
+                let w = second.spin_bound()?;
+                // (z⁽ᵏ⁾ ≤ F₂⁽ᵏ⁾ + Σⱼ₌₁..ₖ C(k, j) Ω₂ᵏ⁻ʲ |y⁽ʲ⁾|)
+                for k in 1..=4 {
+                    let mut c = 1.;
+                    for j in (1..=k).rev() {
+                        // (C(k, j) built from C(k, k) = 1 down: C(k, j−1) = C(k, j) j/(k − j + 1))
+                        z[k-1] = z[k-1].add(i(c*w.powi((k-j) as i32))?.mul(y[j-1])?)?;
+                        c = c*j as f64/(k-j+1) as f64;
+                    }
+                }
+                Ok(z)
+            }
+            // (placed first, a rigid placement moving nothing; inverse, unplaced last)
+            Trajectory::Placed {twist,at} if forward => Self::turning(twist,Self::placed(*at,b)?),
+            Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => Self::turning(s,b),
+            _ => Err(IntervalError::InvalidBounds),
+        }
+    }
+
+    /// A constant twist's first four rates of the points of `b`: `|ratio| ρ + |advance|/τ`, then
+    /// `|ratio|ᵏ ρ`, `ρ` their farthest distance from its axis (a slide's its advance's alone).
+    fn turning(s: &Screw,b: [Interval;3]) -> Result<[Interval;4],IntervalError> {
+        let i = Interval::point;
+        let slide = i(s.advance.abs())?.div(i(std::f64::consts::TAU)?)?;
+        if s.is_slide() { return Ok([slide,Interval::ZERO,Interval::ZERO,Interval::ZERO]) }
+        let (_,radius) = Self::about(s,b)?;
+        let w = s.ratio.abs();
+        Ok([i(w)?.mul(radius)?.add(slide)?,i(w*w)?.mul(radius)?,i(w.powi(3))?.mul(radius)?,i(w.powi(4))?.mul(radius)?])
     }
 
     /// How fast `node` carries `b`, forward or inverse.

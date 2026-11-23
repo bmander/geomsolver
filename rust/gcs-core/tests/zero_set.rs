@@ -583,3 +583,170 @@ fn the_pieces_through_a_callers_seeds_alone() {
     xs.sort_by(f64::total_cmp);
     assert_eq!(xs,[-1.,1.]);
 }
+
+/// **A cell spanning a whole turn is halved across it** (#880 T1f): on a cylinder over `θ` in a
+/// whole turn and its height, the distance from a ball off its axis less its radius closes a loop
+/// on the far side of the turn; the search halves the whole rectangle across `θ` too (measured
+/// between its sides' ends, which over a whole turn are one point, it was halved along the height
+/// alone and never settled), and the loop is traced once, closed, on the ball's sphere.
+#[test]
+fn a_cell_spanning_a_whole_turn_is_halved_across_it() {
+    use std::f64::consts::{PI,TAU};
+    let (c,r) = ([-1.,0.,0.5],0.3);
+    let at = |uv: Uv| { let (s,co) = uv[0].dsin_cos(); [co,s,uv[1]] };
+    let map = move |uv: Uv| { let (s,co) = uv[0].dsin_cos(); ([co,s,uv[1]],[-s,co,0.],[0.,0.,1.]) };
+    let f = move |uv: Uv| {
+        let (x,xu,xv) = map(uv);
+        let d = [x[0]-c[0],x[1]-c[1],x[2]-c[2]];
+        let l = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt();
+        let g = |w: [f64;3]| (d[0]*w[0]+d[1]*w[1]+d[2]*w[2])/l;
+        (l-r,[g(xu),g(xv)])
+    };
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        let m = at(mid);
+        let mut reach: f64 = 0.;
+        for i in 0..3 { for j in 0..3 {
+            let p = at([cell[0][0]+(cell[0][1]-cell[0][0])*i as f64/2.,cell[1][0]+(cell[1][1]-cell[1][0])*j as f64/2.]);
+            reach = reach.max(((p[0]-m[0]).powi(2)+(p[1]-m[1]).powi(2)+(p[2]-m[2]).powi(2)).sqrt());
+        } }
+        // (a chord's sag over a cell's arc of the unit circle widens the reach: its square over two)
+        Bound::lipschitz(f(mid).0,1.,reach*(1.+reach))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let tol = 1e-6;
+    let t = trace(&m,&Question {rect:[[0.,TAU],[0.,1.]],edges:&[],seeds:&[],tol,feature:0.1}).unwrap();
+    let [p] = &t.pieces[..] else { panic!("one loop: {} pieces",t.pieces.len()) };
+    assert!(p.closed(),"the loop closed: {:?}",p.ends);
+    for uv in &p.uv {
+        assert!(f(*uv).0.abs() <= tol,"a point {:e} off the sphere",f(*uv).0);
+        assert!((uv[0]-PI).abs() < 0.5,"a point at {uv:?}, off the far side");
+    }
+    assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
+}
+
+/// **A curve whose image lies on another's is still traced** (#880 T1f): a surface wound twice round
+/// a cylinder brings `u` and `u + 2π` to one point, as a sheet meeting itself along its double
+/// curve does. A line rim to rim at `u = 2` and a loop about `(2 + 2π, ½)` cross in space, never in
+/// the parameters; the loop, found only by the search, stood in space beside the traced line, and
+/// its cells were answered beside it — the test whether a point is traced is read in the chart now
+/// (the line's chord within the tolerance in space and, by the metric there, in the parameters).
+#[test]
+fn a_loop_whose_image_crosses_a_traced_curve_is_found() {
+    use std::f64::consts::TAU;
+    let (c,r) = ([2.+TAU,0.5],0.05);
+    let map = |uv: Uv| { let (s,co) = uv[0].dsin_cos(); ([co,s,uv[1]],[-s,co,0.],[0.,0.,1.]) };
+    // (the least of the line's and the loop's signed distances in the parameters, the cylinder's
+    // own metric: their zero sets the line and the circle)
+    let f = move |uv: Uv| {
+        let line = (uv[0]-2.,[1.,0.]);
+        let d = (uv[0]-c[0]).dhypot(uv[1]-c[1]);
+        let disc = (d-r,[(uv[0]-c[0])/d,(uv[1]-c[1])/d]);
+        if line.0 <= disc.0 { line } else { disc }
+    };
+    // (1-Lipschitz in the parameters: the cell's half diagonal bounds it there)
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        Bound::lipschitz(f(mid).0,1.,0.5*(cell[0][1]-cell[0][0]).dhypot(cell[1][1]-cell[1][0]))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let t = trace(&m,&question([[1.,2.*TAU-1.],[0.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"the line and the loop: {:?}",t.pieces.iter().map(|p| (p.uv[0],p.ends)).collect::<Vec<_>>());
+    let loops: Vec<_> = t.pieces.iter().filter(|p| p.closed()).collect();
+    let [lp] = loops[..] else { panic!("one loop") };
+    for uv in &lp.uv { assert!(((uv[0]-c[0]).dhypot(uv[1]-c[1])-r).abs() <= TOL,"a point {uv:?} off the loop") }
+}
+
+/// **A rim crossed at two readings of one place is no piece** (#880 T1f): `f = v + g(u)` over
+/// `v ≥ 0`, `g` a parabola a hundredth of the tolerance deep between roots 2.5 tolerances apart —
+/// the curve within the tolerance of the rim from one root to the other, as a shallow crossing read
+/// through a field known to its tolerance changes sign twice about the one root (the thin's sheet
+/// `−` at its rim). The march from one root arrived at the other, a piece of two points along the
+/// rim, longer than the tolerance: kept, and the run it joined doubled back. Now no piece.
+#[test]
+fn a_rim_crossed_at_two_readings_of_one_place_is_no_piece() {
+    let (u0,d,h) = (0.5,1.25*TOL,0.01*TOL);
+    let g = move |u: f64| (h*((u-u0)*(u-u0)/(d*d)-1.),2.*h*(u-u0)/(d*d));
+    let m = Mapped {
+        f: Box::new(move |uv| { let (gu,gd) = g(uv[0]); (uv[1]+gu,[gd,1.]) }),
+        map: Box::new(flat),
+        bound: Some(Box::new(move |c: Rect| {
+            let (u,v) = (Iv::new(c[0][0],c[0][1]),Iv::new(c[1][0],c[1][1]));
+            let w = u-k(u0);
+            Bound {value:v+(sq(w).times(1./(d*d))-k(1.)).times(h),grad:Some([w.times(2.*h/(d*d)),k(1.)])}
+        })),
+    };
+    let t = trace(&m,&question([[0.,1.],[0.,0.5]],TOL,0.1)).unwrap();
+    assert!(t.pieces.is_empty(),"pieces: {:?}",t.pieces.iter().map(|p| (p.uv.clone(),p.ends)).collect::<Vec<_>>());
+}
+
+/// A function of the parameters defined only where `inside` holds: the depth's far cover, which
+/// is no cover where the point's own contact holds the instant.
+struct Partial { f: Mapped,inside: Box<dyn Fn(Uv) -> bool> }
+
+impl Field for Partial {
+    type At = At;
+    fn least(&self,uv: Uv) -> Option<Value<At>> { (self.inside)(uv).then(|| self.f.least(uv)).flatten() }
+    fn along(&self,uv: Uv,a: &At) -> Option<Value<At>> { self.f.along(uv,a) }
+    fn surface(&self,uv: Uv) -> ([f64;3],[f64;3],[f64;3]) { self.f.surface(uv) }
+    fn bound(&self,_: Rect) -> Option<Bound> { None }
+}
+
+/// **A curve running to where its field is not defined ends there** (#880 T1f, `End::Undefined`):
+/// the line `v = ½` from the rim at `u = 0`, its field defined only left of the oblique line
+/// `u = ½ + (v − ½)/5` (as the far cover is none past where its basin merges into the point's own
+/// contact: the bench's tumbling torus at its corner). The march halved its step under the rounding
+/// there and refused; now it ends there, within the tolerance of that edge.
+#[test]
+fn a_curve_running_to_where_its_field_is_undefined_ends_there() {
+    let edge = |uv: Uv| 0.5+0.2*(uv[1]-0.5)-uv[0];
+    let p = Partial {
+        f: Mapped {f:Box::new(|uv| (uv[1]-0.5,[0.,1.])),map:Box::new(flat),bound:None},
+        inside: Box::new(move |uv| edge(uv) >= 0.),
+    };
+    let t = trace(&p,&question([[0.,1.],[0.,1.]],TOL,0.1)).unwrap();
+    let [piece] = &t.pieces[..] else { panic!("one piece: {:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>()) };
+    let ends = [piece.uv[0],piece.uv[piece.uv.len()-1]];
+    let undefined = (0..2).find(|&e| piece.ends[e] == End::Undefined).expect("an end where the field stops");
+    assert_eq!(piece.ends[1-undefined],End::Rim);
+    let q = ends[undefined];
+    assert!(edge(q) >= 0. && edge(q) <= 2.*TOL,"the end {q:?} {:e} from the field's edge",edge(q));
+    for uv in &piece.uv { assert!((uv[1]-0.5).abs() <= TOL) }
+}
+
+/// **A loop within the feature of a traced curve in space, on the far side of its sign, is found**
+/// (#880 T1f): the plane `x = u/50`, `y = v` — a chart pressed fifty to one, as a spine doubled
+/// back beside a near-pinch brings a place far off in the parameters within the feature of another
+/// in space — and `f` the least of the line `x = 0` (positive beyond it) and a thin ellipse beside
+/// it (half axes 0.02 by 0.3, centred 0.07 off the line). Every cell of the ellipse lies within the
+/// feature of the line, and each was answered beside it, so the loop was never sought (the crossed
+/// reverse's closed cuspidal edge on its sheet `−`, within 2e-3 to 5e-2 of the fold loop traced
+/// first); inside it `f` reads the sign of the line's far side, so it is not answered by the line.
+#[test]
+fn a_loop_beside_a_traced_curve_on_the_far_side_of_its_sign_is_found() {
+    let (s,c,a,b) = (0.02,[0.07,0.5],0.02,0.3);
+    let map = move |uv: Uv| ([s*uv[0],uv[1],0.],[s,0.,0.],[0.,1.,0.]);
+    // (each branch 1-Lipschitz in space: the line's distance, and the ellipse's `a (ρ − 1)`)
+    let f = move |uv: Uv| {
+        let (x,y) = (s*uv[0],uv[1]);
+        let line = (x,[s,0.]);
+        let (dx,dy) = ((x-c[0])/a,(y-c[1])/b);
+        let rho = dx.dhypot(dy);
+        let ellipse = (a*(rho-1.),[s*dx/rho,a*dy/(b*rho)]);
+        if line.0 <= ellipse.0 { line } else { ellipse }
+    };
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        Bound::lipschitz(f(mid).0,1.,0.5*(s*(cell[0][1]-cell[0][0])).dhypot(cell[1][1]-cell[1][0]))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let t = trace(&m,&question([[-1.,5.],[0.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"the line and the loop: {:?}",t.pieces.iter().map(|p| (p.uv[0],p.ends)).collect::<Vec<_>>());
+    let loops: Vec<_> = t.pieces.iter().filter(|p| p.closed()).collect();
+    let [lp] = loops[..] else { panic!("one loop: {:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>()) };
+    for uv in &lp.uv {
+        let (dx,dy) = ((s*uv[0]-c[0])/a,(uv[1]-c[1])/b);
+        assert!((a*(dx.dhypot(dy)-1.)).abs() <= TOL,"a point {uv:?} off the ellipse");
+    }
+    assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
+}

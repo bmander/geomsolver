@@ -10,7 +10,7 @@ use gcs_core::brep::swept::rings::{Corner,Ring,Side,admits,contacts};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::model::SolidDef;
-use crate::common::bench::{Runner,cubic,runner,thin,tumbling};
+use crate::common::bench::{Runner,crossed,crossed_moved,cubic,runner,thin,tumbling};
 
 /// The sweep `name` of `text` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
 fn sweep(text: &str,name: &str) -> (Brep,Trajectory,[f64;2]) {
@@ -1205,4 +1205,179 @@ fn a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it() {
     let inner: f64 = pieces.iter().filter(|p| p.len() == 1 && p[0].iter().all(|q| (q[0]-c[0]).hypot(q[1]-c[1]) <= r+1e-12))
         .map(|p| area(&p[0])).sum();
     assert!((inner-(-area(hole))).abs() <= 1e-12,"the circle's halves fill the hole: {inner} against {}",-area(hole));
+}
+
+/// **A meridian touched whole for an instant is found exactly and refused by name** (#880 T1f,
+/// `Ring::touched_once`): brep-bench's crossed tumbling tori. Where `A` and `B` vanish together at
+/// one angle and one roll, the instant touches that meridian all round — `n · v` within the
+/// rounding of nought at every point of it — and the tube's two branches meet there and exchange
+/// its halves, the sheet over the angle and the roll blowing its point up into the whole meridian.
+/// Each member has one such instant inside its roll (the forward 1.3264280599, the reverse
+/// 0.9003349192), and the road refuses there, `Curved` at the meridian's outer point, before
+/// anything is fitted (it had refined its fit toward the instant without end); `closed::ring` then
+/// builds the tube road's solid (`swept_tube::the_crossed_forward_member_builds_by_the_tube_road`). Its half that
+/// touches is the sweep's boundary: no other instant covers it. The cases already built touch no
+/// meridian whole. And each instant's contact is read over the whole roll — followed from angle
+/// to angle by its label (`Ring::instant`): read by its place round the meridian alone, the
+/// crossed tori's contact, its `ψ` turning half a turn within a 256th of a turn beside such a
+/// meridian, was taken for the other branch and the instant refused (the forward at 1.32689, the
+/// reverse at 0.47042, as `Curved` before the road began).
+#[test]
+fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name() {
+    use gcs_core::brep::swept::{depth,rings};
+    for (observer,at,theta,point) in [(1.,1.326428059908,5.971164660,[3.5915533579712884,1.9979569251726716,1.5194116132740945]),
+        (-1.,0.900334919170,2.102988913,[1.9673972992433895,0.2632173866369367,1.7258088475516893])] {
+        let (tool,path,roll,tol) = crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let once = ring.touched_once(&path,roll).unwrap();
+        assert_eq!(once.len(),1,"{observer}: {once:?}");
+        let (t,th,k) = once[0];
+        assert!((t-at).abs() < 1e-11 && (th-theta).abs() < 1e-8 && k == 0,"{observer}: {once:?}");
+        // the whole meridian in contact at that instant, its touching half on the boundary
+        let psis: Vec<f64> = (0..24).map(|i| std::f64::consts::TAU*i as f64/24.).collect();
+        let round = rings::meridian_read(&ring,&path,roll,t,th,&psis).unwrap();
+        assert_eq!(round.len(),24);
+        for &(psi,x,nv,bend) in &round {
+            assert!(nv.abs() < 1e-13,"{observer}: n · v {nv:e} at ψ {psi}");
+            if bend > 0.1 {
+                let r = depth::cover(&ring,&path,roll,x,t,0.,tol).unwrap();
+                assert!(matches!(r,depth::Reading::Alone),"{observer}: ψ {psi} touching ({bend}) read {r:?}");
+            }
+        }
+        assert!(round.iter().any(|r| r.3 > 0.1) && round.iter().any(|r| r.3 < -0.1));
+        // (the road refuses there; `closed::ring` then builds by the tube road, gated in `swept_tube`)
+        match gcs_core::brep::swept::closed::ring_entered(&tool,&path,roll,tol) {
+            Err(Unbuilt::Curved {at}) => assert!(gcs_core::brep::util::space::distance(at,point) < 1e-9,"{observer}: {at:?}"),
+            other => panic!("{observer}: {:?}",other.map(|e| e.sheets.len())),
+        }
+        assert!(matches!(admits(&tool,&path,roll),Err(Unbuilt::Curved {..})));
+    }
+    // (and no case already built touches a meridian whole for an instant)
+    for (tool,path,roll,_) in [tumbling(90.),tumbling(180.),thin()] {
+        assert!(Ring::read(&tool).unwrap().touched_once(&path,roll).unwrap().is_empty());
+    }
+}
+
+/// **The collar about a meridian touched whole for an instant** (#880 T1f, `rings::Collar`): where
+/// `(A, B)` is regular at `(θ*, t*)` — as it is on both crossed tori — `(A, B) = ρ (−sin ψ, cos ψ)`
+/// charts both tubes and the meridian about the instant as one annulus, `(ψ, ρ)` and `(ψ + π, −ρ)` one
+/// place of the two branches, the point there square to `(A, B)`. On it the sweep's boundary is one
+/// strip across the meridian: on the meridian itself the arc between two ends, each a double curve's
+/// preimage crossing it, covered beyond by an instant a tenth of the roll or more away (no `Near` at
+/// either end), the fold that follows it 2e-3 further on and buried (measured by `ring_profile
+/// collar`, and with an independent reading of the depth as the least over the roll of the core
+/// circle's closed-form distance: the ends at 72.833° and 257.162° where the depth crosses nought,
+/// 72.883° and 257.127° where it passes the tolerance below). Nothing of the boundary's structure
+/// stands at the event: the meridian's touching half, the two saddles and the instant lie inside one
+/// smooth piece of the collar.
+/// **A pair's end through the swing is the swing's within the hole** (#880 T1f, `rings::Hole`): at
+/// the instant `s''` is odd about the meridian, and the forward's tube `+` has its pair's least 0.044
+/// of a turn past it at a depth all but `s''` beside it — its end, read where `s''` climbs back to
+/// the depth, flipped from roll to roll between the swing and the flat stretch beside it (5.9282 at
+/// 1.32581410146, 5.9025 at 1.3264234849, the swing at 5.9716). In a stretch with a hole of
+/// `ρ₀ = 0.03` it is the swing there, and runs in on it smoothly from the hole's rim.
+#[test]
+fn a_pairs_end_through_the_swing_is_the_swings_within_the_hole() {
+    use gcs_core::brep::swept::rings;
+    let (tool,path,roll,_) = crossed(1.);
+    let ring = Ring::read(&tool).unwrap();
+    let once = ring.touched_once(&path,roll).unwrap()[0];
+    let hole = rings::Collar::new(&ring,&path,roll,once).unwrap().hole(0.03).unwrap();
+    let (t0,th0) = (once.0,once.1);
+    // (tube `+`'s touching end, the stretch from its pair's swallowtail point to the instant)
+    let end = |t: f64| -> f64 {
+        let cs = rings::stretch_pieces(&ring,&path,roll,[1.2815882460604988,t0-1e-7],Some(hole.clone()),t).unwrap();
+        let c = cs.iter().find(|c| c[0].2.branch).unwrap();
+        c.iter().find(|p| p.3 == rings::Side::Touching).unwrap().1.rem_euclid(std::f64::consts::TAU)
+    };
+    for t in [1.32581410146,1.3258141015,1.3264234849] {
+        let e = end(t);
+        assert!((e-th0).abs() < 1e-3,"at {t} the end {e}, the meridian {th0}");
+    }
+    // (smooth: its second differences over 64 rolls up to a millionth short of the instant)
+    let ts: Vec<f64> = (0..=64).map(|k| t0-0.04+(0.04-1e-6)*k as f64/64.).collect();
+    let es: Vec<f64> = ts.iter().map(|&t| end(t)).collect();
+    let most = es.windows(3).map(|w| (w[0]-2.*w[1]+w[2]).abs()).fold(0f64,f64::max);
+    let step = es.windows(2).map(|w| (w[1]-w[0]).abs()).fold(0f64,f64::max);
+    assert!(most < 0.1*step,"its second differences up to {most:e} against its steps' {step:e}: {es:?}");
+}
+
+#[test]
+fn the_collar_about_a_meridian_touched_whole_charts_both_tubes_and_holds_one_strip_of_boundary() {
+    use gcs_core::brep::swept::{depth,rings};
+    use std::f64::consts::{PI,TAU};
+    for (observer,ends) in [(1.,[1.272051,4.487706]),(-1.,[3.060138,5.885428])] {
+        let (tool,path,roll,tol) = crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let once = ring.touched_once(&path,roll).unwrap();
+        let collar = rings::Collar::new(&ring,&path,roll,once[0]).expect("a regular collar");
+        // (each place read from either branch alike, its two points the tube's opposite sides)
+        for (psi,rho) in [(0.3,0.05),(2.,-0.08),(4.,0.02)] {
+            let (x,p) = collar.point(psi,rho).unwrap();
+            let (y,q) = collar.point(psi+PI,-rho).unwrap();
+            assert!((p[0]-q[0]).abs() < 1e-12 && (p[1]-q[1]).abs() < 1e-12,"{observer}: {p:?} {q:?}");
+            assert!(gcs_core::brep::util::space::distance(x,y) > 0.4,"{observer}: {x:?} {y:?}");
+            let ab = collar.ab(p[0],p[1]).unwrap();
+            assert!((ab[0]+rho*psi.sin()).abs() < 1e-9 && (ab[1]-rho*psi.cos()).abs() < 1e-9,"{observer}: {ab:?}");
+        }
+        // (the meridian at the instant: one arc of boundary, its ends halved to the rounding)
+        let kept = |psi: f64| match rings::collar_meridian(&collar,&[psi],tol).unwrap()[0].2 {
+            depth::Reading::Alone => true,
+            depth::Reading::Far(c) => c.depth > -tol,
+            depth::Reading::Near => false,
+        };
+        let psis: Vec<f64> = (0..72).map(|i| TAU*i as f64/72.).collect();
+        let flags: Vec<bool> = psis.iter().map(|&p| kept(p)).collect();
+        let turns: Vec<usize> = (0..72).filter(|&i| flags[i] != flags[(i+1)%72]).collect();
+        assert_eq!(turns.len(),2,"{observer}: {flags:?}");
+        for (k,&i) in turns.iter().enumerate() {
+            let (mut x,mut y) = (psis[i],psis[i]+TAU/72.);
+            loop { let h = 0.5*(x+y); if !(h > x && h < y) { break } if kept(h) == flags[i] { x = h } else { y = h } }
+            let end = if flags[i] { x } else { y };
+            let at = [ends[0],ends[1]].into_iter().find(|e| ((end-e+PI).rem_euclid(TAU)-PI).abs() < 1e-5);
+            assert!(at.is_some(),"{observer}: an end {k} at {end}");
+            // (covered beyond by a far instant)
+            let held = if flags[i] { y } else { x };
+            match rings::collar_meridian(&collar,&[held+if flags[i] { 1e-4 } else { -1e-4 }],tol).unwrap()[0].2 {
+                depth::Reading::Far(c) => assert!((c.at-once[0].0).abs() > 0.05,"{observer}: {c:?}"),
+                r => panic!("{observer}: beyond the end {end} read {r:?}"),
+            }
+        }
+    }
+}
+
+/// **The crossed tori are read at every roll by their contacts' labels** (#880 T1f, `Ring::instant`;
+/// the slow tier): each instant's contact followed from angle to angle by its label. Read by its
+/// place round the meridian alone, the crossed tori's contact, its `ψ` turning half a turn within a
+/// 256th of a turn beside a meridian all but touched whole, was taken for the other branch and the
+/// instant refused (the forward at 1.32689, the reverse at 0.47042: the bench's `Curved` before the
+/// road began). The forward's fold pairs are born and die at the four rolls below, its curves keeping
+/// their kinds through the meridian touched whole at 1.3264280599. In the reverse, over 0.44–0.52
+/// of its roll, a meridian is all but touched whole (`B` at `A`'s nought within 7e-4 of the terms'
+/// scale, never through it), the contact's `ψ` turning half a turn within a few thousandths of an
+/// angle. Read by its label, each instant's contact is read at every roll the shape changes are
+/// sought at, and the changes — a fold pair born and vanishing about the near miss — stand where
+/// they stood with the observer's origin moved by an ulp along `y` (to 1e-9) and by a millionth (to
+/// 1e-4, what the move moves them); the meridian touched whole at 0.9003349192 stays one instant,
+/// moved as little.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: four rolls of 4096 instants")]
+fn the_crossed_tori_are_read_at_every_roll_by_their_contacts_labels() {
+    use gcs_core::brep::swept::rings;
+    let (tool,path,roll,_) = crossed(1.);
+    let ring = Ring::read(&tool).unwrap();
+    let (_,cuts) = rings::changes(&ring,&path,roll).unwrap_or_else(|u| panic!("{u:?}"));
+    let known = [0.257430212274,0.612894065505,1.224039779171,1.383259823825];
+    assert_eq!(cuts.len(),known.len(),"{cuts:?}");
+    for (c,k) in cuts.iter().zip(known) { assert!((c-k).abs() < 1e-9,"{cuts:?}") }
+    let known = [0.102140087076,0.105978753943,0.442232830369,0.483358523288,1.329460825143];
+    for (by,within) in [(0.,1e-9),(f64::NAN,1e-9),(1e-6,1e-4)] {
+        let (tool,path,roll,_) = crossed_moved(-1.,|mut o| { o[1] = if by.is_nan() { f64::from_bits(o[1].to_bits()+1) } else { o[1]+by }; o });
+        let ring = Ring::read(&tool).unwrap();
+        let (_,cuts) = rings::changes(&ring,&path,roll).unwrap_or_else(|u| panic!("moved {by}: {u:?}"));
+        assert_eq!(cuts.len(),known.len(),"moved {by}: {cuts:?}");
+        for (c,k) in cuts.iter().zip(known) { assert!((c-k).abs() < within,"moved {by}: {cuts:?}") }
+        let once = ring.touched_once(&path,roll).unwrap();
+        assert!(once.len() == 1 && (once[0].0-0.900334919170).abs() < within.max(1e-11),"moved {by}: {once:?}");
+    }
 }

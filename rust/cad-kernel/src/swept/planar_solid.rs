@@ -105,7 +105,7 @@ pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> R
 /// A box of the plane holding the region `setting`'s section sweeps over `roll`: the section's
 /// points carried by poses `BOX_PER_DEGREE` a degree, and a quarter of the section's size and the
 /// farthest one of them moved between two poses to spare.
-fn holding(setting: &Setting,roll: [f64;2]) -> [P;2] {
+pub(super) fn holding(setting: &Setting,roll: [f64;2]) -> [P;2] {
     let n = (((roll[1]-roll[0]).to_degrees()*BOX_PER_DEGREE).ceil() as usize).max(64);
     // the section's points read once, each pose carrying them
     let local = setting.points(4);

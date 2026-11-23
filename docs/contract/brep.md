@@ -1033,7 +1033,19 @@ the reach of over its own box, the lowest operand's first. Joined one face at a 
 index whose surface was the same over the box the faces before it filled, a class took whichever
 face was asked first for its surface: a foot's pad leaning `1e-7` rad about its own length, read
 first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
-the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
+the plate's other face on that very plane was a surface of its own. **A class takes the index of a surface
+given the arrangement (`give`) that one of its faces' surfaces is the same as, in any frame** (#880,
+`Shared::class`): `ssi::same` to the tolerance, the rule `Shared::index` reads a face against a
+surface given by, so a meeting given on a surface is found from a face on it however either is
+written — and only an index no other class has taken, never one read the same over a region alone,
+which would join what the classes parted. Taken where a face was the given surface exactly, a pose
+of the ring road turned about its own axis — its seam stood elsewhere, the same torus in another
+frame — was given an index of its own and lost the meetings given it: the 80° tumbling torus judged
+wrong at one seam position, the full turn refused at every one but its own.
+`arrangement::a_face_takes_the_index_of_a_surface_given_it_is_the_same_as_in_any_frame` (a torus's
+meeting with a plane given on the torus with its seam turned, laid as given) and
+`swept_rings::the_tumbling_torus_is_built_wherever_its_start_poses_seam_stands` and
+`the_full_turn_is_built_wherever_its_end_poses_seams_stand` are the gates. **The rules an arrangement reads
 two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
 come within `ON_CURVE` tolerances, inside both stretches by as much (`query::crossings_in`:
 `curve_curve`'s closed forms read at that reach in every test they make, each a test of two curves
@@ -1527,7 +1539,32 @@ knot differs by a function of `v` alone, which closes to nought round a loop, so
 column is filled out from the knot nearest the face's middle only as far as a `u` asked reaches, a
 span at a time by the net's rows read at that `v` (the sheet and `S_v` B-spline curves in `u`
 there) — a fitted sheet's face was integrated across its hundreds of spans per column, each node a
-2D evaluation. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
+2D evaluation. **Every other reading of a net's face is Green's theorem cell by cell** (`props`'s
+`Cells` and `by_cells`, #880): the area, a rational net's flux, a field's flux and a weighed area
+on a B-spline or offset face take `G` along each stretch of a use — cut where it crosses a knot
+line (`crossings`, a kink a sixteenth lands on exactly crossed there) so it lies in one cell — from the
+knot line bounding its strip on the side of the face's middle, one span's rule, and where the loop
+hands over from one knot to another at `v_c` add the strips' columns between, `± Σ H_j(v_c)`,
+`H_j = ∫ I_j dv` tabled once per strip a whole cell at a time along `v` (the constant each table
+starts from cancels: a closed loop crosses each knot line as often each way).  The cell holding a
+crossing is read by its part on the face's side of it along the knot line, so nothing beyond the
+trim is read: a sheet trimmed at its fold folds back past it, `|S_u × S_v|` kinked there, and a
+cell read whole across it was 1.1e-7 off a face of the crossed forward member.  Each span across, cell
+along and stretch is read by ten nodes where their Kronrod extension agrees (`checked`); the
+cost is the cells the face spans and its uses' nodes, where `G` gathered across every span from the
+middle cost each node the spans between — 34 to 50 million integrand reads a face of the crossed
+forward member, its area 78 s, now 3 to 11 million and 18 s.  A face reaching a collapsed row
+(a degenerate use's line, or a row all but collapsed) keeps `integrated`'s reading along the
+parameter collapsed; a stretch is read as there (ten nodes, `checked`), and a use's ends closed
+where its curve arrives; a line in the parameters is cut at every knot line it crosses, in closed
+form.  A net creased at its knots needs nothing more: each cell's nodes lie inside it, on its own
+span's side (`brep::a_creased_net_is_read_cell_by_cell`).  `brep::a_nets_face_is_read_cell_by_cell` (an annulus of a paraboloid on a
+graded net, the polynomial net and the same net rational; the integrand's reads, `props::reads`,
+no more than doubled as the knots are doubled in `u` and then in `v`),
+`brep::a_polygon_on_a_net_is_read_cell_by_cell` (a pentagon with a square hole whose sides lie on
+knot lines, a triangle with a pole row, a triangle inside one cell) and
+`brep::a_rational_torus_is_read_cell_by_cell_across_its_seams` hold area and flux to their closed
+forms within 1e-12. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
 each node's foot from the previous node's, carried along by its rate, where that node is just
 behind it, the branch still the one nearest the line between the ends — from that line, Newton
 took some ten steps a node on a fitted sheet's curved edge.
