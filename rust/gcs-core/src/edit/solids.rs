@@ -495,9 +495,8 @@ fn rounds_edit(
     // a body a file gives is the file's, never extended (#993 stage 2): a round is written on a
     // body made of it, as a body word is
     if matches!(object.def, crate::model::SolidDef::Given(_)) {
-        return Err(format!("`{body}` is the body a file gives, and it is never extended: name \
-                            the body to {} — `part := solid({body})` — and pick its edges",
-                           word.as_str()));
+        return Err(crate::program::never_extended(&body, &format!(
+            "to {} — `part := solid({body})` — and pick its edges", word.as_str())));
     }
     let size = size.trim();
     if size.is_empty() {

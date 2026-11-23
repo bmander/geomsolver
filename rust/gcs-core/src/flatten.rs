@@ -421,6 +421,10 @@ pub struct Expansion {
     /// Where a declaration reads through a name already said to name nothing — a formal its
     /// call gave nothing that is (#253): the elaborator, finding nothing there, says no more.
     pub quiet: BTreeSet<Span>,
+    /// **Each read of a given body refused where it would have to be placed** (E106, #993 stage
+    /// 2), by where it is read: the body's path — so where the same read is a body statement's
+    /// body, refused as extending it (E080), the elaborator says that one alone (`body_rule`).
+    pub misplaced: BTreeMap<Span, String>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
     /// **Some points of sets** ([0.212]): each point a `some` binds, by absolute key (a probe,
@@ -1434,12 +1438,9 @@ impl<'a> Walk<'a> {
         self.listed_names();
         let (mut flat, mut aliases) = self.resolve();
         // the given bodies the document read, declared before everything else (#993 stage 2)
-        if self.given_bodies() {
-            let (mut given, resolved) = self.resolve();
-            given.append(&mut flat);
-            flat = given;
-            aliases = resolved;
-        }
+        let (mut given, misplaced) = self.given_bodies();
+        given.append(&mut flat);
+        flat = given;
         let lowered = self.to_judge(&aliases);
         if let Some((comp, scope)) = self.datums() {
             // A document that says `use std` has the standard datums, as a CAD part has its
@@ -1476,6 +1477,7 @@ impl<'a> Walk<'a> {
             charts: self.charts,
             joints: self.joints,
             quiet: self.quiet,
+            misplaced,
             probes: self.sets.probes,
             binders: self.sets.binders,
             sheets: self.sets.sheets,

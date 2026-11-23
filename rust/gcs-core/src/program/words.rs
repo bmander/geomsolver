@@ -147,11 +147,17 @@ fn given(p: &Program, say: &mut impl FnMut(Code, Span, String)) {
     }
     let files = std::iter::once(None).chain((0..p.modules.len()).map(Some));
     for file in files {
+        // a file's own names read only where one of its `use`s names a given module
+        let uses: Vec<_> = p.use_stmts(file).iter()
+            .filter(|u| p.module_named(&u.name).is_some_and(|k| p.modules[k].given.is_some()))
+            .collect();
+        if uses.is_empty() {
+            continue;
+        }
         let own = own_names(p, file);
-        for u in p.use_stmts(file) {
-            let given = p.module_named(&u.name).is_some_and(|k| p.modules[k].given.is_some());
+        for u in uses {
             let head = u.name.split('.').next().unwrap_or_default();
-            if given && own.contains(head) {
+            if own.contains(head) {
                 say(Code::E071, u.span, format!(
                     "`{head}` is defined in this file, and `use {}` names the body its file \
                      gives: one name, two things", u.name));
