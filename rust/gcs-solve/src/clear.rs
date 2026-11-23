@@ -300,9 +300,36 @@ pub(crate) fn evaluate(
         .evaluated_solid(a, policy)
         .and_then(|a| sk.evaluated_solid(b, policy).map(|b| (a, b)));
     match pair {
-        Ok((a, b)) => evaluate_pair(requirement, &a, &b),
+        Ok((ea, eb)) => {
+            let one = one_set(sk, a, b) && ea.origin().0 == eb.origin().0
+                && ea.rotation() == eb.rotation();
+            Verdict { evidence: measure_pair(requirement, &ea, &eb, None, one) }
+        }
         Err(reason) => Verdict::failed(reason),
     }
+}
+
+/// **Whether solids `a` and `b` are one set**: each the same solid once a body whose stock is
+/// another, with nothing on, through or bound and no binding placing it (`part :=
+/// solid(bracket)`), is read as that stock.  Their boundaries are then one boundary, faceted
+/// alike, so a containment between them is exact whatever its faceting (#993 stage 2).
+fn one_set(sk: &Sketch, a: usize, b: usize) -> bool {
+    let root = |mut i: usize| {
+        // a chain of such bodies is acyclic (a body's stock is made before it), and bounded
+        for _ in 0..sk.solids.len() {
+            match sk.solids.get(i) {
+                Some(crate::model::SolidE {
+                    def: crate::model::SolidDef::Body { stock, on, through, bound },
+                    binding: None, ..
+                }) if on.is_empty() && through.is_empty() && bound.is_empty() => {
+                    i = *stock as usize
+                }
+                _ => break,
+            }
+        }
+        i
+    };
+    root(a) == root(b)
 }
 
 /// Checked compatibility adapter. Invalid arguments cannot reach geometric evaluation.
@@ -324,7 +351,7 @@ pub fn evaluate_pair(
     a: &solid::EvaluatedSolid,
     b: &solid::EvaluatedSolid,
 ) -> Verdict {
-    Verdict { evidence: measure_pair(requirement, a, b, None) }
+    Verdict { evidence: measure_pair(requirement, a, b, None, false) }
 }
 
 /// `measure_pair` with `b` moved rigidly in space by `pose`: what a claim swept over a motion asks
@@ -335,7 +362,7 @@ pub(crate) fn evaluate_moved(
     b: &solid::EvaluatedSolid,
     pose: crate::envelope::Motion,
 ) -> Result<GeometricEvidence, String> {
-    measure_pair(requirement, a, b, Some(pose))
+    measure_pair(requirement, a, b, Some(pose), false)
 }
 
 fn measure_pair(
@@ -343,6 +370,7 @@ fn measure_pair(
     a: &solid::EvaluatedSolid,
     b: &solid::EvaluatedSolid,
     pose: Option<crate::envelope::Motion>,
+    one: bool,
 ) -> Result<GeometricEvidence, String> {
     use crate::model::SolidRequirement as R;
     let pa = a.boundary();
@@ -420,7 +448,9 @@ fn measure_pair(
             (status, interval, nearest)
         }
         R::Inside | R::Fits { .. } => {
-            let inside = contained(pa, &cb, eps);
+            // one set (`one_set`): its boundary is the other's, and a set holds itself exactly
+            let (inside, facet_tol) =
+                if one { (true, 0.0) } else { (contained(pa, &cb, eps), facet_tol) };
             let interval = Interval::around(if inside { gap } else { -gap }, facet_tol)?;
             let status = if facet_tol > 0.0 && interval.lower() <= 0.0 && interval.upper() >= 0.0 {
                 Predicate::Unresolved("containment is within curved-faceting uncertainty".into())
