@@ -220,7 +220,8 @@ fn a_far_cover_continued_into_the_points_own_contact_ends() {
 /// **The half turn's seams traced from the depth on every chart** (#880 T1f, `tube::seams`): on the
 /// sheet `−`, about its swallowtail point, a disc of radius 0.01 (halved from the feature until every
 /// far cover on its rim is within the tolerance) cut from the depth's domain; its double curve's two
-/// preimages each run from the disc's rim — one across `θ ≡ 0` to the roll's end, one to where its
+/// preimages each run from the disc's rim (to the tolerance in space on the sheet, where the march
+/// measures it) — one across `θ ≡ 0` to the roll's end, one to where its
 /// cover passes to the end pose — and the end pose's one seam crosses `θ ≡ 0` too, leaving its
 /// contact circle where the first preimage leaves the sheet's rim — the same crossing, but each
 /// chart's read on its own: 1.64e-5 apart, five tolerances, the end pose touching the sheet along
@@ -245,11 +246,27 @@ fn the_half_turns_seams_are_traced_from_the_depth_on_every_chart() {
     let [disc] = discs[..] else { panic!("one disc: {discs:?}") };
     assert!((disc.radius-0.01).abs() < 1e-12,"the disc's radius {}",disc.radius);
     assert_eq!(minus.len(),3,"the sheet −'s seams: {:?}",minus.iter().map(|p| (p.uv[0],p.uv[p.uv.len()-1],p.ends)).collect::<Vec<_>>());
-    // (an end on an inner edge named by that edge, the folds' first: the disc's rim is read by its side)
+    // (an end on an inner edge named by that edge, the part's runs numbered folds first; the disc's
+    // rim read in space on the sheet, the march's own measure: beside the fold the sheet's metric
+    // all but loses its kernel, and an end within the tolerance of the rim in space stands
+    // 2.5e-4 and 3.5e-4 off it in the spine's metric, the disc's own — read near the end in the
+    // parameters, the sheet passing through itself along the double curve)
+    let gap = |q: [f64;2]| -> f64 {
+        let x = tube.at(Chart::Sheet(-1.),q).unwrap().x;
+        let apart = |f: f64| { let y = tube.at(Chart::Sheet(-1.),disc.rim(f)).unwrap().x;
+            ((x[0]-y[0]).powi(2)+(x[1]-y[1]).powi(2)+(x[2]-y[2]).powi(2)).sqrt() };
+        let near = |f: f64| { let r = disc.rim(f); (r[0]-q[0]).hypot(r[1]-q[1]) };
+        let n = 4096;
+        let f = (0..n).map(|k| k as f64/n as f64).min_by(|a,b| near(*a).total_cmp(&near(*b))).unwrap();
+        let (mut lo,mut hi) = (f-1./64.,f+1./64.);
+        let g = 0.5*(5f64.sqrt()-1.);
+        while hi-lo > 1e-12 { let (a,b) = (hi-g*(hi-lo),lo+g*(hi-lo)); if apart(a) < apart(b) { hi = b } else { lo = a } }
+        apart(0.5*(lo+hi))
+    };
     let on_disc = |p: &gcs_core::brep::zero_set::Piece<_>| [(p.ends[0],p.uv[0]),(p.ends[1],p.uv[p.uv.len()-1])].iter()
-        .any(|(e,q)| matches!(e,End::Edge(_)) && disc.side(*q).abs() <= 1e-6);
+        .any(|(e,q)| matches!(e,End::Edge(_)) && gap(*q) <= tol);
     assert_eq!(minus.iter().filter(|p| on_disc(p)).count(),2,"two pieces from the disc's rim: {:?}",
-        minus.iter().map(|p| (p.ends,disc.side(p.uv[0]),disc.side(p.uv[p.uv.len()-1]))).collect::<Vec<_>>());
+        minus.iter().map(|p| (p.ends,gap(p.uv[0]),gap(p.uv[p.uv.len()-1]))).collect::<Vec<_>>());
     for k in 0..2 {
         let (circles,_) = edges(&tube,Chart::End(k),tol,feature).unwrap();
         assert_eq!(circles.len(),8,"the end {k}'s contact circles, in quarters");
