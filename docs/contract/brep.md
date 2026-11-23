@@ -750,9 +750,18 @@ no domain to hold it), where the sheet's own signed distance runs on along the t
 there the curvature is switched off at the edge, and a ball's centre rolling on past a face's
 edge on it turned its curvature from 25 to 9 at once, which no cubic net fits (the canal missed
 its bar by 1.7e-4). `Surface::parallel` is `offset`, in closed form, else a sheet's offset (an
-offset's offset by the sum), and none for the kinds whose second partials are not read (a swept
-curve's, a blend's, a family's wall, an image).
-`sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate.
+offset's offset by the sum), and none for the kinds whose second partials are not read (any other
+curve swept, a curve turned, a blend, a family's wall, an image).
+**A spline or an ellipse swept along a line is the sheet it is** (`Surface::swept_net`): its
+spline's poles (an ellipse's rational one) carried each way along the sweep, one straight span in
+`v`, exact — so its offset is a sheet's, read by its signed distance as above, and a ball rolls on
+it and a chamfer's leg is read from it. The span is as long each way as the curve is wide, and a
+foot past it is read on the line it runs on: **a net that is one straight span along a parameter
+carries on exactly along it** (degree 1, two poles, each pair weighed alike), so
+`continued_foot` holds a foot to the domain's width past it along every other way only.
+`sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate, and
+`brep::an_ellipses_foot_is_its_nearest_point` the swept ellipse's (its offset 2 in stands its
+distance off with its foot at the point's own height, 3000 up the sweep and 500 below).
 **A ball rolls on a sheet** (`fillet::roll`, brep-bench's fillet/bezier-dome-one-edge): its centre
 runs on the faces' offsets read so, traced only round the run — the run's box grown by `r + 2r /
 sin(θ/2)`, as far as a ball rolling on past an end needs, its section's corner within `r /
