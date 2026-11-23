@@ -108,33 +108,45 @@ impl Bound {
         let j = at.partition_point(|q| q[0] < x).clamp(1,n-1);
         let (p,q) = (at[j-1],at[j]);
         let guess = if q[0] > p[0] { p[1]+(q[1]-p[1])*(x-p[0])/(q[0]-p[0]) } else { p[1] };
-        let f = |y: f64| tube.stop(chart,*stop,axis.point(x,y));
-        // (the inside's way: where the field is positive, read beside the guess)
-        let (mut a,mut b) = (guess,guess);
-        let mut h = step;
-        let (mut fa,mut fb) = (f(a),f(b));
-        let mut tries = 0;
-        while (fa > 0.) == (fb > 0.) {
-            a = guess-h; b = guess+h;
-            fa = f(a); fb = f(b);
-            h *= 2.;
-            tries += 1;
-            if tries > 64 { return None }
-        }
-        // (false position, Illinois's, to the rounding)
-        let mut side = 0;
-        for _ in 0..200 {
-            let m = (a*fb-b*fa)/(fb-fa);
-            if !(m > a.min(b) && m < a.max(b)) { break }
-            let fm = f(m);
-            if fm == 0. { return Some(m) }
-            if (fm > 0.) == (fa > 0.) { a = m; fa = fm; if side == -1 { fb *= 0.5 } side = -1 }
-            else { b = m; fb = fm; if side == 1 { fa *= 0.5 } side = 1 }
-            if (b-a).abs() <= 4.*f64::EPSILON*a.abs().max(b.abs()) { break }
-        }
-        // (the root's inside end: the chart bounds the sweep there)
-        Some(if fa > 0. { a } else { b })
+        root(&|y: f64| tube.stop(chart,*stop,axis.point(x,y)),guess,step)
     }
+}
+
+/// **A root of `f` beside `guess`**, its inside end (where `f` is positive): bracketed by doubling
+/// from `step` either way until `f` changes sign across the bracket, then halved by false position
+/// (Illinois's) to the rounding. None where no bracket is found in sixty-four doublings.
+fn root(f: &dyn Fn(f64) -> f64,guess: f64,step: f64) -> Option<f64> {
+    let (mut a,mut b) = (guess,guess);
+    let mut h = step;
+    let (mut fa,mut fb) = (f(a),f(b));
+    let mut tries = 0;
+    while (fa > 0.) == (fb > 0.) {
+        a = guess-h; b = guess+h;
+        fa = f(a); fb = f(b);
+        h *= 2.;
+        tries += 1;
+        if tries > 64 { return None }
+    }
+    // (false position, Illinois's, while it shrinks the bracket; then halving to the rounding — a
+    // false position stalled at one end leaves the bracket wide)
+    let mut side = 0;
+    for _ in 0..64 {
+        let m = (a*fb-b*fa)/(fb-fa);
+        if !(m > a.min(b) && m < a.max(b)) { break }
+        let fm = f(m);
+        if fm == 0. { return Some(m) }
+        if (fm > 0.) == (fa > 0.) { a = m; fa = fm; if side == -1 { fb *= 0.5 } side = -1 }
+        else { b = m; fb = fm; if side == 1 { fa *= 0.5 } side = 1 }
+        if (b-a).abs() <= 4.*f64::EPSILON*a.abs().max(b.abs()) { break }
+    }
+    loop {
+        let m = 0.5*(a+b);
+        if !(m > a.min(b) && m < a.max(b)) { break }
+        let fm = f(m);
+        if fm == 0. { return Some(m) }
+        if (fm > 0.) == (fa > 0.) { a = m; fa = fm } else { b = m }
+    }
+    Some(if fa > 0. { a } else { b })
 }
 
 impl Cell {
@@ -173,6 +185,16 @@ impl Cell {
     pub fn net(&self,tube: &Tube,step: f64,bar: f64) -> Option<(crate::nurbs::Net,f64)> {
         let cache = RefCell::new(BTreeMap::new());
         let f = |u: f64,v: f64| self.place(tube,[u,v],step,&cache).and_then(|q| tube.at(self.chart,q)).map_or([f64::NAN;3],|p| p.x);
+        if std::env::var_os("SOLVENT_TUBE_FAIL").is_some() {
+            let mut bad = Vec::new();
+            for i in 0..=16 { let u = i as f64/16.; let x = self.run[0]+(self.run[1]-self.run[0])*u;
+                let sd = self.sides(tube,x,step,&cache);
+                let ok = (0..=8).all(|j| f(if self.axis == Axis::Columns { u } else { j as f64/8. },if self.axis == Axis::Columns { j as f64/8. } else { u })[0].is_finite());
+                bad.push((x,sd,ok)) }
+            eprintln!("NET {:?} run {:?}: {bad:?}",self.axis,self.run);
+            let r = crate::nurbs::fit_net(&f,super::faces::DEGREE,super::faces::DEGREE,32,16,bar);
+            eprintln!("  fit {:?}",r.as_ref().map(|r| (r.1,r.0.poles.len(),r.0.poles[0].len())));
+        }
         let (net,err) = crate::nurbs::fit_net(&f,super::faces::DEGREE,super::faces::DEGREE,32,16,bar)?;
         (err <= bar && net.poles.iter().flatten().flatten().all(|x| x.is_finite())).then_some((net,err))
     }
@@ -202,9 +224,10 @@ impl Stops {
     }
 }
 
-/// A crossing of a line with a polyline: its place across the line, which polyline, which segment.
+/// A crossing of a line with a polyline: its place across the line, which polyline, which segment,
+/// and the stop it lies on (a stop's own, or a face's edge on the pinch's rim).
 #[derive(Clone,Copy,Debug)]
-struct Crossing { y: f64,line: usize,seg: usize }
+struct Crossing { y: f64,line: usize,seg: usize,stop: Option<Stop> }
 
 /// The crossings of the line at `x` (run's coordinate `axis.along()`) with the polylines, each segment
 /// read half-open so a vertex on the line is crossed once.
@@ -216,7 +239,7 @@ fn crossings(polys: &[&[P]],axis: Axis,x: f64) -> Vec<Crossing> {
             let (p,q) = (l[s],l[s+1]);
             if (p[i] <= x) != (q[i] <= x) {
                 let f = (x-p[i])/(q[i]-p[i]);
-                out.push(Crossing {y:p[j]+(q[j]-p[j])*f,line:k,seg:s});
+                out.push(Crossing {y:p[j]+(q[j]-p[j])*f,line:k,seg:s,stop:None});
             }
         }
     }
@@ -231,9 +254,22 @@ fn crossings(polys: &[&[P]],axis: Axis,x: f64) -> Vec<Crossing> {
 #[derive(Clone,Debug)]
 struct Read { x: f64,face: Option<[f64;2]>,lo: Option<(f64,Stop,usize,usize)>,hi: Option<(f64,Stop,usize,usize)>,blocked: bool }
 
+/// **How an edge of a face is read exactly**, a segment of one of its rings at a time (the ring, the
+/// segment from its point, the hold): its own curve's point at a fraction along the segment
+/// (`At`), or where it meets the line of coordinate `0` or `1` at a value (`Line`) — an arc's own
+/// curve (a join's normal form by its parameter, the pinch's rim by the collar's angle, a traced run
+/// settled on its double curve with the line's parameter held), never the chord. None where the
+/// segment's curve does not meet the line. The ring's polygon proposes the segment; the curve
+/// decides.
+#[derive(Clone,Copy,Debug)]
+pub enum Hold { At(f64),Line(usize,f64) }
+
 /// The context a face's cells are found in: the tube and chart, the face's rings (outer first) placed
-/// in the window, where the chart stops, the tolerance.
-pub struct Ask<'a> { pub tube: &'a Tube<'a>,pub chart: Chart,pub rings: Vec<Vec<P>>,pub stops: &'a Stops,pub tol: f64 }
+/// in the window, their edges read exactly (`Hold`) and the stop each lies on (`lies`: an edge on the
+/// pinch's rim is the hole's stop itself), where the chart stops, the tolerance, the bar a cell's net
+/// is fitted to and the step its sides' roots are bracketed from.
+pub struct Ask<'a> { pub tube: &'a Tube<'a>,pub chart: Chart,pub rings: Vec<Vec<P>>,pub edge: &'a dyn Fn(usize,usize,Hold) -> Option<P>,
+    pub lies: &'a dyn Fn(usize,usize) -> Option<Stop>,pub stops: &'a Stops,pub tol: f64,pub bar: f64,pub step: f64 }
 
 /// **A face's cells**: each leaf of the splits of its box, the part of the box it covers (`rect`) and
 /// its cell; and the splits, each the line it was split at (its axis, its value, the part's extent
@@ -241,32 +277,58 @@ pub struct Ask<'a> { pub tube: &'a Tube<'a>,pub chart: Chart,pub rings: Vec<Vec<
 pub struct Cover { pub leaves: Vec<([[f64;2];2],Cell)>,pub splits: Vec<(Axis,f64,[f64;2])> }
 
 impl Ask<'_> {
-    /// The box of the face's part inside `rect` (its rings' segments clipped to it, a clipped end put
-    /// on the side it was clipped at); none where it holds none of the face.
+    /// **The box of the face's part inside `rect`**, read on its edges' own curves: each segment of
+    /// its rings whose chord or curve meets the rect, its ends within the rect, the curve's crossings
+    /// of the rect's sides within the rect's extent, and the curve's extremes inside the segment (a
+    /// curve bowing past its chord) within the rect; and the rect's corners inside the face. None where
+    /// it holds none of the face. So a sliver between a chord and its curve is no part: a part is
+    /// where the face's edges are, as every line reads them.
     fn part(&self,rect: [[f64;2];2]) -> Option<[[f64;2];2]> {
         let mut b = [[f64::INFINITY,f64::NEG_INFINITY];2];
-        let mut put = |p: P| for k in 0..2 { b[k] = [b[k][0].min(p[k]),b[k][1].max(p[k])] };
-        for r in &self.rings {
-            for s in 0..r.len() {
-                let (p,q) = (r[s],r[(s+1)%r.len()]);
-                // (Liang–Barsky, each end's clipping side kept)
-                let (mut t0,mut t1) = (0f64,1f64);
-                let (mut s0,mut s1): (Option<(usize,f64)>,Option<(usize,f64)>) = (None,None);
-                let d = [q[0]-p[0],q[1]-p[1]];
-                let mut ok = true;
+        let inside = |p: P| (0..2).all(|k| p[k] >= rect[k][0] && p[k] <= rect[k][1]);
+        let mut put = |p: P| if inside(p) { for k in 0..2 { b[k] = [b[k][0].min(p[k]),b[k][1].max(p[k])] } };
+        for (r,ring) in self.rings.iter().enumerate() {
+            let n = ring.len();
+            for s in 0..n {
+                let (p,q) = (ring[s],ring[(s+1)%n]);
+                // (the segment's curve's middle: how far it bows from its chord, which widens the
+                // chord's box for the question whether the segment meets the rect at all)
+                let lo = [p[0].min(q[0]),p[1].min(q[1])];
+                let hi = [p[0].max(q[0]),p[1].max(q[1])];
+                let near = (0..2).all(|k| hi[k] >= rect[k][0] && lo[k] <= rect[k][1]);
+                let m = if near { (self.edge)(r,s,Hold::At(0.5)) } else {
+                    // (a chord's box apart from the rect by more than its length cannot hold its
+                    // curve's bow — a segment is a short run of a smooth curve)
+                    let len = (hi[0]-lo[0]).max(hi[1]-lo[1]);
+                    if (0..2).any(|k| lo[k] > rect[k][1]+len || hi[k] < rect[k][0]-len) { continue }
+                    (self.edge)(r,s,Hold::At(0.5))
+                };
+                put(p);
+                put(q);
                 for k in 0..2 {
-                    for (pk,lim,side) in [(-d[k],p[k]-rect[k][0],rect[k][0]),(d[k],rect[k][1]-p[k],rect[k][1])] {
-                        if pk == 0. { if lim < 0. { ok = false } continue }
-                        let r = lim/pk;
-                        if pk < 0. { if r > t0 { t0 = r; s0 = Some((k,side)) } } else if r < t1 { t1 = r; s1 = Some((k,side)) }
+                    for v in rect[k] {
+                        if !v.is_finite() { continue }
+                        let crossed = (p[k] <= v) != (q[k] <= v) || m.is_some_and(|m| (m[k] <= v) != (p[k] <= v));
+                        if !crossed { continue }
+                        if let Some(c) = (self.edge)(r,s,Hold::Line(k,v)) { let mut c = c; c[k] = v; put(c) }
                     }
                 }
-                if ok && t0 <= t1 {
-                    for (t,side) in [(t0,s0),(t1,s1)] {
-                        let mut c = [p[0]+d[0]*t,p[1]+d[1]*t];
-                        if let Some((k,v)) = side { c[k] = v }
-                        put(c);
+                // (each coordinate's extreme along the segment where the curve's middle stands past
+                // both its ends: golden section on the curve's fraction)
+                let Some(m) = m else { continue };
+                put(m);
+                for k in 0..2 {
+                    let sign = if m[k] > p[k].max(q[k]) { 1. } else if m[k] < p[k].min(q[k]) { -1. } else { continue };
+                    let g = |f: f64| (self.edge)(r,s,Hold::At(f)).map_or(f64::NEG_INFINITY,|x| sign*x[k]);
+                    let (mut a,mut e) = (0f64,1f64);
+                    let phi = 0.5*(5f64.sqrt()-1.);
+                    let (mut c,mut d) = (e-phi*(e-a),a+phi*(e-a));
+                    let (mut gc,mut gd) = (g(c),g(d));
+                    while e-a > 1e-12 {
+                        if gc > gd { e = d; d = c; gd = gc; c = e-phi*(e-a); gc = g(c) }
+                        else { a = c; c = d; gc = gd; d = a+phi*(e-a); gd = g(d) }
                     }
+                    if let Some(x) = (self.edge)(r,s,Hold::At(0.5*(a+e))) { put(x) }
                 }
             }
         }
@@ -274,14 +336,33 @@ impl Ask<'_> {
         // the box's sides there)
         if rect.iter().flatten().all(|x| x.is_finite()) {
             for c in [[rect[0][0],rect[1][0]],[rect[0][1],rect[1][0]],[rect[0][0],rect[1][1]],[rect[0][1],rect[1][1]]] {
-                let crossed = self.rings.iter().map(|r| (0..r.len()).filter(|&j| {
-                    let (p,q) = (r[j],r[(j+1)%r.len()]);
-                    (p[1] <= c[1]) != (q[1] <= c[1]) && p[0]+(c[1]-p[1])/(q[1]-p[1])*(q[0]-p[0]) > c[0]
-                }).count()).sum::<usize>();
-                if crossed%2 == 1 { for k in 0..2 { b[k] = [b[k][0].min(c[k]),b[k][1].max(c[k])] } }
+                if self.holds(c) { for k in 0..2 { b[k] = [b[k][0].min(c[k]),b[k][1].max(c[k])] } }
             }
         }
         (b[0][0] < b[0][1] && b[1][0] < b[1][1]).then_some(b)
+    }
+
+    /// Whether the face holds `c`: its rings' crossings of the row through `c`, each read on its
+    /// curve, odd to its right.
+    fn holds(&self,c: P) -> bool {
+        let closed: Vec<Vec<P>> = self.rings.iter().map(|r| { let mut c = r.clone(); c.push(r[0]); c }).collect();
+        let cs = crossings(&closed.iter().map(|c| &c[..]).collect::<Vec<_>>(),Axis::Rows,c[1]);
+        cs.iter().filter(|x| self.on_curve(x,Axis::Rows,c[1]) > c[0]).count()%2 == 1
+    }
+
+    /// A ring's crossing of the line at `x` read on its edge's own curve (`edge`); the chord's where
+    /// the curve does not meet the line within the segment (the chord crosses, the curve's ends
+    /// straddle it: only a failure of the reading itself).
+    fn on_curve(&self,c: &Crossing,axis: Axis,x: f64) -> f64 {
+        (self.edge)(c.line,c.seg,Hold::Line(axis.along(),x)).map_or(c.y,|p| p[axis.across()])
+    }
+
+    /// A stop's crossing of the line at `x` settled on its own field (`Tube::stop`) beside the
+    /// polyline's.
+    fn stop_on(&self,c: &Crossing,axis: Axis,x: f64) -> f64 {
+        let stop = self.stops.lines[c.line].1;
+        let m = self.tube.rates_at(self.chart,axis.point(x,c.y)).map_or(1.,|m| m[axis.across()].max(f64::MIN_POSITIVE));
+        root(&|y: f64| self.tube.stop(self.chart,stop,axis.point(x,y)),c.y,self.tol/m).unwrap_or(c.y)
     }
 
     /// **The part `b` read on the line at `x`** (`Read`).
@@ -291,14 +372,30 @@ impl Ask<'_> {
         let (lim0,lim1) = (lim0.min(lo),lim1.max(hi));
         // (the rings closed for the crossing)
         let closed: Vec<Vec<P>> = self.rings.iter().map(|r| { let mut c = r.clone(); c.push(r[0]); c }).collect();
-        let cs = crossings(&closed.iter().map(|c| &c[..]).collect::<Vec<_>>(),axis,x);
+        let mut cs = crossings(&closed.iter().map(|c| &c[..]).collect::<Vec<_>>(),axis,x);
+        for c in cs.iter_mut() { c.y = self.on_curve(c,axis,x); c.stop = (self.lies)(c.line,c.seg) }
+        cs.sort_by(|a,b| a.y.total_cmp(&b.y));
         // (the face's runs on the line — between its crossings, even and odd — clipped to the box,
         // and their extent: a run beyond the box is another part's)
         let face = cs.chunks(2).filter(|w| w.len() == 2).map(|w| [w[0].y.max(lo),w[1].y.min(hi)]).filter(|w| w[0] < w[1])
             .fold(None,|e: Option<[f64;2]>,w| Some(e.map_or(w,|e| [e[0].min(w[0]),e[1].max(w[1])])));
         if std::env::var_os("SOLVENT_TUBE_CROSS").is_some() { eprintln!("    crossings at {x}: {:?}",cs.iter().map(|c| (c.y,c.line,c.seg)).collect::<Vec<_>>()) }
         let polys: Vec<&[P]> = self.stops.lines.iter().map(|(l,_)| &l[..]).collect();
-        let stops: Vec<Crossing> = crossings(&polys,axis,x).into_iter().filter(|c| c.y > lim0 && c.y < lim1).collect();
+        let mut stops: Vec<Crossing> = crossings(&polys,axis,x);
+        for c in stops.iter_mut() { c.y = self.stop_on(c,axis,x); c.stop = Some(self.stops.lines[c.line].1) }
+        // (a face's edge on a stop is that stop where the line meets it, on the edge's own curve:
+        // the stop's polyline's crossing beside it, within the tolerance in space, is the same
+        // point — and a line passing between the stop's chord and its curve, where it turns,
+        // crosses the edge all the same)
+        let space = |y: f64| self.tube.at(self.chart,axis.point(x,y)).map(|p| p.x);
+        let own: Vec<Crossing> = cs.iter().filter(|c| c.stop.is_some()).map(|c| Crossing {line:usize::MAX,seg:0,..*c}).collect();
+        stops.retain(|c| !own.iter().any(|o| o.stop == c.stop && match (space(o.y),space(c.y)) {
+            (Some(p),Some(q)) => distance(p,q) <= self.tol,
+            _ => false,
+        }));
+        stops.extend(own);
+        stops.sort_by(|a,b| a.y.total_cmp(&b.y));
+        stops.retain(|c| c.y > lim0 && c.y < lim1);
         // (each run between the crossings read at its middle)
         let mut cuts: Vec<f64> = vec![lim0];
         cuts.extend(stops.iter().map(|c| c.y));
@@ -328,11 +425,11 @@ impl Ask<'_> {
                 // (below the face: the highest such run's top, a crossing)
                 if k+1 < cuts.len()-1 {
                     let c = stops[k];
-                    if r.lo.is_none_or(|l| l.0 < e) { r.lo = Some((e,self.stops.lines[c.line].1,c.line,c.seg)) }
+                    if r.lo.is_none_or(|l| l.0 < e) { r.lo = Some((e,c.stop.expect("a stop's crossing"),c.line,c.seg)) }
                 }
             } else if above {
                 // (above it: the lowest such run's bottom)
-                if r.hi.is_none() && k >= 1 { let c = stops[k-1]; r.hi = Some((a,self.stops.lines[c.line].1,c.line,c.seg)) }
+                if r.hi.is_none() && k >= 1 { let c = stops[k-1]; r.hi = Some((a,c.stop.expect("a stop's crossing"),c.line,c.seg)) }
             } else { r.blocked = true }
         }
         r
@@ -379,13 +476,19 @@ impl Ask<'_> {
         }
         if !breaks.is_empty() { breaks.dedup(); return Err(breaks) }
         let on: Vec<&Read> = reads.iter().filter(|r| r.face.is_some()).collect();
-        if on.is_empty() || on.iter().any(|r| r.blocked) { return Err(Vec::new()) }
+        if on.is_empty() || on.iter().any(|r| r.blocked) {
+            if std::env::var_os("SOLVENT_TUBE_FAIL").is_some() { eprintln!("  (empty {} blocked {:?})",on.is_empty(),reads.iter().filter(|r| r.blocked).take(2).collect::<Vec<_>>()) }
+            return Err(Vec::new())
+        }
         let side = |pick: &dyn Fn(&Read) -> Option<(f64,Stop,usize,usize)>,boxed: bool,end: f64| -> Option<Bound> {
             if boxed { return Some(Bound::At(end)) }
             let (_,stop,..) = pick(on[0])?;
             Some(Bound::Stop {stop,at:reads.iter().filter_map(|r| pick(r).map(|p| [r.x,p.0])).collect()})
         };
-        let (Some(lo),Some(hi)) = (side(&|r| r.lo,boxed[0],b0),side(&|r| r.hi,boxed[1],b1)) else { return Err(Vec::new()) };
+        let (Some(lo),Some(hi)) = (side(&|r| r.lo,boxed[0],b0),side(&|r| r.hi,boxed[1],b1)) else {
+            if std::env::var_os("SOLVENT_TUBE_FAIL").is_some() { eprintln!("  (no side: {:?} {:?})",on[0].lo,on[0].hi) }
+            return Err(Vec::new())
+        };
         // (no stop met inside: every polyline's vertex within the run stands outside the cell, but
         // those of the very curves its sides follow)
         // (each polyline a side follows, and the segments of it the side's lines met)
@@ -411,11 +514,41 @@ impl Ask<'_> {
                 let (x,y) = (p[axis.along()],p[axis.across()]);
                 if !(x > x0 && x < x1) { continue }
                 if skip.iter().any(|&(k,a,e)| k == li && vi >= a && vi <= e) { continue }
-                if y > interp(&lo,x) && y < interp(&hi,x) { breaks.push(x) }
+                if !(y > interp(&lo,x) && y < interp(&hi,x)) { continue }
+                // (a vertex of a stop within the tolerance in space of a side, as the side is
+                // settled on that line, is on the side: a stop's polyline and the side's curve read
+                // one curve two ways)
+                let step = self.tol/self.tube.rates_at(self.chart,*p).map_or(1.,|m| m[axis.across()].max(f64::MIN_POSITIVE));
+                let at = |y: f64| self.tube.at(self.chart,axis.point(x,y)).map(|q| q.x);
+                let near = [&lo,&hi].iter().any(|bd| match (bd.value(self.tube,self.chart,axis,x,step).and_then(at),at(y)) {
+                    (Some(s),Some(v)) => distance(s,v) <= self.tol,
+                    _ => false,
+                });
+                if !near { breaks.push(x) }
             }
         }
         if !breaks.is_empty() { breaks.sort_by(f64::total_cmp); breaks.dedup(); return Err(breaks) }
         Ok(Cell {chart:self.chart,axis,run:[x0,x1],lo,hi})
+    }
+
+    /// **Where a curve turns between the lines at `x − δ` and `x + δ`** (run's coordinate along
+    /// `axis`): where the face's rings and the stops cross the two lines a different number of
+    /// times, a curve's two crossings meet between them — its turning point across the run, read as
+    /// the middle of the nearest two crossings of one curve on the line that has them, each settled
+    /// on its own curve. None where no curve turns there.
+    fn turning(&self,axis: Axis,x: f64,delta: f64) -> Option<f64> {
+        let closed: Vec<Vec<P>> = self.rings.iter().map(|r| { let mut c = r.clone(); c.push(r[0]); c }).collect();
+        let rings: Vec<&[P]> = closed.iter().map(|c| &c[..]).collect();
+        let polys: Vec<&[P]> = self.stops.lines.iter().map(|(l,_)| &l[..]).collect();
+        let count = |x: f64| crossings(&rings,axis,x).len()+crossings(&polys,axis,x).len();
+        let (a,e) = (count(x-delta),count(x+delta));
+        if a == e { return None }
+        let at = if a > e { x-delta } else { x+delta };
+        // (each crossing settled, with its source: a ring's, or a stop's)
+        let mut cs: Vec<(f64,usize)> = crossings(&rings,axis,at).iter().map(|c| (self.on_curve(c,axis,at),c.line)).collect();
+        cs.extend(crossings(&polys,axis,at).iter().map(|c| (self.stop_on(c,axis,at),usize::MAX-c.line)));
+        cs.sort_by(|p,q| p.0.total_cmp(&q.0));
+        cs.windows(2).filter(|w| w[0].1 == w[1].1).min_by(|p,q| (p[1].0-p[0].0).total_cmp(&(q[1].0-q[0].0))).map(|w| 0.5*(w[0].0+w[1].0))
     }
 
     /// **The face's cells** (`Cover`), from its box; refused by name where a part is split deeper
@@ -442,17 +575,44 @@ impl Ask<'_> {
             let rate = self.tube.rates_at(self.chart,mid).map_or(0.,|m| m[i]);
             for k in 0..2 { if rect[i][k].is_finite() && (b[i][k]-rect[i][k]).abs()*rate <= self.tol { c[i][k] = rect[i][k] } }
             match self.slab(c,axis) {
-                Ok(cell) => { out.leaves.push((rect,cell)); return Ok(()) }
+                // (a cell is one its net fits within the bar: where the chart's map turns faster
+                // than a net over the whole cell follows — beside the pinch, its spine's normal
+                // turning round the umbrella's handle — the cell is split, as at its middle)
+                Ok(cell) if cell.net(self.tube,self.step,self.bar).is_some() => { out.leaves.push((rect,cell)); return Ok(()) }
+                Ok(_) => breaks.push(Vec::new()),
                 Err(bs) => breaks.push(bs.into_iter().map(|x| (axis,x)).collect()),
             }
         }
+        if std::env::var_os("SOLVENT_TUBE_BOTH").is_some() { eprintln!("both: depth {depth} rect {rect:?} part {b:?} {:?}",breaks.iter().map(|b| b.iter().map(|x| (x.0 == Axis::Columns,x.1)).collect::<Vec<_>>()).collect::<Vec<_>>()) }
         // (the way with the fewest breaks: the lines across it change least)
         let breaks: Vec<(Axis,f64)> = breaks.into_iter().filter(|b| !b.is_empty()).min_by_key(|b| b.len()).unwrap_or_default();
         let mid = [0.5*(b[0][0]+b[0][1]),0.5*(b[1][0]+b[1][1])];
+        // (a break at a curve's turning point across the run — where an edge of the face or a stop
+        // is tangent to the line — is split through that point the other way: a line tangent to a
+        // curve leaves between them a sliver its lines read the face on only in part, and the
+        // curve is a graph over the other way there)
+        let breaks: Vec<(Axis,f64)> = breaks.into_iter().filter_map(|(axis,x)| {
+            let [x0,x1] = b[axis.along()];
+            let delta = 0.5*(x1-x0)/LINES as f64;
+            match self.turning(axis,x,delta) {
+                None => Some((axis,x)),
+                Some(y) => {
+                    let other = if axis == Axis::Columns { Axis::Rows } else { Axis::Columns };
+                    let [y0,y1] = b[other.along()];
+                    (y > y0 && y < y1).then_some((other,y))
+                }
+            }
+        }).collect();
         if std::env::var_os("SOLVENT_TUBE_CELLS").is_some() { eprintln!("cells: {:?} depth {depth} part {b:?} breaks {breaks:?}",self.chart) }
         let m = self.tube.rates_at(self.chart,mid).unwrap_or([1.,1.]);
         let lengths = [(b[0][1]-b[0][0])*m[0],(b[1][1]-b[1][0])*m[1]];
         if depth >= DEEPEST || lengths[0].max(lengths[1]) <= self.tol {
+            if std::env::var_os("SOLVENT_TUBE_FAIL").is_some() { for axis in [Axis::Columns,Axis::Rows] {
+                let mut c = b; c[axis.across()] = rect[axis.across()];
+                let [x0,x1] = c[axis.along()];
+                eprintln!("FAIL rect {rect:?} part {b:?} axis {axis:?} -> {:?}",self.slab(c,axis).err());
+                for k in (0..LINES).step_by(8) { eprintln!("  {:?}",self.read(c,axis,x0+(x1-x0)*(k as f64+0.5)/LINES as f64)) }
+            } }
             return Err(super::Unbuilt::Failed(format!("the tube road: a face of {:?} about {mid:?} is covered by no regular cell",self.chart)))
         }
         // (of those, the break nearest its run's middle, as a part of the run)

@@ -25,7 +25,7 @@
 //! bounds the sweep (`Tube::side` above nought, and no other instant holding it). A sheet's face
 //! lies on a net fitted over its window as a map (`nurbs::fit_net`), an end pose's on its torus.
 use super::{Chart,Depth,Disc,Tube,edges,seams,swallowtails,swallowtails_on};
-use super::cells::Axis;
+use super::cells::{Axis,Hold};
 use std::collections::BTreeMap;
 use crate::geom::{Curve,Frame,Surface};
 use crate::nurbs::BSpline;
@@ -1228,15 +1228,22 @@ fn faces(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mut
                                 for (l,_) in &stops.lines { let _ = writeln!(f,"stop {chart:?} {}",l.iter().map(|q| format!("{},{}",q[0],q[1])).collect::<Vec<_>>().join(" ")); }
                             }
                         }
-                        let ask = super::cells::Ask {tube,chart,rings:rings.clone(),stops:&stops,tol};
-                        let cover = ask.cover()?;
-                        if debug() { eprintln!("tube: {chart:?} window {w}: a part in {} cells, {} splits",cover.leaves.len(),cover.splits.len()) }
+                        let origins = g.origins(i);
+                        let edge = |r: usize,k: usize,hold: Hold| exact(tube,&g,&origins,arcs,trims,r,k,hold);
+                        let lies = |r: usize,k: usize| {
+                            let (e,..) = origins[r][k];
+                            matches!(arcs[g.lines[e].0].kind,Kind::Hole {..}).then_some(super::cells::Stop::Hole)
+                        };
                         let mid = rings[0][0];
                         let rate = tube.rates_at(chart,mid).map_or(1.,|m| m[0].max(m[1]));
-                        (Some(cover),tol/rate)
+                        let step = tol/rate;
+                        let ask = super::cells::Ask {tube,chart,rings:rings.clone(),edge:&edge,lies:&lies,stops:&stops,tol,bar:fit,step};
+                        let cover = ask.cover()?;
+                        if debug() { eprintln!("tube: {chart:?} window {w}: a part in {} cells, {} splits",cover.leaves.len(),cover.splits.len()) }
+                        (Some(cover),step)
                     }
                 };
-                if let Some(cover) = &cover { seams_of(tube,&g,i,chart,cover,arcs,&mut seams)? }
+                if let Some(cover) = &cover { seams_of(tube,&g,i,chart,cover,arcs,trims,&mut seams)? }
                 parts.push(Kept {chart,w,rings,cover,step});
             }
         }
@@ -1413,12 +1420,80 @@ enum Ends { On { arc: usize,used: usize,s: f64,shift: f64 },Junction }
 #[derive(Clone,Debug)]
 struct Seam { chart: Chart,axis: Axis,x: f64,ys: [f64;2],ends: [Ends;2] }
 
+/// **A ring's segment read on its arc's own curve** (`cells::Hold`): the ring `r` of a part of the
+/// graph (its `origins`), its segment from point `k`, as the arc it lies on draws it — a join (a
+/// swallowtail's normal form, or straight to a corner) by its own parameter, evenly along its
+/// polyline; the pinch's rim on a sheet by the collar's angle, evenly along its polyline; a traced
+/// run settled on its double curve, from its chord's point, held square to the chord (`At`) or on
+/// the line (`Line`); a rim, a cut and a seam straight in the chart's parameters, as their polylines
+/// are. A `Line` met within the segment by halving the curve's own parameter (or, traced, settled
+/// on it); none where the curve's ends do not straddle the line.
+#[allow(clippy::too_many_arguments)]
+fn exact(tube: &Tube,g: &Graph,origins: &[Vec<(usize,usize,bool)>],arcs: &[Arc2],trims: &[Trim],r: usize,k: usize,hold: Hold) -> Option<P> {
+    let (e,seg,fwd) = origins[r][k];
+    let (i,u,ref placed) = g.lines[e];
+    let line = &arcs[i].uses[u].1;
+    let shift = placed[0][0]-line[0][0];
+    let n = line.len();
+    let (p,q) = (line[seg],line[seg+1]);
+    let lerp = |a: P,b: P,f: f64| [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
+    let traced = match arcs[i].kind { Kind::Trim(ti) if matches!(trims[ti].shape,Shape::Traced) => Some(&trims[ti]),_ => None };
+    // (the traced run's point from `c` on its own chart, its partner's from the partner's chord,
+    // held on `dir`)
+    let held = |t: &Trim,f: f64,c: P,dir: P| -> Option<P> {
+        let other = if u == 0 { &t.partner } else { &t.uv };
+        let o = lerp(other[seg],other[seg+1],f);
+        let charts = if u == 0 { (t.own,t.other) } else { (t.other,t.own) };
+        settle(tube,charts,[c,o],dir).map(|s| s[0])
+    };
+    // (the curve at the fraction `f` of the use's segment, in the use's own parameters)
+    let at = |f: f64| -> Option<P> {
+        if f <= 0. { return Some(p) }
+        if f >= 1. { return Some(q) }
+        let s = (seg as f64+f)/(n-1) as f64;
+        match arcs[i].kind {
+            Kind::Trim(ti) => match trims[ti].shape {
+                Shape::Traced => held(&trims[ti],f,lerp(p,q,f),[q[0]-p[0],q[1]-p[1]]),
+                _ => trims[ti].at(tube,s).map(|x| x[u]).map(|x| [unwrap(x[0],p[0]),x[1]]),
+            },
+            Kind::Hole {sign,psi} if u == 1 => tube.pinch.as_ref()?.rim(sign,psi[0]+(psi[1]-psi[0])*s).map(|x| [unwrap(x[0],p[0]),x[1]]),
+            _ => Some(lerp(p,q,f)),
+        }
+    };
+    let put = |x: P| [x[0]+shift,x[1]];
+    match hold {
+        Hold::At(f) => at(if fwd { f } else { 1.-f }).map(put),
+        Hold::Line(a,x) => {
+            let x = if a == 0 { x-shift } else { x };
+            if (p[a] <= x) == (q[a] <= x) { return None }
+            if let Some(t) = traced {
+                let f = (x-p[a])/(q[a]-p[a]);
+                let mut c = lerp(p,q,f);
+                c[a] = x;
+                let dir = if a == 0 { [1.,0.] } else { [0.,1.] };
+                return held(t,f,c,dir).map(put)
+            }
+            let g = |f: f64| at(f).map(|v| v[a]-x);
+            let (mut lo,mut hi) = (0f64,1f64);
+            let mut gl = g(lo)?;
+            loop {
+                let m = 0.5*(lo+hi);
+                if !(m > lo && m < hi) { break }
+                let gm = g(m)?;
+                if (gm > 0.) == (gl > 0.) { lo = m; gl = gm } else { hi = m }
+            }
+            at(0.5*(lo+hi)).map(|mut v| { v[a] = x; v }).map(put)
+        }
+    }
+}
+
 /// **The seams of the part `i` of a window's graph**: each split of its cells' (`cover.splits`) read
 /// against the part's rings, the line's runs inside the part each a seam, its ends where it crosses
 /// an edge of the part (each crossing read half-open, so a vertex is crossed once) or else on an
 /// earlier split's line.
-fn seams_of(tube: &Tube,g: &Graph,i: usize,chart: Chart,cover: &super::cells::Cover,arcs: &[Arc2],out: &mut Vec<Seam>) -> Result<(),Unbuilt> {
-    let _ = tube;
+#[allow(clippy::too_many_arguments)]
+fn seams_of(tube: &Tube,g: &Graph,i: usize,chart: Chart,cover: &super::cells::Cover,arcs: &[Arc2],trims: &[Trim],out: &mut Vec<Seam>)
+    -> Result<(),Unbuilt> {
     let rings = g.rings(i);
     let origins = g.origins(i);
     for &(axis,x,[y0,y1]) in &cover.splits {
@@ -1430,7 +1505,8 @@ fn seams_of(tube: &Tube,g: &Graph,i: usize,chart: Chart,cover: &super::cells::Co
                 let (p,q) = (ring[k],ring[(k+1)%n]);
                 if (p[a] <= x) == (q[a] <= x) { continue }
                 let f = (x-p[a])/(q[a]-p[a]);
-                let y = p[c]+(q[c]-p[c])*f;
+                // (the crossing on the edge's own curve, as the cells read it)
+                let y = exact(tube,g,&origins,arcs,trims,r,k,Hold::Line(a,x)).map_or(p[c]+(q[c]-p[c])*f,|e| e[c]);
                 if !(y >= y0 && y <= y1) { continue }
                 let (e,seg,fwd) = origins[r][k];
                 let (arc,used,ref line) = g.lines[e];
