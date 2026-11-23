@@ -2968,7 +2968,11 @@ the double curve to the rounding only. Such a run's tail is the straight join to
 **The forward one ulp off**: the collar's trim began with the tracer's seed on the pinch's rim and
 its exit settled on the rim 7e-15 from it, one crossing read twice; the walk read the way out of the
 vertex from that segment, lost the collar's face and was not sewn. A trim does not run along the
-rim: of a run's points on the rim at an end only the end is kept.
+rim: of a run's points on the rim at an end only the end is kept. **The pair's Booleans** (union,
+difference and intersection of the two members, the ordinary `boolean::boolean`; probe:
+`tube_profile crossed-forward pair`) **are not yet built**: each refuses after about 13 minutes,
+"a bspline has a hole in no piece" (`boolean.rs`, a face's hole held by no outer cycle once split
+— most likely the pinch's hole, an island on a sheet's graded net).
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
