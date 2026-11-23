@@ -484,6 +484,29 @@ fn a_refused_file_leaves_unmade_only_what_is_made_of_it() {
     assert!(e.sketch.solids.is_empty(), "{:?}", e.sketch.solids);
 }
 
+/// **A given body read at an instant** (#993's review, R6): `bracket at(under: std.z) 90deg` is
+/// the body placed by the turn, as `part at(under: std.z) 90deg` is — a solid, never a frame.
+#[test]
+fn a_given_body_is_read_at_an_instant() {
+    let e = solved("unit mm\nuse bracket\nuse std\nmoved := bracket at(under: std.z) 90deg\n\
+                    part := solid(bracket)\nturned := part at(under: std.z) 90deg\n");
+    for name in ["moved", "turned"] {
+        assert!(close(volume(&e, name), drilled_volume()), "{name}: {}", volume(&e, name));
+        let x = e.sketch.exact_solid(solid(&e, name)).unwrap();
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        for v in &x.brep.vertices {
+            for k in 0..3 {
+                lo[k] = lo[k].min(v.p[k]);
+                hi[k] = hi[k].max(v.p[k]);
+            }
+        }
+        // the block from (0, 0, 0) to (40, 30, 20) turned a quarter about the world's z
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6);
+        assert!(near(lo, [-30.0, 0.0, 0.0]) && near(hi, [0.0, 40.0, 20.0]), "{name}: {lo:?} {hi:?}");
+    }
+    assert_eq!(gcs_core::model::objects(&e.sketch).len(), 3);
+}
+
 /// **One cause, one diagnostic, the fix in the author's words** (#993's review, R8): a given body
 /// read in a `ring` is refused as one (E106), not also as a name outside the ring (E021); a body
 /// word extending it through a definition's formal is refused as extended (E080), not also as

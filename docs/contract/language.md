@@ -1010,7 +1010,11 @@ before ports 0.9 s to 0.4 s.
   `use vendor.bracket`), a name of the document's root where the document `use`s it (`Walk::new`
   puts it among `names` and `solid_names`), read through the one lookup wherever a solid's name
   is: `solid(bracket)`, `p in bracket` in a set's body, a body word's tool (`bracket cut pin`), a
-  claim (`every q in part: q in bracket`).  It defines nothing else: `use bracket (x)` is E101
+  claim (`every q in part: q in bracket`), a reading at an instant (`bracket at(under: std.z)
+  90deg`, a solid placed as `part at(under: …)` is: `Walk::read_of` takes a given module's path
+  for a solid's though it is declared only after the walk,
+  `given_bodies::a_given_body_is_read_at_an_instant`).  `solid({ p | p in bracket })` is the
+  body `solid(bracket)` is ([sets.md](sets.md), one membership of a whole solid).  It defines nothing else: `use bracket (x)` is E101
   (`words::defines`); a file whose own top-level name is the path's head is E071
   (`program::words::given`).  **What is not read is not there**: `Lookup::raw` notes each read
   (`Given::note`), and the solid is declared — `Sweep::Given` over the module's reading, its

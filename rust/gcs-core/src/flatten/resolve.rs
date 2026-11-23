@@ -1675,10 +1675,11 @@ impl<'a> Walk<'a> {
         let sets: BTreeSet<String> =
             self.sets.made.keys().filter(|k| !self.sets.lowered.contains_key(*k)).cloned()
                 .collect();
+        // a given body (#993 stage 2) among them, declared only once the walk is done
         let solids: BTreeSet<String> = out.iter().filter_map(|(st, ..)| match &st.kind {
             StmtKind::Decl(d) if d.kind == EntKind::Solid => Some(d.name.key().text.clone()),
             _ => None,
-        }).collect();
+        }).chain(self.standard.given.paths()).collect();
         let mut flat = Vec::with_capacity(out.len());
         let normals = std::cell::RefCell::new(std::mem::take(&mut self.normals));
         let charts = std::cell::RefCell::new(std::mem::take(&mut self.charts));
