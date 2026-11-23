@@ -736,7 +736,20 @@ fn joined_round(c: &Complex,shell: usize,kept: &dyn Fn(usize,usize) -> bool) -> 
         said.push(format!(" (edge {e}{} from {:?} to {:?} through {middle:?}; round it {})",
             if c.met.get(e) == Some(&true) { ", a meeting's" } else { "" },ends[0],ends[1],faces.join(", ")));
     }
-    if super::debug() { for s in &said { eprintln!("boolean: shell {shell} joined round{s}") } }
+    if super::debug() {
+        for s in &said { eprintln!("boolean: shell {shell} joined round{s}") }
+        // a meeting's edge both faces were cut along is used four times; fewer, and a face it
+        // should have parted runs on through it (a stretch of that face's meeting not laid)
+        for (e,round) in c.radial.iter().enumerate() {
+            if c.met.get(e) != Some(&true) || round.len() == 4 { continue }
+            let edge = &c.b.edges[e];
+            let ends = edge.v.map(|v| c.b.vertices[v as usize].p);
+            let faces: Vec<String> = round.iter().map(|u| format!("{} of {}",u.face,c.origins[u.face].iter()
+                .map(|o| format!("{}{}",["A","B"].get(o.operand).unwrap_or(&"?"),o.face)).collect::<Vec<_>>().join("="))).collect();
+            eprintln!("boolean: meeting edge {e} used {} times, from {:?} to {:?} through {:?}: {}",round.len(),ends[0],ends[1],
+                edge.point(0.5*(edge.t[0]+edge.t[1]),&c.b.vertices),faces.join(", "));
+        }
+    }
     said.into_iter().next().unwrap_or_default()
 }
 
