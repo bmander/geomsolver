@@ -1269,9 +1269,10 @@ and 250, each holding a lune between tangent rounds, were refused as touching th
 untouched has none of and is no longer asked (`export::given_read`). **What the document writes
 of it reads back**: `brep::export::step` reads its file by the kernel's own reader after
 `step_check`, and refuses it in the reader's words where the reader refuses it, so no file is
-given back that the document's next `use` of it would refuse (#3DBenchy's face #27487, its
-export's pcurve leaping across a spline sheet's fold, written and passed by `step_check`, refused
-at its second reading). Its `Debug`, and
+given back that the document's next `use` of it would refuse (so #3DBenchy's export was refused,
+`step_check` passing a file the reader would not read: the reader's defect, a row judged collapsed
+at the wrong tolerance — brep.md, "The foot of an edge is where its face is" — and with it mended
+the export reads back the same solid, `given_solids::a_body_read_on_its_sheets_rows_exports_and_reads_back`). Its `Debug`, and
 `recipe::Given`'s, is its digest and its size, never its faces; its memo key (`solid/reads.rs`) is
 tag 16, the digest in two 32-bit halves and the document's millimetres per unit — every other
 solid's numbers are the document's own, but the file's are millimetres in any unit while a

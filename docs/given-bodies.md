@@ -314,7 +314,7 @@ real-file fixes changed; the rows the fixes changed were run again at `d08a939`.
 
 | file | size | elaborate | build / write (run) | volume mm³ | faces | entities | read back as a given body |
 |---|---|---|---|---|---|---|---|
-| benchy | 6.04 MB | 2.3 s | 4.7 s / – | 15550.952442 | 1385 | – | export refused (below) |
+| benchy | 6.04 MB | 2.3 s | 3.2 s / 3.7 s (9.5 s) | 15550.952442 | 1385 | 195823 | 1385 faces, Δ 1.1e-08 (at `8412889`, below) |
 | cgb201 | 2.80 MB | 700 ms | 1216 ms / 954 ms (2.83 s) | 2544509.737401 | 435 | 59927 | 435 faces, Δ 5.8e-07 |
 | cgb202 | 17.93 MB | 3.4 s | 8167 ms / 5030 ms (16.69 s) | 4382320.553399 | 2157 | 305028 | 2157 faces, Δ 2.9e-07 |
 | cgb203 | 3.76 MB | 900 ms | 2554 ms / 2126 ms (5.51 s) | 3150273.054684 | 156 | 57351 | 156 faces, Δ 4.2e-07 |
@@ -366,8 +366,10 @@ and one export did not read back:
 Run again here at `d08a939` (same profile, a loaded machine) these five gave 1.8 s; 8.3 / 5.9;
 2.9 / 2.0; 18.7 / 9.3; 4.8 / 3.4 — the same outcomes, slower. **benchy** builds to 15550.952442
 mm³, 1385 faces: 3.1e-6 from brep-bench's reference (15550.999870, by the edges' curves) and 6e-8
-from Open CASCADE's reading (15550.9534). Its export is refused, its glTF (139 s) and PNG (106 s)
-are written (44 s and 39 s in an earlier, quieter run), and its STL is refused (below). The
+from Open CASCADE's reading (15550.9534). At `d08a939` its export was refused, not reading back;
+with the reader mended (below, run at `8412889`) it is written in 9.5 s, 195823 entities, and read
+again as a given body builds to 15550.952608 mm³ on the same 1385 faces. Its glTF (139 s) and PNG
+(106 s) are written (44 s and 39 s in an earlier, quieter run), and its STL is refused (below). The
 fixtures' STL, glTF and PNG each took under 0.6 s.
 
 Reading is once per thread: linking the three-line document over cgb202 (17.9 MB) took 3.59 s
@@ -557,10 +559,15 @@ in the kernel or the evaluator, and the measurements above are after the fixes.
   triangulation laid it.
 - **Every export the core writes is read back by the kernel's reader** after `step_check`, and a
   file the reader refuses is refused, so no document's export is one its next `use` would refuse.
-  benchy's is so refused today: `` the STEP file does not read back: the kernel's reader refuses
+  benchy's was so refused: `` the STEP file does not read back: the kernel's reader refuses
   it: #186157: face 180: edge 354's curve in its parameters leaps 4.385387517242087e-2 … it is no
-  one curve there, near [0.439203, 0.000387] in its parameters `` — the writer's p-curve leaps
-  across a spline sheet's fold, which `step_check` passed. Open.
+  one curve there, near [0.439203, 0.000387] in its parameters ``. The writer and the check were
+  right and the reader wrong: face #27487's sheet folds back under its corner, nearer its edges
+  (4e-4 mm) than the rows the face ends at (4.4e-3), so the reader lays those edges on the rows
+  (`topology::rows`); read again from the file the kernel wrote, which states the 1e-2 mm its
+  geometry holds, a row 0.28 mm long was judged collapsed to a point — at the bar for how far an
+  edge may stand off its face, which grows with the stated uncertainty, not at the tolerance
+  points are one at. Judged there, benchy's export reads back the same solid (brep.md).
 - **`--where` on a given body meshed it**, slower than building it: its volume and area are now
   read off the B-rep (above).
 
@@ -598,8 +605,8 @@ in the kernel or the evaluator, and the measurements above are after the fixes.
   until the solid is built. Older than stage 2.
 - **A containment beside a cut**: `claim every q in part: q in bracket`, `drill cut part`, is
   undecided within the faceting's uncertainty where the bore is shared.
-- **benchy's export does not read back** (above), and **its STL is refused**: `the mesh has 1
-  triangles facing against their surfaces`, a triangle by a pole.
+- **benchy's STL is refused**: `the mesh has 1 triangles facing against their surfaces`, a
+  near-flat triangle by a pole of one spline face (#13736) at the export's 0.01 mm bar.
 - **A file turned against its own loops is refused, not healed** (cgb240): nothing guesses which
   of the face's sense and its boundary the file meant.
 - **The OCCT route** refuses a given body, naming `--kernel rust`; the core's kernel is the export.
