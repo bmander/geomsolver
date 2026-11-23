@@ -2943,7 +2943,8 @@ refuses `Curved` at a meridian touched whole for an instant (`Ring::touched_once
 instants touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`,
 `tube::faces::solid`); nowhere else, and cut from a blank (`ring_cut_from`) it stays refused. The
 forward: 14 faces, volume 16.6109998153 against cadrs's 16.6109997999, about 15 s; the reverse: 15
-faces, 13.7898471917 against 13.7898472784, about a minute, most of it the two graded nets about
+faces, 13.7898471844 against 13.7898472784 (13.7898471917 before `props::crossings` crossed a knot a step
+lands on exactly), about a minute, most of it the two graded nets about
 its near miss of a second whole-touch. Each is held to `check`, no misfit at the size's tolerance,
 membership by the depth at 20 000 points, none of its mesh's points covered deeper than the
 tolerance, its boundary audited by the depth (`audited`: each point of its mesh at 1e-3 stepped

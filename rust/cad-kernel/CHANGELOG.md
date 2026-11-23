@@ -27,14 +27,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   gates hold the cost to.
 - **A knot a use's step lands on is crossed there** (`props::crossings`): read between a step's two
   ends alone, a knot at a step's end lay in neither step and the stretch across it went uncut — a
-  rational torus with knots on the steps' eighths read 2.9e-8 off its area.
+  rational torus with knots on the steps' eighths read 2.9e-8 off its area, and a sheet face of the
+  crossed reverse member its flux −4.602553423 where read with its net's parameters transposed it
+  is −4.602553430438, as it now reads (the member's volume 13.7898471917 now 13.7898471844).
 - **A row of poles in one point is read where its parameters run** (`props::integrated`): on a
   polynomial net's table a degenerate use was taken to run along `u` and skipped, but a pole row
   at the domain's last `u` runs along `v`, where `G` from the table's knot is not nought: a plane
   triangle with one read its flux 0.1875 against 0.25.
 
 - **The crossed tumbling tori built by the tube road** (#880 T1f): the reverse member (15 faces,
-  13.7898471917 against cadrs's 13.7898472784) and the forward (14 faces, 16.6109998153 against
+  13.7898471844 against cadrs's 13.7898472784; 13.7898471917 before a knot a step lands on was
+  crossed, below) and the forward (14 faces, 16.6109998153 against
   16.6109997999; read 16.6116290673 before its flux was cut at its net's knot lines, below). `zero_set`'s search answers a cell beside a traced
   piece only on the side of it its sign says (a piece's ends excepted): a closed cuspidal edge
   folded within the feature of another in space, beside a near-pinch, was never sought.
@@ -57,7 +60,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   meridian touched whole for an instant by name (`Curved`, `Ring::touched_once`) and no two instants
   touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`, `tube::faces::solid`);
   nowhere else, and cut from a blank it stays refused. Forward: 14 faces, 16.6109998153 (cadrs
-  16.6109997999), about 15 s; reverse: 15 faces, 13.7898471917 (cadrs 13.7898472784), about a
+  16.6109997999), about 15 s; reverse: 15 faces, 13.7898471844 (cadrs 13.7898472784; 13.7898471917 before a knot a step lands on was crossed), about a
   minute; each built again with the observer's origin one ulp and 1e-6 off to the same volume.
 - **A trim against an end pose reaching that pose's rim is the corner** (#880 T1f, `faces::solid`):
   beside the rim the end pose stands from the sheet by half its depth's second rate times the

@@ -753,8 +753,10 @@ fn the_crossed_forward_member_builds_by_the_tube_road() {
 
 /// **The crossed reverse member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar, the closed cuspidal edge beside its fold loop traced (the lobe below the near-pinch), the
-/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898471917
-/// against cadrs's 13.7898472784. About a minute a build, most of it the two graded nets over the
+/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898471844
+/// against cadrs's 13.7898472784 — once a knot a pcurve's step lands on exactly was crossed there
+/// (`props::crossings`; before, 13.7898471917, its sheet face 1's flux −4.602553423 where the face
+/// read with its net's parameters transposed is −4.602553430438, as it now reads). About a minute a build, most of it the two graded nets over the
 /// windows holding the near-pinch at `(θ, t)` (1.076, 0.461). Built again with the observer's
 /// origin one ulp off, its trim against the end pose ran on to the rim beside the corner where it
 /// had stopped at the cuspidal edge (a rounding's), and fitted only to 1.2e-5: such a run's end is
@@ -764,5 +766,5 @@ fn the_crossed_forward_member_builds_by_the_tube_road() {
 fn the_crossed_reverse_member_builds_by_the_tube_road() {
     let (faces,v) = crossed_held(-1.,13.789847278416222);
     assert_eq!(faces,15);
-    assert!((v-13.7898471917).abs() <= 1e-9,"the volume {v}, pinned 13.7898471917");
+    assert!((v-13.7898471844).abs() <= 1e-9,"the volume {v}, pinned 13.7898471844");
 }
