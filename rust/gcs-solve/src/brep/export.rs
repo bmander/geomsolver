@@ -144,7 +144,11 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     if let Some([a,b]) = solid.self_touching(tol).first() {
         let line = format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm",
             a[0],a[1],a[2],b[0],b[1],b[2]);
-        return Err(ExportRefusal::at(Stage::Blank,match (mixed_vertex(sk,body,[*a,*b]),given_read(sk,body)) {
+        // (a body a file gives untouched has no rounds whose vertex it could be: its faces are not
+        // read as a body's rounds read them, which takes minutes on a file's thousand faces)
+        let given = given_read(sk,body);
+        let mixed = if given.as_ref().is_some_and(|g| g.1) { None } else { mixed_vertex(sk,body,[*a,*b]) };
+        return Err(ExportRefusal::at(Stage::Blank,match (mixed,given) {
             (Some(why),_) => format!("{line}: {why}"),
             // a body a file gives (#993 stage 2): no statement made its faces, so no round of one
             // is the cause; the file's own faces meet there, or the document's Booleans over them
@@ -334,13 +338,19 @@ pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
 }
 
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
-/// counts, units, and each face's surface and its numbers), with what the check counted.
+/// counts, units, and each face's surface and its numbers), with what the check counted; and read
+/// by the kernel's own reader (`step_read::read`), so no file is given back that the reader
+/// refuses — a body a file gives is read again from what the document writes of it (#993 stage
+/// 2), and a file `step_check` passes that the reader refuses was a hole in the gate (#3DBenchy's,
+/// a pcurve leaping across a spline sheet's fold, refused at its second reading).
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let (uncertainty,fit) = step_accuracy(tolerance);
     let (text,stated) = super::step::write_stating(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
+    super::step_read::read(&text)
+        .map_err(|r| ExportRefusal::at(Stage::Step,format!("the STEP file does not read back: the kernel's reader refuses it: {r}")))?;
     // (a file states what its fits and the solid's own edges hold where that is past what was asked)
     let held = if stated > uncertainty { format!("; it states an uncertainty of {stated:e} mm, what its geometry holds, past the {uncertainty:e} asked") }
         else { String::new() };

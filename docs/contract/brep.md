@@ -1617,7 +1617,14 @@ end cap poking 28 µm out of a cylinder about another axis, #904 A9) — are spl
 each edge's samples shared by its faces, until none do; corners are one as the triangulation
 welds them, by id and place, and an edge the face uses twice (a seam, or a slit the face lies
 either side of) is one chord each way, no fault (`brep::a_face_thinner_than_its_chords_sag_still_meshes`,
-`a_segment_thinner_than_its_arcs_chord_sags_still_meshes`). An edge is sampled from first pieces no
+`a_segment_thinner_than_its_arcs_chord_sags_still_meshes`). **A use's last corner is read where
+the triangulation lays it**, the next use's first (each use's last sample left for it): a file's
+vertex gathers points its tolerance apart, so two uses' ends at one vertex may stand apart in the
+face's parameters, and a crescent of two arcs each one chord, 3 µm apart at one end (CADGenBench
+248's plane face #17), read with both ends was a thin triangle while the triangulation was given two
+corners and no area — refused, and with it the body's volume and its mesh; read as laid, its two
+chords run between the same two corners and are split (#993 stage 2,
+`brep::a_crescent_whose_ends_stand_apart_at_a_vertex_meshes`). An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
@@ -2304,10 +2311,28 @@ tolerances of a corner both reach. A loop reaching round its surface more than a
 only where the face and its images a period along cover a point of the surface twice (a band
 whose seam leans is read). No tolerance may exceed `sound::LOOSE` (1e-3) of the boundary's size:
 past that the reading says nothing (the corpus's right readings stand at or under 4.6e-4, the next
-above at 7e-2). Gates: `step_sound::a_loop_crossing_itself_is_refused`,
+above at 7e-2). **Each loop turns as its face's sense says** (#993 stage 2, `Brep::turned`, the
+one rule `Brep::check` holds a solid to): the outer loop counter-clockwise in the face's
+parameters about its sense, each hole clockwise, by the signed area it encloses there — read
+against the measured tolerances of its edges and vertices, never the uncertainty the file states
+(a bound, which on CADGenBench 240 is 0.02 mm while its edges measure 1e-4). A loop turning the
+other way is a face whose stated normal points into the material its own edges bound it on: its
+sense and its boundary contradict each other, and which the file meant is not guessed. CADGenBench
+240's cylindrical face #92335 is one — `.F.`, 0.012 mm wide, the faces either side tangent to it
+and facing exactly the other way; read, it was refused only at the export, as "the built
+boundary", where the document's export checks a given body. **A sliver its tolerances cannot
+orient turns no way** (`topo`'s `sliver`): its area in its parameters, carried into space at its
+first corner, no more than its length times the widest tolerance among its edges and vertices; or
+every point of each of its uses within twice that of another of them — two edges of a strip
+narrower than their tolerance are no farther apart — where its area in its parameters is no
+measure (CADGenBench 242's face #75264, a spline's strip some 1e-5 mm wide whose feet wander along
+its narrow way: read turning one way from the file and the other from the same edges written
+again, so the export of the file was refused when read as a given body). Gates:
+`step_sound::a_loop_crossing_itself_is_refused`,
 `holes_crossing_outside_or_overlapping_are_refused`, `a_band_whose_seam_leans_is_read`,
 `a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet`,
-`tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`.
+`tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`,
+`a_face_turned_against_its_loops_is_refused`, `brep::a_face_thinner_than_its_tolerance_turns_no_way`.
 
 **The foot of an edge is where its face is: a face whose edges lie along its sheet's domain's rows
 is bounded by those rows** (`topology::sound_solid`, `rows`, `along_row`). Where `sound` refuses a

@@ -896,3 +896,104 @@ fn statements_no_text_holds_are_numbered_apart() {
     // a given module's index is far below the room between the two ranges
     assert!(GIVEN_STMTS.checked_add(1 << 20).is_some_and(|top| top < FOOT_STMTS - 2));
 }
+
+/// **The corpus through a three-line document** (a tool; `$STEP_CORPUS`, as
+/// `step_rewrite::the_corpus_is_written_again` reads it, or `STEP_DOCUMENT_ONLY`, a path within
+/// it; `STEP_DOCUMENT_FILES`, more files by path, `:` between): every `.step` and `.stp` file made
+/// `input` of `unit mm / use input / part := solid(input)`, linked and elaborated as a host does;
+/// `part` built and exported as `solventc --step` does (`brep::export::exact`, then `step`:
+/// `step_check` and the kernel's reader on what it wrote); the export made `again` of the same
+/// document, built and exported in its turn; and the export read the same solid as the file's
+/// (`step_roundtrip::same`), every face on its original surface. One line a file — its outcome,
+/// seconds and why — and a tally, on `STEP_DOCUMENT_THREADS` threads (two by default):
+/// `STEP_CORPUS=/home/user/step-corpus cargo test -p gcs-core --test core
+/// the_corpus_through_a_document -- --ignored --nocapture`.
+#[test]
+#[ignore = "a tool: STEP_CORPUS names the corpus outside the repository"]
+fn the_corpus_through_a_document() {
+    use crate::step_roundtrip::{joined, measured, same, stages, Found};
+    use gcs_core::brep::export;
+    use gcs_core::brep::sweep::Say;
+    const QUIET: Say = Say { stage: &|_| {}, mark: &|_| {} };
+    let mut files = Vec::new();
+    if let Ok(root) = std::env::var("STEP_CORPUS") {
+        let base = std::path::Path::new(&root).join(std::env::var("STEP_DOCUMENT_ONLY").unwrap_or_default());
+        fn walk(p: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(dir) = std::fs::read_dir(p) else { return };
+            let mut entries: Vec<_> = dir.map(|e| e.unwrap().path()).collect();
+            entries.sort();
+            for e in entries {
+                if e.is_dir() { if !e.ends_with("build") { walk(&e, out) } }
+                else if e.extension().is_some_and(|x| x == "step" || x == "stp") { out.push(e) }
+            }
+        }
+        walk(&base, &mut files);
+    }
+    if let Ok(more) = std::env::var("STEP_DOCUMENT_FILES") {
+        files.extend(more.split(':').filter(|p| !p.is_empty()).map(std::path::PathBuf::from));
+    }
+    if files.is_empty() { eprintln!("no STEP_CORPUS nor STEP_DOCUMENT_FILES"); return }
+    // `name` made `input` of the three-line document, its `part` built and exported: the
+    // document's solid and the file written, or the stage that refused it and why
+    fn through(text: &str, name: &str) -> Result<(gcs_core::brep::topo::Brep, String), (&'static str, String)> {
+        let src = format!("unit mm\nuse {name}\npart := solid({name})\n");
+        let (mut prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let mut diags = link(&mut prog, &mut |n| (n == name).then(|| text.to_string()).or_else(|| gcs_core::library::resolve(n)));
+        let mut e = elaborate(&prog);
+        diags.extend(e.diags.iter().cloned());
+        if let Some(d) = diags.first() { return Err(("refused at the use", d.message.clone())) }
+        let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
+        if !r.success { return Err(("not solved", r.message)) }
+        let i = solid(&e, "part");
+        let built = export::exact(&e.sketch, i, None, None, &QUIET).map_err(|r| ("not built", r.message))?;
+        let written = export::step(&built, "part", None, &QUIET).map_err(|r| ("not written", r.message))?;
+        Ok((built.solid, written))
+    }
+    let threads: usize = std::env::var("STEP_DOCUMENT_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let rows = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|s| for _ in 0..threads { s.spawn(|| loop {
+        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(p) = files.get(k) else { break };
+        let Ok(text) = std::fs::read_to_string(p) else { continue };
+        let started = std::time::Instant::now();
+        let got = std::panic::catch_unwind(|| -> Result<String, (&'static str, String)> {
+            let (b, written) = through(&text, "input")?;
+            // the export a given body of the same document in its turn, and the file's solid again
+            let (_, twice) = through(&written, "again").map_err(|(stage, why)| (stage, format!("the export, read again: {why}")))?;
+            let again = joined(stages(&written).map_err(|(by, r, _)| ("not the same", format!("the export read by {by:?}: {r}")))?);
+            let tol = again.context.uncertainty.unwrap_or(1e-7);
+            same(&b, &measured(&b), &written, &again, gcs_core::brep::step::Fit::Exact, tol, &mut Found::default())
+                .map_err(|d| ("not the same", d))?;
+            Ok(format!("{} faces; its export {} bytes, again {} bytes", b.faces.len(), written.len(), twice.len()))
+        }).unwrap_or_else(|_| Err(("panicked", String::new())));
+        let (outcome, why) = match got { Ok(said) => ("built, exported, read again the same", said), Err((stage, why)) => (stage, why) };
+        eprintln!("DOCUMENT\t{}\t{outcome}\t{:.1}\t{why}", p.display(), started.elapsed().as_secs_f64());
+        rows.lock().unwrap().push(outcome);
+    }); });
+    let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+    for outcome in rows.into_inner().unwrap() { *tally.entry(outcome).or_default() += 1; }
+    for (k, n) in &tally { eprintln!("DOCUMENT SUMMARY {n:4}  {k}"); }
+}
+
+/// **A given body's volume and area are its B-rep's, read there** (`report::positions_where`,
+/// #993 stage 2): `--where part.volume` on a body a file gives, untouched, meshes nothing — its
+/// evaluation meshed it at the report's fineness for a volume its B-rep holds exactly (CADGenBench
+/// 201, half a minute against a build of a second) — while a question of its box still evaluates
+/// it, the one measure its facets give.
+#[test]
+fn a_given_bodys_measures_are_read_off_its_b_rep() {
+    let e = solved("unit mm\nuse bracket\npart := solid(bracket)\n");
+    let before = gcs_core::solid::brep_meshes();
+    let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n == "part" || n == "part.volume");
+    assert_eq!(gcs_core::solid::brep_meshes(), before, "the body was meshed for its volume");
+    let row = |name: &str| rows.iter().find(|(n, _)| n == name).map(|r| r.1);
+    assert!(row("part.volume").is_some_and(|v| close(v, drilled_volume())), "{rows:?}");
+    assert!(row("part.area").is_some(), "{rows:?}");
+    assert!(row("part.bounds.x0").is_none(), "{rows:?}");
+    // asked of its box, it is evaluated: its box the block's
+    let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n.starts_with("part"));
+    let x1 = rows.iter().find(|(n, _)| n == "part.bounds.x1").map(|r| r.1);
+    assert!(x1.is_some_and(|x| (x - 40.0).abs() < 1e-6), "{rows:?}");
+}

@@ -667,3 +667,17 @@ fn sound_census() {
     assert!(refused.is_empty());
 }
 
+
+/// **A face whose loop turns against its sense is refused** (`sound`'s `face`, by `Brep::turned`,
+/// #993 stage 2): its sense flipped and its loops not, its normal points into the material its
+/// own edges bound it on — its neighbours across every edge still use them as a face turned the
+/// other way would, so the shell closes and faces out, and only the face says it (CADGenBench
+/// 240's cylindrical face #92335, `.F.` where the faces either side, tangent to it, face the
+/// other way; read, it was refused minutes later at the export as "the built boundary").
+#[test]
+fn a_face_turned_against_its_loops_is_refused() {
+    let mut b = block([0.;3],[3.,2.,1.]);
+    is_sound("the block",&b);
+    b.faces[2].reversed = !b.faces[2].reversed;
+    refused(&b,Some(2),None,"its outer loop turns against the face's sense");
+}
