@@ -562,4 +562,3 @@ fn statements_no_text_holds_are_numbered_apart() {
     // a given module's index is far below the room between the two ranges
     assert!(GIVEN_STMTS.checked_add(1 << 20).is_some_and(|top| top < FOOT_STMTS - 2));
 }
-
