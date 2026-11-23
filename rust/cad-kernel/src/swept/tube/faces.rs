@@ -1515,10 +1515,14 @@ fn seams_of(tube: &Tube,g: &Graph,i: usize,chart: Chart,cover: &super::cells::Co
             }
         }
         cs.sort_by(|p,q| p.0.total_cmp(&q.0));
+        // (an end on the split's own extent is a junction only where that is an earlier split's
+        // line: the face's box's own side, where an edge of the face touches it at its extreme, is
+        // no edge, and a seam ending there would hang free)
+        let split = |y: f64| cover.splits.iter().any(|&(other,v,[z0,z1])| other != axis && v == y && x >= z0 && x <= z1);
         let mut ys: Vec<(f64,Ends)> = Vec::new();
-        if cs.first().is_none_or(|f| f.0 > y0) { ys.push((y0,Ends::Junction)) }
+        if cs.first().is_none_or(|f| f.0 > y0) && split(y0) { ys.push((y0,Ends::Junction)) }
         ys.extend(cs);
-        if ys.last().is_none_or(|l| l.0 < y1) { ys.push((y1,Ends::Junction)) }
+        if ys.last().is_none_or(|l| l.0 < y1) && split(y1) { ys.push((y1,Ends::Junction)) }
         for w in ys.windows(2) {
             let m = 0.5*(w[0].0+w[1].0);
             if !(w[1].0 > w[0].0) || !within(axis.point(x,m),&rings) { continue }
