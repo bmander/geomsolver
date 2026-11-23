@@ -1653,15 +1653,15 @@ fn load_beside(path: &str, from: &str) -> gcs_core::drawing::Loaded {
 /// The module `name` a document at `source` `use`s: the first of `modules::search_paths` that is
 /// a file — `NAME.sv`, `NAME.step`, `NAME.stp` beside the document, then in each of its
 /// ancestors, never the document itself — else the module library compiled in.  The core opens
-/// no file; this is where one is opened for it.
-fn beside(name: &str, source: &str) -> Option<String> {
+/// no file; this is where one is opened for it, and where it was found is said with its text.
+fn beside(name: &str, source: &str) -> Option<gcs_core::modules::Found> {
     let dir = std::path::Path::new(source).parent().map(|d| d.to_path_buf()).unwrap_or_default();
     match gcs_core::modules::search_paths(name, source).iter()
         .map(|rel| dir.join(rel)).find(|p| p.is_file()) {
         // one that is there and does not read is said and resolves nothing (E070 at the `use`),
         // rather than a farther file or the library's copy standing in for it
-        Some(p) => read_file(&p),
-        None => gcs_core::library::resolve(name),
+        Some(p) => read_file(&p).map(|t| gcs_core::modules::Found::at(&p.to_string_lossy(), t)),
+        None => gcs_core::library::resolve(name).map(Into::into),
     }
 }
 

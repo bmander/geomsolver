@@ -995,14 +995,17 @@ before ports 0.9 s to 0.4 s.
   one file.  `tests/modules.rs` is the gate (`the_standard_library_is_modules_under_std`).
   **A text that is a STEP file is a given module** (#993 stage 2, `modules::is_step`: its first
   token, past an optional byte-order mark and whitespace, is `ISO-10303-21;` — one test, which
-  a host asks too): never parsed, its `Module::text` empty (one byte of the virtual text, so no
-  later module's spans move past a file of megabytes), no `root`, no `uses`, and its file beside
-  it in `Module::given` (`modules::Given`: the text, its `modules::digest` — a fixed-key hash
-  over the bytes, the same on every target — and the one solid the kernel read, a
-  `model::Given`, or why none), shared by every program linked from it.  `relink` hands the
-  reading on (`link_from`'s `like`), so **an edit never reads the file again**, and a fresh link
-  of a text read before on the thread finds it in a memo of the last four, by digest and text;
-  `Program::module_text` still answers the file's text, which a host asks for.
+  a host asks too), and so is a text the host found by an exchange file's name whatever it holds
+  (`modules::Found::exchange`): never parsed, its `Module::text` empty (one byte of the virtual
+  text, so no later module's spans move past a file of megabytes), no `root`, no `uses`, and
+  what its file gave beside it in `Module::given` (`modules::Given`: the text's
+  `modules::digest` — a fixed-key hash over the bytes, the same on every target — and length,
+  and the one solid the kernel read, a `model::Given`, or why none), shared by every program
+  linked from it.  `relink` hands the reading on (`link_from`'s `like`), so **an edit never
+  reads the file again**, and a fresh link of a text read before on the thread finds it in a memo
+  of the last four, by digest — the host's where it took one (`Found::digest`) — and length,
+  the text neither hashed again nor compared.  The file's text is the host's: no program keeps
+  it, and `Program::module_text` answers a Solvent module's alone.
   `given_bodies::an_edit_hands_the_reading_on` and
   `a_given_module_holds_its_file_beside_it` are the gates.
 - **A given body** (#993 stage 2, `flatten/given.rs`).  A given module contributes one thing, the

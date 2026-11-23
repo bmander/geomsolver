@@ -97,10 +97,13 @@ pub fn compile_with(
             let mut unread = None;
             let errs = crate::modules::link(&mut p, &mut |name| {
                 match crate::modules::search_paths(name, &path).iter()
-                    .find_map(|candidate| load(candidate, &path)) {
-                    Some(Ok((_, t))) => Some(t),
-                    Some(Err(why)) => { unread.get_or_insert(format!("module `{name}`: {why}")); None }
-                    None => crate::library::resolve(name),
+                    .find_map(|candidate| Some((candidate, load(candidate, &path)?))) {
+                    Some((at, Ok((_, t)))) => Some(crate::modules::Found::at(at, t)),
+                    Some((_, Err(why))) => {
+                        unread.get_or_insert(format!("module `{name}`: {why}"));
+                        None
+                    }
+                    None => crate::library::resolve(name).map(Into::into),
                 }
             });
             if let Some(why) = unread { return Err(fail(why)) }

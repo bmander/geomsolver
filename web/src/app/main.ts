@@ -60,7 +60,7 @@
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
-import { handed, sending } from '../core/modules.js';
+import { handed, ModuleOutbox } from '../core/modules.js';
 import type { ExportJob, ExportReply } from './export-worker.js';
 import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
@@ -220,8 +220,8 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
  *  the functions `solventc --step/--stl` calls, so the file is the one the terminal writes. It takes
  *  seconds, so the page goes on drawing, and says so; a refusal is the export's, its stage named. */
 let exporter: Worker | null = null;
-/** The digests of the modules' texts the export worker was last sent (`modules.sending`). */
-let exporterSent = new Set<string>();
+/** The page's account of the export worker's modules, made with it. */
+let exporterOutbox = new ModuleOutbox();
 let exportJob = 0;
 const exportsWaiting = new Map<number, { name: string; kind: 'step' | 'stl' }>();
 function exactExport(kind: 'step' | 'stl'): void {
@@ -245,7 +245,7 @@ function exactExport(kind: 'step' | 'stl'): void {
     };
     w.onerror = (ev) => { exportsWaiting.clear(); toast(`the export stopped: ${ev.message || 'its worker failed'}`); exporter = null; };
     exporter = w;
-    exporterSent = new Set();
+    exporterOutbox = new ModuleOutbox();
   }
   const text = view.source;
   const modules = handed(text);
@@ -253,7 +253,7 @@ function exactExport(kind: 'step' | 'stl'): void {
     const id = ++exportJob;
     const name = o.name.replace(/[^\w.-]/g, '_');
     exportsWaiting.set(id, { name, kind });
-    const job: ExportJob = { id, text, modules: sending(exporterSent, modules), x: view.sketch.getX(),
+    const job: ExportJob = { id, text, modules: exporterOutbox.send(modules), x: view.sketch.getX(),
                              solid: o.index, kind, tolerance: 0.01 };
     exporter.postMessage(job);
   }

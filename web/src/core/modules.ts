@@ -27,8 +27,11 @@ export function digest(name: string): string | null {
 }
 
 /** A module a text reaches: `provided` when the host handed it over, and not the library's;
- *  `digest` names its text. */
-export interface SourceFile { name: string; path: string; text: string; provided: boolean; digest: string }
+ *  `digest` names its text; `at` is the path the host handed it over with (`foundAt`, '' where it
+ *  gave none or the text is the library's) and `path` the one it is shown by. */
+export interface SourceFile {
+  name: string; path: string; at: string; text: string; provided: boolean; digest: string;
+}
 
 /** The texts `related` read last, by digest: a text the core holds unchanged is not copied out of
  *  it again (a given module's file may be megabytes, and the page asks on every edit). */
@@ -48,7 +51,8 @@ export function related(text: string): SourceFile[] {
     const text = d === null ? null : lastTexts.get(d) ?? texts.get(d) ?? source(name);
     if (d === null || text === null) continue;
     texts.set(d, text);
-    files.push({ name, path: pathOf(name, text), text, provided: provided(name), digest: d });
+    const at = foundAt(name) ?? '';
+    files.push({ name, path: at || pathOf(name, text), at, text, provided: provided(name), digest: d });
     queue.push(...uses(text));
   }
   lastTexts = texts;
@@ -73,9 +77,9 @@ export function isStep(text: string): boolean {
 }
 
 /** Hand the core a module's text under its `use` name; it outranks the library's copy.  `path` is
- *  where the host found it (`parts/bracket.step`), or none for a text handed on (a worker given
- *  the page's): a file found by an exchange file's name is one to the core whatever its text, so
- *  one that is none is refused by the kernel's reader at the `use` (`modules::decode`). */
+ *  where the host found it (`parts/bracket.step`), or none for a text told by its content alone: a
+ *  file found by an exchange file's name is one to the core whatever its text, so one that is none
+ *  is refused by the kernel's reader at the `use` (`modules::Found::at`). */
 export function provide(name: string, text: string, path = ''): void {
   installed = null;
   withStr(name, (np, nn) => withStr(path, (pp, pn) => withStr(text, (tp, tn) =>
@@ -87,63 +91,86 @@ export function provided(name: string): boolean {
   return withStr(name, (np, nn) => core().gcs_module_provided(np, nn)) === 1;
 }
 
-/** A module handed to a worker: its `use` name, its digest, and its text — left out where the
- *  worker has it already (`sending`), so a file of megabytes crosses to a worker once. */
-export type Handed = [name: string, digest: string, text?: string];
+/** The path the host handed module `name` over with (`gcs_module_path`; '' where it gave none),
+ *  or null where it handed none over. */
+export function foundAt(name: string): string | null {
+  const p = withStr(name, (np, nn) => core().gcs_module_path(np, nn));
+  return p ? takeStr(p) : null;
+}
 
-/** The modules handed over that `text` reaches, as `[use name, digest, text]`: what a worker is
- *  given to read the page's drawing as the page reads it (`install`); the library's own it has
+/** A module handed to a worker: its `use` name, its digest, the path the page was handed it with
+ *  (a file found as `NAME.step` is one whatever it holds), and its text — left out where the
+ *  worker has it already (`ModuleOutbox`), so a file of megabytes crosses to a worker once. */
+export type Handed = [name: string, digest: string, path: string, text?: string];
+
+/** The modules handed over that `text` reaches, as `[use name, digest, path, text]`: what a worker
+ *  is given to read the page's drawing as the page reads it (`install`); the library's own it has
  *  already. */
 export function handed(text: string): Handed[] {
-  return related(text).filter((f) => f.provided).map((f): Handed => [f.name, f.digest, f.text]);
+  return related(text).filter((f) => f.provided).map((f): Handed => [f.name, f.digest, f.at, f.text]);
 }
 
-/** `list` as one worker is sent it: a text it was sent last time, by its digest, left out.  `sent`
- *  is that worker's — the digests of the last list it was sent, which `install` keeps the texts
- *  of — and becomes this list's. */
-export function sending(sent: Set<string>, list: Handed[]): Handed[] {
-  const out = list.map(([name, d, text]): Handed => (sent.has(d) ? [name, d] : [name, d, text]));
-  sent.clear();
-  for (const [, d] of list) sent.add(d);
-  return out;
+/** **The page's account of one worker's modules**, made with the worker: the digests of the last
+ *  list it was sent, whose texts the worker keeps (`received`).  A worker made afresh is given a
+ *  fresh one, so every text is sent it again. */
+export class ModuleOutbox {
+  private sent = new Set<string>();
+
+  /** `list` as this worker is sent it: a text it was sent last time, by its digest, left out. */
+  send(list: Handed[]): Handed[] {
+    const out = list.map(([name, d, path, text]): Handed =>
+      (this.sent.has(d) ? [name, d, path] : [name, d, path, text]));
+    this.sent = new Set(list.map(([, d]) => d));
+    return out;
+  }
 }
 
-/** What tells two lists of modules apart: their names and digests, never their texts. */
+/** What tells two lists of modules apart: their names, digests and paths, never their texts. */
 export function modulesKey(list: Handed[]): string {
-  return list.map(([name, d]) => `${name} ${d}`).join('\n');
+  return list.map(([name, d, path]) => `${name} ${d} ${path}`).join('\n');
 }
 
-/** The texts a worker was sent, by digest: those of the last list it received, as `sending` keeps
- *  the page's account of it. */
+/** The texts a worker was sent, by digest: those of the last list it received, as the page's
+ *  `ModuleOutbox` keeps its account of it. */
 let held = new Map<string, string>();
 /** The list the worker's core has now, by `modulesKey`. */
 let installed: string | null = null;
 
-/** `list` as a worker receives it, its texts left out (`sending`) put back from the last list it
- *  received.  Called as each message arrives, in the order the page sent them, so the worker
+/** `list` as a worker receives it, its texts left out (`ModuleOutbox`) put back from the last
+ *  list it received.  Called as each message arrives, in the order the page sent them, so the worker
  *  holds what the page counts it as holding, whatever it does with the job after. */
 export function received(list: Handed[]): Handed[] {
   const texts = new Map<string, string>();
-  const out = list.map(([name, d, text]): Handed => {
+  const out = list.map(([name, d, path, text]): Handed => {
     const t = text ?? held.get(d);
     if (t === undefined) throw new Error(`module \`${name}\` was named without its text`);
     texts.set(d, t);
-    return [name, d, t];
+    return [name, d, path, t];
   });
   held = texts;
   return out;
 }
 
+/** A job's modules taken as a worker receives it (`received`, put back in place), or why not
+ *  handed to `refuse`, the job's own refusal: false then, and the job is not done. */
+export function receive(job: { modules: Handed[] }, refuse: (why: string) => void): boolean {
+  try {
+    job.modules = received(job.modules);
+    return true;
+  } catch (e) {
+    refuse(String(e));
+    return false;
+  }
+}
+
 /** Replace everything handed over with `list` (`received`, its texts in it): a worker given the
- *  page's modules.  A list the core has already is not handed over again. */
+ *  page's modules, each with the path the page was handed it with.  A list the core has already
+ *  is not handed over again. */
 export function install(list: Handed[]): void {
   const key = modulesKey(list);
   if (key === installed) return;
   forget();
-  for (const [name, d, text] of list) {
-    if (text === undefined) throw new Error(`module \`${name}\` (${d}) was named without its text`);
-    provide(name, text);
-  }
+  for (const [name, , path, text] of list) provide(name, text!, path);
   installed = key;
 }
 
@@ -154,9 +181,10 @@ export function forget(): void {
 }
 
 /** A `use` name as the path beside the document: `engine.parts` is `engine/parts.sv`, or, for
- *  a module whose `text` is an exchange file, `engine/parts.step`. */
+ *  a module whose `text` is an exchange file, `engine/parts.step` — the core's first candidates
+ *  of each kind (`searchPaths`). */
 export function pathOf(name: string, text?: string): string {
-  return name.split('.').join('/') + (text !== undefined && isStep(text) ? '.step' : '.sv');
+  return searchPaths(name, '')[text !== undefined && isStep(text) ? 1 : 0];
 }
 
 /** Project paths a `use` of `name` in the model at `root` reads, the first the host has winning:

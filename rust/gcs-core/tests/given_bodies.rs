@@ -89,10 +89,10 @@ fn a_given_module_holds_its_file_beside_it() {
     let m = &p.modules[k];
     let g = m.given.as_ref().expect("a given module");
     assert!(m.text.is_empty() && m.root.body.is_empty() && m.uses.is_empty());
-    assert_eq!(g.text, DRILLED);
-    assert_eq!(g.digest, modules::digest(DRILLED));
+    assert_eq!((g.digest, g.len), (modules::digest(DRILLED), DRILLED.len()));
     assert!(g.body.is_ok(), "{:?}", g.body);
-    assert_eq!(p.module_text("bracket").as_deref(), Some(DRILLED));
+    // the file's text is the host's: the program keeps none of it
+    assert_eq!(p.module_text("bracket"), None);
     let s = p.module_named("std").unwrap();
     assert_eq!(p.modules[s].base, m.base + 1);
     assert_eq!(p.source_at(m.base), (Some(k), 0));

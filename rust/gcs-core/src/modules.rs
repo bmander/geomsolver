@@ -2,9 +2,10 @@
 //!
 //! A module is a Solvent document read for its **components**.  `use NAME` at the top of a
 //! document asks for one; what the name resolves to is the *host's* question — the core takes text
-//! and has no filesystem — so `link` takes a resolver, `NAME -> text`, and the CLI answers it from
-//! the files beside the document while the browser answers it from the library compiled into the
-//! core (`library.rs`).  A module's own `use`s are followed the same way, once each, so a diamond
+//! and has no filesystem — so `link` takes a resolver, `NAME -> Found` (the text, and where the
+//! host found it), and the CLI answers it from the files beside the document while the browser
+//! answers it from what the page handed over and the library compiled into the core
+//! (`library.rs`).  A module's own `use`s are followed the same way, once each, so a diamond
 //! is one copy and a cycle is not a hang.
 //!
 //! What a module contributes is exactly its component definitions and relation words, plus the
@@ -21,13 +22,15 @@
 //! `program::elaborate` shows a module's diagnostic at the `use` that brought the module in, its
 //! own place named in the message.
 //!
-//! **A given module** (#993 stage 2): a text that is an ISO 10303-21 exchange file (`is_step`) is
-//! never parsed as Solvent.  It contributes one thing, the body its file gives, named by the
-//! module's whole path (`flatten::given`).  Its `Module::text` is empty — one byte of the virtual
-//! text, so no later module's spans are pushed past a file of megabytes — and its file, what the
-//! kernel read of it and the text's digest stand beside it (`Module::given`, `Given`), shared:
-//! `relink` hands the same reading on, so an edit never reads the file again, and a fresh link of
-//! a text read before on this thread finds it in a small memo by its digest.
+//! **A given module** (#993 stage 2): a text that is an ISO 10303-21 exchange file (`is_step`), or
+//! one the host found by an exchange file's name (`Found::exchange`), is never parsed as Solvent.
+//! It contributes one thing, the body its file gives, named by the module's whole path
+//! (`flatten::given`).  Its `Module::text` is empty — one byte of the virtual text, so no later
+//! module's spans are pushed past a file of megabytes — and what the kernel read of its file and
+//! the text's digest stand beside it (`Module::given`, `Given`), shared: `relink` hands the same
+//! reading on, so an edit never reads the file again, and a fresh link of a text read before on
+//! this thread finds it in a small memo by its digest.  The file's text is the host's: the core
+//! keeps none of it once read.
 
 use crate::drawing::relative_path;
 use crate::program::{Code, Diag};
@@ -43,43 +46,61 @@ pub const MAX_MODULES: usize = 64;
 /// Solvent document, then an ISO 10303-21 exchange file that gives a body (#993 stage 2).
 pub const MODULE_EXTENSIONS: [&str; 3] = ["sv", "step", "stp"];
 
+/// **What a host found for a `use`**: the module's text, whether it was found as an exchange file
+/// (`NAME.step`, `NAME.stp`: `Found::at`), and the text's `digest` where the host took it already
+/// (the ABI's, as a text is handed over), so a text read before is known without being hashed
+/// again.  A resolver answering with a bare `String` answers a text found by no name, told by its
+/// content alone (`From<String>`).  The text is shared, so a host keeping it hands it on uncopied.
+#[derive(Clone)]
+pub struct Found {
+    pub text: Arc<str>,
+    pub exchange: bool,
+    pub digest: Option<u64>,
+}
+
+impl Found {
+    /// A text the host found at `path`: an exchange file where the path names one.
+    pub fn at(path: &str, text: String) -> Found {
+        Found { text: text.into(), exchange: exchange(path), digest: None }
+    }
+
+    /// Whether `link` reads it as a given module: found as an exchange file, or one by its text.
+    fn given(&self) -> bool {
+        self.exchange || is_step(&self.text)
+    }
+}
+
+impl From<String> for Found {
+    fn from(text: String) -> Found {
+        Found { text: text.into(), exchange: false, digest: None }
+    }
+}
+
+/// Whether a path names an exchange file (`NAME.step`, `NAME.stp`, `MODULE_EXTENSIONS` past the
+/// first): **a file found by an exchange file's name is one whatever its text**, so one that is
+/// no exchange file — empty, or not starting `ISO-10303-21;` — is given to the kernel's reader,
+/// which refuses it in its own words at the `use` (E072), and it is never parsed as Solvent.
+pub fn exchange(path: &str) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, ext)| MODULE_EXTENSIONS[1..].contains(&ext))
+}
+
 /// The text of a module a host read as bytes (a file, a buffer handed over the ABI) where it found
 /// them, `path` (as `search_paths` names it, or a path in the page's project; empty where the host
-/// has none, a worker handed the page's texts).  Told by its content as `is_step` tells it: UTF-8
-/// as it stands; else, an exchange file read lossily — real Part 21 files carry Latin-1 bytes in
-/// their strings (a product's name, the header's author), and the geometry they give is all ASCII,
-/// so nothing a body is read from is touched; else refused, for a Solvent document that is not
-/// UTF-8 is not one to guess at.  Every host reads through this, so a module file that exists and
-/// does not read is said, never taken for no module.
-///
-/// **A file found by an exchange file's name** (`NAME.step`, `NAME.stp`) is one whatever its text:
-/// one that is no exchange file — empty, or not starting `ISO-10303-21;` — is read lossily and
-/// handed on marked so (`is_step` answers it), so `link` gives it to the kernel's reader, which
-/// refuses it in its own words at the `use` (E072), and it is never parsed as Solvent.  The mark
-/// is the host's word for where the text was found, carried in the text because a resolver
-/// answers a name with a text; the reader is given the file's own text.
+/// has none).  Told as `link` tells it: UTF-8 as it stands; else, an exchange file — one found by
+/// an exchange file's name (`exchange`), or one by its text (`is_step`) — read lossily: real
+/// Part 21 files carry Latin-1 bytes in their strings (a product's name, the header's author), and
+/// the geometry they give is all ASCII, so nothing a body is read from is touched; else refused,
+/// for a Solvent document that is not UTF-8 is not one to guess at.  Every host reads through
+/// this, so a module file that exists and does not read is said, never taken for no module.
 pub fn decode(path: &str, bytes: Vec<u8>) -> Result<String, std::string::FromUtf8Error> {
-    let exchange = path.rsplit_once('.').is_some_and(|(_, ext)| MODULE_EXTENSIONS[1..].contains(&ext));
-    if exchange {
-        let text = String::from_utf8(bytes)
-            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-        return Ok(match is_step(&text) {
-            true => text,
-            false => format!("{FOUND}{text}"),
-        });
-    }
     String::from_utf8(bytes).or_else(|e| {
         let head = &e.as_bytes()[..e.as_bytes().len().min(1024)];
-        match is_step(&String::from_utf8_lossy(head)) {
+        match exchange(path) || is_step(&String::from_utf8_lossy(head)) {
             true => Ok(String::from_utf8_lossy(e.as_bytes()).into_owned()),
             false => Err(e),
         }
     })
 }
-
-/// What `decode` puts before the text of a file found by an exchange file's name that is no
-/// exchange file: no Solvent document or Part 21 file starts with a NUL.
-const FOUND: &str = "\u{0}found as an exchange file\u{0}";
 
 /// Candidate paths relative to a root model, nearest directory first, and in each directory
 /// `NAME.sv`, then `NAME.step`, then `NAME.stp`: a nearer file of any kind wins over a farther
@@ -107,22 +128,13 @@ pub fn search_paths(name: &str, source: &str) -> Vec<String> {
 /// Whether a module's text is an ISO 10303-21 exchange file rather than Solvent: its first token,
 /// after an optional UTF-8 byte-order mark and ASCII whitespace, is `ISO-10303-21;`.  Told by the
 /// content and not by a file's name, so every host — and a text a host was handed with no name —
-/// answers alike; a host asks it before putting a text through the Solvent parser.  A text
-/// `decode` marked as found by an exchange file's name is one too, whatever follows the mark.
+/// answers alike; a host asks it before putting a text through the Solvent parser.  A text found
+/// by an exchange file's name is one whatever it holds, which the host says (`Found::exchange`).
 pub fn is_step(text: &str) -> bool {
-    if text.starts_with(FOUND) {
-        return true;
-    }
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     text.trim_start_matches(|c: char| c.is_ascii_whitespace()).starts_with("ISO-10303-21;")
 }
 
-/// Resolve every `use` in `prog` through `resolve`, and every `use` inside what it brings in.
-///
-/// The modules' components join `prog.components` before the root.  Diagnostics come back as
-/// the elaborator's: a module nothing resolves (E070, at the `use`), a component defined twice
-/// (E071, at the later definition), and a module's own parse errors (E100, at their place in the
-/// module).  Nothing is said twice: a module asked for by two `use`s is linked once.
 /// Where module statements' ids start: past any a document is ever given (`parse` caps a
 /// document far below it), so a module's ids depend only on the modules before it and its text.
 pub const MODULE_STMTS: u32 = 1 << 30;
@@ -138,14 +150,23 @@ pub const GIVEN_STMTS: u32 = 3 << 30;
 /// range, nothing is minted.
 pub const FOOT_STMTS: u32 = u32::MAX;
 
-pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<Diag> {
-    link_from(prog, resolve, None)
+/// Resolve every `use` in `prog` through `resolve`, and every `use` inside what it brings in.
+///
+/// The modules' components join `prog.components` before the root.  Diagnostics come back as
+/// the elaborator's: a module nothing resolves (E070, at the `use`), a component defined twice
+/// (E071, at the later definition), and a module's own parse errors (E100, at their place in the
+/// module).  Nothing is said twice: a module asked for by two `use`s is linked once.
+///
+/// `resolve` answers what the host found (`Found`), or a bare text a host found by no name.
+pub fn link<F: Into<Found>>(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<F>)
+    -> Vec<Diag> {
+    link_from(prog, &mut |name| resolve(name).map(Into::into), None)
 }
 
 /// `link`, handing on what `like` read of each given module rather than asking for its file.
 fn link_from(
     prog: &mut Program,
-    resolve: &mut dyn FnMut(&str) -> Option<String>,
+    resolve: &mut dyn FnMut(&str) -> Option<Found>,
     like: Option<&Program>,
 ) -> Vec<Diag> {
     let mut diags = Vec::new();
@@ -173,7 +194,7 @@ fn link_from(
             push_given(prog, name, via, given);
             continue;
         }
-        let Some(text) = resolve(&name) else {
+        let Some(found) = resolve(&name) else {
             diags.push(Diag::new(
                 Code::E070,
                 at,
@@ -182,10 +203,11 @@ fn link_from(
             ));
             continue;
         };
-        if is_step(&text) {
-            push_given(prog, name, via, given(text));
+        if found.given() {
+            push_given(prog, name, via, given(&found));
             continue;
         }
+        let text = found.text.to_string();
         let base = prog.virtual_len();
         // a module's statements are numbered in a range of their own, so they keep their ids
         // when the document grows: a statement appended to the document, then relinked, must not
@@ -275,7 +297,9 @@ pub fn localize(p: &Program, diags: &mut [Diag]) {
 /// A given module is handed on as `like` read it (`Module::given`): its file is neither asked
 /// for nor read again.
 pub fn relink(prog: &mut Program, like: &Program) -> Vec<Diag> {
-    let mut resolve = |name: &str| like.module_text(name).or_else(|| crate::library::resolve(name));
+    let mut resolve = |name: &str| {
+        like.module_text(name).or_else(|| crate::library::resolve(name)).map(Found::from)
+    };
     link_from(prog, &mut resolve, Some(like))
 }
 
@@ -318,29 +342,20 @@ pub fn digest(text: &str) -> u64 {
     h ^ (h >> 33)
 }
 
-/// **What a given module's file gives** (#993 stage 2): the text as the host gave it (what
-/// `Program::module_text` answers), its digest, and the one solid the kernel read from it — or
-/// why there is none the language reads, in the kernel's words (`Refusal`'s, its entity `#n` in
-/// front) or saying how many solids the file gives.  Shared by every program linked from it.
+/// **What a given module's file gives** (#993 stage 2): the text's digest and length, and the one
+/// solid the kernel read from it — or why there is none the language reads, in the kernel's words
+/// (`Refusal`'s, its entity `#n` in front) or saying how many solids the file gives.  Shared by
+/// every program linked from it.  The text itself is the host's, never kept here: a file may be
+/// megabytes.
+#[derive(Debug)]
 pub struct Given {
-    pub text: String,
     pub digest: u64,
+    pub len: usize,
     pub body: Result<Arc<Body>, String>,
 }
 
 /// What a given module's file gives the model: its B-rep and the text's digest.
 pub type Body = crate::model::Given;
-
-/// The digest and what was read, never the text: a file may be megabytes.
-impl std::fmt::Debug for Given {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let read = match &self.body {
-            Ok(_) => "a solid".to_string(),
-            Err(why) => format!("refused: {why}"),
-        };
-        write!(f, "Given {{ digest: {:016x}, bytes: {}, {read} }}", self.digest, self.text.len())
-    }
-}
 
 /// How many files a thread keeps what it read of: a host elaborates a document often, and every
 /// fresh link of it hands the same texts again.
@@ -352,15 +367,15 @@ thread_local! {
 }
 
 /// **A STEP text read**, once per thread for as long as it is among the last few read: reading is
-/// unbudgeted, and a file of megabytes takes seconds.  Found by its digest, and the text held to
-/// be the same, so no two files share a reading.
-fn given(text: String) -> Arc<Given> {
-    // a text marked as found by an exchange file's name is read as the file's own
-    let text = match text.starts_with(FOUND) { true => text[FOUND.len()..].to_string(), false => text };
-    let digest = digest(&text);
+/// unbudgeted, and a file of megabytes takes seconds.  Found by its digest — the host's where it
+/// took one — and its length, never by comparing the text; a text found by an exchange file's name
+/// is read as the file's own.
+fn given(found: &Found) -> Arc<Given> {
+    let digest = found.digest.unwrap_or_else(|| digest(&found.text));
+    let len = found.text.len();
     let kept = READ.with(|r| {
         let mut r = r.borrow_mut();
-        let k = r.iter().position(|g| g.digest == digest && g.text == text)?;
+        let k = r.iter().position(|g| g.digest == digest && g.len == len)?;
         let g = r.remove(k);
         r.push(g.clone());
         Some(g)
@@ -368,8 +383,7 @@ fn given(text: String) -> Arc<Given> {
     if let Some(g) = kept {
         return g;
     }
-    let body = read(&text, digest);
-    let g = Arc::new(Given { text, digest, body });
+    let g = Arc::new(Given { digest, len, body: read(&found.text, digest) });
     READ.with(|r| {
         let mut r = r.borrow_mut();
         if r.len() >= READ_KEPT {

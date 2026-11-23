@@ -13,7 +13,7 @@
 import {
   solidClaims, type ClaimProgress, type ClaimVerdict, type SolidClaim,
 } from '../core/claims.js';
-import { handed, sending, type Handed } from '../core/modules.js';
+import { handed, ModuleOutbox, type Handed } from '../core/modules.js';
 import type { Document } from '../core/program.js';
 
 /** What the page asks of the worker: to judge the claims of one drawing, or to stop. */
@@ -21,8 +21,8 @@ export type ClaimJob = {
   kind: 'claims';
   id: number;
   text: string;
-  /** The modules the page handed over and the text reaches, as `[use name, digest, text]`, a text
-   *  the worker was sent before left out (`modules.sending`). */
+  /** The modules the page handed over and the text reaches, as `[use name, digest, path, text]`,
+   *  a text the worker was sent before left out (`ModuleOutbox`). */
   modules: Handed[];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
@@ -80,8 +80,8 @@ export function samePose(a: Float64Array, b: Float64Array): boolean {
 
 export class ClaimJudging {
   private worker: JudgeWorker | null = null;
-  /** The digests of the modules' texts the worker was last sent (`modules.sending`). */
-  private sent = new Set<string>();
+  /** The page's account of the worker's modules, made with it. */
+  private outbox = new ModuleOutbox();
   private job = 0;
   /** The drawing the job in hand (or its verdicts) is of. */
   private of: { text: string; x: Float64Array } | null = null;
@@ -120,9 +120,9 @@ export class ClaimJudging {
       w.onmessageerror =
         () => this.fail('the worker judging the claims sent what could not be read');
       this.worker = w;
-      this.sent = new Set();
+      this.outbox = new ModuleOutbox();
     }
-    const modules = sending(this.sent, handed(doc.text));
+    const modules = this.outbox.send(handed(doc.text));
     this.worker.postMessage({ kind: 'claims', id: this.job, text: doc.text, modules, x, claims });
     this.told(this.state);
   }

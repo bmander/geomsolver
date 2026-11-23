@@ -35,7 +35,8 @@ pub(crate) fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Every error `text` gives, parsed, linked through `resolve` and elaborated: the syntax's, the
 /// linker's and the elaborator's, each as `CODE: message`.
-fn errors(text: &str, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<String> {
+fn errors<F: Into<modules::Found>>(text: &str, resolve: &mut dyn FnMut(&str) -> Option<F>)
+    -> Vec<String> {
     let (mut prog, errs) = syntax::parse(text);
     if !errs.is_empty() {
         return errs.iter().map(|e| format!("E100: {}", e.message)).collect();
