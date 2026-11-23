@@ -39,7 +39,7 @@ fn main() {
     let nt = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(64usize);
     let tracing = args.iter().any(|a| a == "trace");
     let half = std::env::var("TUBE_HALF").ok().and_then(|h| h.parse().ok()).unwrap_or(half);
-    let tol = tube_r/50_000.;
+    let tol = tube_r/std::env::var("TUBE_TOL").ok().and_then(|t| t.parse::<f64>().ok()).unwrap_or(50_000.);
     let roll = [-(half as f64).to_radians(),(half as f64).to_radians()];
     let ring = Ring::read(&tool).unwrap();
     let clock = Instant::now();
