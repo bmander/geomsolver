@@ -43,7 +43,8 @@ fn main() {
     let roll = [-(half as f64).to_radians(),(half as f64).to_radians()];
     let ring = Ring::read(&tool).unwrap();
     let clock = Instant::now();
-    let tb = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    // (`NOPINCH`: the tube read without its pinch, `Tube::new`)
+    let tb = if std::env::var_os("NOPINCH").is_some() { Tube::new(&ring,&path,roll).unwrap() } else { Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap() };
     if let Some(p) = &tb.pinch { println!("pinch at (t*, θ*) {:?}: ρ₀ {}, reach {:?}, in {:?}",p.collar.at,p.rho,p.reach,clock.elapsed()) }
     if let Some(at) = std::env::var_os("SEED_AT") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
@@ -51,7 +52,8 @@ fn main() {
         let field = tube::Depth {tube:&tb,chart,within:tol,holes:&[]};
         let rect = [[v[3],v[4]],roll];
         let r = cad_kernel::zero_set::through(&field,&cad_kernel::zero_set::Question {rect,edges:&[],seeds:&[[v[1],v[2]]],tol,feature:0.25*ring.thickness});
-        match r { Ok(t) => for p in &t.pieces { println!("{} points {:?} {:?} .. {:?}",p.uv.len(),p.ends,p.uv[0],p.uv[p.uv.len()-1]) },Err(e) => println!("{e}") }
+        match r { Ok(t) => for p in &t.pieces { println!("{} points {:?} {:?} .. {:?}",p.uv.len(),p.ends,p.uv[0],p.uv[p.uv.len()-1]);
+            for q in p.uv.iter().step_by(4) { println!("    {q:?} hole {:?} J {:?}",tb.pinch.as_ref().map(|h| h.side(*q)),tb.jacobian(v[0],q[0],q[1])) } },Err(e) => println!("{e}") }
         let s = [v[1],v[2]];
         println!("least at the seed {:?}",cad_kernel::zero_set::Field::least(&field,s).map(|v| (v.f,v.grad)));
         return
@@ -147,7 +149,7 @@ fn main() {
     }
     // `pinch`: each chart's cuspidal edges, swallowtail points and depth's zero set about the pinch
     if args.iter().any(|a| a == "pinch") {
-        let charts = [Chart::Sheet(1.),Chart::Sheet(-1.),Chart::Collar];
+        let charts = if std::env::var_os("ENDS").is_some() { vec![Chart::End(0),Chart::End(1)] } else { vec![Chart::Sheet(1.),Chart::Sheet(-1.),Chart::Collar] };
         for chart in charts {
             let clock = Instant::now();
             let (folds,search) = match tube::edges(&tb,chart,tol,0.25*ring.thickness) { Ok(e) => e,Err(e) => { println!("{chart:?}: edges refused: {e:?}"); continue } };
@@ -170,6 +172,7 @@ fn main() {
             if !tracing { continue }
             let clock = Instant::now();
             let lines: Vec<Vec<[f64;2]>> = folds.iter().map(|p| p.uv.clone()).collect();
+            println!("  beside the edges: {:?}",tube::beside_edges(&tb,chart,&lines,tol,0.25*ring.thickness));
             let extra: Vec<[f64;2]> = std::env::var("SEEDS").ok().map(|v| { let x: Vec<f64> = v.split(',').map(|x| x.parse().unwrap()).collect(); x.chunks(2).map(|c| [c[0],c[1]]).collect() }).unwrap_or_default();
             match tube::seams(&tb,chart,&lines,&tails,&extra,tol,0.25*ring.thickness) {
                 Ok((pieces,_,discs)) => {
@@ -285,6 +288,49 @@ fn main() {
                 let m = s.misfits(cad_kernel::geom::tolerance(size));
                 println!("misfits at {:e}: {}",cad_kernel::geom::tolerance(size),m.len());
                 for (what,d,held) in &m { println!("  {what}: {d:e} (held to {held:e})") }
+                // (`AUDIT=δ`: each mesh vertex moved δ in and out along its triangles' normal, read
+                // by the depth — the least over the roll, sampled and settled — the disagreements by face)
+                if let Some(delta) = std::env::var("AUDIT").ok().and_then(|d| d.parse::<f64>().ok()) {
+                    let m = cad_kernel::mesh::mesh(&s,1e-4,0.1).unwrap();
+                    let mut nrm = vec![[0f64;3];m.pts.len()];
+                    let mut face = vec![0u32;m.pts.len()];
+                    for (t,&f) in m.tris.iter().zip(&m.of) {
+                        let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                        let n = cad_kernel::util::space::cross(cad_kernel::util::space::sub(b,a),cad_kernel::util::space::sub(c,a));
+                        for &i in t { for k in 0..3 { nrm[i as usize][k] += n[k] } face[i as usize] = f }
+                    }
+                    let [a,b] = roll;
+                    let depth = |x: [f64;3]| -> f64 {
+                        let d = |t: f64| tb.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+                        let n = 512;
+                        let (i,_) = (0..=n).map(|i| d(a+(b-a)*i as f64/n as f64)).enumerate().min_by(|p,q| p.1.total_cmp(&q.1)).unwrap();
+                        let st = (b-a)/n as f64;
+                        let (mut l,mut h) = ((a+st*i as f64-st).max(a),(a+st*i as f64+st).min(b));
+                        let g = 0.5*(5f64.sqrt()-1.);
+                        while h-l > 1e-13 { let (x1,x2) = (h-g*(h-l),l+g*(h-l)); if d(x1) < d(x2) { h = x2 } else { l = x1 } }
+                        d(0.5*(l+h))
+                    };
+                    let body = cad_kernel::swept::member::Solid::new(&s,1e-4,1.).unwrap();
+                    let mut bad: std::collections::BTreeMap<u32,(usize,usize,[f64;3])> = std::collections::BTreeMap::new();
+                    for (i,p) in m.pts.iter().enumerate().step_by(8) {
+                        let l = cad_kernel::util::space::norm(nrm[i]);
+                        if !(l > 0.) { continue }
+                        let n = cad_kernel::util::space::scale(nrm[i],1./l);
+                        for sgn in [-1.,1.] {
+                            let q = cad_kernel::util::space::add(*p,cad_kernel::util::space::scale(n,sgn*delta));
+                            let d = depth(q);
+                            if d.abs() < 0.25*delta { continue }
+                            let sd = body.signed_distance(q);
+                            if (d < 0.) != (sd < 0.) {
+                                let e = bad.entry(face[i]).or_insert((0,0,q));
+                                if d > 0. { e.0 += 1 } else { e.1 += 1 }
+                                e.2 = q;
+                            }
+                        }
+                    }
+                    println!("audit at δ {delta:e} over {} vertices:",m.pts.len());
+                    for (f,(i,o,p)) in &bad { if i+o > 0 { println!("  face {f} ({}): {i} in the solid, outside by the depth; {o} out of the solid, inside by the depth; e.g. {p:?}",s.faces[*f as usize].name) } }
+                }
             }
             Err(e) => println!("refused in {:?} ({covers} covers): {e:?}",clock.elapsed()),
         }

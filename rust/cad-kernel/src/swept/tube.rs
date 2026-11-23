@@ -554,11 +554,14 @@ fn golden(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
 /// — and the pieces of every part
 /// returned (a curve across a cut in two, each ending on the rim there), with each part's search.
 /// Inner edges (`edges`, polylines in the parameters) are given to each part as their runs inside
-/// it, all with the one side function `side`; seeds to the part holding them, each brought into the
-/// turn.
+/// it, each with its own side function (`sides`, one an edge: a march's exit across an edge is
+/// solved on that edge's side alone — on the least of them all, a step from the pinch's rim that
+/// passed the fold beside it was read as leaving across the rim where it began, and the forward
+/// member's sliver run beside its fold never left the rim); seeds to the part holding them, each
+/// brought into the turn.
 #[allow(clippy::too_many_arguments,clippy::type_complexity)]
 pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],seeds: &[[f64;2]],edges: &[Vec<[f64;2]>],
-    side: &dyn Fn([f64;2]) -> f64,tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<F::At>>,Vec<crate::zero_set::Search>),String> {
+    sides: &[&dyn Fn([f64;2]) -> f64],tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<F::At>>,Vec<crate::zero_set::Search>),String> {
     let cut = |k: usize| -> Vec<[f64;2]> {
         let [a,b] = rect[k];
         if periodic[k] { vec![[a,0.5*(a+b)],[0.5*(a+b),b]] } else { vec![[a,b]] }
@@ -570,16 +573,16 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
         let mine: Vec<[f64;2]> = seeds.iter().map(|&s| wrap(s)).filter(inside).collect();
         // (each inner edge's runs inside the part, its points brought into the turn, each run a
         // polyline read at a fraction of its points' count)
-        let mut lines: Vec<Vec<[f64;2]>> = Vec::new();
-        for e in edges {
+        let mut lines: Vec<(Vec<[f64;2]>,usize)> = Vec::new();
+        for (i,e) in edges.iter().enumerate() {
             let mut run: Vec<[f64;2]> = Vec::new();
             for &q in e {
                 let q = wrap(q);
-                if inside(&q) { run.push(q) } else { if run.len() >= 2 { lines.push(std::mem::take(&mut run)) } run.clear() }
+                if inside(&q) { run.push(q) } else { if run.len() >= 2 { lines.push((std::mem::take(&mut run),i)) } run.clear() }
             }
-            if run.len() >= 2 { lines.push(run) }
+            if run.len() >= 2 { lines.push((run,i)) }
         }
-        let ats: Vec<Box<dyn Fn(f64) -> [f64;2]>> = lines.iter().map(|e| {
+        let ats: Vec<Box<dyn Fn(f64) -> [f64;2]>> = lines.iter().map(|(e,_)| {
             let e: &Vec<[f64;2]> = e;
             Box::new(move |f: f64| {
                 let x = f.clamp(0.,1.)*(e.len()-1) as f64;
@@ -588,7 +591,7 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
                 [e[k][0]+(e[k+1][0]-e[k][0])*g,e[k][1]+(e[k+1][1]-e[k][1])*g]
             }) as Box<dyn Fn(f64) -> [f64;2]>
         }).collect();
-        let inner: Vec<crate::zero_set::Edge> = ats.iter().map(|at| crate::zero_set::Edge {at:&**at,side}).collect();
+        let inner: Vec<crate::zero_set::Edge> = ats.iter().zip(&lines).map(|(at,(_,i))| crate::zero_set::Edge {at:&**at,side:sides[*i]}).collect();
         crate::zero_set::trace(field,&crate::zero_set::Question {rect:[wu,wv],edges:&inner,seeds:&mine,tol,feature})
     };
     // (each part traced; a piece leaving a part across a cut seeds the parts beside it — beside a
@@ -634,7 +637,8 @@ pub fn edges(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> Result<(Vec<crat
     let periodic = [true,matches!(chart,Chart::End(_))];
     let hole = tube.hole(chart)?;
     let side = |uv: [f64;2]| tube.pinch.as_ref().filter(|_| !hole.is_empty()).map_or(1.,|p| p.side(uv));
-    round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&hole,&side,tol,feature)
+    let sides: Vec<&dyn Fn([f64;2]) -> f64> = hole.iter().map(|_| &side as &dyn Fn([f64;2]) -> f64).collect();
+    round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&hole,&sides,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: where it stops bounding the sweep: {why}")))
 }
 
@@ -720,15 +724,22 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
         (0..RIM).all(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth < -tol))
     };
     let holes: Vec<Disc> = tails.iter().filter(|&&at| !held(at)).map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
+    // (each inner edge with its own side: a fold the chart's `side`, a disc its rim's, the pinch's
+    // hole its rim's)
     let mut inner: Vec<Vec<[f64;2]>> = edges.to_vec();
     inner.extend(holes.iter().map(|d| d.polygon(RIM)));
-    inner.extend(tube.hole(chart)?);
-    let side = |uv: [f64;2]| holes.iter().map(|d| d.side(uv)).fold(tube.side(chart,uv).unwrap_or(-1.),f64::min)
-        .min(match (chart,&tube.pinch) { (Chart::Sheet(_),Some(p)) => p.side(uv),_ => f64::INFINITY });
+    let rim = tube.hole(chart)?;
+    inner.extend(rim.iter().cloned());
+    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(-1.);
+    let discs: Vec<Box<dyn Fn([f64;2]) -> f64>> = holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let hole = |uv: [f64;2]| match (chart,&tube.pinch) { (Chart::Sheet(_),Some(p)) => p.side(uv),_ => f64::INFINITY };
+    let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = edges.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
+    sides.extend(discs.iter().map(|d| &**d));
+    sides.extend(rim.iter().map(|_| &hole as &dyn Fn([f64;2]) -> f64));
     let mut seeds = seeds.to_vec();
     seeds.extend(beside_edges(tube,chart,edges,tol,feature));
     let clock = std::time::Instant::now();
-    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,&seeds,&inner,&side,tol,feature)
+    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,&seeds,&inner,&sides,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))?;
     if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() { eprintln!("seams of {chart:?}: {} pieces in {:?}",pieces.len(),clock.elapsed()) }
     Ok((pieces,search,holes))
@@ -1053,7 +1064,11 @@ pub fn beside_edges(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tol: f64,fea
     let Some(pinch) = &tube.pinch else { return Vec::new() };
     let field = Depth {tube,chart,within:tol,holes:&[]};
     let rho = pinch.rho;
-    let value = |uv: [f64;2]| -> Option<f64> { match field.reading(uv)?.1 { Reading::Far(c) => Some(c.depth),Reading::Alone => Some(f64::INFINITY),_ => None } };
+    // (a point the instants beside its own hold is inside the sweep, below nought: on the kept side
+    // of a fold, within the rounding of its edge, the reading is that — the forward member's collar
+    // at ψ 255.32°, where the walk stopped and the trim at 257.14° was never seeded)
+    let value = |uv: [f64;2]| -> Option<f64> { match field.reading(uv)?.1 { Reading::Far(c) => Some(c.depth),Reading::Alone => Some(f64::INFINITY),
+        Reading::Near => Some(f64::NEG_INFINITY) } };
     // (an end on the rim: its rim's sign and angle)
     let on = |q: [f64;2]| -> Option<(f64,f64)> { match chart {
         Chart::Collar => (q[1].abs() >= rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),

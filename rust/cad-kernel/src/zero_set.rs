@@ -455,6 +455,10 @@ impl<'a,F: Field> Tracer<'a,F> {
             near = Some((m,[p[0]+s*d[0],p[1]+s*d[1]]));
         });
         let Some((_,c)) = near else { return false };
+        // (a piece's end is no side of it: past where it stops — at the rim, where its field is
+        // undefined, at a corner — its rate says nothing of a curve beyond, and the piece answers
+        // the cell as before)
+        if self.pieces.iter().any(|p| c == p.uv[0] || c == p.uv[p.uv.len()-1]) { return true }
         // (the middle's sign against the piece's rate toward it; either unread, or either nought,
         // and the piece answers it as before)
         let (Some(m),Some(at)) = (self.field.least(uv),self.least(c)) else { return true };

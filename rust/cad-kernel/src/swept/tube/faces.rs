@@ -348,7 +348,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
         if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
         let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
         let field = Depth {tube,chart,within:tol,holes:&discs};
-        let runs = merged(tube,chart,pieces,tol);
+        let runs = merged(tube,chart,&field,pieces,tol);
         // each piece cut into runs by what covers it, and the runs kept; each switch of what covers
         // it resolved once for both runs beside it (`switched`: its vertex, or none where it is the
         // partner run's rim crossing, read once every run's ends are — a switch between a sheet's
@@ -502,21 +502,50 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
 /// **The pieces of a chart's seams joined across the cuts `round` traces in**: two ends on one
 /// cut are one point where they stand at one place to the rounding or — each the root along the cut
 /// its own part's trace read — within the tolerance of one another in space (an end pose's `ψ`, a
-/// whole turn too, read within its turn).
-fn merged(tube: &Tube,chart: Chart,pieces: Vec<crate::zero_set::Piece<Cover>>,tol: f64) -> Vec<(Vec<P>,Vec<Cover>)> {
+/// whole turn too, read within its turn) — or, on one cut, where the cut between them stands within
+/// the tolerance of the zero set, the far cover continued from one end (`Depth::along`) within it
+/// at their middle and quarters: a crossing shallow to the cut is read on each side to the
+/// tolerance in space, and its two roots along the cut stand farther apart than that (the forward
+/// member's sheet `+` crossing `θ = 0` at `t` 1.50984 and 1.50986, 1.2e-5 apart, its two runs left
+/// apart and the one's loose end sent to a corner).
+fn merged(tube: &Tube,chart: Chart,field: &Depth,pieces: Vec<crate::zero_set::Piece<Cover>>,tol: f64) -> Vec<(Vec<P>,Vec<Cover>)> {
     let [a,b] = tube.roll;
-    let mut runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
+    let runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
     let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
     let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
     let (dv,rv) = match chart { Chart::End(_) => (turn as fn(f64) -> f64,HALF_READ),Chart::Sheet(_) => ((|x| x) as fn(f64) -> f64,HALF_READ*(b-a)),
         Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)) };
-    let same = |p: P,q: P| turn(p[0]-q[0]) == 0. && dv(p[1]-q[1]) == 0.
-        || turn(p[0]-q[0]).abs() <= HALF_READ && (dv(p[1]-q[1]).abs() <= rv || near(p,q));
+    // (the segment between two points within the tolerance of the zero set, the far cover read on
+    // from the one's at its middle and quarters: an angle, and an end pose's `ψ`, met within its turn)
+    let band = |p: P,c: &Cover,q: P| [0.25,0.5,0.75].iter().all(|&f| {
+        let r = [p[0]+turn(q[0]-p[0])*f,p[1]+dv(q[1]-p[1])*f];
+        crate::zero_set::Field::along(field,r,c).is_some_and(|v| v.f.abs() <= tol)
+    });
+    // a run in the band of one kept before it — its two ends and its middle each joined to that
+    // run's nearest point (in the parameters, within the feature in space) through the band — is
+    // that run read again, and dropped: where the far cover meets the chart all but tangentially
+    // the depth stands within the tolerance across a strip, and each sign change of it along an
+    // inner edge there seeds a run of its own (the forward member's sheet `−`: one double curve
+    // traced seven times, 2e-5 apart along `t`)
+    let feature = 0.25*tube.ring.thickness;
+    let apart = |p: P,q: P| turn(p[0]-q[0]).dhypot(dv(p[1]-q[1]));
+    let again = |a: &(Vec<P>,Vec<Cover>),b: &(Vec<P>,Vec<Cover>)| [0,a.0.len()/2,a.0.len()-1].iter().all(|&i| {
+        let p = a.0[i];
+        let q = b.0.iter().copied().min_by(|x,y| apart(p,*x).total_cmp(&apart(p,*y))).expect("a run of points");
+        let close = match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= feature,_ => false };
+        close && band(p,&a.1[i],q)
+    });
+    let mut kept: Vec<(Vec<P>,Vec<Cover>)> = Vec::new();
+    for r in runs { if !kept.iter().any(|k| again(&r,k)) { kept.push(r) } }
+    let mut runs = kept;
+    let same = |p: P,c: &Cover,q: P| turn(p[0]-q[0]) == 0. && dv(p[1]-q[1]) == 0.
+        || turn(p[0]-q[0]).abs() <= HALF_READ && (dv(p[1]-q[1]).abs() <= rv || near(p,q) || band(p,c,q));
     'merge: loop {
         for i in 0..runs.len() { for j in 0..runs.len() {
             if i == j { continue }
             let (pi,pj) = (runs[i].0[runs[i].0.len()-1],runs[j].0[0]);
-            if same(pi,pj) {
+            let ci = runs[i].1[runs[i].1.len()-1].clone();
+            if same(pi,&ci,pj) {
                 let (mut u,mut c) = runs.remove(j);
                 let i = if j < i { i-1 } else { i };
                 u.remove(0); c.remove(0);
@@ -524,7 +553,7 @@ fn merged(tube: &Tube,chart: Chart,pieces: Vec<crate::zero_set::Piece<Cover>>,to
                 continue 'merge
             }
             let pj = runs[j].0[runs[j].0.len()-1];
-            if i < j && same(pi,pj) {
+            if i < j && same(pi,&ci,pj) {
                 let (mut u,mut c) = runs.remove(j);
                 u.reverse(); c.reverse();
                 u.remove(0); c.remove(0);
@@ -552,10 +581,10 @@ fn met(tube: &Tube,trims: &mut Vec<Trim>,vertices: &[Vertex],tol: f64,feature: f
     let [a,b] = tube.roll;
     let (circles,_) = edges(tube,chart,tol,feature)?;
     let circles: Vec<Vec<P>> = circles.into_iter().map(|p| p.uv).collect();
-    let (pieces,_,_) = seams(tube,chart,&circles,&[],&[],tol,feature)?;
+    let (pieces,_,discs) = seams(tube,chart,&circles,&[],&[],tol,feature)?;
     let ended = |c: &Cover| (c.at-b).abs() <= HALF_READ*(b-a);
     let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
-    for (uv,at) in merged(tube,chart,pieces,tol) {
+    for (uv,at) in merged(tube,chart,&Depth {tube,chart,within:tol,holes:&discs},pieces,tol) {
         let n = uv.len();
         let mut from = 0;
         for i in 1..=n {
