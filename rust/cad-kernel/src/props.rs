@@ -201,6 +201,46 @@ fn settled_by(pieces: usize,most: usize,read: &mut dyn FnMut(usize) -> Option<(f
     Some(last)
 }
 
+/// How many steps each stretch of a use is read in for its crossings of a net's knot lines.
+const CROSSING_STEPS: usize = 8;
+
+/// **Where a use's curve in a net's parameters crosses the net's knot lines** (#880 T1f), over the
+/// edge's range `[t0, t1]` cut at its own `breaks`: `G` read along the use is smooth only between
+/// such crossings — at one a derivative of the net past its continuity there jumps — so the rule is
+/// cut there as at the use's own breaks.  A graded net (the tube road's, its knots crowded toward a
+/// pinch) puts hundreds of knot lines across one stretch of a trim's pcurve, and a rule read over
+/// them whole missed the crossed member's volume by 4e-5 of itself.  Each stretch is read at
+/// `CROSSING_STEPS` steps, a step's knots between its two ends' parameters each settled by
+/// bisection to the rounding (a use doubling back across a knot line within a step, tangent to it
+/// there, is read as not crossing it: the kink is of the order of the step's turn).
+fn crossings(s: &Surface,[t0,t1]: [f64;2],breaks: &[f64],at: &mut dyn FnMut(f64) -> Uv) -> Vec<f64> {
+    let mut cuts = vec![t0];
+    cuts.extend(breaks.iter().copied().filter(|&t| t > t0.min(t1) && t < t0.max(t1)));
+    cuts.push(t1);
+    let mut out = Vec::new();
+    for w in cuts.windows(2) {
+        let mut prev = (w[0],at(w[0]));
+        for j in 1..=CROSSING_STEPS {
+            let t = w[0]+(w[1]-w[0])*j as f64/CROSSING_STEPS as f64;
+            let next = (t,at(t));
+            for k in 0..2 {
+                for knot in s.breaks(k,[prev.1[k],next.1[k]]) {
+                    let below = prev.1[k] < knot;
+                    let (mut lo,mut hi) = (prev.0,next.0);
+                    loop {
+                        let mid = 0.5*(lo+hi);
+                        if !(mid != lo && mid != hi) { break }
+                        if (at(mid)[k] < knot) == below { lo = mid } else { hi = mid }
+                    }
+                    out.push(0.5*(lo+hi));
+                }
+            }
+            prev = next;
+        }
+    }
+    out
+}
+
 /// Pieces for an angle-like span, a sixteenth of a turn each.
 fn pieces(span: f64,periodic: bool) -> usize {
     if periodic { ((span.abs()/(std::f64::consts::PI/8.)).ceil() as usize).max(1) } else { 4 }
@@ -698,6 +738,12 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
                 breaks.sort_by(f64::total_cmp);
                 breaks.dedup();
+                // and where its curve in a net's parameters crosses one of the net's knot lines
+                if let (Surface::BSpline(..) | Surface::Offset(..),Pcurve::Curve(_)) = (s,&c.pcurve) {
+                    breaks.extend(crossings(s,e.t,&breaks,&mut |t| c.pcurve.at(t,e,s,&b.vertices)));
+                    breaks.sort_by(f64::total_cmp);
+                    breaks.dedup();
+                }
                 let line = if !breaks.is_empty() {
                     // smooth between its knots or points: integrated a stretch at a time
                     let mut cuts = vec![e.t[0]];

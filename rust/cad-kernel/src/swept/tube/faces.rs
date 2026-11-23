@@ -395,8 +395,19 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 partner.push(p);
             }
             let other = other.ok_or_else(|| failed("an empty trim".into()))?;
-            // (each angle unwrapped along the run, and an end pose's ψ)
+            // (a run's end on the pinch's rim read twice — the tracer's seed there and its exit settled
+            // there, one crossing: a trim does not run along the rim — the end's alone kept, so the way
+            // the run leaves it is its own, not a rounding's)
             let (mut uv,mut partner) = (uv,partner);
+            for e in 0..2 {
+                while uv.len() > 2 {
+                    let (i,j) = if e == 0 { (0,1) } else { (uv.len()-1,uv.len()-2) };
+                    if tube.on_hole(chart,uv[i]).is_none() || tube.on_hole(chart,uv[j]).is_none() { break }
+                    uv.remove(j);
+                    partner.remove(j);
+                }
+            }
+            // (each angle unwrapped along the run, and an end pose's ψ)
             for j in 1..uv.len() {
                 uv[j][0] = unwrap(uv[j][0],uv[j-1][0]);
                 partner[j][0] = unwrap(partner[j][0],partner[j-1][0]);
@@ -428,6 +439,36 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 }
                 // a rim crossing
                 if side == 0. { return Err(failed(format!("a trim of the collar ends at {q:?}, at no event"))) }
+                // (a run against the end pose `k` reaching its sheet's rim at that end: the corner. Beside
+                // the rim the end pose stands from the sheet's point by half its depth's second rate
+                // in the instant times the square of the instant's way to the end, nought only where
+                // that rate is, on the cuspidal edge: the run reaches the rim at the corner alone, and
+                // about it the sheet and the end pose touch, so each far cover there stands within the
+                // rounding and the run's points stand on their double curve to it alone — whether the
+                // trace stops at the cuspidal edge short of the rim or runs on to the rim beside the
+                // corner is a rounding's. Its tail is the straight join to the corner (`cornered`)
+                // wherever that join holds the end pose, taken back point by point from the rim.)
+                if let (Some(k),Chart::End(o)) = (on_rim(q[1]),trims[ti].other) {
+                    if o == k {
+                        let apart = |c: P| crate::plane2::dist([unwrap(c[0],q[0]),c[1]],q);
+                        let Some(&(v,cq)) = corners.iter().min_by(|x,y| apart(x.1).total_cmp(&apart(y.1))) else {
+                            return Err(failed(format!("a trim of the sheet {side} reaches its end pose's rim at {q:?}, at no corner")))
+                        };
+                        let c = [unwrap(cq[0],q[0]),cq[1]];
+                        let n = trims[ti].uv.len();
+                        // (the `m`-th of its points from the rim's; the join from the farthest it holds
+                        // from, the point before the rim's at least)
+                        let point = |m: usize| if e == 0 { m } else { n-1-m };
+                        let mut cut = 1;
+                        while cut+2 < n && join_holds(tube,side,k,trims[ti].uv[point(cut+1)],c,tol).is_ok() { cut += 1 }
+                        let t = &mut trims[ti];
+                        if e == 0 { t.uv.drain(..cut); t.partner.drain(..cut); } else { t.uv.truncate(n-cut); t.partner.truncate(n-cut) }
+                        let (j,join) = cornered(tube,side,k,cq,v,&trims[ti],e,&mut vertices,tol)?;
+                        trims[ti].ends[e] = j;
+                        trims.push(join);
+                        continue
+                    }
+                }
                 if let Some(k) = on_rim(q[1]) {
                     let (th,c) = crossing(&field,k,q[0],c).ok_or_else(|| failed(format!("a rim crossing from {q:?} not settled")))?;
                     let own = [th.rem_euclid(TAU),tube.roll[k]];
@@ -471,7 +512,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     met(tube,&mut trims,&vertices,tol,feature)?;
     // the switches: each the partner of a rim crossing on the switching trim's chart
     if debug() {
-        for (i,t) in trims.iter().enumerate() { eprintln!("tube: run {i} on {:?} against {:?}, ends {:?}, {:?} .. {:?}, partner {:?} .. {:?}",t.own,t.other,t.ends,t.uv[0],t.uv[t.uv.len()-1],t.partner[0],t.partner[t.partner.len()-1]) }
+        for (i,t) in trims.iter().enumerate() { let n = t.uv.len(); eprintln!("tube: run {i} on {:?} against {:?}, ends {:?}, {:?} .. {:?}, partner {:?} .. {:?}; next {:?}, before last {:?}",t.own,t.other,t.ends,t.uv[0],t.uv[n-1],t.partner[0],t.partner[n-1],t.uv[1.min(n-1)],t.uv[n.saturating_sub(2)]) }
         for (i,v) in vertices.iter().enumerate() { eprintln!("tube: vertex {i} {:?}",v.on) }
     }
     for ti in 0..trims.len() {
@@ -746,17 +787,7 @@ fn cornered(tube: &Tube,side: f64,k: usize,c: P,corner: usize,t: &Trim,e: usize,
     let c = [q[0]+(c[0]-q[0]+PI).rem_euclid(TAU)-PI,c[1]];
     let x = |p: P| tube.point(side,p[0],p[1]).map(|p| p.x);
     let xq = x(q).ok_or_else(|| failed("no sheet at a trim's end".into()))?;
-    let span = distance(xq,x(c).ok_or_else(|| failed("no sheet at a corner".into()))?);
-    let n = (span/(8.*tol*tube.r).sqrt()).ceil().max(1.) as usize;
-    for j in 1..=2*n {
-        let f = j as f64/(2*n) as f64;
-        let p = [q[0]+(c[0]-q[0])*f,q[1]+(c[1]-q[1])*f];
-        let y = x(p).ok_or_else(|| failed("no sheet on a corner's join".into()))?;
-        let (depth,_) = tube.depth_at(y,tube.roll[k]).ok_or_else(|| failed("no depth on a corner's join".into()))?;
-        if depth.abs() > tol || (j < 2*n && !(tube.jacobian(side,p[0],p[1]).is_some_and(|j| j > 0.))) {
-            return Err(failed(format!("a trim not joined to its corner {c:?}: {depth:e} off the end pose at {p:?}")))
-        }
-    }
+    let n = join_holds(tube,side,k,q,c,tol)?;
     vertices.push(Vertex {x:xq,on:vec![(t.own,q),(t.other,r)]});
     let junction = vertices.len()-1;
     let mut join = Trim {own:t.own,other:t.other,uv:vec![q,c],partner:vec![r,r],ends:[junction,corner],shape:Shape::Straight {k}};
@@ -768,6 +799,25 @@ fn cornered(tube: &Tube,side: f64,k: usize,c: P,corner: usize,t: &Trim,e: usize,
     let e = vertices[corner].on.iter().find(|(ch,_)| *ch == Chart::End(k)).map(|(_,p)| *p).expect("a corner on its end pose");
     join.partner[n-1] = [unwrap(e[0],join.partner[n-2][0]),unwrap(e[1],join.partner[n-2][1])];
     Ok((junction,join))
+}
+
+/// **Whether the straight join from `q` to the corner `c`** of the sheet `side` at the roll's end
+/// `k` holds (`cornered`'s): its chords' count, each point and chord's middle within `tol` of the
+/// end pose and, short of the corner, on the side of the cuspidal edge the sheet bounds.
+fn join_holds(tube: &Tube,side: f64,k: usize,q: P,c: P,tol: f64) -> Result<usize,Unbuilt> {
+    let x = |p: P| tube.point(side,p[0],p[1]).map(|p| p.x);
+    let span = distance(x(q).ok_or_else(|| failed("no sheet at a trim's end".into()))?,x(c).ok_or_else(|| failed("no sheet at a corner".into()))?);
+    let n = (span/(8.*tol*tube.r).sqrt()).ceil().max(1.) as usize;
+    for j in 1..=2*n {
+        let f = j as f64/(2*n) as f64;
+        let p = [q[0]+(c[0]-q[0])*f,q[1]+(c[1]-q[1])*f];
+        let y = x(p).ok_or_else(|| failed("no sheet on a corner's join".into()))?;
+        let (depth,_) = tube.depth_at(y,tube.roll[k]).ok_or_else(|| failed("no depth on a corner's join".into()))?;
+        if depth.abs() > tol || (j < 2*n && !(tube.jacobian(side,p[0],p[1]).is_some_and(|j| j > 0.))) {
+            return Err(failed(format!("a trim not joined to its corner {c:?}: {depth:e} off the end pose at {p:?}")))
+        }
+    }
+    Ok(n)
 }
 
 /// **A curve through `f` over `[0, 1]`** with its uses' parameters on the same parameter:

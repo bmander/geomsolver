@@ -26,13 +26,17 @@ use std::time::Instant;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // (`MOVED=ulp` or a length: the observer's origin moved by one ulp, or by that much, each way)
+    let moved = |o: [f64;3]| match std::env::var("MOVED").ok().as_deref() {
+        None => o,Some("ulp") => o.map(f64::next_up),Some(d) => { let d: f64 = d.parse().unwrap(); o.map(|x| x+d) }
+    };
     let ((tool,path),half,tube_r) = match args.first().map(String::as_str) {
         Some("full-turn") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.,0.16),
         Some("tumble") => (bench::tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.5),
         Some("eighty") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),80.,0.16),
         Some("thin") => (bench::tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.015),
-        Some("crossed-forward") => (bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.),100.,0.22),
-        Some("crossed-reverse") => (bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.),100.,0.22),
+        Some("crossed-forward") => (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.,moved),100.,0.22),
+        Some("crossed-reverse") => (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.,moved),100.,0.22),
         _ => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.,0.16),
     };
     let nth = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(128usize);
@@ -109,6 +113,50 @@ fn main() {
             let area = cad_kernel::util::space::norm(cad_kernel::util::space::cross(sp.s_th,sp.s_t));
             println!("({:.6},{:.6}) J {:?} area {area:.3e} bound {:?} reading {:?}",uv[0],uv[1],tb.jacobian(side,uv[0],uv[1]),
                 tb.jacobian_bound(side,[[uv[0]-1e-4,uv[0]+1e-4],[uv[1]-1e-4,uv[1]+1e-4]]).map(|b| (b.value.lo(),b.value.hi())),
+                field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6}",c.depth,c.at),o => format!("{o:?}") }));
+        }
+        return
+    }
+    // (`WHERE=x,y,z`: a point in space read on each chart — each sheet's nearest places on a grid,
+    // settled, and each end pose's — with the side there and the depth's reading)
+    if let Some(at) = std::env::var_os("WHERE") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let x = [v[0],v[1],v[2]];
+        let dist = |p: [f64;3]| ((p[0]-x[0]).powi(2)+(p[1]-x[1]).powi(2)+(p[2]-x[2]).powi(2)).sqrt();
+        for side in [1.,-1.] {
+            let chart = Chart::Sheet(side);
+            let (n,m) = (720,400);
+            let mut best: Vec<(f64,[f64;2])> = Vec::new();
+            for i in 0..n { for j in 0..=m {
+                let uv = [TAU*i as f64/n as f64,roll[0]+(roll[1]-roll[0])*j as f64/m as f64];
+                if let Some(p) = tb.point(side,uv[0],uv[1]) { let d = dist(p.x); if d < 0.02 { best.push((d,uv)) } }
+            } }
+            best.sort_by(|a,b| a.0.total_cmp(&b.0));
+            let mut seen: Vec<[f64;2]> = Vec::new();
+            for (_,mut uv) in best {
+                if seen.iter().any(|s| (s[0]-uv[0]).abs() < 0.05 && (s[1]-uv[1]).abs() < 0.05) { continue }
+                seen.push(uv);
+                for _ in 0..30 {
+                    let p = tb.point(side,uv[0],uv[1]).unwrap();
+                    let r = [x[0]-p.x[0],x[1]-p.x[1],x[2]-p.x[2]];
+                    let d = |a: [f64;3],b: [f64;3]| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+                    let (a,b,c) = (d(p.x_th,p.x_th),d(p.x_th,p.x_t),d(p.x_t,p.x_t));
+                    let (g0,g1) = (d(p.x_th,r),d(p.x_t,r));
+                    let det = a*c-b*b;
+                    uv = [uv[0]+(c*g0-b*g1)/det,uv[1]+(a*g1-b*g0)/det];
+                }
+                let p = tb.point(side,uv[0],uv[1]).unwrap();
+                let field = tube::Depth {tube:&tb,chart,within:tol,holes:&[]};
+                println!("{chart:?} at {uv:?}: {:.3e} away, J {:?}, reading {:?}",dist(p.x),tb.jacobian(side,uv[0],uv[1]),
+                    field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6}",c.depth,c.at),o => format!("{o:?}") }));
+            }
+        }
+        for k in 0..2 {
+            let chart = Chart::End(k);
+            let uv = tb.on_end(k,x).unwrap();
+            let p = tb.at(chart,uv).unwrap();
+            let field = tube::Depth {tube:&tb,chart,within:tol,holes:&[]};
+            println!("{chart:?} at {uv:?}: {:.3e} away, side {:?}, reading {:?}",dist(p.x),tb.side(chart,uv),
                 field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6}",c.depth,c.at),o => format!("{o:?}") }));
         }
         return
@@ -272,6 +320,31 @@ fn main() {
         }
         return
     }
+    // `pair`: the crossed pair each built by `closed::ring` (the tube road where the old refuses the
+    // pinch), and their three Booleans: union, difference and intersection, each's volume, `check`
+    // and time, and the volumes against one another (|A ∪ B| + |A ∩ B| = |A| + |B|, |A − B| = |A| − |A ∩ B|)
+    if args.iter().any(|a| a == "pair") {
+        let built = |obs: f64| {
+            let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,obs);
+            let clock = Instant::now();
+            let s = cad_kernel::swept::closed::ring(&tool,&path,roll,tube_r/250.,tol).unwrap();
+            println!("member {obs:+}: {} faces, volume {:.10}, in {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed());
+            s
+        };
+        let (a,b) = (built(1.),built(-1.));
+        let (va,vb) = (cad_kernel::props::volume(&a),cad_kernel::props::volume(&b));
+        let mut vs = Vec::new();
+        for (name,op) in [("union",cad_kernel::boolean::Op::Union),("difference",cad_kernel::boolean::Op::Cut),("intersection",cad_kernel::boolean::Op::Common)] {
+            let clock = Instant::now();
+            match cad_kernel::boolean::boolean(&a,&b,op,tol) {
+                Ok(s) => { let v = cad_kernel::props::volume(&s); vs.push(v);
+                    println!("{name}: {} faces, volume {v:.10}, check {:?}, in {:?}",s.faces.len(),s.check(tol).err(),clock.elapsed()) }
+                Err(e) => { vs.push(f64::NAN); println!("{name}: refused in {:?}: {e}",clock.elapsed()) }
+            }
+        }
+        println!("|A ∪ B| + |A ∩ B| − |A| − |B| = {:e}; |A − B| − |A| + |A ∩ B| = {:e}",vs[0]+vs[2]-va-vb,vs[1]-va+vs[2]);
+        return
+    }
     // `build`: the solid by the tube road, its faces, volume and time, and the certified covers it asked
     if args.iter().any(|a| a == "build") {
         let clock = Instant::now();
@@ -290,6 +363,97 @@ fn main() {
                 for (what,d,held) in &m { println!("  {what}: {d:e} (held to {held:e})") }
                 // (`AUDIT=δ`: each mesh vertex moved δ in and out along its triangles' normal, read
                 // by the depth — the least over the roll, sampled and settled — the disagreements by face)
+                // (`ON=k`: every k-th mesh vertex's own depth — a point of the boundary, by the depth
+                // nought or above to the tolerance; those below by more, by face, with their least)
+                if let Some(every) = std::env::var("ON").ok().and_then(|d| d.parse::<usize>().ok()) {
+                    let m = cad_kernel::mesh::mesh(&s,1e-4,0.1).unwrap();
+                    let mut face = vec![0u32;m.pts.len()];
+                    for (t,&f) in m.tris.iter().zip(&m.of) { for &i in t { face[i as usize] = f } }
+                    let [a,b] = roll;
+                    let depth = |x: [f64;3]| -> (f64,f64) {
+                        let d = |t: f64| tb.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+                        let n = 256;
+                        let st = (b-a)/n as f64;
+                        let ds: Vec<f64> = (0..=n).map(|i| d(a+st*i as f64)).collect();
+                        let mut best = (f64::INFINITY,0.);
+                        for i in 0..=n {
+                            if (i > 0 && ds[i-1] < ds[i]) || (i < n && ds[i+1] < ds[i]) { continue }
+                            let (mut l,mut h) = ((a+st*i as f64-st).max(a),(a+st*i as f64+st).min(b));
+                            let g = 0.5*(5f64.sqrt()-1.);
+                            while h-l > 1e-13 { let (x1,x2) = (h-g*(h-l),l+g*(h-l)); if d(x1) < d(x2) { h = x2 } else { l = x1 } }
+                            let v = d(0.5*(l+h));
+                            if v < best.0 { best = (v,0.5*(l+h)) }
+                        }
+                        best
+                    };
+                    let idx: Vec<usize> = (0..m.pts.len()).step_by(every).collect();
+                    let reads: Vec<(usize,f64,f64)> = std::thread::scope(|sc| {
+                        let hs: Vec<_> = idx.chunks(idx.len()/4+1).map(|ch| sc.spawn(|| ch.iter().map(|&i| { let (d,t) = depth(m.pts[i]); (i,d,t) }).collect::<Vec<_>>())).collect();
+                        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+                    });
+                    let mut by: std::collections::BTreeMap<u32,(usize,usize,f64,[f64;3],f64)> = std::collections::BTreeMap::new();
+                    for &(i,d,t) in &reads {
+                        let e = by.entry(face[i]).or_insert((0,0,f64::INFINITY,[0.;3],0.));
+                        e.0 += 1;
+                        if d < -10.*tol { e.1 += 1 }
+                        if d < e.2 { (e.2,e.3,e.4) = (d,m.pts[i],t) }
+                    }
+                    println!("on the boundary, {} vertices read:",reads.len());
+                    for (f,(n,below,least,p,t)) in &by { println!("  face {f} ({}): {n} read, {below} below -10 tol, least {least:.3e} at {p:?} (instant {t:.6})",s.faces[*f as usize].name) }
+                    if std::env::var_os("ON_LIST").is_some() {
+                        for &(i,d,t) in &reads { if d < -10.*tol { println!("    {} {:?} {d:.3e} {t:.6}",face[i],m.pts[i]) } }
+                    }
+                }
+                // (`FLUX=bar,…`: each face's flux `∬ X·n dA` by `props` against the mesh's at each bar)
+                if let Ok(bars) = std::env::var("FLUX") {
+                    let exact = cad_kernel::props::fluxes(&s);
+                    for bar in bars.split(',').map(|b| b.parse::<f64>().unwrap()) {
+                        let m = cad_kernel::mesh::mesh(&s,bar,0.1).unwrap();
+                        let mut f = vec![0f64;s.faces.len()];
+                        for (t,&k) in m.tris.iter().zip(&m.of) {
+                            let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                            f[k as usize] += cad_kernel::util::space::dot(a,cad_kernel::util::space::cross(b,c));
+                        }
+                        println!("bar {bar:e}: mesh volume {:.10} ({} triangles, sag {:e})",f.iter().sum::<f64>()/6.,m.tris.len(),m.sag);
+                        for (k,(e,g)) in exact.iter().zip(&f).enumerate() { println!("  face {k} ({}): props {:.9} mesh {:.9} apart {:.3e}",s.faces[k].name,e/3.,g/6.,e/3.-g/6.) }
+                    }
+                }
+                // (`BOX=x,y,z,h,n`: n points on a grid over the cube of half-side h about x, the solid
+                // against the depth, each disagreement past a margin of the tolerance)
+                if let Some(at) = std::env::var_os("BOX") {
+                    let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+                    let (c,h,n) = ([v[0],v[1],v[2]],v[3],v[4] as usize);
+                    let body = cad_kernel::swept::member::Solid::new(&s,1e-4,1.).unwrap();
+                    let [a,b] = roll;
+                    let depth = |x: [f64;3]| -> f64 {
+                        let d = |t: f64| tb.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+                        let m = 256;
+                        let st = (b-a)/m as f64;
+                        let ds: Vec<f64> = (0..=m).map(|i| d(a+st*i as f64)).collect();
+                        let mut best = f64::INFINITY;
+                        for i in 0..=m {
+                            if (i > 0 && ds[i-1] < ds[i]) || (i < m && ds[i+1] < ds[i]) { continue }
+                            let (mut l,mut hh) = ((a+st*i as f64-st).max(a),(a+st*i as f64+st).min(b));
+                            let g = 0.5*(5f64.sqrt()-1.);
+                            while hh-l > 1e-13 { let (x1,x2) = (hh-g*(hh-l),l+g*(hh-l)); if d(x1) < d(x2) { hh = x2 } else { l = x1 } }
+                            best = best.min(d(0.5*(l+hh)));
+                        }
+                        best
+                    };
+                    let pts: Vec<[f64;3]> = (0..n).flat_map(|i| (0..n).flat_map(move |j| (0..n).map(move |k| {
+                        let f = |q: usize| -1.+2.*(q as f64+0.5)/n as f64;
+                        [c[0]+h*f(i),c[1]+h*f(j),c[2]+h*f(k)] }))).collect();
+                    let bad: Vec<([f64;3],f64,f64)> = std::thread::scope(|sc| {
+                        let hs: Vec<_> = pts.chunks(pts.len()/4+1).map(|ch| sc.spawn(|| ch.iter().filter_map(|&p| {
+                            let d = depth(p);
+                            if d.abs() < 10.*tol { return None }
+                            let sd = body.signed_distance(p);
+                            ((d < 0.) != (sd < 0.)).then_some((p,d,sd)) }).collect::<Vec<_>>())).collect();
+                        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+                    });
+                    println!("box: {} of {} apart (cell volume {:e})",bad.len(),pts.len(),(2.*h/n as f64).powi(3));
+                    for (p,d,sd) in bad.iter().take(40) { println!("    {p:?} depth {d:.3e} solid {sd:.3e}") }
+                }
                 if let Some(delta) = std::env::var("AUDIT").ok().and_then(|d| d.parse::<f64>().ok()) {
                     let m = cad_kernel::mesh::mesh(&s,1e-4,0.1).unwrap();
                     let mut nrm = vec![[0f64;3];m.pts.len()];

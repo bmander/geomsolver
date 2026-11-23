@@ -8,6 +8,28 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face's flux read cut where its pcurves cross its net's knot lines** (#880 T1f,
+  `props::integrated`): `G` read along a use is smooth only between its crossings of the net's knot
+  lines, where a derivative past the net's continuity jumps; each use on a B-spline or offset net is
+  now cut there as at its own breaks (`props::crossings`, each settled by bisection to the
+  rounding). A graded net crowds hundreds of knot lines across one stretch of a trim: the crossed
+  forward member read 16.6116290673 (its face holding the pinch's hole 6.6e-4 off), now
+  16.6109998153 against cadrs's 16.6109997999.
+- **The crossed tumbling tori built by `closed::ring`** (#880 T1f): where the old ring road refuses a
+  meridian touched whole for an instant by name (`Curved`, `Ring::touched_once`) and no two instants
+  touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`, `tube::faces::solid`);
+  nowhere else, and cut from a blank it stays refused. Forward: 14 faces, 16.6109998153 (cadrs
+  16.6109997999), about 15 s; reverse: 15 faces, 13.7898471917 (cadrs 13.7898472784), about a
+  minute; each built again with the observer's origin one ulp and 1e-6 off to the same volume.
+- **A trim against an end pose reaching that pose's rim is the corner** (#880 T1f, `faces::solid`):
+  beside the rim the end pose stands from the sheet by half its depth's second rate times the
+  square of the way to the end, nought only on the cuspidal edge, so the run reaches the rim at the
+  corner alone; its tail is the straight join (`cornered`) wherever that join holds the end pose.
+  Whether the trace stopped at the cuspidal edge or ran on beside the corner was a rounding's (the
+  reverse one ulp off fitted only to 1.2e-5). And a run's end on the pinch's rim read twice (the
+  tracer's seed and its exit, one crossing) keeps the end alone: the forward one ulp off left its
+  collar face by a segment 7e-15 long and was not sewn.
+
 - **The collar about the pinch as the tube road's third chart** (#880 T1f): `Tube::pinched` reads
   the tool as a tube and, where an instant inside the roll touches a meridian whole, charts the
   pinch by `rings::Collar` over `(ψ, ρ)` (`Chart::Collar`, `tube::Pinch`): its point and rates in

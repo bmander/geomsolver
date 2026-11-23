@@ -248,7 +248,8 @@ fn the_half_turns_seams_are_traced_from_the_depth_on_every_chart() {
     // (an end on an inner edge named by that edge, the folds' first: the disc's rim is read by its side)
     let on_disc = |p: &gcs_core::brep::zero_set::Piece<_>| [(p.ends[0],p.uv[0]),(p.ends[1],p.uv[p.uv.len()-1])].iter()
         .any(|(e,q)| matches!(e,End::Edge(_)) && disc.side(*q).abs() <= 1e-6);
-    assert_eq!(minus.iter().filter(|p| on_disc(p)).count(),2,"two pieces from the disc's rim");
+    assert_eq!(minus.iter().filter(|p| on_disc(p)).count(),2,"two pieces from the disc's rim: {:?}",
+        minus.iter().map(|p| (p.ends,disc.side(p.uv[0]),disc.side(p.uv[p.uv.len()-1]))).collect::<Vec<_>>());
     for k in 0..2 {
         let (circles,_) = edges(&tube,Chart::End(k),tol,feature).unwrap();
         assert_eq!(circles.len(),8,"the end {k}'s contact circles, in quarters");
@@ -602,6 +603,9 @@ fn crossed_held(observer: f64,want: f64) -> (usize,f64) {
     let ring = Ring::read(&tool).unwrap();
     let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
     held(&solid,&tube,&path,roll,v);
+    let (n,worst) = covered(&solid,&tube,roll,tol);
+    assert_eq!(n,0,"the boundary covered deeper than the tolerance at {n} points, the deepest {worst:e}");
+    for delta in [2e-5,2.*tol] { audited(&solid,&tube,roll,delta,tol) }
     for (what,moved) in [("one ulp",&(|x: f64| x.next_up()) as &dyn Fn(f64) -> f64),("1e-6",&|x: f64| x+1e-6)] {
         let (w,..) = build(moved);
         eprintln!("  the observer's origin moved by {what}: volume {w:.10}");
@@ -610,14 +614,96 @@ fn crossed_held(observer: f64,want: f64) -> (usize,f64) {
     (solid.faces.len(),v)
 }
 
+/// **A solid's boundary audited by the depth alone** (#880 T1f): each point of its mesh at 1e-3
+/// stepped `delta` out along its face's normal (its mesh's way out) stands outside the sweep by the depth, stepped
+/// in, inside — read where the step stays clear of every other face, the point farther than
+/// `8 delta` from its face's edges. A region of a chart kept though another instant covers it,
+/// or a face missing over a region kept beside it, reads apart here; a mesh's membership
+/// (`member::Solid`, its sag the bar's) cannot read a step below its bar, and read the crossed
+/// forward member's boundary apart at 2e-5 where it was right.
+fn audited(solid: &gcs_core::brep::topo::Brep,tube: &Tube,[a,b]: [f64;2],delta: f64,tol: f64) {
+    use gcs_core::brep::util::space::{add,cross,dot,norm,scale,sub};
+    let m = gcs_core::brep::mesh::mesh(solid,1e-3,0.2).unwrap();
+    let mut normal = vec![[0f64;3];m.pts.len()];
+    let mut face = vec![u32::MAX;m.pts.len()];
+    // (each face's own edges: its triangles' sides used once among them)
+    let mut sides: std::collections::BTreeMap<(u32,u32,u32),usize> = std::collections::BTreeMap::new();
+    for (t,&f) in m.tris.iter().zip(&m.of) {
+        let [p,q,r] = t.map(|i| m.pts[i as usize]);
+        let n = cross(sub(q,p),sub(r,p));
+        for &i in t { for k in 0..3 { normal[i as usize][k] += n[k] } face[i as usize] = f }
+        for (i,j) in [(t[0],t[1]),(t[1],t[2]),(t[2],t[0])] { *sides.entry((f,i.min(j),i.max(j))).or_insert(0) += 1 }
+    }
+    let edges: Vec<([f64;3],[f64;3])> = sides.iter().filter(|(_,&n)| n == 1).map(|(&(_,i,j),_)| (m.pts[i as usize],m.pts[j as usize])).collect();
+    let clear = |x: [f64;3]| edges.iter().all(|&(p,q)| {
+        let d = sub(q,p);
+        let s = (dot(sub(x,p),d)/dot(d,d)).clamp(0.,1.);
+        norm(sub(x,add(p,scale(d,s)))) > 8.*delta
+    });
+    let depth = |x: [f64;3]| -> f64 {
+        let d = |t: f64| tube.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+        let n = 512;
+        let step = (b-a)/n as f64;
+        let s: Vec<f64> = (0..=n).map(|i| d(a+step*i as f64)).collect();
+        let mut best = f64::INFINITY;
+        for i in 0..=n {
+            if i > 0 && i < n && !(s[i] <= s[i-1] && s[i] <= s[i+1]) { continue }
+            let (mut l,mut h) = ((a+step*i as f64-step).max(a),(a+step*i as f64+step).min(b));
+            let g = 0.5*(5f64.sqrt()-1.);
+            while h-l > 1e-13 { let (x1,x2) = (h-g*(h-l),l+g*(h-l)); if d(x1) < d(x2) { h = x2 } else { l = x1 } }
+            best = best.min(d(0.5*(l+h))).min(s[i]);
+        }
+        best
+    };
+    let (mut read,mut turned,mut apart) = (0,0,Vec::new());
+    for (i,&x) in m.pts.iter().enumerate() {
+        let l = norm(normal[i]);
+        if !(l > 0.) || !clear(x) { continue }
+        // (the face's own normal at the point, out of the solid: a mesh's turns sharply beside a
+        // swallowtail point, where the sheet's fold bends it at the scale of the step)
+        // (where the surface's inverse stands back at the point within the tolerance: a net over a
+        // window holding the pinch's hole folds over it, and its inverse can land on the other leaf)
+        let f = &solid.faces[face[i] as usize];
+        let uv = f.surface.inverse(x);
+        let Some(n) = f.surface.normal(uv) else { continue };
+        if !(norm(sub(f.surface.point(uv),x)) <= tol) { continue }
+        let n = scale(n,if f.reversed { -1. } else { 1. });
+        if !(dot(n,normal[i]) > 0.) { turned += 1; continue }
+        for sign in [1.,-1.] {
+            let d = depth(add(x,scale(n,sign*delta)));
+            read += 1;
+            if !(sign*d > 0.) { apart.push((face[i],x,sign,d)) }
+        }
+    }
+    eprintln!("  the boundary audited at {delta:e}: {read} steps read of {} points, {turned} turned from the mesh, {} apart",m.pts.len(),apart.len());
+    assert!(read >= m.pts.len() && 100*turned <= m.pts.len() && apart.is_empty(),"at {delta:e}, {read} read, apart (face, point, way, depth): {:?}",&apart[..apart.len().min(8)]);
+}
+
+/// **The crossed forward member built by the tube road** (#880 T1f): its pinch charted by the
+/// collar at `(t*, θ*)` (1.3264, 5.9712), sheet `−`'s two double curves with itself ending at
+/// swallowtail points. 14 faces, volume 16.6109998153 against cadrs's 16.6109997999 — once its
+/// flux was read cut at each pcurve's crossings of its graded net's knot lines (`props`; read
+/// whole, 16.6116290673, the face holding the pinch's hole 6.6e-4 off). About 15 s a build.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed forward built three times, ~2 min")]
+fn the_crossed_forward_member_builds_by_the_tube_road() {
+    let (faces,v) = crossed_held(1.,16.610999799920087);
+    assert_eq!(faces,14);
+    assert!((v-16.6109998153).abs() <= 1e-9,"the volume {v}, pinned 16.6109998153");
+}
+
 /// **The crossed reverse member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar, the closed cuspidal edge beside its fold loop traced (the lobe below the near-pinch), the
-/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898469012
+/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898471917
 /// against cadrs's 13.7898472784. About a minute a build, most of it the two graded nets over the
-/// windows holding the near-pinch at `(θ, t)` (1.076, 0.461).
+/// windows holding the near-pinch at `(θ, t)` (1.076, 0.461). Built again with the observer's
+/// origin one ulp off, its trim against the end pose ran on to the rim beside the corner where it
+/// had stopped at the cuspidal edge (a rounding's), and fitted only to 1.2e-5: such a run's end is
+/// the corner, its tail the straight join.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed reverse built three times, ~4 min")]
 fn the_crossed_reverse_member_builds_by_the_tube_road() {
-    let (faces,_) = crossed_held(-1.,13.789847278416222);
+    let (faces,v) = crossed_held(-1.,13.789847278416222);
     assert_eq!(faces,15);
+    assert!((v-13.7898471917).abs() <= 1e-9,"the volume {v}, pinned 13.7898471917");
 }

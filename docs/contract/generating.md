@@ -2711,7 +2711,7 @@ over its diagonal): each edge's own measured tolerance is what `check` holds it 
 **The two end poses' meeting** is the depth's zero set on the start pose where the cover is
 the end pose, as every other seam — `seams` on `Chart::End(0)` reads it, the certified cover
 marching the whole roll to its far end — read as trims between the poses (below, `faces::met`).
-The old road stays what `closed::ring` calls. **The next cases, as checks:** the crossed reverse
+`closed::ring` calls the old road, and the tube road where the old refuses a meridian touched whole for an instant (below, the crossed pair). **The next cases, as checks:** the crossed reverse
 member with its roll's end at 5° (no pinch; the old road misclassifies a cell and refuses `Wrong`)
 builds in 0.4 s — 8 faces, `check`, volume 1.5608532821, no volume known apart, held to its mesh and
 to membership by the depth at 18 988 of 20 000 points
@@ -2935,6 +2935,40 @@ through within a few ten-thousandths and a graded net asks 866 × 855 poles), an
 stalls of each member (forward at (2.9903, 0.6355), 0.02 from its swallowtail point (2.9730,
 0.6227), where the far cover is born within the tolerance of nought; reverse at (1.4390, 0.1605)
 on a cuspidal edge with nothing covering either side).
+
+**The crossed pair built, and `closed::ring` dispatching to it** (#880 T1f; gated by
+`swept_tube::the_crossed_forward_member_builds_by_the_tube_road` and
+`swept_tube::the_crossed_reverse_member_builds_by_the_tube_road`, both slow): where the old road
+refuses `Curved` at a meridian touched whole for an instant (`Ring::touched_once`) and no two
+instants touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`,
+`tube::faces::solid`); nowhere else, and cut from a blank (`ring_cut_from`) it stays refused. The
+forward: 14 faces, volume 16.6109998153 against cadrs's 16.6109997999, about 15 s; the reverse: 15
+faces, 13.7898471917 against 13.7898472784, about a minute, most of it the two graded nets about
+its near miss of a second whole-touch. Each is held to `check`, no misfit at the size's tolerance,
+membership by the depth at 20 000 points, none of its mesh's points covered deeper than the
+tolerance, its boundary audited by the depth (`audited`: each point of its mesh at 1e-3 stepped
+`δ` out along its face's normal stands outside by the depth, stepped in, inside, at `δ` 2e-5 and
+twice the tolerance, none apart), and built again with the observer's origin one ulp and 1e-6 off
+to the same volume (forward 16.6109998154 and 16.6110018019; reverse 13.7898471715 and
+13.7898510440). **The forward's 3.8e-5 was the volume's reading, not the solid**: no point of its
+boundary stood under another instant, and its mesh's volume, extrapolated to no sag, read
+16.6109994 — but the face holding the pinch's hole read its flux 6.6e-4 off at any bar. `G`, read
+along a use by Green's theorem, is smooth only between the use's crossings of its net's knot lines,
+and the graded net crowds hundreds of them across one stretch of a trim: each use on a net is now cut
+at its crossings too (`props::crossings`). An audit by a mesh's membership (`member::Solid`, its
+sag the bar's) cannot read a step below its bar: at 2e-5 against a mesh at 1e-4 it read points
+apart both ways where the solid was right. **The reverse one ulp off**: its trim against the end
+pose had stopped at the cuspidal edge 6.9e-4 short of the corner and been joined straight; one ulp
+off it ran on to the rim 2.2e-5 beside the corner and fitted only to 1.2e-5. Beside the rim the end
+pose stands from the sheet's point by half its depth's second rate in the instant times the square
+of the instant's way to the end, nought only on the cuspidal edge: a run against the end pose `k`
+reaches the rim at `k` at the corner alone, and about it the two touch, so its points there stand on
+the double curve to the rounding only. Such a run's tail is the straight join to the corner
+(`cornered`, `join_holds`), from the farthest of its points the join holds the end pose from.
+**The forward one ulp off**: the collar's trim began with the tracer's seed on the pinch's rim and
+its exit settled on the rim 7e-15 from it, one crossing read twice; the walk read the way out of the
+vertex from that segment, lost the collar's face and was not sewn. A trim does not run along the
+rim: of a run's points on the rim at an end only the end is kept.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

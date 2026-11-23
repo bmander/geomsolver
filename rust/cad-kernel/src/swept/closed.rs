@@ -1114,7 +1114,21 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
             return candidates(tool,path,[a,b],bar,tol,Some(blank),t.ends,t.sheets,&t.given,true)
         }
     }
-    entered_built(tool,path,[a,b],bar,tol,blank,entered_from(tool,path,[a,b],tol,ring,&touched)?)
+    // **a meridian touched whole for an instant, built by the tube road** (#880 T1f): where this road
+    // refuses it by name (`Curved`, `Ring::touched_once`: no net over `(u, t)` holds a tube's sheet
+    // there) and no two instants touch one, the solid is the tube road's — the set of points within
+    // the tube of the surface the core circle sweeps, its pinch charted by the collar
+    // (`tube::Tube::pinched`, `tube::faces::solid`); nowhere else. Cut from a blank it stays refused.
+    let twice = touched.len() >= 2;
+    match entered_from(tool,path,[a,b],tol,ring,&touched) {
+        Err(Unbuilt::Curved {at}) if blank.is_none() && !twice => {
+            let ring = super::rings::Ring::read(tool)?;
+            if ring.touched_once(path,[a,b])?.is_empty() { return Err(Unbuilt::Curved {at}) }
+            let tube = super::tube::Tube::pinched(&ring,path,[a,b],tol,0.25*ring.thickness)?;
+            super::tube::faces::solid(&tube,tol)
+        }
+        entered => entered_built(tool,path,[a,b],bar,tol,blank,entered?),
+    }
 }
 
 /// **A ring's sweep built from what its road entered** (`ring_entered`), as `ring` builds it: so a
