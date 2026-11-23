@@ -1262,7 +1262,15 @@ so `own_exact`, a body's build and `brep::export::exact` take one path, and `sol
 whose stock it is and nothing else, builds to it untouched too; the export's `check`,
 `self_touching`, `pinches` and `step_check` hold it as they hold a built solid. Its `Debug`, and
 `recipe::Given`'s, is its digest and its size, never its faces; its memo key (`solid/reads.rs`) is
-tag 16 and the digest in two 32-bit halves. Everything that reads a solid through its B-rep reads it
+tag 16, the digest in two 32-bit halves and the document's millimetres per unit — every other
+solid's numbers are the document's own, but the file's are millimetres in any unit while a
+display's vertices are the document's, so the same file read in millimetres and in inches is two
+builds, never one mesh drawn in both (`given_bodies::a_given_bodys_key_reads_the_documents_unit`).
+**It is never an object** (`model::objects`), however it is read — a body's stock, a set's
+membership, a claim's, a tool — so the report, the workspace (`overview::shown_objects`), the cut
+list (`stock::cut_list`), the outline and an assembly's export, which all read `objects`, list
+what the document makes of it and never it beside them
+(`given_bodies::a_given_body_is_never_an_object`). Everything that reads a solid through its B-rep reads it
 (display mesh, measures, claims, sections, glTF); its facet term, what `mesh_unit` and a refused
 build read, is its B-rep's mesh (`evaluated::brep_facets`, shared with `from_brep`), never an empty
 term. Its material field is `BuiltField` where every face's surface has an exact foot, else refused

@@ -363,3 +363,48 @@ fn a_document_naming_a_file_exports_the_same_solid() {
     same(b, &measured(b), &text, &back[0], Fit::Exact, tol, &mut Found::default())
         .unwrap_or_else(|d| panic!("not the same solid: {d}"));
 }
+
+/// **A given body's build key reads the document's unit** (#993 stage 2, the review's R1): the
+/// file's numbers are millimetres whatever the document says, and a display is in the
+/// document's unit, so the same file read in millimetres and in inches is two builds — never the
+/// millimetre mesh drawn in the inch drawing.  The same document twice is one.
+#[test]
+fn a_given_bodys_key_reads_the_documents_unit() {
+    let key = |unit: &str| {
+        let e = solved(&format!("unit {unit}\nuse bracket\npart := solid(bracket)\n"));
+        (gcs_core::solid::field_key(&e.sketch, solid(&e, "part")),
+         gcs_core::solid::field_key(&e.sketch, solid(&e, "bracket")))
+    };
+    let (mm, inch) = (key("mm"), key("in"));
+    assert_eq!(mm, key("mm"));
+    assert_ne!(mm.0, inch.0);
+    assert_ne!(mm.1, inch.1);
+}
+
+/// **A given body is never an object, however it is read** (#993 stage 2, the review's R2): read
+/// through a set, by a claim, as a body's stock or as a tool, the objects are what the document
+/// makes of it — never the given body beside them in the report, the workspace, the cut list or an
+/// assembly's export, which all read `model::objects`.
+#[test]
+fn a_given_body_is_never_an_object() {
+    let names = |e: &Elaborated, of: Vec<usize>| -> Vec<String> {
+        of.into_iter().map(|i| e.sketch.solids[i].name.clone()).collect()
+    };
+    let cases: [(&str, &[&str]); 5] = [
+        ("unit mm\nuse bracket\nuse std\nb := solid({ p | p in bracket })\n", &["b"]),
+        ("unit mm\nuse bracket\nuse std\nb := solid({ p | p in bracket; p distance(>= 10mm, \
+          along: n) std.top })\n", &["b"]),
+        (&format!("{DRILL}claim every q in drill: q in bracket\n"), &["drill"]),
+        (&format!("{DRILL}part := solid(bracket)\ndrill cut part\n"), &["part"]),
+        (&format!("{DRILL}pin := solid(drill)\nbracket cut pin\n"), &["pin"]),
+    ];
+    for (src, want) in cases {
+        let e = solved(src);
+        assert!(e.sketch.solids.iter().any(|s| s.name == "bracket"), "{src}");
+        assert_eq!(names(&e, gcs_core::model::objects(&e.sketch)), want.to_vec(), "{src}");
+        assert_eq!(names(&e, gcs_core::overview::shown_objects(&e.sketch)), want.to_vec(), "{src}");
+        let cut = gcs_core::stock::cut_list(&e.sketch).unwrap();
+        let listed: Vec<String> = cut.iter().flat_map(|c| c.objects.clone()).collect();
+        assert_eq!(listed, want.to_vec(), "{src}");
+    }
+}
