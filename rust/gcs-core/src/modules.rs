@@ -29,6 +29,7 @@
 //! `relink` hands the same reading on, so an edit never reads the file again, and a fresh link of
 //! a text read before on this thread finds it in a small memo by its digest.
 
+use crate::drawing::relative_path;
 use crate::program::{Code, Diag};
 use crate::syntax::{parse_from, Component, Module, Program, Span, StmtKind};
 use std::cell::RefCell;
@@ -89,31 +90,18 @@ const FOUND: &str = "\u{0}found as an exchange file\u{0}";
 /// **A document is never its own module**: the candidate that is `source` itself (`foo.sv`'s
 /// `use foo`, `engine/parts.sv`'s `use engine.parts` as `../engine/parts.sv`) is not named, so
 /// `foo.sv` reads the `foo.step` beside it, and a `use` nothing else answers is a module there is
-/// none of (E070).  Told by the paths as written, `.` and `..` read lexically.
+/// none of (E070).  Told by the paths as written, `.` and `..` read lexically
+/// (`drawing::relative_path`).
 pub fn search_paths(name: &str, source: &str) -> Vec<String> {
     let rel = name.replace('.', "/");
     let source = source.replace('\\', "/");
     let depth = source.split('/').count();
-    let own = lexical(&source);
-    let dir = source.rsplit_once('/').map_or("", |(dir, _)| dir).to_string();
+    let own = relative_path(&source, "");
     (0..depth).flat_map(|n| {
         let up = "../".repeat(n);
         let rel = &rel;
         MODULE_EXTENSIONS.iter().map(move |ext| format!("{up}{rel}.{ext}"))
-    }).filter(|c| lexical(&format!("{dir}/{c}")) != own).collect()
-}
-
-/// A path's parts, `.` and empty parts dropped and `..` taken back where it can be.
-fn lexical(path: &str) -> Vec<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for p in path.split('/') {
-        match p {
-            "" | "." => {}
-            ".." if parts.last().is_some_and(|l| *l != "..") => { parts.pop(); }
-            p => parts.push(p.to_string()),
-        }
-    }
-    parts
+    }).filter(|c| relative_path(c, &source) != own).collect()
 }
 
 /// Whether a module's text is an ISO 10303-21 exchange file rather than Solvent: its first token,
