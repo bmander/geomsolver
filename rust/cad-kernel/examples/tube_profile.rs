@@ -36,16 +36,16 @@ fn main() {
     if let Some(at) = std::env::var_os("TUBE_AT") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
         let (side,th0,t0,dth,dt) = (v[0],v[1],v[2],v[3],v[4]);
-        let field = tube::Depth {tube:&tb,chart:Chart::Sheet(side),within:tol};
+        let field = tube::Depth {tube:&tb,chart:Chart::Sheet(side),within:tol,holes:&[]};
         {
-            let v = cad_kernel::zero_set::Field::least(&field,[th0,t0]).unwrap();
+            if let Some(v) = cad_kernel::zero_set::Field::least(&field,[th0,t0]) {
             let g = v.grad.unwrap();
             let l = g[0].hypot(g[1]);
             let tan = [-g[1]/l,g[0]/l];
             let k = tb.kernel(side,th0,t0).unwrap();
             let p = tb.point(side,th0,t0).unwrap();
             let sp = |d: [f64;2]| { let w = [0,1,2].map(|i| p.x_th[i]*d[0]+p.x_t[i]*d[1]); (w[0]*w[0]+w[1]*w[1]+w[2]*w[2]).sqrt() };
-            println!("tangent {tan:?} kernel {k:?} |X·tangent| {:e} |X·kernel| {:e} |X_θ| {:e} |X_t| {:e} cover at {}",sp(tan),sp(k),sp([1.,0.]),sp([0.,1.]),v.at.at);
+            println!("tangent {tan:?} kernel {k:?} |X·tangent| {:e} |X·kernel| {:e} |X_θ| {:e} |X_t| {:e} cover at {}",sp(tan),sp(k),sp([1.,0.]),sp([0.,1.]),v.at.at); }
         }
         for i in -4..=4 { for j in -4..=4 {
             let (th,t) = (th0+dth*i as f64/4.,t0+dt*j as f64/4.);
@@ -124,8 +124,9 @@ fn main() {
         }
         if tracing {
             let clock = Instant::now();
-            match tube::seams(&tb,Chart::Sheet(side),&folds,&tails,tol,0.25*ring.thickness) {
-                Ok((pieces,search)) => {
+            match tube::seams(&tb,Chart::Sheet(side),&folds,&tails,&[],tol,0.25*ring.thickness) {
+                Ok((pieces,search,discs)) => {
+                    for d in &discs { println!("  disc about {:?}: radius {:e}",d.at,d.radius) }
                     println!("side {side:+}: depth zero set {} pieces in {:?}; search {:?}",pieces.len(),clock.elapsed(),
                         search.iter().map(|s| (s.free,s.monotone,s.beside,s.sampled,s.unresolved.len())).collect::<Vec<_>>());
                     for p in &pieces {
@@ -155,8 +156,8 @@ fn main() {
         };
         if tracing {
             let clock = Instant::now();
-            match tube::seams(&tb,chart,&circles,&[],tol,0.25*ring.thickness) {
-                Ok((pieces,search)) => {
+            match tube::seams(&tb,chart,&circles,&[],&[],tol,0.25*ring.thickness) {
+                Ok((pieces,search,_)) => {
                     println!("end {k}: depth zero set {} pieces in {:?}; search {:?}",pieces.len(),clock.elapsed(),
                         search.iter().map(|s| (s.free,s.monotone,s.beside,s.sampled,s.unresolved.len())).collect::<Vec<_>>());
                     for p in &pieces {

@@ -16,7 +16,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   where the sheet's kernel runs along that edge (`tube::swallowtails`); the end poses as charts
   over `(θ, ψ)` with their contact circles; the far cover's depth over any chart as a
   `zero_set::Field` with a bound (`tube::Depth`, `tube::seams`), each rectangle traced in parts
-  across a whole turn (`tube::round`). Probe: `tube_profile`.
+  across a whole turn (`tube::round`, a piece leaving a part seeding the next), a disc about each
+  swallowtail point cut from its domain (`tube::disc`). Probe: `tube_profile`.
 
 - **The crossed tori's tubes fitted through a meridian touched whole for an instant, with a hole**
   (#880 T1f, `swept::rings::Hole`, `closed::ring_fitted_holed`, `rings::pairs_over`; not yet the

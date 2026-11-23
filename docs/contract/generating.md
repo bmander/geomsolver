@@ -2638,11 +2638,25 @@ points less their spread, a cell whose nine nothing else covers read clear — a
 the middle alone clears nothing along the rims, where a sheet touches its end pose and the end's
 depth goes as the square of the distance. `Depth::along`, continuing a cover held at an end of the
 roll, reads that end too: past the point's own contact `d` is no single basin over the stretch, and
-the golden section settled on the climb, 7e-6 off. Measured: no seam on the sheet `+` nor on the
-start pose; on the end pose one, the double curve's continuation, covered from 1.4626 to 1.4830;
-on the sheet `−` the double curve traced from the end pose's cover down to 5e-4 of the swallowtail
-point, where the march stalls — it ends there tangent to the cuspidal edge, where the sheet's metric
-is singular (not yet joined to the point).
+the golden section settled on the climb, 7e-6 off. A piece leaving one part across a cut seeds
+the part beside it (`round`): beside a seam the far cover may be read on one side only, so the cut's
+own sign changes missed both curves' continuations across `θ ≡ 0`. **About a swallowtail point a
+disc** (`tube::disc`, `Disc`) is cut from the depth's domain, its rim an inner edge, its radius (in
+the spine's metric) halved from the feature until every far cover read on its rim is within the
+tolerance: there the far cover is all but invisible (points read `Alone`, the few `Far` covered
+1e-9 deep), the double curve ends tangent to the cuspidal edge where the sheet's metric is singular,
+and the march stalled 5e-4 from the point. Measured (`tube_profile half-turn … trace`, gated in the
+slow tier by `swept_tube::the_half_turns_seams_are_traced_from_the_depth_on_every_chart`): no seam
+on the sheet `+` nor on the start pose; on the sheet `−` a disc of 0.01 and the double curve's two
+preimages, one from the disc's rim across `θ ≡ 0` (at `t` 1.52384) to the roll's end at `θ`
+6.22418, covered at τ 1.4626–1.4726, the other from the disc's rim to (0.13929, 1.56981), its cover
+passing to the end pose; on the end pose one seam from its contact circle at `θ` 6.22420 across
+`θ ≡ 0` to its contact circle at 0.13633. The two charts' crossings of their shared rim are one
+crossing read twice, 1.64e-5 apart (five tolerances: the end pose touches the sheet along that rim,
+so a crossing of it is ill-conditioned along it) — such a vertex is to be found once, on the rim.
+**Not yet**: the corner where the cuspidal edge reaches the roll's end, (0.13863, `b`) — like a
+swallowtail point every far cover about it is within 1e-8, the second preimage runs into it and the
+end pose's seam stops 2.3e-3 short of it in `θ` — asks a disc of its own; then the faces.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

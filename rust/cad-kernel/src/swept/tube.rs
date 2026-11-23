@@ -218,11 +218,12 @@ impl Tube<'_> {
 /// where the neighbours hold it (`Near`), or where nothing else covers it (`Alone`). Its gradient
 /// is the envelope theorem's: the covering instant's distance gradient against the chart's rates,
 /// each in closed form.
-pub struct Depth<'a> { pub tube: &'a Tube<'a>,pub chart: Chart,pub within: f64 }
+pub struct Depth<'a> { pub tube: &'a Tube<'a>,pub chart: Chart,pub within: f64,pub holes: &'a [Disc] }
 
 impl Depth<'_> {
     /// The chart's point where it can bound the sweep, with its rates.
     fn kept(&self,uv: [f64;2]) -> Option<Point> {
+        if self.holes.iter().any(|d| d.side(uv) <= 0.) { return None }
         let p = self.tube.at(self.chart,uv)?;
         (self.tube.side(self.chart,uv)? > 0.).then_some(p)
     }
@@ -341,8 +342,9 @@ fn golden(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
 /// too (`zero_set::trace`) — the search halves a cell across its longer way in space, read between
 /// its sides' ends, and over a whole turn those ends are one point — and the pieces of every part
 /// returned (a curve across a cut in two, each ending on the rim there), with each part's search.
-/// Inner edges (`edges`, polylines in the parameters) are given to the part holding them whole, all
-/// with the one side function `side`; seeds to the part holding them, brought into the turn.
+/// Inner edges (`edges`, polylines in the parameters) are given to each part as their runs inside
+/// it, all with the one side function `side`; seeds to the part holding them, each brought into the
+/// turn.
 #[allow(clippy::too_many_arguments,clippy::type_complexity)]
 pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],seeds: &[[f64;2]],edges: &[Vec<[f64;2]>],
     side: &dyn Fn([f64;2]) -> f64,tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<F::At>>,Vec<crate::zero_set::Search>),String> {
@@ -351,12 +353,21 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
         if periodic[k] { vec![[a,0.5*(a+b)],[0.5*(a+b),b]] } else { vec![[a,b]] }
     };
     let wrap = |s: [f64;2]| std::array::from_fn::<f64,2,_>(|k| if periodic[k] { rect[k][0]+(s[k]-rect[k][0]).rem_euclid(rect[k][1]-rect[k][0]) } else { s[k] });
-    let (mut pieces,mut searches) = (Vec::new(),Vec::new());
-    for wu in cut(0) { for wv in cut(1) {
+    let parts: Vec<crate::zero_set::Rect> = cut(0).into_iter().flat_map(|wu| cut(1).into_iter().map(move |wv| [wu,wv])).collect();
+    let part = |[wu,wv]: crate::zero_set::Rect,seeds: &[[f64;2]]| {
         let inside = |s: &[f64;2]| s[0] >= wu[0] && s[0] <= wu[1] && s[1] >= wv[0] && s[1] <= wv[1];
         let mine: Vec<[f64;2]> = seeds.iter().map(|&s| wrap(s)).filter(inside).collect();
-        // (each inner edge a polyline of the part's, read at a fraction of its points' count)
-        let lines: Vec<&Vec<[f64;2]>> = edges.iter().filter(|e| e.len() >= 2 && e.iter().all(inside)).collect();
+        // (each inner edge's runs inside the part, its points brought into the turn, each run a
+        // polyline read at a fraction of its points' count)
+        let mut lines: Vec<Vec<[f64;2]>> = Vec::new();
+        for e in edges {
+            let mut run: Vec<[f64;2]> = Vec::new();
+            for &q in e {
+                let q = wrap(q);
+                if inside(&q) { run.push(q) } else { if run.len() >= 2 { lines.push(std::mem::take(&mut run)) } run.clear() }
+            }
+            if run.len() >= 2 { lines.push(run) }
+        }
         let ats: Vec<Box<dyn Fn(f64) -> [f64;2]>> = lines.iter().map(|e| {
             let e: &Vec<[f64;2]> = e;
             Box::new(move |f: f64| {
@@ -367,10 +378,41 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
             }) as Box<dyn Fn(f64) -> [f64;2]>
         }).collect();
         let inner: Vec<crate::zero_set::Edge> = ats.iter().map(|at| crate::zero_set::Edge {at:&**at,side}).collect();
-        let traced = crate::zero_set::trace(field,&crate::zero_set::Question {rect:[wu,wv],edges:&inner,seeds:&mine,tol,feature})?;
-        pieces.extend(traced.pieces);
-        searches.push(traced.search);
-    } }
+        crate::zero_set::trace(field,&crate::zero_set::Question {rect:[wu,wv],edges:&inner,seeds:&mine,tol,feature})
+    };
+    // (each part traced; a piece leaving a part across a cut seeds the parts beside it — beside a
+    // seam the far cover may be read on one side only, so the cut's own sign changes miss it — and
+    // a part given new seeds traced again, until none is)
+    let mut given: Vec<Vec<[f64;2]>> = vec![seeds.to_vec();parts.len()];
+    let mut traced: Vec<Option<crate::zero_set::Traced<F::At>>> = (0..parts.len()).map(|_| None).collect();
+    let mut asked: Vec<bool> = vec![true;parts.len()];
+    while let Some(k) = asked.iter().position(|&a| a) {
+        asked[k] = false;
+        let t = part(parts[k],&given[k])?;
+        for p in &t.pieces {
+            for (uv,end) in [(p.uv[0],p.ends[0]),(p.uv[p.uv.len()-1],p.ends[1])] {
+                if end != crate::zero_set::End::Rim { continue }
+                for (j,r) in parts.iter().enumerate() {
+                    if j == k { continue }
+                    let w = wrap(uv);
+                    // (on a cut, the side of the part beside it: within the rounding of the cut)
+                    let on = |x: f64,[a,b]: [f64;2]| x >= a-HALF_READ*(b-a) && x <= b+HALF_READ*(b-a);
+                    let cut_k = |i: usize| periodic[i] && (uv[i] == parts[k][i][0] || uv[i] == parts[k][i][1]);
+                    if !(cut_k(0) || cut_k(1)) { continue }
+                    if !(on(w[0],r[0]) && on(w[1],r[1])) { continue }
+                    let w = [w[0].clamp(r[0][0],r[0][1]),w[1].clamp(r[1][0],r[1][1])];
+                    let w = std::array::from_fn::<f64,2,_>(|i| if cut_k(i) && (w[i]-r[i][0]).abs() > (w[i]-r[i][1]).abs() { r[i][1] }
+                        else if cut_k(i) { r[i][0] } else { w[i] });
+                    if given[j].iter().any(|g| *g == w) { continue }
+                    given[j].push(w);
+                    if traced[j].is_some() { asked[j] = true }
+                }
+            }
+        }
+        traced[k] = Some(t);
+    }
+    let (mut pieces,mut searches) = (Vec::new(),Vec::new());
+    for t in traced.into_iter().flatten() { pieces.extend(t.pieces); searches.push(t.search); }
     Ok((pieces,searches))
 }
 
@@ -383,15 +425,78 @@ pub fn edges(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> Result<(Vec<crat
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: where it stops bounding the sweep: {why}")))
 }
 
+/// **A disc of a chart's parameters about a swallowtail point**, cut from the depth's domain: an
+/// ellipse in the parameters, the points within `radius` of the centre in the metric `metric` (the
+/// spine's there, so `radius` is a length in space).
+#[derive(Clone,Copy,Debug)]
+pub struct Disc { pub at: [f64;2],pub metric: [[f64;2];2],pub radius: f64 }
+
+impl Disc {
+    /// Positive outside the disc, nought on its rim.
+    pub fn side(&self,uv: [f64;2]) -> f64 {
+        let d = [uv[0]-self.at[0],uv[1]-self.at[1]];
+        let m = self.metric;
+        (d[0]*(m[0][0]*d[0]+m[0][1]*d[1])+d[1]*(m[1][0]*d[0]+m[1][1]*d[1])).max(0.).sqrt()-self.radius
+    }
+
+    /// The rim's point at the fraction `f` of a turn: `radius L⁻ᵀ (cos, sin)`, `M = L Lᵀ`.
+    pub fn rim(&self,f: f64) -> [f64;2] {
+        let m = self.metric;
+        let l11 = m[0][0].sqrt();
+        let l21 = m[1][0]/l11;
+        let l22 = (m[1][1]-l21*l21).max(0.).sqrt();
+        let (s,c) = (TAU*f).dsin_cos();
+        let (x,y) = (self.radius*c,self.radius*s);
+        // (Lᵀ d = (x, y), Lᵀ upper triangular)
+        let d1 = y/l22;
+        let d0 = (x-l21*d1)/l11;
+        [self.at[0]+d0,self.at[1]+d1]
+    }
+
+    /// The rim as a closed polyline of `n` chords.
+    pub fn polygon(&self,n: usize) -> Vec<[f64;2]> { (0..=n).map(|k| self.rim(k as f64/n as f64)).collect() }
+}
+
+/// Chords a disc's rim is read in: a turn in 64, each a 64th of the disc's girth (structural: the
+/// rim is an edge of the depth's domain, sampled as `zero_set` samples an inner edge).
+const RIM: usize = 64;
+
+/// **The disc about a swallowtail point `at` of a chart** inside which the depth is read as
+/// nought: within it the far cover's depth is within the tolerance everywhere the rim shows — the
+/// double curve's two leaves and the tail between them within the tolerance of the sheet beyond,
+/// so the trim may run to the point along any path in it — its radius halved from the feature size
+/// until every far cover read on its rim (`RIM` points) is within `tol`; refused where that asks a
+/// disc under the tolerance.
+pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Result<Disc,Unbuilt> {
+    let Some(sp) = tube.spine(at[0],at[1]) else { return Err(Unbuilt::Failed(format!("the tube road: no spine at the swallowtail point {at:?}"))) };
+    let metric = [[dot(sp.s_th,sp.s_th),dot(sp.s_th,sp.s_t)],[dot(sp.s_th,sp.s_t),dot(sp.s_t,sp.s_t)]];
+    let field = Depth {tube,chart,within:tol,holes:&[]};
+    let mut radius = feature;
+    while radius >= tol {
+        let d = Disc {at,metric,radius};
+        let deep = (0..RIM).any(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth.abs() > tol));
+        if !deep { return Ok(d) }
+        radius *= 0.5;
+    }
+    Err(Unbuilt::Failed(format!("the tube road: the depth about the swallowtail point {at:?} is not within the tolerance on any disc")))
+}
+
 /// **The depth's zero set over a chart** (`Depth`, `round`) to `tol`, `feature` its longest step,
-/// the chart's own edges (`edges`) given as inner edges, `seeds` traced too: the curves where
-/// another instant's cover of the chart begins, each point with its covering instant.
-pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],seeds: &[[f64;2]],tol: f64,feature: f64)
-    -> Result<(Vec<crate::zero_set::Piece<Cover>>,Vec<crate::zero_set::Search>),Unbuilt> {
+/// the chart's own edges (`edges`) given as inner edges, a disc about each swallowtail point
+/// (`tails`, `disc`) cut from its domain with its rim an inner edge too, `seeds` traced as well: the
+/// curves where another instant's cover of the chart begins, each point with its covering instant,
+/// and the discs.
+#[allow(clippy::type_complexity)]
+pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],seeds: &[[f64;2]],tol: f64,feature: f64)
+    -> Result<(Vec<crate::zero_set::Piece<Cover>>,Vec<crate::zero_set::Search>,Vec<Disc>),Unbuilt> {
     let periodic = [true,matches!(chart,Chart::End(_))];
-    let side = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(-1.);
-    round(&Depth {tube,chart,within:tol},tube.rect(chart),periodic,seeds,edges,&side,tol,feature)
-        .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))
+    let holes: Vec<Disc> = tails.iter().map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
+    let mut inner: Vec<Vec<[f64;2]>> = edges.to_vec();
+    inner.extend(holes.iter().map(|d| d.polygon(RIM)));
+    let side = |uv: [f64;2]| holes.iter().map(|d| d.side(uv)).fold(tube.side(chart,uv).unwrap_or(-1.),f64::min);
+    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,seeds,&inner,&side,tol,feature)
+        .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))?;
+    Ok((pieces,search,holes))
 }
 
 /// **The swallowtail points on a cuspidal edge** (`edges`' piece `uv`): where the sheet's kernel
