@@ -27,8 +27,7 @@ use std::rc::Rc;
 /// lookup's context (`Datums`), so no read is lost.
 #[derive(Clone, Default)]
 pub(super) struct Given {
-    /// Each given module, by path: its index, the files that `use` it, and whether its file gave
-    /// a body.
+    /// Each given module, by path: its index, the files that `use` it, and what its file gave.
     modules: BTreeMap<String, Module>,
     /// The document's `in` blocks of a frame that is not the world's: what each covers of the
     /// text, and the frame as written.
@@ -43,7 +42,14 @@ pub(super) struct Given {
 struct Module {
     k: usize,
     files: BTreeSet<Option<usize>>,
-    body: bool,
+    file: std::sync::Arc<crate::modules::Given>,
+}
+
+impl Module {
+    /// Whether the kernel refused its file.
+    fn refused(&self) -> bool {
+        self.file.body.is_err()
+    }
 }
 
 /// Where a read would have to place the body.
@@ -66,7 +72,7 @@ impl Given {
             let files = std::iter::once(None).chain((0..prog.modules.len()).map(Some))
                 .filter(|&f| prog.uses_of(f).contains(&m.name.as_str()))
                 .collect();
-            modules.insert(m.name.clone(), Module { k, files, body: g.body.is_ok() });
+            modules.insert(m.name.clone(), Module { k, files, file: g.clone() });
         }
         if modules.is_empty() {
             return Given::default();
@@ -134,13 +140,13 @@ impl Given {
     /// The paths of the given modules the walk reads whose file the kernel refused: names a
     /// read of finds, and nothing is declared for (`Walk::unmade_by_refusal`).
     pub(super) fn refused_paths(&self) -> BTreeSet<String> {
-        self.modules.iter().filter(|(_, m)| !m.body).map(|(p, _)| p.clone()).collect()
+        self.modules.iter().filter(|(_, m)| m.refused()).map(|(p, _)| p.clone()).collect()
     }
 
     /// Whether `path` is a given module whose file the kernel refused: a name known, read
     /// silently, since the refusal is said at the `use`.
     pub(super) fn refused(&self, path: &str) -> bool {
-        self.modules.get(path).is_some_and(|m| !m.body)
+        self.modules.get(path).is_some_and(Module::refused)
     }
 }
 
@@ -148,15 +154,20 @@ impl Walk<'_> {
     /// **The given bodies read**, declared: one solid each, named by its module's path, its
     /// definition the file's reading (`Sweep::Given`), its statement the document's `use` — and
     /// each refused read said where it is written.  Read once the walk has resolved every
-    /// reference, so every read is known; the statements are walked as the document's own.
-    pub(super) fn given_bodies(&mut self) -> bool {
+    /// reference, so every read is known; each declaration reads nothing, so there is nothing of
+    /// it to resolve, and it is lowered as it stands.  With them, each read refused, by where it
+    /// is read: the body's path (`Expansion::misplaced`).
+    pub(super) fn given_bodies(&mut self)
+        -> (Vec<crate::ir::Statement>, BTreeMap<Span, String>) {
         let given = self.standard.given.clone();
         let misplaced = std::mem::take(&mut *given.misplaced.borrow_mut());
         let mut read = given.read.borrow().clone();
+        let mut refused = BTreeMap::new();
         for (span, (path, why)) in misplaced {
             if given.refused(&path) {
                 continue;
             }
+            refused.insert(span, path.clone());
             // declared all the same, so nothing reading it says more than this
             read.insert(path.clone());
             let place = match why {
@@ -169,28 +180,26 @@ impl Walk<'_> {
                  and this reads it in {place}: placing a given body is not built yet (#993 \
                  stage 5), so read it at the document's root"));
         }
-        let mut made = false;
+        let mut made = Vec::new();
         for path in read {
-            let Some(m) = given.modules.get(&path).filter(|m| m.body) else { continue };
-            let module = &self.prog.modules[m.k];
-            let Some(file) = module.given.clone() else { continue };
-            let at = module.via;
+            let Some(m) = given.modules.get(&path).filter(|m| !m.refused()) else { continue };
+            let at = self.prog.modules[m.k].via;
             let name = Name { text: path.clone(), span: at };
             let d = Decl {
                 kind: crate::model::EntKind::Solid,
                 seed: Vec::new(),
                 seed_text: Vec::new(),
-                sweep: Some(Sweep::Given(file)),
+                sweep: Some(Sweep::Given(m.file.clone())),
                 ..Decl::point(DeclName::Written(name), [0.0; 2], None)
             };
             // an identity no statement of the document, a module or a set's foot is minted
             let id = StmtId(crate::modules::GIVEN_STMTS + m.k as u32);
-            let st = Stmt { id, kind: StmtKind::Decl(d.clone()), span: at,
-                            chained: Default::default() };
-            let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
-            self.emit(StmtKind::Decl(d), &st, &scope, &[]);
-            made = true;
+            let st = Stmt { id, kind: StmtKind::Decl(d), span: at, chained: Default::default() };
+            match crate::ir::Statement::lower(st, Vec::new()) {
+                Ok(st) => made.push(st),
+                Err(d) => self.diagnostic(d),
+            }
         }
-        made
+        (made, refused)
     }
 }

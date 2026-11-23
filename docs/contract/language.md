@@ -1030,7 +1030,8 @@ before ports 0.9 s to 0.4 s.
   their own word and the given body renamed — `` `part := solid(bracket)`, then `drill bore
   part` `` for `drill bore bracket` over a word `x bore B` of their own, or, where it is read
   through a definition's formal, `` …, and give `part` where it is given `` — and nothing more of
-  that read (no E106 for a formal's read inside the statement: the body made of it is the one fix)
+  that read (no E106 for a formal's read inside the statement, known by where it is read and the
+  body it reads, `Expansion::misplaced`: the body made of it is the one fix)
   (`program::solids::body_rule`,
   `given_bodies::a_given_body_refused_is_said_once_in_the_authors_words`).  **Where it stands**: the document's own space, the
   file's origin and axes the world's, whatever plane of the world a statement is in (`in

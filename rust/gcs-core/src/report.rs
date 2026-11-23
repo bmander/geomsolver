@@ -964,11 +964,13 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         // face a path names)
         let boxed = |n: &String| ["x", "y", "z"].iter().any(|a| asked(&format!("{n}.bounds.{a}0"))
                                                        || asked(&format!("{n}.bounds.{a}1")));
-        if given_untouched(sk, e.i()) && !names.iter().any(boxed) {
+        if sk.given_untouched(e.i()).is_some() && !names.iter().any(boxed) {
             let Ok(x) = sk.exact_solid(e.i()) else { continue };
             let b = &x.brep;
             let volume = if b.faces.is_empty() { 0.0 } else { crate::brep::props::volume(b) / x.mm.powi(3) };
-            let area = b.faces.iter().map(|f| crate::brep::props::area(b, f)).sum::<f64>() / (x.mm * x.mm);
+            let face = |f: usize| crate::brep::props::area(b, &b.faces[f]);
+            let area = crate::par::indices(b.faces.len(), face).into_iter().sum::<f64>()
+                / (x.mm * x.mm);
             for n in names {
                 out.insert(format!("{n}.volume"), volume);
                 out.insert(format!("{n}.area"), area);
@@ -998,22 +1000,13 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             // a given body's face is no path a reader can write (#993 stage 2): its area is in
             // the body's
             for (tail, a) in faces {
-                if crate::model::Given::face_of(&format!("{n}.{tail}")).is_none() {
+                if crate::vocab::given_face(&format!("{n}.{tail}")).is_none() {
                     out.insert(format!("{n}.{tail}.area"), a);
                 }
             }
         }
     }
     published(out)
-}
-
-/// Whether solid `i` is a body a file gives, untouched: the given body itself, or a body whose
-/// stock it is with nothing on, through or bound by it (`solid(bracket)`).
-fn given_untouched(sk: &Sketch, i: usize) -> bool {
-    use crate::model::SolidDef;
-    let given = |k: usize| matches!(sk.solids[k].def, SolidDef::Given(_));
-    given(i) || matches!(&sk.solids[i].def, SolidDef::Body { stock, on, through, bound }
-        if given(*stock as usize) && on.is_empty() && through.is_empty() && bound.is_empty())
 }
 
 /// **A solid asked about that is not built, said** (#994): for each solid `asked` takes one of the
@@ -2044,7 +2037,7 @@ fn point_text(x: [f64; 3]) -> String {
 fn nearest_text(n: &crate::clear::Nearest) -> String {
     let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
     // a given body's face said as one of its faces, which is all a reader can write of it
-    let said = |f: &str| crate::model::Given::face_said(f);
+    let said = |f: &str| crate::vocab::face_said(f);
     let n = crate::clear::Nearest { a: said(&n.a), b: said(&n.b), ..n.clone() };
     if n.deepest || n.at_a == n.at_b {
         let word = if n.deepest { "deepest" } else { "nearest" };

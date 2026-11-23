@@ -192,14 +192,14 @@ fn body_rule(
                     Some(fixed) => format!("then `{fixed}`"),
                     None => "and give `part` where it is given".to_string(),
                 };
-                // and where the same read would also have to be placed (E106, a definition's
-                // body), that is not said as well: one cause, and the body made of it the one fix
-                let placed = format!("`{given}` is the body a file gives, which stands");
-                diags.retain(|d| !(d.code == Code::E106 && r.span.lo <= d.span.lo
-                    && d.span.hi <= r.span.hi && d.message.starts_with(&placed)));
-                diags.push(Diag::within(Code::E080, r.span, st.id, format!(
-                    "`{given}` is the body a file gives, and it is never extended: name the body \
-                     this makes of it, `part := solid({given})`, {then}")));
+                // and where the same read would also have to be placed (E106 at the read, a
+                // definition's body), that is not said as well: one cause, and the body made of
+                // it the one fix
+                let inside = |s: Span| r.span.lo <= s.lo && s.hi <= r.span.hi;
+                diags.retain(|d| !(d.code == Code::E106 && inside(d.span)
+                    && res.misplaced.get(&d.span).is_some_and(|p| p == given)));
+                diags.push(Diag::within(Code::E080, r.span, st.id, never_extended(given,
+                    &format!("this makes of it, `part := solid({given})`, {then}"))));
             }
             Ok((a, b)) => stated.push((*st, r.word, r.span, a, b)),
             Err((code, span, m)) => diags.push(Diag::within(code, span, st.id, m)),
@@ -279,25 +279,24 @@ fn body_rule(
 }
 
 /// `text`, one statement on one line, with each whole name `from` in it written `to` — `None`
-/// where it has none (a name is never part of a longer one, nor a member past a dot).
+/// where it has none (a name is read as the expression lexer reads one, `substitute_with`: never
+/// part of a longer one, nor a member past a dot).
 fn renamed(text: &str, from: &str, to: &str) -> Option<String> {
-    let name = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
-    let mut out = String::new();
-    let (mut rest, mut found) = (text, false);
-    while let Some(k) = rest.find(from) {
-        let before = rest[..k].chars().last().or_else(|| out.chars().last());
-        let after = rest[k + from.len()..].chars().next();
-        out.push_str(&rest[..k]);
-        if before.is_some_and(name) || after.is_some_and(name) {
-            out.push_str(from);
-        } else {
-            out.push_str(to);
-            found = true;
-        }
-        rest = &rest[k + from.len()..];
-    }
-    out.push_str(rest);
-    found.then(|| out.split_whitespace().collect::<Vec<_>>().join(" "))
+    let found = std::cell::Cell::new(false);
+    let out = crate::flatten::substitute_with(text, |w| {
+        (w == from).then(|| {
+            found.set(true);
+            to.to_string()
+        })
+    });
+    found.get().then(|| out.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// **A given body extended, refused** (#993 stage 2; E080, and the edit's refusal of a gesture
+/// that would): `given` is the file's, never extended, and the fix is the body named of it —
+/// `fix`, how the rest of the sentence reads.
+pub(crate) fn never_extended(given: &str, fix: &str) -> String {
+    format!("`{given}` is the body a file gives, and it is never extended: name the body {fix}")
 }
 
 /// **Strata in layers** (#183 F6, [0.149]): a body whose rounds name one another's faces laid

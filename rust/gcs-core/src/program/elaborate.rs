@@ -293,6 +293,7 @@ fn expand(
     cx.res.normals = expansion.normals.clone();
     cx.res.charts = expansion.charts.clone();
     cx.res.joints = expansion.joints.clone();
+    cx.res.misplaced = expansion.misplaced.clone();
     expansion
 }
 

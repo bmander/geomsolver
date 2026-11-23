@@ -5,6 +5,8 @@
 //! the module, read once (`modules::Given`); an edit never reads it again.  The documents here are
 //! linked against an in-memory shelf, as a host's resolver would answer.
 
+use crate::common::linked::{linked_with, solving};
+use crate::common::solid_named;
 use gcs_core::modules::{self, link, relink};
 use gcs_core::program::{elaborate, Code, Diag, Elaborated};
 use gcs_core::syntax::{parse, Program};
@@ -39,13 +41,8 @@ fn shelf() -> BTreeMap<&'static str, String> {
 
 /// `src` parsed and linked against the shelf (then the library), as a host does.
 fn linked(src: &str) -> (Program, Vec<Diag>) {
-    let (mut prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
     let shelf = shelf();
-    let diags = link(&mut prog, &mut |name| {
-        shelf.get(name).cloned().or_else(|| gcs_core::library::resolve(name))
-    });
-    (prog, diags)
+    linked_with(src, &|name| shelf.get(name).cloned())
 }
 
 /// `src` linked and elaborated, every diagnostic of both.
@@ -146,21 +143,14 @@ fn drilled_volume() -> f64 {
 
 /// `src` read, every diagnostic none, and solved.
 fn solved(src: &str) -> Elaborated {
-    let (mut e, diags) = read(src);
-    assert!(diags.is_empty() && e.ok(), "{diags:?}\n{src}");
-    let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
-
-/// The solid the document calls `name`, by index.
-fn solid(e: &Elaborated, name: &str) -> usize {
-    e.sketch.solids.iter().position(|s| s.name == name).unwrap_or_else(|| panic!("no `{name}`"))
+    let (e, diags) = read(src);
+    assert!(diags.is_empty(), "{diags:?}\n{src}");
+    solving(e)
 }
 
 /// Its exact volume.
 fn volume(e: &Elaborated, name: &str) -> f64 {
-    let x = e.sketch.exact_solid(solid(e, name)).unwrap_or_else(|m| panic!("`{name}`: {m}"));
+    let x = e.sketch.exact_solid(solid_named(e, name)).unwrap_or_else(|m| panic!("`{name}`: {m}"));
     gcs_core::brep::props::volume(&x.brep)
 }
 
@@ -176,9 +166,9 @@ fn the_body_is_read_by_the_modules_path_and_only_where_read() {
     assert!(e.sketch.solids.is_empty(), "{:?}", e.sketch.solids);
     let e = solved("unit mm\nuse bracket\npart := solid(bracket)\n");
     assert_eq!(e.sketch.solids.len(), 2, "{:?}", e.sketch.solids);
-    assert!(matches!(e.sketch.solids[solid(&e, "bracket")].def,
+    assert!(matches!(e.sketch.solids[solid_named(&e, "bracket")].def,
                      gcs_core::model::SolidDef::Given(_)));
-    let part = solid(&e, "part");
+    let part = solid_named(&e, "part");
     assert_eq!(gcs_core::model::objects(&e.sketch), vec![part]);
     assert!(close(volume(&e, "part"), drilled_volume()), "{}", volume(&e, "part"));
     // one object wherever objects are read: the workspace, the cut list, an assembly's export
@@ -209,7 +199,7 @@ fn a_given_body_is_a_set() {
                     set := solid({ p | p in bracket })\n\
                     claim every q in whole: q in bracket\nclaim every q in bracket: q in whole\n");
     assert!(close(volume(&e, "set"), drilled_volume()), "{}", volume(&e, "set"));
-    let faces = |n: &str| e.sketch.exact_solid(solid(&e, n)).unwrap().brep.faces.len();
+    let faces = |n: &str| e.sketch.exact_solid(solid_named(&e, n)).unwrap().brep.faces.len();
     assert_eq!(faces("set"), faces("whole"));
     let v = gcs_core::diagnose::judge_solids(&e.sketch);
     assert_eq!(v.len(), 2);
@@ -235,7 +225,7 @@ fn a_given_body_is_an_operand() {
     let e = solved(&format!("{DRILL}part := solid(bracket)\ndrill cut part\n"));
     let want = drilled_volume() - std::f64::consts::PI * 9.0 * 20.0;
     assert!(close(volume(&e, "part"), want), "{} against {want}", volume(&e, "part"));
-    assert_eq!(gcs_core::model::objects(&e.sketch), vec![solid(&e, "part")]);
+    assert_eq!(gcs_core::model::objects(&e.sketch), vec![solid_named(&e, "part")]);
     // the tool of a body word: the block taken from a pin through it leaves its two ends
     let e = solved(&format!("{DRILL}pin := solid(drill)\nbracket cut pin\n"));
     let ends = std::f64::consts::PI * 9.0 * 40.0;
@@ -284,7 +274,7 @@ fn a_given_module_defines_nothing_but_its_body() {
 fn a_given_body_stands_in_the_documents_space() {
     let e = solved("unit mm\nuse bracket\nuse std\nin std.top {\n  part := solid(bracket)\n}\n");
     assert!(close(volume(&e, "part"), drilled_volume()));
-    let x = e.sketch.exact_solid(solid(&e, "part")).unwrap();
+    let x = e.sketch.exact_solid(solid_named(&e, "part")).unwrap();
     // the file's origin and axes are the world's: its corners from (0, 0, 0) to (40, 30, 20)
     let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
     for v in &x.brep.vertices {
@@ -321,7 +311,7 @@ fn a_given_body_stands_in_the_documents_space() {
 fn a_given_body_is_measured_in_the_documents_unit() {
     // the volume the model measures, in the document's unit
     let measured = |e: &Elaborated| e.sketch
-        .evaluated_solid(solid(e, "part"), gcs_core::solid::ApproximationPolicy::Report)
+        .evaluated_solid(solid_named(e, "part"), gcs_core::solid::ApproximationPolicy::Report)
         .unwrap_or_else(|m| panic!("{m}")).volume();
     let e = solved("unit in\nuse bracket\npart := solid(bracket)\n");
     let inch3 = 25.4f64.powi(3);
@@ -352,7 +342,7 @@ fn a_document_naming_a_file_exports_the_same_solid() {
     use gcs_core::brep::{export, step::Fit, sweep::Say};
     let e = solved("unit mm\nuse bracket\npart := solid(bracket)\n");
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let x = export::exact(&e.sketch, solid(&e, "part"), None, None, &say)
+    let x = export::exact(&e.sketch, solid_named(&e, "part"), None, None, &say)
         .unwrap_or_else(|m| panic!("{m:?}"));
     let text = export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"));
     let original = stages(DRILLED).unwrap_or_else(|(by, r, _)| panic!("{by:?}: {r}"));
@@ -367,12 +357,10 @@ fn a_document_naming_a_file_exports_the_same_solid() {
 /// `src` linked against the shelf and `more` before it (a host's resolver over other files),
 /// then elaborated: every diagnostic of both.
 fn read_with(src: &str, more: &[(&str, &str)]) -> (Elaborated, Vec<Diag>) {
-    let (mut prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
     let shelf = shelf();
-    let mut diags = link(&mut prog, &mut |name| {
+    let (prog, mut diags) = linked_with(src, &|name| {
         more.iter().find(|(n, _)| *n == name).map(|(_, t)| t.to_string())
-            .or_else(|| shelf.get(name).cloned()).or_else(|| gcs_core::library::resolve(name))
+            .or_else(|| shelf.get(name).cloned())
     });
     let e = elaborate(&prog);
     diags.extend(e.diags.iter().cloned());
@@ -400,7 +388,8 @@ fn a_file_of_several_solids_is_refused_saying_how_many() {
 
 /// The volume and world box of the solid the document calls `name`, in the document's unit.
 fn measure(e: &Elaborated, name: &str) -> (f64, [f64; 3], [f64; 3]) {
-    let s = e.sketch.evaluated_solid(solid(e, name), gcs_core::solid::ApproximationPolicy::Report)
+    let s = e.sketch
+        .evaluated_solid(solid_named(e, name), gcs_core::solid::ApproximationPolicy::Report)
         .unwrap_or_else(|m| panic!("`{name}`: {m}"));
     let b = s.world_bounds();
     (s.volume(), b.lo, b.hi)
@@ -500,9 +489,9 @@ fn one_body_per_module_however_many_files_use_it() {
     let given: Vec<usize> = (0..e.sketch.solids.len())
         .filter(|&i| matches!(e.sketch.solids[i].def, gcs_core::model::SolidDef::Given(_)))
         .collect();
-    assert_eq!(given, vec![solid(&e, "bracket")]);
+    assert_eq!(given, vec![solid_named(&e, "bracket")]);
     for name in ["a", "b"] {
-        assert!(matches!(e.sketch.solids[solid(&e, name)].def,
+        assert!(matches!(e.sketch.solids[solid_named(&e, name)].def,
                          gcs_core::model::SolidDef::Body { stock, .. }
                              if stock as usize == given[0]));
     }
@@ -536,7 +525,7 @@ fn a_body_with_a_void_is_read_claimed_and_written_again() {
     }
     let e = solved("unit mm\nuse void\npart := solid(void)\n");
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let x = export::exact(&e.sketch, solid(&e, "part"), None, None, &say)
+    let x = export::exact(&e.sketch, solid_named(&e, "part"), None, None, &say)
         .unwrap_or_else(|m| panic!("{m:?}"));
     let text = export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"));
     assert!(text.contains("BREP_WITH_VOIDS"));
@@ -561,7 +550,7 @@ fn edits_over_a_given_body_are_made_or_refused_in_words() {
     use gcs_core::model::EntRef;
     let src = "unit mm\nuse bracket\npart := solid(bracket)\n";
     let e = solved(src);
-    let (g, p) = (solid(&e, "bracket"), solid(&e, "part"));
+    let (g, p) = (solid_named(&e, "bracket"), solid_named(&e, "part"));
     let untouched = |x: &edit::Edit| x.kind == Kind::None && x.text == src;
     let refused = |what: &str, x: edit::Edit, words: &str| {
         assert!(untouched(&x), "{what}: {:?}", x.text);
@@ -603,7 +592,7 @@ fn edits_over_a_given_body_are_made_or_refused_in_words() {
     assert!(x.text.ends_with("round(r: 1) part\n"), "{}", x.text);
     let rounded = rebuilt(&x.text);
     // built, or refused in the solid's own words: never a panic
-    let _ = rounded.sketch.evaluated_solid(solid(&rounded, "part"),
+    let _ = rounded.sketch.evaluated_solid(solid_named(&rounded, "part"),
                                            gcs_core::solid::ApproximationPolicy::Report);
     let pair = gcs_core::overview::workspace::solid_edges(&e.sketch, p)[0].faces.clone();
     refused("round an edge of the body", edit::add_rounds(&e.program, &e.sketch, p,
@@ -677,7 +666,7 @@ fn the_librarys_case_drills_a_bought_block() {
     };
     let (holds, e) = judged(&src);
     assert_eq!(holds, Some(true));
-    let block = solid(&e, "block");
+    let block = solid_named(&e, "block");
     assert_eq!(gcs_core::model::objects(&e.sketch), vec![block]);
     let want = drilled_volume() - std::f64::consts::PI * 2.5 * 2.5 * 20.0;
     assert!(close(volume(&e, "block"), want), "{} against {want}", volume(&e, "block"));
@@ -706,8 +695,8 @@ fn the_solid_a_given_body_sweeps_is_swept() {
 fn a_given_bodys_key_reads_the_documents_unit() {
     let key = |unit: &str| {
         let e = solved(&format!("unit {unit}\nuse bracket\npart := solid(bracket)\n"));
-        (gcs_core::solid::field_key(&e.sketch, solid(&e, "part")),
-         gcs_core::solid::field_key(&e.sketch, solid(&e, "bracket")))
+        (gcs_core::solid::field_key(&e.sketch, solid_named(&e, "part")),
+         gcs_core::solid::field_key(&e.sketch, solid_named(&e, "bracket")))
     };
     let (mm, inch) = (key("mm"), key("in"));
     assert_eq!(mm, key("mm"));
@@ -752,19 +741,19 @@ fn two_spellings_of_a_given_body_are_one_solid() {
     use crate::step_roundtrip::{measured, same, stages, Found};
     use gcs_core::brep::{export, step::Fit, sweep::Say};
     let e = solved("unit mm\nuse bracket\nwhole := solid(bracket)\nset := solid({ p | p in bracket })\n");
-    assert!(matches!(e.sketch.solids[solid(&e, "set")].def,
+    assert!(matches!(e.sketch.solids[solid_named(&e, "set")].def,
                      gcs_core::model::SolidDef::Body { ref on, ref through, ref bound, .. }
                      if on.is_empty() && through.is_empty() && bound.is_empty()));
     // the built B-rep's names, which the report reads (no written path reaches a given face)
     let names = |n: &str| -> Vec<String> {
-        let x = e.sketch.exact_solid(solid(&e, n)).unwrap_or_else(|m| panic!("`{n}`: {m}"));
+        let x = e.sketch.exact_solid(solid_named(&e, n)).unwrap_or_else(|m| panic!("`{n}`: {m}"));
         x.brep.faces.iter().map(|f| f.name.clone()).collect()
     };
     assert_eq!(names("whole"), names("set"));
     assert_eq!(names("set").len(), 7);
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let step = |n: &str| {
-        let x = export::exact(&e.sketch, solid(&e, n), None, None, &say)
+        let x = export::exact(&e.sketch, solid_named(&e, n), None, None, &say)
             .unwrap_or_else(|m| panic!("{m:?}"));
         export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"))
     };
@@ -826,7 +815,7 @@ fn a_given_body_is_read_at_an_instant() {
                     part := solid(bracket)\nturned := part at(under: std.z) 90deg\n");
     for name in ["moved", "turned"] {
         assert!(close(volume(&e, name), drilled_volume()), "{name}: {}", volume(&e, name));
-        let x = e.sketch.exact_solid(solid(&e, name)).unwrap();
+        let x = e.sketch.exact_solid(solid_named(&e, name)).unwrap();
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
         for v in &x.brep.vertices {
             for k in 0..3 {
@@ -881,9 +870,10 @@ fn a_given_bodys_faces_are_said_as_its_faces() {
     let v = gcs_core::diagnose::judge_solids(&e.sketch);
     let text = gcs_core::report::solid_claim_text(&v[0]);
     assert!(text.contains("a face of `bracket`") && !text.contains("#given"), "{text}");
-    assert_eq!(gcs_core::model::Given::face_said("part.bracket.#given0"),
-               "a face of `part.bracket`");
-    assert_eq!(gcs_core::model::Given::face_said("drill.hole"), "drill.hole");
+    assert_eq!(gcs_core::vocab::face_said("part.bracket.#given0"), "a face of `part.bracket`");
+    assert_eq!(gcs_core::vocab::face_said("drill.hole"), "drill.hole");
+    assert_eq!(gcs_core::vocab::face_quoted("part.bracket.#given0"), "a face of `part.bracket`");
+    assert_eq!(gcs_core::vocab::face_quoted("drill.hole"), "`drill.hole`");
 }
 
 /// **Statements no text holds are numbered apart** (#993's review, R10): a given body's
@@ -937,15 +927,13 @@ fn the_corpus_through_a_document() {
     // document's solid and the file written, or the stage that refused it and why
     fn through(text: &str, name: &str) -> Result<(gcs_core::brep::topo::Brep, String), (&'static str, String)> {
         let src = format!("unit mm\nuse {name}\npart := solid({name})\n");
-        let (mut prog, errs) = parse(&src);
-        assert!(errs.is_empty(), "{errs:?}");
-        let mut diags = link(&mut prog, &mut |n| (n == name).then(|| text.to_string()).or_else(|| gcs_core::library::resolve(n)));
+        let (prog, mut diags) = linked_with(&src, &|n| (n == name).then(|| text.to_string()));
         let mut e = elaborate(&prog);
         diags.extend(e.diags.iter().cloned());
         if let Some(d) = diags.first() { return Err(("refused at the use", d.message.clone())) }
         let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
         if !r.success { return Err(("not solved", r.message)) }
-        let i = solid(&e, "part");
+        let i = solid_named(&e, "part");
         let built = export::exact(&e.sketch, i, None, None, &QUIET).map_err(|r| ("not built", r.message))?;
         let written = export::step(&built, "part", None, &QUIET).map_err(|r| ("not written", r.message))?;
         Ok((built.solid, written))
@@ -996,4 +984,23 @@ fn a_given_bodys_measures_are_read_off_its_b_rep() {
     let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n.starts_with("part"));
     let x1 = rows.iter().find(|(n, _)| n == "part.bounds.x1").map(|r| r.1);
     assert!(x1.is_some_and(|x| (x - 40.0).abs() < 1e-6), "{rows:?}");
+}
+
+/// **A round says a given body's faces as its faces** (#993's review, C3): the faces a round reads
+/// of a body made of the file's (`solid::faces`) are named by keys no document writes
+/// (`bracket.#given4`), and a lowering's refusal names each as `BodyFaces::said` says it —
+/// through `vocab::face_quoted`, as a claim's witness and the export's warning say them — so
+/// `` a face of `bracket` ``, never the key, while a face the document cut keeps its path.
+#[test]
+fn a_round_says_a_given_bodys_faces_as_its_faces() {
+    let e = solved(&format!("{DRILL}part := solid(bracket)\ndrill cut part\n"));
+    let faces = gcs_core::solid::faces::cached(&e.sketch, solid_named(&e, "part"))
+        .unwrap_or_else(|m| panic!("{m}"));
+    let said: Vec<(String, String)> = (0..faces.paths().len())
+        .map(|fi| (faces.paths()[fi].text(), faces.said(fi))).collect();
+    let given: Vec<_> = said.iter().filter(|(path, _)| path.contains("#given")).collect();
+    assert_eq!(given.len(), 7, "{said:?}");
+    assert!(given.iter().all(|(_, s)| s.starts_with("a face of `") && !s.contains("#given")),
+            "{said:?}");
+    assert!(said.iter().any(|(path, s)| *s == format!("`{path}`")), "{said:?}");
 }

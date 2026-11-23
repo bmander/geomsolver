@@ -178,10 +178,7 @@ fn given_read(sk: &Sketch,body: usize) -> Option<(String,bool)> {
     use crate::model::SolidDef;
     let reached = crate::solid::operands_reached(sk,body).ok()?;
     let given = reached.into_iter().find(|&i| matches!(sk.solids[i].def,SolidDef::Given(_)))?;
-    let untouched = given == body || matches!(&sk.solids[body].def,
-        SolidDef::Body {stock,on,through,bound} if *stock as usize == given && on.is_empty() && through.is_empty()
-            && bound.is_empty());
-    Some((sk.solids[given].name.clone(),untouched))
+    Some((sk.solids[given].name.clone(),sk.given_untouched(body) == Some(given)))
 }
 
 /// **Where the solid touches itself at a vertex of edges of both turns** (#962): the line `ends`
@@ -621,13 +618,11 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
 }
 
 /// A face of a built solid as a reader writes it (`face 3` where it has no name; a face of a body
-/// a file gives, which no written path reaches, as a face of that body: `Given::face_of`).
+/// a file gives, which no written path reaches, as a face of that body: `vocab::face_quoted`).
 fn face_name(faces: &[super::topo::Face],f: u32) -> String {
-    faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
-        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| match crate::model::Given::face_of(&n) {
-            Some(of) => format!("a face of `{of}`"),
-            None => format!("`{n}`"),
-        })
+    faces.get(f as usize).map(|x| crate::solid::exact::joined(&x.name))
+        .filter(|n| !crate::vocab::public_path(n).is_empty())
+        .map_or_else(|| format!("face {f}"),|n| crate::vocab::face_quoted(&n))
 }
 
 /// A length in millimetres, written in the unit that suits it.
