@@ -203,6 +203,46 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   meetings given it: the ring road's 80° tumbling torus was judged wrong with its start pose's
   seam at −2.78, and its full turn refused at every end pose's seam but its own; both build again.
 
+## [0.22.1] - 2026-11-23
+
+- **A blend screwed round reads its foot near by its lead** (#1004): #1002 (0.22.0) read a
+  blend's foot near by its sections' size, and a section longer than the lead it is screwed at
+  comes back within the lead of itself. The screw's domain in a thread with sharp crests, its
+  edges 116 long screwed thirty turns at a lead of 1, kept a stationary foot a tenth of the lead
+  off a point of its own rim, and the thread, built before #1002, was refused. A blend's foot is
+  near by its sections' size and no more than the rise a turn of a screw carrying it. And a level
+  line's screwed sheet keeps Newton's foot from its closed-form start where it reads farther only
+  by the rounding of the point's coordinates: a point of its first rim was searched onto the next
+  turn.
+
+- **An elliptic cylinder's rim is chamfered and rounded** (brep-bench's chamfer/elliptic-cylinder-rim,
+  chamfer/elliptic-hole-rim and fillet/elliptic-cylinder-rim):
+  - A profile takes an ellipse, its whole turn, as `ProfileEdge::Exact(Curve::Ellipse(..))`: a
+    prism (or a slide or a screw) sweeps it into a side closed round it, `Surface::Extrusion` of the
+    ellipse, written as STEP's own `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE`. A turn and a draft
+    refuse it by name.
+  - A spline or an ellipse swept along a line has an offset (`Surface::parallel`,
+    `Surface::has_parallel`): the sheet it is, its spline's poles carried along the sweep, read by
+    its signed distance as a B-spline sheet's. A ball rolls on it (`fillet::roll`), and
+    `fillet::flat_along` reads a chamfer's legs from `parallel` (it read `offset`'s closed forms
+    only, and refused a sheet's leg as wider than its face). A side swept from a spline is still
+    no surface closed round it (a spline has no period), so a loop round it is not chamfered yet.
+  - A foot on a net's continuation runs as far as it likes along a way the net is one straight
+    span, the line it lies on (it was held to the domain's width past it).
+  - `Curve::inverse` of an ellipse is its nearest point (`affine::ellipse_foot`): Newton from the
+    point's own angle settled, inside the ellipse near its evolute, on another stationary point.
+  - `fillet`'s seamed strip takes a swept curve's iso line, a line along the sweep.
+
+- **A fill of four curves** (brep-bench's fill/coons-patch-of-four-parabolas):
+  `nurbs::coons(edges: [&BSpline; 4]) -> Result<Net, String>` is the bilinearly blended Coons patch
+  of four curves closing a loop, the first and third along `u`, the second and fourth along `v`,
+  each one's parameter carried onto `[0, 1]`. Opposite curves are made one space, so the patch is
+  exactly a net whose boundary rows are the curves' own poles: `build::sheet` makes its face and
+  `sew::sewn` closes it with what it caps. Refused for rational curves and a loop that does not
+  close. Beside it, `BSpline::elevated` raises a curve's degree exactly (each knot once more per
+  degree, so as continuous as it was), and `BSpline::reversed` and `BSpline::over` run a curve
+  the other way and over another interval.
+
 ## [0.22.0] - 2026-11-23
 
 - **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
