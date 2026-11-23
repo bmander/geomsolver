@@ -332,6 +332,20 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`MEET=i,j,x,y,z`: face i of A and face j of B traced from the seed (x, y, z) alone)
+        if let Some(m) = std::env::var("MEET").ok() {
+            let v: Vec<f64> = m.split(',').map(|x| x.parse().unwrap()).collect();
+            let (fa,fb) = (&a.faces[v[0] as usize].surface,&b.faces[v[1] as usize].surface);
+            let (lo,hi) = a.bounds();
+            let clock = Instant::now();
+            let seeds: Vec<[f64;3]> = v[2..].chunks(3).map(|c| [c[0],c[1],c[2]]).collect();
+            match cad_kernel::ssi::trace(fa,fb,&seeds,lo,hi,tol) {
+                Ok(cs) => for c in &cs { println!("a {} curve",c.kind()) },
+                Err(e) => println!("refused: {e}"),
+            }
+            println!("traced in {:?}",clock.elapsed());
+            return
+        }
         let (va,vb) = (cad_kernel::props::volume(&a),cad_kernel::props::volume(&b));
         let mut vs = Vec::new();
         // (`OP=union|difference|intersection`: that one alone)
