@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.23.0] - 2026-11-23
+
 - **A net's face read cell by cell** (#880, `props`'s `Cells` and `by_cells`): Green's `G` on a
   B-spline or offset face — its area, a rational net's flux, a field's flux and a weighed area;
   a polynomial net's flux keeps its exact table (`Prefix`) — was gathered from the face's middle
