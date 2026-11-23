@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.22.0] - 2026-11-23
+
 - **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
   distance from the origin, so a part built there was refused, or built hundreds of times slower,
   once it stood a few of its own sizes off. A foot found from the last one on a face family's
