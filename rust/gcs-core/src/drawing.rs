@@ -11,7 +11,7 @@ use crate::style::Style;
 use crate::syntax::Span;
 pub use parser::parse;
 pub use render::{fills, named_view, plane_across, plane_named, render, Model};
-pub use compile::{colours, compile, compile_with, Compiled};
+pub use compile::{colours, compile, compile_with, Compiled, Loaded};
 pub use highlight::highlight;
 
 #[derive(Clone, Debug)]

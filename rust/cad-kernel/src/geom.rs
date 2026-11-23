@@ -93,6 +93,13 @@ pub fn widen(b: &mut Box3,other: Box3) { for k in 0..3 { b.0[k] = b.0[k].min(oth
 pub fn common(a: Box3,b: Box3) -> Box3 { (std::array::from_fn(|k| a.0[k].max(b.0[k])),std::array::from_fn(|k| a.1[k].min(b.1[k]))) }
 pub(super) fn hull(pts: impl IntoIterator<Item=V>) -> Box3 { let mut b = EMPTY; for p in pts { include(&mut b,p); } b }
 
+/// How far `p` stands from the line through `o` along the unit `z`.
+pub(crate) fn off_axis(p: V,o: V,z: V) -> f64 { let q = sub(p,o); norm(sub(q,scale(z,dot(q,z)))) }
+
+/// **Whether a frame's axis is the line through `o` along the unit `z`**: its `z` along it, and its
+/// origin within `tol` of it — a cylinder or a cone about the line, a circle round it.
+pub(crate) fn about_axis(f: &Frame,o: V,z: V,tol: f64) -> bool { norm(cross(f.z,z)) <= 1e-12 && off_axis(f.o,o,z) <= tol }
+
 /// **The span of a prism through everything** (#737, #746): over each use, the section through `o`
 /// square to `n` where that use puts it and the box `b` about its body's material, the ordinates
 /// along `n` (in lengths of `n`) reaching across the box, each end padded past it by `4e-5` of its

@@ -108,7 +108,27 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   report carries (a motion's `movingParams`).  **A `use` resolves against what the host handed over,
   then the library**: `gcs_module_set` is the browser's "beside the document" — `core/modules.ts`
   asks `gcs_program_uses`, fetches each through the app and hands it over, transitively; linking
-  stays the core's (`modules::link`, in the CLI's order).  The dev server serves `rust/examples/` as
+  stays the core's (`modules::link`, in the CLI's order).  Which paths a `use` is looked for at is
+  the core's answer too (`gcs_module_search_paths`, `modules::search_paths`), and so is whether a
+  text is an exchange file that gives a body (`gcs_text_is_step`, asked of the text's head): the
+  binding never asks the `use`s of one, which is not Solvent and may be megabytes, and
+  `gcs_program_uses` answers `[]` for one without parsing it.  `gcs_module_set` takes a module's
+  bytes and the path the host found them at as `modules::decode` reads them, an exchange file
+  lossily where its strings are not UTF-8, and refuses any other text that is not UTF-8 with 0 and
+  `gcs_last_error`, never storing an empty module (`host_modules.rs`; `core.test.ts`, "an exchange
+  file is handed over as it came and never asked for its uses").  It keeps what `link` is handed
+  (`modules::Found`: the text, shared, whether its path names an exchange file, and its digest)
+  and the path beside it, which `gcs_module_path` answers, so a host passing a module on passes
+  its path with it.  **A module's text crosses to a worker once** (#993 stage 2):
+  `gcs_module_digest` names the text a `use` reads by the core's `modules::digest` (taken once, as
+  it is handed over, and what a fresh link finds a file read before by), so `related` copies a
+  text out of the core only when its digest is new, a job names each module `[name, digest, path,
+  text]` with the text left out where that worker was sent it last (a `ModuleOutbox`, the page's
+  account of each worker, made with it; `modules.received`, the worker's, as each message
+  arrives), and a worker tells two lists apart by `modulesKey` — names, digests and paths —
+  installing a list its core has already not again
+  (`core.test.ts`, "a module's text crosses to a worker once, and is named by its digest after";
+  `object-builds.test.ts`, "a module's text crosses to a pool worker once, …"; `host_modules.rs`).  The dev server serves `rust/examples/` as
   `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
   compiled-in copy is read.  **File ▸ Open GitHub project gathers texts and nothing more**:
   `app/github.ts` reads a repository's (or a folder's) project files — the tree from GitHub's API,
@@ -120,7 +140,33 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   to its drawing and a page opened on one opens it.
 * **CLI** (`rust/gcs-cli/`): `solventc` parses, elaborates, solves, diagnoses and reports on a
   document, and resolves modules (`engine/parts.sv` beside the document or an ancestor, then
-  `library::MODULES`). It **invents no wording**: a per-document line is `diagnose::summary`, a
+  `library::MODULES`).  **Every host looks for a module in one order** (#993 stage 2):
+  `NAME.sv`, then `NAME.step`, then `NAME.stp` in each directory, the document's own first and
+  then its ancestors, nearest first, then the library (`modules::search_paths`,
+  `module_search.rs`) — in one directory the Solvent document wins, and a nearer exchange file
+  wins over a farther document (`a_use_is_looked_for_as_sv_then_step_then_stp_nearest_first`).
+  **A document is never its own module**: `search_paths` does not name the document itself, so
+  `foo.sv` saying `use foo` reads the `foo.step` beside it, and a `use` only the document would
+  answer is E070, "no module `foo`" (`a_document_is_never_among_its_own_candidates`,
+  `a_document_named_like_the_file_it_reads_reads_the_file`).
+  The CLI, a drawing's loader, the `fixtures` crate, the ABI and the examples' gates read a module
+  file's bytes through `modules::decode`, given the path they found it at: UTF-8 as it stands, an
+  exchange file lossily (its geometry is ASCII; real files carry Latin-1 in their strings),
+  anything else refused.  **A file found by an exchange file's name is one whatever its text**:
+  the resolver `modules::link` takes answers what the host found (`modules::Found`, `Found::at` a
+  path), so an empty `bracket.step`, or one not starting `ISO-10303-21;`, is given to the kernel's
+  reader as found by that name, never marked in its text, and the reader refuses it at the `use`
+  in its own words, once — E072
+  "`bracket`: line 1, byte 0: the file does not start `ISO-10303-21;` at …" — never linked as an
+  empty Solvent module or parsed as Solvent
+  (`a_file_found_as_an_exchange_file_is_read_as_one_and_refused_if_it_is_none`,
+  `a_step_file_that_is_no_exchange_file_is_refused_at_the_use`,
+  `a_file_found_as_an_exchange_file_that_is_none_is_refused_at_the_use`).  The first candidate
+  that is a file is the module: one that does not read is said beside its path and resolves
+  nothing — on stderr and E070 at the `use` for a model; for a drawing's loader, whose answer is
+  `drawing::Loaded` (none there, a text, or why one there does not read), the drawing's error
+  names the module and why — rather than a farther file or the library's copy standing in for it
+  (`a_module_file_is_read_lossily_if_an_exchange_file_and_said_if_it_does_not_read`). It **invents no wording**: a per-document line is `diagnose::summary`, a
   culprit is `io::describe_with` (`SourceMap` names, never `P0`; the app uses `gcs_elab_describe`),
   `--json` is `report::*_json`.
   **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`

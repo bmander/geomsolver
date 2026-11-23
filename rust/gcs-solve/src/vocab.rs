@@ -267,6 +267,35 @@ pub fn public_path(name: &str) -> String {
     path.join(".")
 }
 
+/// **A face's key as a reader is told it** (#993 stage 2): its `public_path` — unless it names a
+/// face of a body a file gives (`part.bracket.#given4`, `model::GIVEN_FACE`), which no written
+/// path reaches (stage 3 chooses one by what it is, never by an index): that is `` a face of
+/// `part.bracket` ``, the path up to it, all a reader can write of it.  A path is unquoted
+/// (`face_quoted` quotes it).
+pub fn face_said(key: &str) -> String {
+    let path = public_path(key);
+    match given_face(&path) {
+        Some(of) => format!("a face of `{of}`"),
+        None => path,
+    }
+}
+
+/// `face_said`, a path in backticks: what a refusal names a face by.
+pub fn face_quoted(key: &str) -> String {
+    let path = public_path(key);
+    match given_face(&path) {
+        Some(of) => format!("a face of `{of}`"),
+        None => format!("`{path}`"),
+    }
+}
+
+/// Where `path` names a face of a body a file gives (`bracket.#given4`, `part.bracket.#given0`),
+/// the path up to it, never empty: what a reader can write of it.
+pub fn given_face(path: &str) -> Option<&str> {
+    let at = path.find(&format!(".{}", crate::model::GIVEN_FACE))?;
+    (at > 0).then(|| &path[..at])
+}
+
 /// **A message with every key in it said by its public path** (#948): each word that is a key
 /// a block made (`#71.0.#7.1.taken.round`, a statement's id and a copy's, then the name) said as
 /// `public_path` says it (`taken[1].round`) — what a kernel names a face by, or a refusal a solid

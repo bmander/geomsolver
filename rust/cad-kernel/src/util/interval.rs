@@ -47,16 +47,29 @@ impl Interval {
 
     pub fn add(self,b: Self) -> Result<Self,Error> { Self::outward(self.lo+b.lo,self.hi+b.hi) }
     pub fn sub(self,b: Self) -> Result<Self,Error> { Self::outward(self.lo-b.hi,self.hi-b.lo) }
+    /// The product, its ends chosen by the operands' signs: the least and the greatest of the four
+    /// products of ends are known from them but where both straddle nought. Rounding to nearest is
+    /// monotonic, so the rounded product of the ends the real extremes take is the extreme of the
+    /// rounded four — the enclosure the four-way reading gives, read in two products.
     pub fn mul(self,b: Self) -> Result<Self,Error> {
-        let p = [self.lo*b.lo,self.lo*b.hi,self.hi*b.lo,self.hi*b.hi];
-        Self::outward(p.into_iter().fold(f64::INFINITY,f64::min),
-            p.into_iter().fold(f64::NEG_INFINITY,f64::max))
+        let ([a0,a1],[b0,b1]) = ([self.lo,self.hi],[b.lo,b.hi]);
+        let (lo,hi) = if a0 >= 0. {
+            if b0 >= 0. { (a0*b0,a1*b1) } else if b1 <= 0. { (a1*b0,a0*b1) } else { (a1*b0,a1*b1) }
+        } else if a1 <= 0. {
+            if b0 >= 0. { (a0*b1,a1*b0) } else if b1 <= 0. { (a1*b1,a0*b0) } else { (a0*b1,a0*b0) }
+        } else if b0 >= 0. { (a0*b1,a1*b1) } else if b1 <= 0. { (a1*b0,a0*b0) } else {
+            ((a0*b1).min(a1*b0),(a0*b0).max(a1*b1))
+        };
+        Self::outward(lo,hi)
     }
+    /// The quotient by an interval clear of nought, its ends chosen by the signs as `mul`'s are.
     pub fn div(self,b: Self) -> Result<Self,Error> {
         if b.contains(0.) { return Err(Error::DivisionByZero); }
-        let p = [self.lo/b.lo,self.lo/b.hi,self.hi/b.lo,self.hi/b.hi];
-        Self::outward(p.into_iter().fold(f64::INFINITY,f64::min),
-            p.into_iter().fold(f64::NEG_INFINITY,f64::max))
+        let ([a0,a1],[b0,b1]) = ([self.lo,self.hi],[b.lo,b.hi]);
+        let (lo,hi) = if b0 > 0. {
+            if a0 >= 0. { (a0/b1,a1/b0) } else if a1 <= 0. { (a0/b0,a1/b1) } else { (a0/b0,a1/b0) }
+        } else if a0 >= 0. { (a1/b1,a0/b0) } else if a1 <= 0. { (a1/b0,a0/b1) } else { (a1/b1,a0/b1) };
+        Self::outward(lo,hi)
     }
     pub fn square(self) -> Result<Self,Error> {
         let a = self.lo*self.lo; let b = self.hi*self.hi;

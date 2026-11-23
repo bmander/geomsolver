@@ -149,3 +149,24 @@ fn a_cones_unknown_half_reads_within_a_half_turn() {
     assert!((half - 30.0).abs() < 1e-9, "{half}");
     holds(&e, "cone", PI * x * x * 10.0 / 3.0, &[[0.0, 0.0, 5.0]], &[[4.0, 0.0, 5.0]]);
 }
+
+/// **A body kept within a half-space moves no solid declared after it** (#953, D1 of #993's
+/// review): `upper`, the ball kept above a plane, is made the body over `big` kept in common with
+/// the half-space's region (`defined::trimmed`) — that region pushed past every solid the document
+/// declares, never between `upper` and the next, so `ball`, declared after it, is still what
+/// `cap`'s terms read: the cap of a ball of 10 above 5 (`πh²(3r − h)/3`), and the whole ball, not
+/// `upper`'s half-space within a box.
+#[test]
+fn a_body_kept_within_a_half_space_moves_no_later_solid() {
+    let head = "unit mm\nuse std\nuse std.sets\n\
+                big := solid(std.sets.Ball(std.origin, r: 20mm))\n\
+                part := solid(big)\n\
+                upper := solid({ p | p in part; p distance(>= 10mm, along: n) std.top })\n\
+                ball := solid(std.sets.Ball(std.origin, r: 10mm))\n";
+    let e = solved(&format!("{head}cap := solid({{ p | p in ball; p distance(>= 5mm, along: n) \
+                             std.top }})\n"));
+    holds(&e, "upper", PI * 100.0 * 50.0 / 3.0, &[[0.0, 0.0, 15.0]], &[[0.0, 0.0, 5.0]]);
+    holds(&e, "cap", PI * 25.0 * 25.0 / 3.0, &[[0.0, 0.0, 7.0]], &[[0.0, 0.0, 3.0], [0.0, 0.0, 12.0]]);
+    let e = solved(&format!("{head}whole := solid({{ p | p in ball }})\n"));
+    holds(&e, "whole", 4.0 / 3.0 * PI * 1000.0, &[[0.0, 0.0, -7.0]], &[[0.0, 0.0, 12.0]]);
+}

@@ -304,6 +304,23 @@ pub(crate) fn area_vector(pts: &[[f64; 3]]) -> [f64; 3] {
     acc
 }
 
+/// The box `lo`..`hi` as one primitive: six facets, each of face 0 of `faces` — a stand-in whose
+/// extent is all that is read (`document::extent_at`).
+pub(super) fn cuboid(lo: [f64; 3], hi: [f64; 3], faces: Vec<String>, of: &str) -> Prim {
+    let corner = |i: usize| -> [f64; 3] { std::array::from_fn(|k| if i >> k & 1 == 1 { hi[k] } else { lo[k] }) };
+    // each side: the axis it is normal to, which end, and its four corners in turn
+    let facets = (0..3).flat_map(|k| [0, 1].map(move |end| (k, end))).map(|(k, end)| {
+        let (a, b) = ((k + 1) % 3, (k + 2) % 3);
+        let at = |sa: usize, sb: usize| corner((end << k) | (sa << a) | (sb << b));
+        let mut pts = vec![at(0, 0), at(1, 0), at(1, 1), at(0, 1)];
+        if end == 0 { pts.reverse() }
+        let mut n = [0.0; 3];
+        n[k] = if end == 1 { 1.0 } else { -1.0 };
+        Facet { pts, n, face: 0, smooth: false }
+    }).collect();
+    finish(facets, faces, of)
+}
+
 pub(super) fn finish(facets: Vec<Facet>, faces: Vec<String>, of: &str) -> Prim {
     let mut bbox = Box3::empty();
     for f in &facets {

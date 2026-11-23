@@ -256,6 +256,14 @@ const projects: Example[] = [{
     + '(right-drag) to see the dimple; raise `sunk` to deepen it, or set it to 0mm and the bare touch '
     + 'is refused rather than built.',
   target: { kind: 'file', path: 'solid_dimpled_ring.sv' },
+}, {
+  label: 'Bought block · a STEP file drilled', key: 'given',
+  description: 'A part bought in as its maker\'s STEP file: drilled_block.step beside the document '
+    + 'is a 40 × 30 × 20 mm block bored through. The document names the file (`use '
+    + 'drilled_block`), draws none of the block again, and states only the change: a 5 mm hole '
+    + 'drilled through 10 mm in from two edges, and a claim that what is left is under 21.4 cm³. '
+    + 'Move or resize the hole, or lower the claim\'s bound to see it refused.',
+  target: { kind: 'directory', path: 'given', entry: 'bought_block.sv' },
 }];
 
 export function exampleCases(): Example[] {

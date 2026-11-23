@@ -268,11 +268,7 @@ fn corpus() -> BTreeMap<String, BTreeMap<&'static str, usize>> {
         let text = std::fs::read_to_string(&path).unwrap();
         let (mut prog, _) = gcs_core::syntax::parse(&text);
         let dir = path.parent().unwrap().to_path_buf();
-        let mut resolve = |m: &str| -> Option<String> {
-            gcs_core::modules::search_paths(m, &name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| gcs_core::library::resolve(m))
-        };
+        let mut resolve = |m: &str| fixtures::module_beside(&dir, &name, m);
         let _ = gcs_core::modules::link(&mut prog, &mut resolve);
         let mut by: BTreeMap<&'static str, usize> = BTreeMap::new();
         for d in drift(&prog) {

@@ -993,6 +993,91 @@ before ports 0.9 s to 0.4 s.
   std.rounds (round)` — comes from `library::resolve`, and what its body refuses is said at that
   `use`, which is the edit's own (`tests/edit_rounds.rs`).  E070 no module, E071 defined twice in
   one file.  `tests/modules.rs` is the gate (`the_standard_library_is_modules_under_std`).
+  **A text that is a STEP file is a given module** (#993 stage 2, `modules::is_step`: its first
+  token, past an optional byte-order mark and whitespace, is `ISO-10303-21;` — one test, which
+  a host asks too), and so is a text the host found by an exchange file's name whatever it holds
+  (`modules::Found::exchange`): never parsed, its `Module::text` empty (one byte of the virtual
+  text, so no later module's spans move past a file of megabytes), no `root`, no `uses`, and
+  what its file gave beside it in `Module::given` (`modules::Given`: the text's
+  `modules::digest` — a fixed-key hash over the bytes, the same on every target — and length,
+  and the one solid the kernel read, a `model::Given`, or why none), shared by every program
+  linked from it.  `relink` hands the reading on (`link_from`'s `like`), so **an edit never
+  reads the file again**, and a fresh link of a text read before on the thread finds it in a memo
+  of the last four, by digest — the host's where it took one (`Found::digest`) — and length,
+  the text neither hashed again nor compared.  The file's text is the host's: no program keeps
+  it, and `Program::module_text` answers a Solvent module's alone.
+  `given_bodies::an_edit_hands_the_reading_on` and
+  `a_given_module_holds_its_file_beside_it` are the gates.
+- **A given body** (#993 stage 2, `flatten/given.rs`).  A given module contributes one thing, the
+  body its file gives, **named by the module's whole path** (`bracket`; `vendor.bracket` after
+  `use vendor.bracket`), a name of the document's root where the document `use`s it (`Walk::new`
+  puts it among `names` and `solid_names`), read through the one lookup wherever a solid's name
+  is: `solid(bracket)`, `p in bracket` in a set's body, a body word's tool (`bracket cut pin`), a
+  claim (`every q in part: q in bracket`), a reading at an instant (`bracket at(under: std.z)
+  90deg`, a solid placed as `part at(under: …)` is: `Walk::read_of` takes a given module's path
+  for a solid's though it is declared only after the walk,
+  `given_bodies::a_given_body_is_read_at_an_instant`).  `solid({ p | p in bracket })` is the
+  body `solid(bracket)` is ([sets.md](sets.md), one membership of a whole solid).  It defines nothing else: `use bracket (x)` is E101
+  (`words::defines`); a file whose own top-level name is the path's head is E071
+  (`program::words::given`).  **What is not read is not there**: `Lookup::raw` notes each read
+  (`Given::note`), and the solid is declared — `Sweep::Given` over the module's reading, its
+  statement the document's `use`, built as `SolidDef::Given` — only once the walk has read it
+  (`Walk::given_bodies`), one per module however many files use it; so `use bracket` alone
+  makes nothing and `part := solid(bracket)` one object (`model::objects`), the given body its
+  stock.  **Never extended**: a body statement whose body is the given one (`drill cut
+  bracket`, `x union bracket`, `x common bracket`, or the primitive they are written in) is E080
+  where it is written, naming the body to make and the statement **as the author wrote it**,
+  their own word and the given body renamed — `` `part := solid(bracket)`, then `drill bore
+  part` `` for `drill bore bracket` over a word `x bore B` of their own, or, where it is read
+  through a definition's formal, `` …, and give `part` where it is given `` — and nothing more of
+  that read (no E106 for a formal's read inside the statement, known by where it is read and the
+  body it reads, `Expansion::misplaced`: the body made of it is the one fix)
+  (`program::solids::body_rule`,
+  `given_bodies::a_given_body_refused_is_said_once_in_the_authors_words`).  **Where it stands**: the document's own space, the
+  file's origin and axes the world's, whatever plane of the world a statement is in (`in
+  std.top { … }`); a read in a definition's body (the document's or a module's, its file `use`ing
+  the module), in a `ring`, or under an `in` of a frame that is not one of `std`'s is E106 at the
+  read (`Given::unplaced` finds it where a closed body's lookup does not, so nothing else is
+  said of a definition's body or a frame's; in a `ring` the ring's own E021 is not said beside
+  it, `judge_rings`: passing the body as part of the ring is no fix for it), since placing a
+  given body is later work (#993 stage 5).  A set or a body made of it **at the root** stands in
+  the world wherever it is later read, as every root solid does: `S := { p | p in bracket }` then
+  `part := solid(S)` under `in f` is the body at the world, as a body over any root solid is
+  there; only a direct read of the given body under such an `in` is refused, since that is what
+  someone placing it would write.  Its lengths are the file's, carried to the document's unit by the model.  **A file
+  the kernel refuses** is one E072 at the `use`, `` `bracket`: `` and the kernel's words
+  (`Refusal`'s, `#n: …` where it names an entity), or how many solids a file of several gives;
+  its name is still known to the flattener and still resolves, and nothing is declared for it.
+  **What it leaves unmade** (`Walk::unmade_by_refusal`) is found by what the statements'
+  references resolve to, never by how they are spelled: the refused path, every declaration a
+  reference of which resolves to one (a body over it, a reading of it at an instant, a body over
+  those, transitively), and every region solid whose probe's relation reads one (with its
+  probe).  A reference resolving to one is quiet (`Expansion::quiet`, as a formal's whose
+  argument named nothing, #253) and its statement is not stated, a declaration included — so no
+  "no such entity" is made of it, and nothing reading it says more: one diagnostic.  What the
+  statement says wrong of its own (`x := part.volume + nosuch`'s `nosuch`), and a name a scope
+  cannot see (`point in part` in a definition's body), is said as it is with a readable file
+  (`given_bodies::a_refused_file_leaves_unmade_only_what_is_made_of_it`).  Statements no text
+  holds are numbered apart (`modules::GIVEN_STMTS`, `FOOT_STMTS`): a given body's declaration
+  `GIVEN_STMTS` plus its module's index, past every module's, a distance's foot's counting down
+  from the top.  A file
+  of several solids is that E072, `` `two`: the file gives 2 solids, and a given body is one solid
+  `` (`a_file_of_several_solids_is_refused_saying_how_many`, over a fixture written by hand).
+  Every read that would place it is refused or right
+  (`a_given_body_is_refused_wherever_it_would_have_to_be_placed`): in a `ring`, a mirrored
+  instance, closed instances of one binding (said once), a joint's frame, a claim or a formal
+  under a posed frame, E106; a body over a body made of it, written under a posed frame, stands
+  where a body over any root solid does, `part at(under: std.z) 90deg` is it turned, and the
+  solid it sweeps about a line is swept.  **Edits**: it has no statement of its own, so a gesture
+  over it is refused in words, the document untouched — deleting it names the statements reading
+  it and the `use` (`edit::remove`, which counts it kept), rounding it names the body to make
+  (`edit::add_rounds`), resizing, turning or drawing on it finds no statement or face to write —
+  while the body made of it is rounded whole, cut or deleted, an edge picked between faces with
+  no name to write refused rather than taken as the whole body; `retext` and `adopt` hold, and the
+  outline has one row, the body (`edits_over_a_given_body_are_made_or_refused_in_words`).  The
+  library's case is `rust/examples/given/bought_block.sv`, its file beside it, held by
+  `every_example` and `the_librarys_case_drills_a_bought_block`.  `tests/given_bodies.rs` is the
+  gate, the stage's own (`a_document_naming_a_file_exports_the_same_solid`) among it.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
   (`Decl::computed`), refused on the sheet by the flattener and compiled to two tapes when traced.

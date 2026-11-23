@@ -473,6 +473,9 @@ impl<'a> Walk<'a> {
             }
             // its walls exact (#243 L2): the interval's pieces, the stations each is solved at, and
             // each wall's edge's numbers at every one of them
+            // a body a file gives (#993 stage 2): its B-rep handed through, in millimetres, moved
+            // only where the recipe is written about another origin than the world's
+            SolidDef::Given(g) => Node::Given(g.node(w.about)),
             SolidDef::Family {..} => Node::Family(super::family::family(&super::family::walls(sk,i)
                 .map_err(|e| format!("`{}`: {e}",solid.name))?,w)),
         };

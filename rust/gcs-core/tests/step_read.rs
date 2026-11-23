@@ -97,8 +97,6 @@ fn every_solid_the_kernel_writes_reads_back_to_itself() {
         assert_eq!((got.edges, got.vertices, got.faces.len()), (written.edges, written.vertices, written.faces.len()), "{name}: counts");
         for (k, (x, y)) in got.faces.iter().zip(&written.faces).enumerate() {
             assert_eq!((x.kind, x.reversed), (y.kind, y.reversed), "{name}: face {k}'s kind and sense");
-            // (a swept surface's frame is the reader's own, its curve the one written)
-            if x.kind == 7 || x.kind == 8 { continue }
             assert_eq!(x.numbers.len(), y.numbers.len(), "{name}: face {k}");
             for (p, q) in x.numbers.iter().zip(&y.numbers) { close(&format!("{name}: face {k}'s numbers"), *p, *q, 1e-12); }
         }

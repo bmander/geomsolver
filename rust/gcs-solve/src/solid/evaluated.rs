@@ -500,9 +500,6 @@ impl EvaluatedSolid {
         let origin = WorldPoint(exact.origin);
         let mm = exact.mm;
         let b = &exact.brep;
-        let bar = (crate::curve::flatness(unit) * mm).min(BREP_RELATIVE_SAG * b.size());
-        let m = crate::brep::mesh::mesh(b, bar, BREP_ANGULAR)
-            .map_err(|e| format!("`{name}`: {e}"))?;
         // one face index a path, so the pieces of one face split by a boolean or a seam are one;
         // the leading faces' first, so an edge is named by the face the facet term named it by
         let mut faces: Vec<String> = Vec::new();
@@ -516,31 +513,8 @@ impl EvaluatedSolid {
             })
             .collect();
         // the B-rep stands about the solid's origin already
-        let local = |p: [f64; 3]| -> [f64; 3] { p.map(|x| x / mm) };
-        let mut facets = Vec::with_capacity(m.tris.len());
-        let mut corner_normals = Vec::with_capacity(m.tris.len());
-        let mut brep_faces = Vec::with_capacity(m.tris.len());
-        let mut order: Vec<usize> = (0..m.tris.len()).collect();
-        order.sort_by_key(|&t| index[m.of[t] as usize]);
-        let mut bbox = Box3::empty();
-        for (t, &fi) in order.iter().map(|&t| (&m.tris[t], &m.of[t])) {
-            let [a, b3, c] = t.map(|i| local(m.pts[i as usize]));
-            let (u, v) = (crate::space::sub(b3, a), crate::space::sub(c, a));
-            // the scale is the solid's own, whatever it is: a facet is dropped only with no area
-            let n = crate::space::cross(u, v);
-            let l = crate::space::norm(n);
-            if !(l > 0.0 && l.is_finite()) { continue }
-            let n = n.map(|x| x / l);
-            for p in [a, b3, c] { bbox.add(p); }
-            let face = &b.faces[fi as usize];
-            let smooth = !matches!(face.surface, crate::brep::geom::Surface::Plane(_));
-            // the surface's own outward normal at each corner (the facet's own at a pole)
-            corner_normals.push(smooth.then(|| t.map(|i| {
-                face.outward(m.pts[i as usize]).unwrap_or(n)
-            })));
-            brep_faces.push(fi);
-            facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
-        }
+        let BrepFacets { facets, corner_normals, brep_faces, bbox } =
+            brep_facets(b, mm, unit, &index, [0.0; 3]).map_err(|e| format!("`{name}`: {e}"))?;
         // (one with faces that mesh to nothing is a failure, not an empty solid)
         if facets.is_empty() && !b.faces.is_empty() {
             return Err(format!("`{name}`: the exact solid meshed to nothing"));
@@ -1264,6 +1238,65 @@ impl Rigid {
 /// The determinant of a 3×3 matrix by rows: its rows' triple product.
 fn det3(r: &[[f64; 3]; 3]) -> f64 {
     plane::dot(crate::space::cross(r[0], r[1]), r[2])
+}
+
+/// **A B-rep's mesh as one primitive's facets** (`from_brep`, and a given body's facet term,
+/// #993 stage 2): `b` (millimetres, `mm` of them a model unit) meshed within the approximation
+/// `unit`'s sagitta and never coarser than `BREP_RELATIVE_SAG` of its size, each triangle a
+/// facet of face `index[f]` for the B-rep face `f` it lies on, in model units less `origin`
+/// (model units), in the order of those indices; with each facet's surface normals at its
+/// corners (where its face is curved) and its B-rep face.  A facet of no area is dropped.
+pub(crate) struct BrepFacets {
+    pub facets: Vec<Facet>,
+    pub corner_normals: Vec<Option<[[f64; 3]; 3]>>,
+    pub brep_faces: Vec<u32>,
+    pub bbox: Box3,
+}
+
+pub(crate) fn brep_facets(b: &crate::brep::topo::Brep, mm: f64, unit: f64, index: &[usize],
+                          origin: [f64; 3]) -> Result<BrepFacets, String> {
+    BREP_MESHES.with(|n| n.set(n.get() + 1));
+    let bar = (crate::curve::flatness(unit) * mm).min(BREP_RELATIVE_SAG * b.size());
+    let m = crate::brep::mesh::mesh(b, bar, BREP_ANGULAR).map_err(|e| e.to_string())?;
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| p[k] / mm - origin[k]) };
+    let mut facets = Vec::with_capacity(m.tris.len());
+    let mut corner_normals = Vec::with_capacity(m.tris.len());
+    let mut brep_faces = Vec::with_capacity(m.tris.len());
+    let mut order: Vec<usize> = (0..m.tris.len()).collect();
+    order.sort_by_key(|&t| index[m.of[t] as usize]);
+    let mut bbox = Box3::empty();
+    for (t, &fi) in order.iter().map(|&t| (&m.tris[t], &m.of[t])) {
+        let [a, b3, c] = t.map(|i| local(m.pts[i as usize]));
+        let (u, v) = (crate::space::sub(b3, a), crate::space::sub(c, a));
+        // the scale is the solid's own, whatever it is: a facet is dropped only with no area
+        let n = crate::space::cross(u, v);
+        let l = crate::space::norm(n);
+        if !(l > 0.0 && l.is_finite()) { continue }
+        let n = n.map(|x| x / l);
+        for p in [a, b3, c] { bbox.add(p); }
+        let face = &b.faces[fi as usize];
+        let smooth = !matches!(face.surface, crate::brep::geom::Surface::Plane(_));
+        // the surface's own outward normal at each corner (the facet's own at a pole)
+        corner_normals.push(smooth.then(|| t.map(|i| {
+            face.outward(m.pts[i as usize]).unwrap_or(n)
+        })));
+        brep_faces.push(fi);
+        facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
+    }
+    Ok(BrepFacets { facets, corner_normals, brep_faces, bbox })
+}
+
+thread_local! {
+    /// How many B-reps this thread has meshed into facets (`brep_facets`).
+    static BREP_MESHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many B-reps this thread has meshed into a solid's facets** — an exact solid's boundary or
+/// a given body's (#993 stage 2): what a test of a host's thread reads before and after the calls
+/// it makes, to hold that they mesh nothing (`page_thread.rs`).  A count, not a time: the gate is
+/// the same on a slow machine.
+pub fn brep_meshes() -> usize {
+    BREP_MESHES.with(|n| n.get())
 }
 
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large
