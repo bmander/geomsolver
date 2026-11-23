@@ -85,11 +85,11 @@ What (C) costs, stated:
 
 ## The rules as built
 
-Each document below was run through `solventc` at `375efd5`, stage 2 with review's fixes, with the
-kernel's fixtures (`rust/gcs-core/tests/step_file/`, written by OCCT 7.9.3) copied beside it.
-`bracket.step` is `drilled_ap214.step`: a 40 × 30 × 20 block from the origin, drilled through along
-z by a hole of radius 6 about (20, 15). Its volume is `24000 − 720π = 21738.053`, its area `5200 +
-168π = 5727.79`.
+Each document below was run through `solventc` at `375efd5`, stage 2 with review's fixes, and again
+at `d08a939`, with the real-file fixes, with the kernel's fixtures
+(`rust/gcs-core/tests/step_file/`, written by OCCT 7.9.3) copied beside it. `bracket.step` is
+`drilled_ap214.step`: a 40 × 30 × 20 block from the origin, drilled through along z by a hole of
+radius 6 about (20, 15). Its volume is `24000 − 720π = 21738.053`, its area `5200 + 168π = 5727.79`.
 
 **1. Recognised by content, or by the name it was found by.** A text whose first token, after an
 optional byte-order mark and white space, is `ISO-10303-21;` is an exchange file and its module a
@@ -134,7 +134,8 @@ in this file, and `use bracket` names the body its file gives: one name, two thi
 | `upper := solid({ p \| p in bracket; p distance(>= 10mm, along: n) std.top })` | `upper.volume = 10869`, its upper half (`10869.026645 mm³` built) |
 | `bracket cut pin`, `pin` a prism of radius 3 at (5, 5) from z = −10 to 30 | `pin.volume = 565.487`, its two ends (`180π`) |
 | `claim every q in pin: q in part`, `pin` of radius 2 within the material | `holds, measured 3` |
-| `claim every q in part: q in bracket` | `undecided, measured 0`, `` nearest at (0, 0, 20), between a face of `bracket` and a face of `bracket` ``, `unresolved: containment is within curved-faceting uncertainty` (their boundaries are one) |
+| `claim every q in part: q in bracket` and `claim every q in bracket: q in part` | each `holds, measured 0 (interval [0, 0])`: a body and its untouched stock are one set |
+| the same claim, `drill cut part` beside it | `undecided, measured 0`, `` between a face of `bracket` and a face of `bracket` ``, `unresolved: containment is within curved-faceting uncertainty` (the bore is shared; open) |
 
 `solid(bracket)` builds to the file's B-rep untouched (`405` entities exported), and so does the
 set spelling: one membership of a whole solid, `{ p | p in S }`, is `S`'s body, as `solid(S)` is,
@@ -208,10 +209,15 @@ have to be placed is refused at the read:
 |---|---|
 | a component's body, `component Holder() { part := solid(bracket) }` | `error[E106]: `` `bracket` `` is the body a file gives, which stands in the document's own space, and this reads it in a definition's body, which its instance's frame places: placing a given body is not built yet (#993 stage 5), so read it at the document's root` |
 | a `ring 4 about std.z { … }` | the same E106, "in a `ring`, which turns each copy", and nothing else |
+| `left := Holder() mirrored(front)`, or two instances of `Holder` | the definition's-body E106, said once |
+| `in (arm := frame) { part := solid(bracket) }`, `arm spins(1) o` | the same E106, ``in `in arm`, a frame that is not the world's`` |
+| `in f { claim every q in part: q in bracket }` | the same E106 at `bracket` |
 | `f := frame`, `in f { … }` | the same E106, ``in `in f`, a frame that is not the world's`` |
 
-Only a direct read is refused. A set or a body made of the given body at the root stands in the
-world wherever it is later read, as every root solid does: `S := { p | p in bracket }` at the root
+Only a read that a frame would place is refused. `repeat 2 { part := solid(bracket) }` makes two
+copies, each the file's body where it stands; `part at(under: std.z) 90deg` is the body made of it
+turned. A set or a body made of the given body at the root stands in the world wherever it is later
+read, as every root solid does: `S := { p | p in bracket }` at the root
 and `part := solid(S)` inside `in f { … }` is the block at the world (`part.bounds.x1 = 40`).
 
 Lengths are the file's, read in its own units and carried to the document's: a `unit in` document
@@ -229,7 +235,8 @@ still said:
 | `assembly_ap214.step`, two cubes by XCAF | `` error[E072]: `pair`: #376: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies are not read yet `` |
 | `placed_ap214.step`, one cube XCAF located | `` error[E072]: `given`: #372: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies are not read yet `` |
 | a header with no `FILE_SCHEMA`, read by `part := solid(junk)` and `other := solid(part)` | `` error[E072]: `junk`: the file's header names no schema (FILE_SCHEMA) ``, and nothing else |
-| `drilled_ap214.step` with a second `MANIFOLD_SOLID_BREP` over its shell | `` error[E072]: `twice`: the file gives 2 solids, and a given body is one solid `` |
+| `two_solids_ap214.step`, two blocks in one representation | `` error[E072]: `two`: the file gives 2 solids, and a given body is one solid `` |
+| CADGenBench 240's `input.step`, 6.6 MB | `` error[E072]: `input`: #92335: face 965: its outer loop turns against the face's sense (2.5690052629002286e-4 enclosed in its parameters): the face's normal points into the material its edges bound it on `` |
 | an empty `empty.step` | `` error[E072]: `empty`: line 1, byte 0: the file does not start `ISO-10303-21;` at the end `` |
 | `notstep.step` holding `hello` | `` error[E072]: `notstep`: line 1, byte 0: the file does not start `ISO-10303-21;` at `hello ` `` |
 | `shell_ap214.step` read by `part := solid(shell)`, `other := solid({ p \| p in part })` and `x := part.volume + nosuch` | the E072 at the `use`, and `` error[E101]: `x`: no such entity: `nosuch` ``: nothing of `part` or `other` |
@@ -244,6 +251,32 @@ module `selfonly` ``. The first candidate that is a file is the module; one that
 not read is said and resolves nothing, never a farther file standing in for it — for a drawing
 whose model `use`s it, `` error[D001]: model `…/m.sv`: module `dims`: …/dims.sv: invalid utf-8
 sequence of 1 bytes from index 0 ``.
+
+**The page's gestures.** A given body has no statement of its own, so a gesture over it is refused
+in words and the document is left as it was (app.md;
+`edits_over_a_given_body_are_made_or_refused_in_words`, not run here: the CLI makes no gestures).
+Deleting it says `` `bracket` is the body a file gives, made by its `use` and by no statement of its
+own: delete the statements that read it, or the `use` ``; rounding it is refused as never extended,
+naming the body to make; an edge picked between faces no document can name is refused as having "no
+name the document can write", where it rounded the whole body. The body made of it is rounded, cut
+or deleted as any body is. The page never meshes a given body on its own thread, only in a worker: with a 2.7 MB file
+an edit stalled the page 36 s and now stalls it 0.4 s, and the worker's build went from 63 s to 8 s
+(the mesher had measured the boundary once per face) — the page fix's own measurements, not repeated
+here.
+
+**The library's case** is `rust/examples/given/bought_block.sv`, with `drilled_block.step` beside
+it: the block bought in, a 5 mm hole drilled through it, and a claim on its volume.
+
+```
+$ solventc rust/examples/given/bought_block.sv --where block.volume
+rust/examples/given/bought_block.sv: solved
+  volume(<= 21400 * 1mm^3) block: 21345.4 mm^3 ± 0 mm^3 <= 21400 mm^3: claimed, kept
+  1 params, 1 equations, structural rank 1; DOF 0
+  block.volume = 21345.4
+```
+
+`24000 − 720π − 6.25π · 20 = 21345.354`. The bound is written `21400 * 1mm^3`: `21400mm^3` is
+(21400 mm)³, and `claim volume(<= 21400mm^3) part` is kept against `9.80034e+12 mm^3`.
 
 ## Measurements
 
@@ -269,9 +302,79 @@ own reading face by face (`step_roundtrip::same`: every face on its original sur
 every edge and vertex where the file had it), and the kernel's writer holds what it writes to
 `step_check::verify`.
 
-*To be added by the stage's gate run:* `solventc` over real files of many faces — the 32
-CADGenBench editing inputs and benchy — read through a document: the time to read, build and
-export each, and its round trip. Not measured here.
+### Real files
+
+The three-line document — `unit mm`, `use input`, `part := solid(input)` — over the 32
+CADGenBench editing inputs and #3DBenchy (brep-bench's `integration/benchy.step.gz`), none of
+them committed. Each was elaborated, built, exported (the writer's own check passing), and its
+export read again as a given body in a second document and built. **The numbers are the gate run's**
+(`solventc` built under `[profile.test]` — opt-level 2, no LTO, debug assertions — on a shared
+4-core machine under load 4–9, single wall-clock runs, not medians), corrected below by what the
+real-file fixes changed; the rows the fixes changed were run again at `d08a939`.
+
+| file | size | elaborate | build / write (run) | volume mm³ | faces | entities | read back as a given body |
+|---|---|---|---|---|---|---|---|
+| benchy | 6.04 MB | 2.3 s | 4.7 s / – | 15550.952442 | 1385 | – | export refused (below) |
+| cgb201 | 2.80 MB | 700 ms | 1216 ms / 954 ms (2.83 s) | 2544509.737401 | 435 | 59927 | 435 faces, Δ 5.8e-07 |
+| cgb202 | 17.93 MB | 3.4 s | 8167 ms / 5030 ms (16.69 s) | 4382320.553399 | 2157 | 305028 | 2157 faces, Δ 2.9e-07 |
+| cgb203 | 3.76 MB | 900 ms | 2554 ms / 2126 ms (5.51 s) | 3150273.054684 | 156 | 57351 | 156 faces, Δ 4.2e-07 |
+| cgb204 | 1.39 MB | 300 ms | 569 ms / 299 ms (1.23 s) | 4554.651527 | 186 | 26548 | 186 faces, Δ 7.9e-06 |
+| cgb205 | 1.05 MB | 200 ms | 282 ms / 313 ms (0.81 s) | 438357.637483 | 212 | 63541 | 212 faces, Δ 9.2e-08 |
+| cgb206 | 4.97 MB | 1.0 s | 1785 ms / 1350 ms (4.15 s) | 848139.273664 | 637 | 108934 | 637 faces, Δ 3.7e-08 |
+| cgb207 | 2.17 MB | 700 ms | 1515 ms / 1267 ms (3.44 s) | 111690.284183 | 286 | 50878 | 286 faces, Δ 2.3e-07 |
+| cgb208 | 4.73 MB | 800 ms | 1063 ms / 1181 ms (3.17 s) | 2110134.494347 | 586 | 109338 | 586 faces, Δ 1.5e-07 |
+| cgb209 | 0.61 MB | 62 ms | 26 ms / 116 ms (0.21 s) | 77896.054143 | 118 | 25252 | 118 faces, Δ 3.5e-09 |
+| cgb211 | 9.92 MB | 1.3 s | 3538 ms / 2210 ms (7.30 s) | 3038789.186913 | 560 | 138406 | 560 faces, Δ 5.1e-07 |
+| cgb212 | 2.92 MB | 700 ms | 1489 ms / 1168 ms (3.39 s) | 1399836.610073 | 354 | 72174 | 354 faces, Δ 3.4e-07 |
+| cgb214 | 2.74 MB | 500 ms | 1421 ms / 815 ms (2.78 s) | 1849949.813237 | 430 | 76504 | 430 faces, Δ 1.6e-07 |
+| cgb215 | 1.74 MB | 300 ms | 312 ms / 348 ms (1.00 s) | 54470.955142 | 392 | 38880 | 392 faces, Δ 9.2e-09 |
+| cgb217 | 2.18 MB | 700 ms | 952 ms / 1260 ms (2.79 s) | 223473.799092 | 364 | 46633 | 364 faces, Δ 2.8e-07 |
+| cgb218 | 0.30 MB | 35 ms | 8 ms / 70 ms (0.13 s) | 3417501.086943 | 93 | 13953 | 93 faces, Δ 1.2e-12 |
+| cgb224 | 0.95 MB | 63 ms | 16 ms / 149 ms (0.22 s) | 75591.248780 | 127 | 42605 | 127 faces, Δ 1.1e-07 |
+| cgb225 | 1.81 MB | 200 ms | 479 ms / 303 ms (1.03 s) | 439514.777897 | 358 | 53099 | 358 faces, Δ 5.2e-08 |
+| cgb229 | 0.97 MB | 200 ms | 621 ms / 397 ms (1.30 s) | 383922.578392 | 120 | 22667 | 120 faces, Δ 2.2e-08 |
+| cgb230 | 1.33 MB | 300 ms | 493 ms / 398 ms (1.13 s) | 3467004.256284 | 141 | 31218 | 141 faces, Δ 4.1e-07 |
+| cgb231 | 0.40 MB | 45 ms | 9 ms / 55 ms (0.12 s) | 639467.976556 | 98 | 15313 | 98 faces, Δ 6.7e-09 |
+| cgb238 | 4.88 MB | 700 ms | 2087 ms / 1149 ms (3.97 s) | 420546.703641 | 404 | 115300 | 404 faces, Δ 7.2e-08 |
+| cgb240 | 6.61 MB | E072 at the `use`, 1.1 s | – | – | – | – | – |
+| cgb241 | 1.79 MB | 100 ms | 298 ms / 294 ms (0.77 s) | 925689.633307 | 52 | 20255 | 52 faces, Δ 5.4e-07 |
+| cgb242 | 6.41 MB | 1.5 s | export 6.4 s | 410953.608062 | 879 | 142302 | 879 faces, Δ 5.7e-08 (re-read 4.4 s) |
+| cgb243 | 4.48 MB | 600 ms | 1732 ms / 1520 ms (3.96 s) | 297319.162371 | 588 | 168676 | 588 faces, Δ 7.4e-07 |
+| cgb244 | 1.47 MB | 200 ms | 361 ms / 245 ms (0.87 s) | 315912.952279 | 309 | 27348 | 309 faces, Δ 1.1e-08 |
+| cgb245 | 1.69 MB | 93 ms | 40 ms / 162 ms (0.32 s) | 121083.288062 | 450 | 60205 | 450 faces, Δ 1.4e-10 |
+| cgb246 | 2.83 MB | 600 ms | export 2.0 s | 599863.975682 | 617 | 75014 | 617 faces, Δ 5.1e-08 (re-read 1.4 s) |
+| cgb247 | 7.47 MB | 800 ms | 1731 ms / 1187 ms (3.78 s) | 51113373.082765 | 1026 | 156948 | 1026 faces, Δ 7.2e-09 |
+| cgb248 | 12.38 MB | 3.0 s | export 12.6 s | 33106181.345197 | 1197 | 240676 | 1197 faces, Δ 4.2e-08 (re-read 6.6 s) |
+| cgb249 | 3.34 MB | 700 ms | 1002 ms / 1232 ms (2.87 s) | 1505668.428525 | 283 | 59601 | 283 faces, Δ 3.1e-06 |
+| cgb250 | 4.79 MB | 900 ms | export 3.6 s | 633178.722577 | 642 | 91534 | 642 faces, Δ 2.8e-06 (re-read 2.6 s) |
+
+Δ is the re-read body's volume against the first build's, relative. **31 of the 32 inputs build,
+export, read back as a given body and build to the same solid** — the corpus tool
+`given_bodies::the_corpus_through_a_document` (ignored; `STEP_CORPUS=… STEP_DOCUMENT_FILES=…`)
+holds each to the same solid — the volume within 7.9e-6 in every case and within 1e-6 in 28.
+cgb240 is refused at its `use`. Before the real-file fixes four of the 32 were refused at the export
+and one export did not read back:
+
+| file | before | after (export / re-read, s) |
+|---|---|---|
+| cgb240 | refused at the export after 2.4 s | E072 at the `use` in 1.1 s |
+| cgb242 | exported; its re-read refused | 6.4 / 4.4 |
+| cgb246 | refused after 34 s | 2.0 / 1.4 |
+| cgb248 | refused after 443 s | 12.6 / 6.6 |
+| cgb250 | refused after 166 s | 3.6 / 2.6 |
+
+Run again here at `d08a939` (same profile, a loaded machine) these five gave 1.8 s; 8.3 / 5.9;
+2.9 / 2.0; 18.7 / 9.3; 4.8 / 3.4 — the same outcomes, slower. **benchy** builds to 15550.952442
+mm³, 1385 faces: 3.1e-6 from brep-bench's reference (15550.999870, by the edges' curves) and 6e-8
+from Open CASCADE's reading (15550.9534). Its export is refused, its glTF (139 s) and PNG (106 s)
+are written (44 s and 39 s in an earlier, quieter run), and its STL is refused (below). The
+fixtures' STL, glTF and PNG each took under 0.6 s.
+
+Reading is once per thread: linking the three-line document over cgb202 (17.9 MB) took 3.59 s
+(`step_read::read` alone 3.52 s), a second and third link of the same text 18.2 ms and 17.1 ms (the
+digest memo), a `relink` after an edit 1.4 µs, and `elaborate` 0.2–0.9 ms. `--where part.volume`
+and `part.area` of an untouched given body are read off its B-rep with no mesh: on cgb201 39 s
+became 2.3 s. `--where part`, which reports its box, still meshes it (60 s on benchy).
 
 ## The later stages' documents, in this spelling
 
@@ -422,7 +525,39 @@ rule above is the fixed one, run against `375efd5`.
   (architecture.md).
 
 Left open, older than stage 2: a face path that names nothing is accepted until the solid is built
-(below).
+(*What stays open*, below).
+
+## What real files found
+
+The gate's run over real files found what the kernel's small fixtures could not; each was fixed
+in the kernel or the evaluator, and the measurements above are after the fixes.
+
+- **A face turned against its loops was read, and refused only at the export** (cgb240, face
+  #92335: `.F.` on a cylinder 0.012 mm wide, its neighbours tangent across both edges and facing
+  exactly the other way). The export said `the built boundary is invalid: … loop 0 turns the wrong
+  way`, of a body nothing had built. The reader now holds each loop to its face's sense at the
+  edges' measured tolerances (never the 0.02 mm the file states), and refuses the file at the
+  `use` (rule 8). Which way the file meant is not guessed.
+- **A sliver thinner than its tolerance was read turning one way and, written again, the other**
+  (cgb242, face #75264, a spline's strip some 1e-5 mm wide): its export did not read back, `loop 0
+  turns the wrong way`. Such a sliver now turns no way.
+- **A lune of two edges was read as the body touching itself**, after 34 s to 443 s spent reading
+  the body's faces as rounds read them (cgb246, cgb248, cgb250, each with a lune between tangent
+  rounds), and the refusal advised rounding by statements naming face keys no document can write.
+  A lune's two edges are its two sides; a given body nothing was done to is no longer asked what
+  rounds are, and where one does touch itself the message is the file's (`` the faces the file
+  `bracket` gives meet there … the body the file gives is no manifold solid ``), with no advice.
+- **A crescent whose two ends stand 3 µm apart at a vertex did not mesh** (cgb248's plane face
+  #17), and with it went the body's volume. The mesher now lays a use's last corner where the
+  triangulation laid it.
+- **Every export the core writes is read back by the kernel's reader** after `step_check`, and a
+  file the reader refuses is refused, so no document's export is one its next `use` would refuse.
+  benchy's is so refused today: `` the STEP file does not read back: the kernel's reader refuses
+  it: #186157: face 180: edge 354's curve in its parameters leaps 4.385387517242087e-2 … it is no
+  one curve there, near [0.439203, 0.000387] in its parameters `` — the writer's p-curve leaps
+  across a spline sheet's fold, which `step_check` passed. Open.
+- **`--where` on a given body meshed it**, slower than building it: its volume and area are now
+  read off the B-rep (above).
 
 ## What reads better
 
@@ -446,21 +581,29 @@ Left open, older than stage 2: a face path that names nothing is accepted until 
 - **A module name is now sometimes a solid.** A reader of `use vendor.bracket` cannot tell from the
   `use` whether it brings components or a body; the name's reads say so.
 
-## What is refused, and left
+## What stays open
 
-- **Several solids in one file**, and assemblies (the kernel refuses a file's product structure):
-  E072 at the `use`.
-- **Placing a given body** — in a definition's body, a `ring`, an `in` of the document's own frame
-  — is E106 (stage 5).
-- **Its faces have no name a document can write**, and no reader is shown a key for one: the
-  report gives the body's measures and no row per face, and a claim's witness says `` a face of
-  `bracket` ``. Rounds, deletes and moves on a given body wait for stage 3's selection and stage
-  4's edits.
+- **Several solids in one file**, and assemblies, a single part XCAF wrote with a location among
+  them (`placed_ap214.step`): E072 at the `use`.
+- **Placing a given body** in a frame — a definition's body, a `ring`, a mirrored or posed
+  instance, a joint's frame, a claim or a formal under a posed `in` — is E106 (stage 5).
+- **Its faces have no name a document can write** (stage 3), and rounds, deletes and moves on it
+  wait for stage 4. `repeat a in part` over a body made of one makes no copy, and says nothing.
 - **A face path that names nothing** (`input.near.side`, `ball.nosuch.side` alike) is accepted
-  until the solid is built (above). Older than stage 2; stage 3's selection is where it is
-  answered.
-- **The OCCT route** refuses a given body, naming `--kernel rust` (solids.md); the core's kernel is
-  the export.
+  until the solid is built. Older than stage 2.
+- **The export's warning of thin faces still names face keys**: cgb246's export says `` `part`
+  holds 2 faces thinner than the export's 10.000 µm …: the first, `input.#given231`, 7.835 µm
+  across, beside `input.#given229` and `input.#given233` ``, and advises moving "one cut" — names
+  and advice no document over a given body can act on.
+- **A containment beside a cut**: `claim every q in part: q in bracket`, `drill cut part`, is
+  undecided within the faceting's uncertainty where the bore is shared.
+- **benchy's export does not read back** (above), and **its STL is refused**: `the mesh has 1
+  triangles facing against their surfaces`, a triangle by a pole.
+- **A file turned against its own loops is refused, not healed** (cgb240): nothing guesses which
+  of the face's sense and its boundary the file meant.
+- **The OCCT route** refuses a given body, naming `--kernel rust`; the core's kernel is the export.
+- **A bound written `21400mm^3` is (21400 mm)³**, silently: write `21400 * 1mm^3`. A rule of the
+  units, older than stage 2.
 
 ## The issue's open questions, as the experiment answers them
 

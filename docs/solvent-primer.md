@@ -399,7 +399,9 @@ about. Radii mean the same in every view.
 ### 1.6 Values, unknowns and units
 
 **Expressions**: `+ - * / ^`, parentheses, `pi`, `tau`, and `sqrt abs sin cos tan asin acos atan
-atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.**
+atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.** A power binds
+the number with its unit: `21400mm^3` is (21400 mm)³, so a volume of 21 400 mm³ is `21400 *
+1mm^3` (`claim volume(<= 21400mm^3) part` is kept against `9.80034e+12 mm^3`).
 
 **A chosen number**: `if(COND, A, B)` is `A` where `COND` holds and `B` where not, `COND` a
 `when`'s comparisons (1.7) — `pitch := if(n > 12, 2mm, 3mm)`, or a copy's own number in one
@@ -2429,6 +2431,7 @@ document's root:
 | `drill cut part` | a hole drilled in the body made of it (below) |
 | `bracket cut pin` | the given body as a body word's tool: `pin` less the bracket |
 | `claim every q in pin: q in part` | a containment claim over it |
+| `claim every q in part: q in bracket` | holds exactly, `measured 0 (interval [0, 0])`, either way, while `part` is untouched |
 | `moved := bracket at(under: std.z) 90deg` | the block turned a quarter about the world's z |
 
 - **Never extend the given body; name the body you make of it.** `drill cut bracket` is E080 —
@@ -2441,10 +2444,11 @@ document's root:
   make of it, never the given body beside them.
 - **It stands where the file puts it**: the file's origin and axes are the world's, and an `in
   std.top { … }` around the statement moves nothing. Read it in a component's body, a `ring`, or
-  an `in f { … }` of a frame of your own and it is E106 — "placing a given body is not built yet
-  (#993 stage 5), so read it at the document's root". To stand it elsewhere, read it at an instant
-  at the root (`bracket at(under: std.z) 90deg`). Draw what you add in the world's planes, at the
-  file's coordinates.
+  an `in f { … }` of a frame of your own (a joint's frame, a claim under it, a mirrored instance's
+  body) and it is E106 — "placing a given body is not built yet (#993 stage 5), so read it at the
+  document's root". To stand it elsewhere, read it at an instant at the root (`bracket at(under:
+  std.z) 90deg`); a `repeat` copies it where it stands. Draw what you add in the world's planes, at
+  the file's coordinates.
 - **Units are the file's, carried to the document's.** A `unit in` document reading a millimetre
   file gets the same body in inches (`part.volume = 1.32654`, for 21738.05 mm³); a file written in
   inches, metres or feet reads to its size.
@@ -2453,14 +2457,19 @@ document's root:
   solid ``, `` `pair`: #376: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies
   are not read yet ``, `` `twice`: the file gives 2 solids, and a given body is one solid ``, and
   for an empty `empty.step` `` `empty`: line 1, byte 0: the file does not start `ISO-10303-21;` at
-  the end ``. Nothing is said of what is made of it; a statement's own faults still are.
+  the end ``; a face the file turned against its own loops is `` …: its outer loop turns against
+  the face's sense (…): the face's normal points into the material its edges bound it on ``,
+  refused, not healed. Nothing is said of what is made of it; a statement's own faults still are.
+- **What you export is read back.** `--step` writes nothing the kernel's reader would refuse at
+  your next `use` of it: `the STEP file does not read back: the kernel's reader refuses it: …`.
 - **Its faces have no names you can write.** The report gives the body's measures and no row per
   face, and a claim's witness says `` a face of `bracket` ``. A face of a given body cannot yet
   be rounded, deleted or moved (#993 stages 3 and 4), and a face path over it that names nothing
   (`bracket.near.side`) is not refused until the solid is built. `use bracket (x)` is E101, and a
   top-level `bracket` of your own beside `use bracket` E071.
 - **A document is never its own module.** `bracket.sv` saying `use bracket` reads the
-  `bracket.step` beside it.
+  `bracket.step` beside it. `rust/examples/given/bought_block.sv`, beside `drilled_block.step`,
+  is the library's case.
 
 `bracket.step` here is a 40 × 30 × 20 block drilled through along z by a hole of radius 6 about
 (20, 15); a second hole of radius 3 is drilled at (8, 8):

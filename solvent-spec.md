@@ -929,14 +929,15 @@ from); a turn short of a whole one is capped `.start` where its interval begins 
 ends. A line named
 `under:` is the turn about it (§6.14 **[0.200]**), so a revolution adds no unknown.
 
-**A given body is a solid** **[0.230]**. The body a file gives, named by its given module's
-path (§14.4), is a set as any solid is: `solid(bracket)` is the body whose stock it is,
-`solid({ p | p in bracket; … })` the points of it a set's other terms keep, `bracket at(under:
-std.z) 90deg` it read at an instant (§6.14), and it is the tool of a body word as any solid is
-(`bracket cut pin`). It is never a body word's body (**E080**, below), and never itself an object:
-what the document makes of it is. Its faces are the file's, each on its own surface, its edges and
-vertices where the file has them; a document that only names it (`part := solid(bracket)`) MUST
-build to that boundary unchanged, so its exact export is the same solid.
+**A given body is a solid** **[0.230]**. The body a file gives, named by its given module's path
+(§14.4), is a set as any solid is: `solid(bracket)` is the body whose stock it is, `solid({ p | p in
+bracket; … })` the points of it a set's other terms keep, `bracket at(under: std.z) 90deg` it read
+at an instant (§6.14), and it is the tool of a body word as any solid is (`bracket cut pin`). A body
+whose stock it is, nothing taken from it or added, is one set with it: a containment claim between
+the two holds exactly, either way. It is never a body word's body (**E080**, below), and never
+itself an object: what the document makes of it is. Its faces are the file's, each on its own
+surface, its edges and vertices where the file has them; a document that only names it (`part :=
+solid(bracket)`) MUST build to that boundary unchanged, so its exact export is the same solid.
 
 **One membership of a whole solid is its body** **[0.230]**. `solid({ p | p in S })`, `S` a
 solid named whole and nothing else in the set, is `solid(S)`: the same solid, its faces named
@@ -3640,10 +3641,13 @@ part := solid(bracket)      // the points of the body the file gives
 - **It stands in the document's own space.** The file's origin and axes are the world's
   (`std.origin`, `std.x`, `std.y`, `std.z`), whatever plane of the world a statement is written in
   (`in std.top { … }`). Its lengths are read in the file's own units and carried to the document's
-  `unit`. It stands elsewhere read at an instant, as any solid does. A read where a frame would have
-  to place it — in a definition's body, in a `ring`, or under `in` of a frame that is not one of
-  `std`'s — is **E106** at the read, once, never left at the world. A set or a body made of it at
-  the root stands in the world wherever it is read later, as every root solid does.
+  `unit`. It stands elsewhere read at an instant, as any solid does. A read a frame would have to
+  place — in a definition's body (an instance's, mirrored or not, said once for all instances of
+  one binding), in a `ring`, or under `in` of a frame that is not one of `std`'s (a joint's frame,
+  a claim under it, a formal given the body in an instance posed so) — is **E106** at the read,
+  never left at the world. A `repeat` turns nothing: each copy is the body where it stands. A set
+  or a body made of it at the root stands in the world wherever it is read later, as every root
+  solid does.
 - **A file that gives no one solid** — one the implementation cannot read, or one giving several
   solids — is **E072** at the `use`, once: the reader's reason with the module's name in front, or
   how many solids the file gives. Nothing is said of what is made of it — a statement whose
@@ -3651,10 +3655,12 @@ part := solid(bracket)      // the points of the body the file gives
   are said as with a readable file.
 
 *Non-normative:* the reference implementation reads a manifold solid of AP203, AP214 or AP242
-advanced B-rep through its kernel's reader and hands the B-rep through untouched, so a document
-that only names a file exports the same solid; an assembly, a shell-based surface model, and a
-file of several solids are refused. Choosing a given body's faces by what they are, editing it by
-statements over them, and placing it (or part of it) in a frame are not specified in this draft.
+advanced B-rep through its kernel's reader and hands the B-rep through untouched, so a document that
+only names a file exports the same solid; an assembly, a shell-based surface model, a file of
+several solids, and a face whose loops turn against its sense are refused. Every STEP file it writes
+is read back by the same reader, and one the reader refuses is not written. Choosing a given body's
+faces by what they are, editing it by statements over them, and placing it (or part of it) in a
+frame are not specified in this draft.
 
 **[0.30] [0.48] Nothing is imported bare unless the `use` names it.** A file reaches a module's component, relation word, param or group by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.fwA` — or bare, where its `use` lists the name in brackets:
 
@@ -3817,7 +3823,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E067 | a plane that cannot stand on its held axes: two wholly held axes that do not meet or run alike, or a plane held where its held axes are not — a plane's axes pass through its origin (§6.7) **[0.43]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component or a relation word defined twice in one file (§14.4, §9.9) **[0.12]** **[0.30]**; **[0.48]** a relation word defined over a word of the language's own, and an import of a name twice, from two modules, over the file's own definition, or over a built-in word (§14.4); **[0.84]** an interface defined twice in one file, or over a component of the file (§8.1); **[0.230]** a `use` of a given module whose path's first segment the file defines at its top level (§14.4) |
-| E072 | **[0.230]** a `use` of a given module whose file gives no one solid: the reader's refusal (a file found as `NAME.step` that is empty or no exchange text among them), or how many solids it gives (§14.4) |
+| E072 | **[0.230]** a `use` of a given module whose file gives no one solid: the reader's refusal (a file found as `NAME.step` that is empty or no exchange text, a face whose loops turn against its sense, among them), or how many solids it gives (§14.4) |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body; **[0.42]** a face over a point standing in space, and a prism's side generating in a plane the solve places (§6.15.2) |
 | E081 | invalid revolution axis (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
@@ -3826,7 +3832,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks or holds of another type, and an interface's `Side` member (§8.1) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
-| E106 | a construct the language has and elaboration does not yet: a driving row in a second load scenario (§9.11) **[0.164]**; **[0.230]** a given body read where it would have to be placed — in a definition's body, a `ring`, or under `in` of a frame that is not the world's (§14.4) |
+| E106 | a construct the language has and elaboration does not yet: a driving row in a second load scenario (§9.11) **[0.164]**; **[0.230]** a given body read where a frame would have to place it — in a definition's body (a mirrored instance's too), a `ring`, or under `in` of a frame that is not the world's (a joint's, a claim's, a posed instance's formal) (§14.4) |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
 | E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.162]** |
 | E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.162]** |

@@ -31,6 +31,17 @@ than a farther one standing in. Through 0.229 `use bracket` beside `bracket.step
 module `bracket` ``) and `solid(bracket)` E101 (`` no such entity: `bracket` ``); no document named
 a file it did not write, and `foo.sv` saying `use foo` linked itself.
 
+**Where it is refused, and where it stands.** E106 is said at a read in a mirrored instance's
+body, once for all closed instances of one binding, in a joint's frame, and in a claim or a formal
+under a posed `in`; a `repeat` copies it where it stands, and `part at(under: std.z) 90deg` turns
+the body made of it. A body whose stock is the given body, nothing taken or added, is one set with
+it: `claim every q in part: q in bracket` holds exactly, `measured 0 (interval [0, 0])`, either
+way. A file holding a face whose loops turn against its sense is E072 at the `use` (`` `input`:
+#92335: face 965: its outer loop turns against the face's sense (…): the face's normal points
+into the material its edges bound it on ``), and every STEP export is read back by the kernel's
+reader, one it refuses not written (`` the STEP file does not read back: the kernel's reader
+refuses it: … ``). The library's case is `given/bought_block.sv`.
+
 **One membership of a whole solid is its body.** `solid({ p | p in S })`, `S` a solid named whole,
 is `solid(S)`: the same faces and names, the same STEP and STL to the byte, for an authored solid
 as for a given one; where `S` is made of the set's solid (the cavity of `std.rounds`' `shell`) it
