@@ -300,6 +300,9 @@ impl Depth<'_> {
 
 impl Field for Depth<'_> {
     type At = Cover;
+    /// A sheet passes through itself along its double curves with itself, each traced on both its
+    /// preimages: a seed of the second near the first in space is not the first.
+    fn folded(&self) -> bool { true }
     fn least(&self,uv: [f64;2]) -> Option<Value<Cover>> {
         match self.reading(uv)? {
             (p,Reading::Far(c)) => self.value(&p,c.at),

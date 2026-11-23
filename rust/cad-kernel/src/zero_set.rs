@@ -96,6 +96,12 @@ pub trait Field {
     fn place(&self,uv: Uv) -> V { self.surface(uv).0 }
     /// Enclosures of `f` and its gradient over `cell`, where the caller has them.
     fn bound(&self,_cell: Rect) -> Option<Bound> { None }
+    /// **Whether two places of the parameters may be one point in space** — a chart through
+    /// itself, as an offset sheet along its double curves with itself: then a point near a traced
+    /// chord in space is that chord's only where it is near it in the parameters too (its length
+    /// from the chord's place in the metric within the reach), and a second preimage of a curve
+    /// is traced, not taken for the first.
+    fn folded(&self) -> bool { false }
 }
 
 /// An inner edge of the domain, a curve in the parameters (a fold curve, a hole's rim): its point
@@ -207,8 +213,9 @@ struct Tracer<'a,F: Field> {
     step: [f64;2],
     seeds: Vec<Seed>,
     pieces: Vec<Piece<F::At>>,
-    /// the traced pieces' chords in space, filed by their ends
+    /// the traced pieces' chords in space, filed by their ends, and in the parameters
     chords: Vec<(V,V)>,
+    chord_uv: Vec<(Uv,Uv)>,
     grid: Grid,
     steps: usize,
     /// the surface last read and where: the point, the metric and the tangent are read at one place
@@ -234,7 +241,7 @@ fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::A
     }
     let r = q.rect;
     let mut t = Tracer {field,q,step:[THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
-        pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0,last:std::cell::Cell::new(None)};
+        pieces:Vec::new(),chords:Vec::new(),chord_uv:Vec::new(),grid:Grid::new(q.feature),steps:0,last:std::cell::Cell::new(None)};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
     for k in (0..4).filter(|_| complete) {
@@ -400,20 +407,36 @@ impl<'a,F: Field> Tracer<'a,F> {
     fn undercut(&self,uv: Uv,l: &Read<F::At>) -> bool { l.f < 0. && self.off(uv,l) > self.q.tol }
 
     /// Whether a point in space lies within `r` of a traced piece's chord.
-    fn near_traced(&self,x: V,r: f64) -> bool {
+    /// Whether the point at `uv` lies within `r` in space of a traced chord — and, where the field's
+    /// chart may pass through itself (`Field::folded`), near its place in the parameters too.
+    fn near_traced(&self,uv: Uv,r: f64) -> bool {
+        let x = self.point(uv);
         let reach = r+self.q.feature;
+        let folded = self.field.folded();
         let mut hit = false;
         self.grid.in_box(x.map(|c| c-reach),x.map(|c| c+reach),|i| {
             let (a,b) = self.chords[i as usize];
-            if !hit && segment_distance(x,a,b) <= r { hit = true }
+            if hit || segment_distance(x,a,b) > r { return }
+            if !folded { hit = true; return }
+            // (the chord's place nearest in space, read in the parameters at its share along it)
+            let (ua,ub) = self.chord_uv[i as usize];
+            use crate::util::space::{dot,sub};
+            let ab = sub(b,a);
+            let l = dot(ab,ab);
+            let s = if l > 0. { (dot(sub(x,a),ab)/l).clamp(0.,1.) } else { 0. };
+            let d = [uv[0]-(ua[0]+(ub[0]-ua[0])*s),uv[1]-(ua[1]+(ub[1]-ua[1])*s)];
+            if self.length(uv,d) <= reach { hit = true }
         });
         hit
     }
 
     fn add_seed(&mut self,uv: Uv,end: End) {
         let x = self.point(uv);
-        // a point found twice (a rectangle's corner, on two sides) is one seed
-        if self.seeds.iter().any(|s| distance(self.point(s.uv),x) <= 2.*self.q.tol) { return }
+        // a point found twice (a rectangle's corner, on two sides) is one seed — where the chart
+        // passes through itself (`Field::folded`), only near in the parameters too
+        let folded = self.field.folded();
+        if self.seeds.iter().any(|s| distance(self.point(s.uv),x) <= 2.*self.q.tol
+            && (!folded || self.length(uv,[uv[0]-s.uv[0],uv[1]-s.uv[1]]) <= 2.*self.q.tol+self.q.feature)) { return }
         self.seeds.push(Seed {uv,end,used:false});
     }
 
@@ -534,7 +557,7 @@ impl<'a,F: Field> Tracer<'a,F> {
     /// **From one seed, the pieces through it**, both ways, recorded. A boundary seed's pieces each
     /// start there; an interior seed's two ways are joined, or close on it.
     fn from_seed(&mut self,uv: Uv,boundary: Option<End>) -> Result<(),String> {
-        if self.near_traced(self.point(uv),2.*self.q.tol) { return Ok(()) }
+        if self.near_traced(uv,2.*self.q.tol) { return Ok(()) }
         let Some(l) = self.least(uv) else { return Ok(()) };
         let own = boundary.is_none();
         let (mut ahead,closed) = self.march(uv,l.at.clone(),1.,own,boundary)?;
@@ -579,13 +602,14 @@ impl<'a,F: Field> Tracer<'a,F> {
 
     fn record(&mut self,p: Piece<F::At>) {
         let xs: Vec<V> = p.uv.iter().map(|&uv| self.point(uv)).collect();
-        for w in xs.windows(2) {
+        for (j,w) in xs.windows(2).enumerate() {
             let i = self.chords.len() as u32;
             self.chords.push((w[0],w[1]));
+            self.chord_uv.push((p.uv[j],p.uv[j+1]));
             self.grid.insert(w[0],i);
             self.grid.insert(w[1],i);
         }
-        if xs.len() == 1 { let i = self.chords.len() as u32; self.chords.push((xs[0],xs[0])); self.grid.insert(xs[0],i); }
+        if xs.len() == 1 { let i = self.chords.len() as u32; self.chords.push((xs[0],xs[0])); self.chord_uv.push((p.uv[0],p.uv[0])); self.grid.insert(xs[0],i); }
         self.pieces.push(p);
     }
 
@@ -830,10 +854,10 @@ impl<'a,F: Field> Tracer<'a,F> {
             let graded = bound.is_some_and(|b| b.grad.is_some());
             let leaf = if graded { tol } else { feature };
             if 2.*reach <= leaf {
-                if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
+                if self.near_traced(mid,reach+leaf) { out.beside += 1; continue }
                 if let Some(s) = self.pulled(mid,reach) {
                     self.from_seed(s,None)?;
-                    if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
+                    if self.near_traced(mid,reach+leaf) { out.beside += 1; continue }
                 }
                 if bound.is_none() {
                     out.sampled += 1;

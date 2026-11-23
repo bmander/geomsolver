@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **`zero_set` tells a second preimage from the first** (#880 T1f): `Field::folded` (default
+  false) says the caller's chart may pass through itself; then a point near a traced chord in space
+  is that chord's only where it is near its place in the parameters too, so a seed of a double
+  curve's second preimage is traced, not dropped. The tube's depth says so.
 - **The collar about the pinch as the tube road's third chart** (#880 T1f): `Tube::pinched` reads
   the tool as a tube and, where an instant inside the roll touches a meridian whole, charts the
   pinch by `rings::Collar` over `(ψ, ρ)` (`Chart::Collar`, `tube::Pinch`): its point and rates in

@@ -2836,9 +2836,11 @@ the hole too (`chart_cuts`); the rim is an edge on each sign between its vertice
 the collar's use and the sheet's). **The reverse's next refusal**: a run of the sheet `+` ends at
 the cut `θ = 2π` (t 1.4597, covered at −0.072) with no piece across it: at `θ = 0` its seed lies
 within the tolerance in space of the run from (0, 0.6988) (covered at 1.4613, own 0.699), a triple
-point of the sheet with itself, and `zero_set`'s duplicate test (`near_traced`) reads in space alone,
-so it drops a second preimage there (`zero_set::through` from the same seed traces it to the roll's
-end at (0.9046, b)). **Not yet**: that, and three readings off the pinch — the reverse's near miss of a second whole-touch
+point of the sheet with itself, and `zero_set`'s duplicate test (`near_traced`) read in space alone,
+so it dropped a second preimage there (`zero_set::through` from the same seed traces it to the
+roll's end at (0.9046, b)); it now reads the parameters too where the field's chart passes through
+itself (`Field::folded`, the tube's depth), and the sheet `+` traces 7 pieces in 4.8 s. The build
+then stops at the sheet `−`'s stall below. **Not yet**: three readings off the pinch — the reverse's near miss of a second whole-touch
 (`|(A, B)|` 6.3e-4, 3.6e-4 of the terms' scale, at (1.0764, 0.4611), no root, where the sheets fold
 through within a few ten-thousandths and a graded net asks 866 × 855 poles), and the sheet `−`'s
 stalls of each member (forward at (2.9903, 0.6355), 0.02 from its swallowtail point (2.9730,

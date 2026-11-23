@@ -624,3 +624,42 @@ fn a_cell_spanning_a_whole_turn_is_halved_across_it() {
     }
     assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
 }
+
+/// `f = cos πu` on the map `(u, v) ↦ (cos πu, sin πu, v)`, which wraps the rectangle round a
+/// cylinder once every two of `u`, saying whether it passes through itself (`Field::folded`).
+struct Wrapped { folded: bool }
+
+impl Field for Wrapped {
+    type At = At;
+    fn least(&self,uv: Uv) -> Option<Value<At>> {
+        let (s,c) = (std::f64::consts::PI*uv[0]).dsin_cos();
+        Some(Value {f:c,grad:Some([-std::f64::consts::PI*s,0.]),at:(0,0.)})
+    }
+    fn along(&self,uv: Uv,_: &At) -> Option<Value<At>> { self.least(uv) }
+    fn surface(&self,uv: Uv) -> ([f64;3],[f64;3],[f64;3]) {
+        let pi = std::f64::consts::PI;
+        let (s,c) = (pi*uv[0]).dsin_cos();
+        ([c,s,uv[1]],[-pi*s,pi*c,0.],[0.,0.,1.])
+    }
+    fn folded(&self) -> bool { self.folded }
+}
+
+/// **A chart through itself has each preimage of a curve traced** (#880 T1f, `Field::folded`): over
+/// `u ∈ [0, 3]` the zero set of `cos πu` is three lines across the rectangle, `u = ½` and `u = 2½`
+/// one curve in space at two places of the parameters. A seed within the tolerance of a traced
+/// chord in space is that chord's — unless the field's chart passes through itself, where it is
+/// that chord's only near its place in the parameters too: so the folded field has all three
+/// traced, and the plain one, reading space alone, takes the second preimage for the first.
+#[test]
+fn a_chart_through_itself_has_each_preimage_traced() {
+    let q = question([[0.,3.],[-1.,1.]],TOL,0.1);
+    let lines = |t: &Traced<At>| { let mut us: Vec<f64> = t.pieces.iter().map(|p| (p.uv[0][0]*1e6).round()/1e6).collect(); us.sort_by(f64::total_cmp); us };
+    let folded = trace(&Wrapped {folded:true},&q).unwrap();
+    assert_eq!(lines(&folded),vec![0.5,1.5,2.5]);
+    for p in &folded.pieces {
+        assert_eq!(p.ends,[End::Rim,End::Rim]);
+        assert!(p.uv.iter().all(|uv| (uv[0]-p.uv[0][0]).abs() <= 1e-9));
+    }
+    let plain = trace(&Wrapped {folded:false},&q).unwrap();
+    assert_eq!(plain.pieces.len(),2,"{:?}",lines(&plain));
+}
