@@ -8,7 +8,7 @@
 //! `build` builds the solid by the tube road (`faces::solid`: faces, volume, time, covers read),
 //! `old` by the old ring road (`closed::ring`), `compare` reads the tube's certified cover against
 //! `depth::cover` on the grid, and `bound` the Jacobian's proved sign over cells against `J` read in
-//! them, and the sheets' edges' time; `READS` (with `build`) times the bench's reads after it. `TUBE_HALF` (degrees) sets the roll's half instead.
+//! them, and the sheets' edges' time; `READS` (with `build`) times the bench's reads after it (the area face by face, with the integrand's reads it took, `props::reads`). `TUBE_HALF` (degrees) sets the roll's half instead.
 //! The tube is read pinched (`Tube::pinched`): `pinch` reads each chart's cuspidal edges,
 //! swallowtail points and (with `trace`) depth's zero set, the collar's too (`SEEDS=θ,t,…` adds
 //! seeds); `fit` fits each sheet over a window holding the pinch and reads it against the sheet
@@ -360,8 +360,8 @@ fn main() {
                 if std::env::var_os("READS").is_some() {
                     let c = Instant::now();
                     let mut area = 0.;
-                    for f in &s.faces { let c = Instant::now(); let a = cad_kernel::props::area(&s,f); area += a;
-                        println!("  area of {} ({}): {a:.6} in {:?}",f.name,f.surface.kind(),c.elapsed()) }
+                    for f in &s.faces { let (c,r) = (Instant::now(),cad_kernel::props::reads()); let a = cad_kernel::props::area(&s,f); area += a;
+                        println!("  area of {} ({}): {a:.12} in {:?}, {} reads",f.name,f.surface.kind(),c.elapsed(),cad_kernel::props::reads()-r) }
                     println!("reads: area {area:.10} in {:?}",c.elapsed());
                     let c = Instant::now(); let ok = s.check(cad_kernel::geom::tolerance(s.size())).err();
                     println!("reads: check {ok:?} in {:?}",c.elapsed());

@@ -1445,7 +1445,29 @@ knot differs by a function of `v` alone, which closes to nought round a loop, so
 column is filled out from the knot nearest the face's middle only as far as a `u` asked reaches, a
 span at a time by the net's rows read at that `v` (the sheet and `S_v` B-spline curves in `u`
 there) — a fitted sheet's face was integrated across its hundreds of spans per column, each node a
-2D evaluation. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
+2D evaluation. **Every other reading of a net's face is Green's theorem cell by cell** (`props`'s
+`Cells` and `by_cells`, #880): the area, a rational net's flux, a field's flux and a weighed area
+on a B-spline or offset face take `G` along each stretch of a use — cut where it crosses a knot
+line (`crossings`, a knot a step lands on exactly crossed there) so it lies in one cell — from the
+knot line bounding its strip on the side of the face's middle, one span's rule, and where the loop
+hands over from one knot to another at `v_c` add the strips' columns between, `± Σ H_j(v_c)`,
+`H_j = ∫ I_j dv` tabled once per strip a whole cell at a time along `v` (the constant each table
+starts from cancels: a closed loop crosses each knot line as often each way).  The cell holding a
+crossing is read by its part on the face's side of it along the knot line, so nothing beyond the
+trim is read: a sheet trimmed at its fold folds back past it, `|S_u × S_v|` kinked there, and a
+cell read whole across it was 1.1e-7 off a face of the crossed forward member.  The rules are those
+`G` from the middle took (two ten-point Gauss pieces a span, along a stretch, along a cell); the
+cost is the cells the face spans and its uses' nodes, where `G` gathered across every span from the
+middle cost each node the spans between — 34 to 50 million integrand reads a face of the crossed
+forward member, its area 78 s, now 3 to 11 million and 18 s.  On a net's table a pole row (a
+degenerate use) runs where its parameters say: one at the domain's last `u` runs along `v`, where
+`G` is not nought.  `brep::a_nets_face_is_read_cell_by_cell` (an annulus of a paraboloid on a
+graded net, the polynomial net and the same net rational; the integrand's reads, `props::reads`,
+no more than doubled as the knots are doubled in `u` and then in `v`),
+`brep::a_polygon_on_a_net_is_read_cell_by_cell` (a pentagon with a square hole whose sides lie on
+knot lines, a triangle with a pole row, a triangle inside one cell) and
+`brep::a_rational_torus_is_read_cell_by_cell_across_its_seams` hold area and flux to their closed
+forms within 1e-12. **An inverse edge's nodes are sought from the last** (`Pcurve::at_and_derivative_from`):
 each node's foot from the previous node's, carried along by its rate, where that node is just
 behind it, the branch still the one nearest the line between the ends — from that line, Newton
 took some ten steps a node on a fitted sheet's curved edge.

@@ -8,6 +8,31 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A net's face read cell by cell** (#880, `props`'s `Cells` and `by_cells`): Green's `G` on a
+  B-spline or offset face — its area, a rational net's flux, a field's flux and a weighed area;
+  a polynomial net's flux keeps its exact table (`Prefix`) — was gathered from the face's middle
+  across every knot span between, for every node of every stretch of its uses, so a face cost its
+  nodes times the spans they lie from the middle: on the crossed forward member's graded sheets
+  (nets of 251×224 and 306×231 poles) 34 to 50 million integrand reads a face, its area 78 s.  It is
+  now taken along each stretch from the knot line bounding its strip on the middle's side, and the
+  strips' columns, gathered once each a cell at a time into a table along `v`, are added where the
+  loop hands over from one knot to another — each column's cell at a crossing read on the face's
+  side of it, so nothing beyond the trim is read (a sheet trimmed at its fold folds back past it,
+  and a cell read whole across it was 1.1e-7 off).  The cost is the cells the face spans and its
+  uses' nodes, each a span's rule: the forward's area is read in 18 s, 3 to 11 million reads a face.
+  Six of its nine sheet faces read as before to 12 digits; three move, 13.397730012278 to
+  13.397730012206, 11.629456925629 to 11.629456926940 and 1.234519263683 to 1.234519269024 — the
+  last the old reading's error, the face read transposed 1.234519269094 and on four and eight
+  Gauss pieces 1.234519269096.  `props::reads` counts the integrand's reads on the thread, what the
+  gates hold the cost to.
+- **A knot a use's step lands on is crossed there** (`props::crossings`): read between a step's two
+  ends alone, a knot at a step's end lay in neither step and the stretch across it went uncut — a
+  rational torus with knots on the steps' eighths read 2.9e-8 off its area.
+- **A row of poles in one point is read where its parameters run** (`props::integrated`): on a
+  polynomial net's table a degenerate use was taken to run along `u` and skipped, but a pole row
+  at the domain's last `u` runs along `v`, where `G` from the table's knot is not nought: a plane
+  triangle with one read its flux 0.1875 against 0.25.
+
 - **The crossed tumbling tori built by the tube road** (#880 T1f): the reverse member (15 faces,
   13.7898471917 against cadrs's 13.7898472784) and the forward (14 faces, 16.6109998153 against
   16.6109997999; read 16.6116290673 before its flux was cut at its net's knot lines, below). `zero_set`'s search answers a cell beside a traced

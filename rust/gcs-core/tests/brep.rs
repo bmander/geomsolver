@@ -3522,3 +3522,186 @@ fn a_faces_measures_are_cut_at_its_nets_knot_lines() {
     assert!((area/want-1.).abs() <= 1e-12,"along the trace, the area {area}, the closed form's {want}: {:e} apart",area-want);
     assert!((flux/want-1.).abs() <= 1e-12,"along the trace, the flux {flux}, the closed form's {want}: {:e} apart",flux-want);
 }
+
+/// What the cell gates build their faces from: a clamped cubic knot vector over `[a, b]` of `n` spans,
+/// graded (`grade` of 0 uniform, toward 1 crowded at the middle), a net's poles from the polar forms
+/// of `1`, `t` and `t²` at each pole's knots (so a polynomial of degree 2 in each parameter is the
+/// net exactly), and a face of loops of curves in the parameters, each its own edge.
+mod cells {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::nurbs::{BSpline,Net};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
+    use std::sync::Arc;
+    pub fn knots(a: f64,b: f64,n: usize,grade: f64) -> Vec<f64> {
+        let mut k = vec![a;3];
+        k.extend((0..=n).map(|i| { let s = 2.*i as f64/n as f64-1.; a+(b-a)*(0.5+0.5*((1.-grade)*s+grade*s*s.abs())) }));
+        k.extend([b;3]);
+        k
+    }
+    /// The polar forms of `t` and `t²` at pole `i`'s knots.
+    pub fn polar(k: &[f64],i: usize) -> (f64,f64) {
+        let t = &k[i+1..=i+3];
+        ((t[0]+t[1]+t[2])/3.,(t[0]*t[1]+t[0]*t[2]+t[1]*t[2])/3.)
+    }
+    /// The net of `f(t, t², s, s²)` (each coordinate bilinear in `(1, t, t²)` and `(1, s, s²)`), its
+    /// weights all `w` where given.
+    pub fn net(ku: Vec<f64>,kv: Vec<f64>,f: impl Fn(f64,f64,f64,f64) -> [f64;3],w: Option<f64>) -> Net {
+        let (nu,nv) = (ku.len()-4,kv.len()-4);
+        let poles = (0..nu).map(|i| { let (t,tt) = polar(&ku,i); (0..nv).map(|j| { let (s,ss) = polar(&kv,j); f(t,tt,s,ss) }).collect() }).collect();
+        let net = Net {du:3,dv:3,uknots:ku,vknots:kv,poles,weights:w.map(|w| vec![vec![w;nv];nu])};
+        net.check().unwrap();
+        net
+    }
+    pub fn line(p: [f64;2],q: [f64;2]) -> Curve {
+        Curve::BSpline(Arc::new(BSpline {degree:1,knots:vec![0.,0.,1.,1.],poles:vec![[p[0],p[1],0.],[q[0],q[1],0.]],weights:None}))
+    }
+    pub fn circle(c: [f64;2],r: f64) -> Curve { Curve::Circle(Frame {o:[c[0],c[1],0.],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]},r) }
+    /// A face of `surface` bounded by `loops`, each a list of curves in its parameters (a circle's
+    /// over `[0, 2π]`, a line's over `[0, 1]`), run forward or reversed; a curve of nought length in
+    /// space (`degenerate`) is a pole's edge.
+    pub fn face(surface: Surface,loops: Vec<Vec<(Curve,bool,bool)>>) -> Brep {
+        let mut b = Brep {vertices:Vec::new(),edges:Vec::new(),faces:Vec::new()};
+        let mut ls = Vec::new();
+        for l in loops {
+            let mut uses = Vec::new();
+            for (c,reversed,degenerate) in l {
+                let t = if matches!(c,Curve::Circle(..)) { [0.,std::f64::consts::TAU] } else { [0.,1.] };
+                let (p,q) = (c.point(t[0]),c.point(t[1]));
+                let v = [b.vertex(p),b.vertex(q)];
+                let pcurve = match &c { Curve::BSpline(_) if degenerate => Pcurve::Line {a:[p[0],p[1]],b:[q[0],q[1]]},_ => Pcurve::Curve(Arc::new(c.clone())) };
+                b.edges.push(Edge {curve:if degenerate { EdgeCurve::Degenerate } else { EdgeCurve::Curve(c) },t,v,tol:0.});
+                uses.push(Coedge {edge:(b.edges.len()-1) as u32,reversed,pcurve});
+            }
+            ls.push(uses);
+        }
+        b.faces.push(Face {surface,reversed:false,loops:ls,name:"cells".into()});
+        b
+    }
+    pub fn surface(net: Net) -> Surface { Surface::BSpline(Frame::WORLD,Arc::new(net)) }
+    /// The area and the flux of `b`'s face, and the integrand's reads its area took.
+    pub fn measured(b: &Brep) -> (f64,f64,u64) {
+        let r = gcs_core::brep::props::reads();
+        let area = gcs_core::brep::props::area(b,&b.faces[0]);
+        let reads = gcs_core::brep::props::reads()-r;
+        (area,gcs_core::brep::props::terms(b,0).iter().flatten().map(|t| t.0+t.1).sum(),reads)
+    }
+}
+
+/// **A face's area and flux on a net read cell by cell** (#880): Green's theorem taken from the
+/// left knot line of each stretch's strip, the strips' columns gathered once along `v`
+/// (`props::Cells`), against closed forms, each to 1e-12 of itself — the rules' own accuracy, as
+/// the knot lines' gate holds them.  The paraboloid `z = (x² + y²)/2` on a graded cubic net over
+/// `[−1, 1]²`, an annulus of it (a circle with a circle's hole): area `(2π/3)((1 + R²)^{3/2} − (1 +
+/// r²)^{3/2})`, flux `−π (R⁴ − r⁴)/4` (`X·(S_u × S_v) = −(x² + y²)/2`) — the polynomial net's flux
+/// by its table, a rational one's (the same net, its weights all 2) cell by cell too.
+#[test]
+fn a_nets_face_is_read_cell_by_cell() {
+    use std::f64::consts::PI;
+    let paraboloid = |n: usize,m: usize,w: Option<f64>| cells::net(cells::knots(-1.,1.,n,0.4),cells::knots(-1.,1.,m,0.3),
+        |t,_,s,_| [t,s,0.],w);
+    let paraboloid = move |n: usize,m: usize,w: Option<f64>| {
+        let mut net = paraboloid(n,m,w);
+        let (ku,kv) = (net.uknots.clone(),net.vknots.clone());
+        for (i,row) in net.poles.iter_mut().enumerate() {
+            for (j,p) in row.iter_mut().enumerate() { p[2] = (cells::polar(&ku,i).1+cells::polar(&kv,j).1)/2. }
+        }
+        net
+    };
+    let (big,small) = (0.9,0.35);
+    let annulus = |net: gcs_core::brep::nurbs::Net| cells::face(cells::surface(net),
+        vec![vec![(cells::circle([0.,0.],big),false,false)],vec![(cells::circle([0.,0.],small),true,false)]]);
+    let area = 2.*PI/3.*((1.+big*big).powf(1.5)-(1.+small*small).powf(1.5));
+    let flux = -PI*(big.powi(4)-small.powi(4))/4.;
+    for w in [None,Some(2.)] {
+        let (a,f,_) = cells::measured(&annulus(paraboloid(64,48,w)));
+        assert!((a/area-1.).abs() <= 1e-12,"weights {w:?}: the area {a}, the closed form's {area}: {:e} apart",a-area);
+        assert!((f/flux-1.).abs() <= 1e-12,"weights {w:?}: the flux {f}, the closed form's {flux}: {:e} apart",f-flux);
+    }
+    // the cost: the knots doubled each way under the same face, the reads grow as the cells the
+    // face covers (twice as many each way), not as their square (298 000, 582 800, 1 046 800)
+    let reads: Vec<u64> = [(32,24),(64,24),(64,48)].iter().map(|&(n,m)| cells::measured(&annulus(paraboloid(n,m,None))).2).collect();
+    assert!(reads[1] as f64 <= 2.*reads[0] as f64 && reads[2] as f64 <= 2.*reads[1] as f64,
+        "the reads {reads:?}, the knots doubled in u then in v: more than twice as many each time");
+}
+
+/// **A polygon with a hole on a net, its sides along knot lines** (#880): `z = x²/2` on a cubic
+/// net of uniform knots (`1/64`s of `[−1, 1]`), a pentagon two of whose sides lie on a `u` and a
+/// `v` knot line, a square hole likewise; the area `∬ √(1 + x²)` and the flux `∬ −x²/2` read round
+/// the polygon's sides in closed form (`∮ Φ(x) dy`, `Φ′` the integrand), to 1e-12 of themselves.
+/// And a pole's edge: the triangle `(u, v(1 − u))` of the plane `z = x/3 + y/4 + 1/2`, its side
+/// `u = 1` a row of poles in one point, read along `v` like any other use — its `G` from the last
+/// strip's knot is not nought — area `√(1 + 1/9 + 1/16)/2`, flux `1/4`; and a triangle inside
+/// one cell of the net, no knot line crossed, its area `√(1 + 1/9 + 1/16) ∬ (1 − u)`.
+#[test]
+fn a_polygon_on_a_net_is_read_cell_by_cell() {
+    let net = |w: Option<f64>| cells::net(cells::knots(-1.,1.,128,0.),cells::knots(-1.,1.,96,0.),|t,tt,s,_| [t,s,tt/2.],w);
+    let outer = [[-0.75,-0.5],[0.5,-0.5],[0.875,0.2],[0.5,0.75],[-0.75,0.75]];
+    let hole = [[-0.25,0.],[0.25,0.],[0.25,0.3],[-0.25,0.3]];
+    let poly = |p: &[[f64;2]],reversed: bool| -> Vec<(gcs_core::brep::geom::Curve,bool,bool)> {
+        let mut l: Vec<_> = (0..p.len()).map(|k| (cells::line(p[k],p[(k+1)%p.len()]),reversed,false)).collect();
+        if reversed { l.reverse() }
+        l
+    };
+    // `∮ Φ(x) dy` round a polygon, side by side, `∫Φ` its antiderivative
+    let around = |p: &[[f64;2]],phi: &dyn Fn(f64) -> f64,int: &dyn Fn(f64) -> f64| -> f64 {
+        (0..p.len()).map(|k| { let (a,b) = (p[k],p[(k+1)%p.len()]);
+            if a[0] == b[0] { phi(a[0])*(b[1]-a[1]) } else { (b[1]-a[1])/(b[0]-a[0])*(int(b[0])-int(a[0])) } }).sum()
+    };
+    let phi = |x: f64| (x*(1.+x*x).sqrt()+x.asinh())/2.;
+    let int_phi = |x: f64| ((1.+x*x).powf(1.5)/3.+x*x.asinh()-(1.+x*x).sqrt())/2.;
+    let area = around(&outer,&phi,&int_phi)-around(&hole,&phi,&int_phi);
+    let flux = around(&outer,&|x| -x.powi(3)/6.,&|x| -x.powi(4)/24.)-around(&hole,&|x| -x.powi(3)/6.,&|x| -x.powi(4)/24.);
+    for w in [None,Some(2.)] {
+        let (a,f,_) = cells::measured(&cells::face(cells::surface(net(w)),vec![poly(&outer,false),poly(&hole,true)]));
+        assert!((a/area-1.).abs() <= 1e-12,"weights {w:?}: the area {a}, the closed form's {area}: {:e} apart",a-area);
+        assert!((f/flux-1.).abs() <= 1e-12,"weights {w:?}: the flux {f}, the closed form's {flux}: {:e} apart",f-flux);
+    }
+    // the triangle with its pole: `x = u`, `y = v (1 − u)`, bilinear, so `v t` at each pole's
+    // knots the product of its polar forms
+    let plane = |w: Option<f64>| cells::net(cells::knots(0.,1.,40,0.2),cells::knots(0.,1.,24,0.),
+        |t,_,s,_| { let y = s*(1.-t); [t,y,t/3.+y/4.+0.5] },w);
+    let tilt = (1.+1./9.+1./16f64).sqrt();
+    for w in [None,Some(2.)] {
+        let tri = cells::face(cells::surface(plane(w)),vec![vec![(cells::line([0.,0.],[1.,0.]),false,false),
+            (cells::line([1.,0.],[1.,1.]),false,true),(cells::line([1.,1.],[0.,1.]),false,false),(cells::line([0.,1.],[0.,0.]),false,false)]]);
+        let (a,f,_) = cells::measured(&tri);
+        assert!((a/(tilt/2.)-1.).abs() <= 1e-12,"weights {w:?}: the pole's triangle's area {a}, the closed form's {}",tilt/2.);
+        assert!((f/0.25-1.).abs() <= 1e-12,"weights {w:?}: the pole's triangle's flux {f}, the closed form's 0.25");
+        // inside one cell (`u` in the strip from 0.5, `v` in the 13th span of 24)
+        let k = cells::knots(0.,1.,40,0.2)[23];
+        let (h,v0) = (1e-3,12.2/24.);
+        let p = [[k+h,v0],[k+3.*h,v0],[k+h,v0+0.02]];
+        let one = cells::face(cells::surface(plane(w)),vec![(0..3).map(|i| (cells::line(p[i],p[(i+1)%3]),false,false)).collect()]);
+        let want = tilt*(2.*h*0.02/2.)*(1.-(p[0][0]+p[1][0]+p[2][0])/3.);
+        let (a,_,_) = cells::measured(&one);
+        assert!((a/want-1.).abs() <= 1e-12,"weights {w:?}: inside one cell, the area {a}, the closed form's {want}");
+    }
+}
+
+/// **A torus as a rational net, read across its seams** (#880): the circle as a rational quadratic,
+/// its knots put in to 40 spans, the torus its revolution (`R = 2`, `r = 0.6`), the face its whole
+/// chart — its loop the domain's sides, each seam used once either way; the area `4π² R r` and the
+/// flux `3 · 2π² R r²` (the volume's), both cell by cell, to 1e-12 of themselves.
+#[test]
+fn a_rational_torus_is_read_cell_by_cell_across_its_seams() {
+    use gcs_core::brep::nurbs::{BSpline,Net};
+    use std::f64::consts::PI;
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let mut c = BSpline {degree:2,knots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],
+        poles:vec![[1.,0.,0.],[1.,1.,0.],[0.,1.,0.],[-1.,1.,0.],[-1.,0.,0.],[-1.,-1.,0.],[0.,-1.,0.],[1.,-1.,0.],[1.,0.,0.]],
+        weights:Some(vec![1.,h,1.,h,1.,h,1.,h,1.])};
+    for k in 0..40 { if k % 10 != 0 { c = c.with_knot(k as f64/40.+0.003*((k*7)%5) as f64) } }
+    let (big,r) = (2.,0.6);
+    let w = c.weights.clone().unwrap();
+    let n = c.poles.len();
+    let net = Net {du:2,dv:2,uknots:c.knots.clone(),vknots:c.knots.clone(),
+        poles:(0..n).map(|i| (0..n).map(|j| { let x = big+r*c.poles[j][0]; [x*c.poles[i][0],x*c.poles[i][1],r*c.poles[j][1]] }).collect()).collect(),
+        weights:Some((0..n).map(|i| (0..n).map(|j| w[i]*w[j]).collect()).collect())};
+    net.check().unwrap();
+    let b = cells::face(cells::surface(net),vec![vec![(cells::line([0.,0.],[1.,0.]),false,false),(cells::line([1.,0.],[1.,1.]),false,false),
+        (cells::line([1.,1.],[0.,1.]),false,false),(cells::line([0.,1.],[0.,0.]),false,false)]]);
+    let (a,f,_) = cells::measured(&b);
+    let (area,flux) = (4.*PI*PI*big*r,6.*PI*PI*big*r*r);
+    assert!((a/area-1.).abs() <= 1e-12,"the torus's area {a}, the closed form's {area}: {:e} apart",a-area);
+    assert!((f.abs()/flux-1.).abs() <= 1e-12,"the torus's flux {f}, the closed form's {flux}: {:e} apart",f.abs()-flux);
+}
