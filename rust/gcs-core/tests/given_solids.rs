@@ -294,3 +294,17 @@ fn a_given_body_is_held_to_its_measured_tolerances() {
     let out = exported_reads_back(&sk,i,&b);
     assert!(untouched(&out,&b));
 }
+
+/// **A given body read on its sheet's rows is exported and read back the same** (#993 stage 2):
+/// the slab under benchy's crumpled face (`step_kinds/crumpled_corner.step`, `topology::rows`),
+/// exported as the document exports it (`export::step`, its file read by the kernel's reader) —
+/// whose export of #3DBenchy the reader refused — and read back the file's solid.
+#[test]
+fn a_body_read_on_its_sheets_rows_exports_and_reads_back() {
+    const CRUMPLED: &str = include_str!("step_kinds/crumpled_corner.step");
+    let b = read(CRUMPLED);
+    let mut sk = Sketch::new();
+    let i = given(&mut sk,CRUMPLED,"crumpled");
+    let out = exported_reads_back(&sk,i,&b);
+    assert!(untouched(&out,&b));
+}
