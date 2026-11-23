@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sweep's contact and trim read faster, to the same answers** (brep-bench's spline bar
+  screwed through a rod, 33 s to 17 s, its STEP the same to the byte): an interval's product and
+  quotient take their ends by the operands' signs, two products rather than four, the enclosure
+  the same; a spline's derivative over many spans hulls each difference of neighbouring
+  coefficients once, not once a span; `BSpline::nearest_indexed` reads each span's seventeen
+  samples off the curve's index, evaluated once for the curve, a curve of few spans included (each
+  thread holding the indexes it asked for last, out of the store's lock); and a curve enclosed over
+  a stretch past its domain — a blend's edge over `[0, 1]` grown outward by a rounding — is
+  enclosed as it reads there, clamped, by its spans' Bézier forms over the stretch within, its
+  derivative with nought, rather than by de Boor's steps in intervals over every span.
+
 - **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
   a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
   the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each

@@ -148,8 +148,17 @@ fn spline<const K: usize>(p: usize,knots: &[f64],count: usize,coeff: &dyn Fn(usi
     let (mut value,mut slope): (Option<[Iv;K]>,Option<[Iv;K]>) = (None,None);
     if reach.clone().count() > WIDE {
         value = Some(hull_k(&coeffs));
-        // (the differences of neighbouring coefficients, each once)
-        if rate { for s in s0..=s1 { let dc = differences(p,knots,s,&coeffs[s-s0..=s-s0+p]); slope = hull(slope,hull_k(&dc[..p])) } }
+        // (the differences of neighbouring coefficients, each once: the spans `s0 ..= s1` reach
+        // the differences `s0 − p .. s1`, every one `p` spans' — the hull of `differences` span by
+        // span, each read once rather than `p` times)
+        if rate && p > 0 {
+            let scale = Iv::point(p as f64);
+            for (j,w) in coeffs.windows(2).enumerate() {
+                let i = s0-p+j;
+                let gap = Iv::point(knots[i+p+1])-Iv::point(knots[i+1]);
+                slope = hull(slope,std::array::from_fn(|k| (w[1][k]-w[0][k])*scale/gap));
+            }
+        }
     } else {
         for s in reach {
             let c = &coeffs[s-s0..=s-s0+p];
@@ -184,8 +193,15 @@ impl Enclosed<1> for BSpline {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let [lo,hi] = self.domain();
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
-        if self.weights.is_none() && self.degree < BEZIER && a >= lo && b <= hi {
-            if let Some(p) = self.restricted([a,b]) { return p }
+        // (a stretch past the domain read as the curve is there, clamped: its point the end's, its
+        // derivative nought — the stretch within, and nought with its derivative. A blend's edge read
+        // over its whole `u` asks `[0, 1]` grown outward by a rounding, past the domain by an ulp,
+        // which de Boor's hull in intervals read over every span, looser and slower)
+        if self.weights.is_none() && self.degree < BEZIER && b >= lo && a <= hi {
+            if let Some(mut p) = self.restricted([a.max(lo),b.min(hi)]) {
+                if a < lo || b > hi { p.d[0] = p.d[0].map(|x| x.hull(Iv::point(0.))) }
+                return p
+            }
         }
         let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
         let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[a,b],true);
