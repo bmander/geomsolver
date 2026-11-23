@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A fill of four curves** (brep-bench's fill/coons-patch-of-four-parabolas):
+  `nurbs::coons(edges: [&BSpline; 4]) -> Result<Net, String>` is the bilinearly blended Coons patch
+  of four curves closing a loop, the first and third along `u`, the second and fourth along `v`,
+  each one's parameter carried onto `[0, 1]`. Opposite curves are made one space, so the patch is
+  exactly a net whose boundary rows are the curves' own poles: `build::sheet` makes its face and
+  `sew::sewn` closes it with what it caps. Refused for rational curves and a loop that does not
+  close. Beside it, `BSpline::elevated` raises a curve's degree exactly (each knot once more per
+  degree, so as continuous as it was), and `BSpline::reversed` and `BSpline::over` run a curve
+  the other way and over another interval.
+
 ## [0.22.0] - 2026-11-23
 
 - **A solid is the same wherever it stands** (#1002): three readings measured a patch by its

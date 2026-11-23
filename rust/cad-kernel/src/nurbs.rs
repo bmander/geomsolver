@@ -943,6 +943,179 @@ pub fn fit_curve(f: &dyn Fn(f64) -> V,d: usize,mut n: usize,tol: f64) -> Option<
     }
 }
 
+impl BSpline {
+    /// **The same curve run the other way**: the point at `t` is the old one at `a + b − t` over
+    /// its domain `[a, b]`, its knots reflected and its poles (and weights) in reverse.
+    pub fn reversed(&self) -> BSpline {
+        let [a,b] = self.domain();
+        let knots = self.knots.iter().rev().map(|k| if *k == a { b } else if *k == b { a } else { a+b-k }).collect();
+        let mut poles = self.poles.clone();
+        poles.reverse();
+        let weights = self.weights.as_ref().map(|w| w.iter().rev().copied().collect());
+        BSpline {degree:self.degree,knots,poles,weights}
+    }
+    /// **The same curve over `[a, b]`**: its knots carried there by the affine map of its domain
+    /// onto it, the ends exactly `a` and `b`, the poles untouched.
+    pub fn over(&self,[a,b]: [f64;2]) -> BSpline {
+        let [lo,hi] = self.domain();
+        let knots = self.knots.iter().map(|&k| {
+            if k <= lo { a } else if k >= hi { b } else { a+(b-a)*((k-lo)/(hi-lo)) }
+        }).collect();
+        BSpline {knots,..self.clone()}
+    }
+    /// **The same curve as a B-spline of degree `by` higher** (degree elevation), exactly: each
+    /// distinct knot once more, so it is as continuous at each as it was, a rational curve's in
+    /// homogeneous coordinates. Split into its Bézier pieces (`insert`), each piece raised by the
+    /// Bernstein identity, and each inner knot taken out again (`remove`) as often as it went in,
+    /// which the raised curve's continuity there makes exact. Refused past `MAX_DEGREE`.
+    pub fn elevated(&self,by: usize) -> Result<BSpline,String> {
+        if by == 0 { return Ok(self.clone()) }
+        if self.degree+by > MAX_DEGREE { return Err(format!("a B-spline raised past degree {MAX_DEGREE}")) }
+        let c = self.segment(self.domain());
+        let (knots,h) = elevate(&c.knots,&c.lifted(),c.degree,by);
+        Ok(BSpline {degree:c.degree+by,..c.dropped(knots,h)})
+    }
+    /// The same curve with the knot `t` (strictly inside its domain) `times` times more.
+    fn with_knots(&self,t: f64,times: usize) -> BSpline { (0..times).fold(self.clone(),|c,_| c.with_knot(t)) }
+}
+
+/// `n` choose `k`, as a float.
+fn choose(n: usize,k: usize) -> f64 { (0..k).fold(1.,|c,i| c*(n-i) as f64/(i+1) as f64) }
+
+/// A clamped B-spline of degree `p` along its first index raised `by` degrees, exactly (see
+/// `BSpline::elevated`): its knots each once more for each degree, the poles of the same curve.
+fn elevate<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,by: usize) -> (Vec<f64>,Vec<Vec<[f64;N]>>) {
+    let d = distinct(&knots[p..knots.len()-p]);
+    let inner = &d[1..d.len()-1];
+    // the Bézier pieces: every inner knot `p` times
+    let (mut k,mut q) = (knots.to_vec(),poles.to_vec());
+    for &(t,m) in inner { for _ in m..p { insert(&mut k,&mut q,p,t); } }
+    // each piece raised (Q_i = Σ_j C(p, j) C(by, i − j) / C(p + by, i) P_j), joined at its first pole
+    let e = p+by;
+    let mut raised: Vec<Vec<[f64;N]>> = Vec::new();
+    for s in 0..=inner.len() {
+        let piece = &q[s*p..=s*p+p];
+        for i in (if s == 0 { 0 } else { 1 })..=e {
+            let mut row = vec![[0.;N];piece[0].len()];
+            for j in i.saturating_sub(by)..=p.min(i) {
+                let c = choose(p,j)*choose(by,i-j)/choose(e,i);
+                for (out,x) in row.iter_mut().zip(&piece[j]) { for c2 in 0..N { out[c2] += c*x[c2]; } }
+            }
+            raised.push(row);
+        }
+    }
+    let [a,b] = [d[0].0,d[d.len()-1].0];
+    let mut k: Vec<f64> = std::iter::repeat_n(a,e+1).collect();
+    for &(t,_) in inner { k.extend(std::iter::repeat_n(t,e)); }
+    k.extend(std::iter::repeat_n(b,e+1));
+    // each inner knot back to its multiplicity, one more than it was
+    for &(t,m) in inner { for _ in m..p { remove(&mut k,&mut raised,e,t); } }
+    (k,raised)
+}
+
+/// Knot `t` taken out of a B-spline of degree `p` once, where the curve is smooth enough there
+/// that it is the same curve without it (Piegl and Tiller A5.8, `insert` undone): the poles it
+/// moved solved for from either end, the left half from the left and the right from the right,
+/// so neither divides by a small weight of the insertion.
+fn remove<const N: usize>(knots: &mut Vec<f64>,poles: &mut Vec<Vec<[f64;N]>>,p: usize,t: f64) {
+    let r = knots.iter().rposition(|&x| x == t).unwrap();
+    let s = knots.iter().filter(|&&x| x == t).count();
+    let (first,last) = (r-p,r-s);
+    // P_i = α_i Q_i + (1 − α_i) Q_{i−1} for i in first..=last, Q_{first−1} and Q_last known
+    let alpha = |i: usize| (t-knots[i])/(knots[i+p+1]-knots[i]);
+    let mix = |x: &Vec<[f64;N]>,a: f64,y: &Vec<[f64;N]>,b: f64| -> Vec<[f64;N]> {
+        x.iter().zip(y).map(|(x,y)| std::array::from_fn(|c| a*x[c]+b*y[c])).collect()
+    };
+    let count = last-first;
+    let left = count.div_ceil(2);
+    let mut q: Vec<Vec<[f64;N]>> = vec![Vec::new();count];
+    for i in first..first+left {
+        let a = alpha(i);
+        let before = if i == first { &poles[first-1] } else { &q[i-1-first] };
+        q[i-first] = mix(&poles[i],1./a,before,-(1.-a)/a);
+    }
+    for i in (first+left+1..=last).rev() {
+        let a = alpha(i);
+        let after = if i == last { &poles[last+1] } else { &q[i-first] };
+        q[i-1-first] = mix(&poles[i],1./(1.-a),after,-a/(1.-a));
+    }
+    let mut out = poles[..first].to_vec();
+    out.extend(q);
+    out.extend_from_slice(&poles[last+1..]);
+    *poles = out;
+    knots.remove(r);
+}
+
+/// **The bilinearly blended Coons patch of four curves closing a loop**, as a net whose boundary
+/// rows are the curves exactly. The curves run end to end round the loop: the first along `u` at
+/// `v = 0`, the second along `v` at `u = 1`, the third back along `u` at `v = 1` and the fourth
+/// back along `v` at `u = 0`, each one's parameter carried onto `[0, 1]` (`BSpline::over`). The
+/// patch is the sum of the ruled surfaces between opposite curves less the bilinear patch of the
+/// corners, `S(u, v) = (1 − v) c₀(u) + v c₂(u) + (1 − u) d₀(v) + u d₁(v) − B(u, v)`, each blend
+/// linear.
+///
+/// Opposite curves are made one space (the lower raised to the other's degree, `elevated`, and
+/// each given the other's knots), so each ruled surface is a net on the patch's knots, its linear
+/// direction's poles at the other's Greville abscissae, where a spline of any degree is linear;
+/// the patch's net is the three nets' sum, and its boundary rows the curves' own poles. Refused
+/// where a curve is rational (a sum of rational curves is no NURBS on their weights) or the loop
+/// does not close within `geom::tolerance` of its poles' extent.
+pub fn coons(edges: [&BSpline;4]) -> Result<Net,String> {
+    if edges.iter().any(|c| c.is_rational()) { return Err("no Coons patch of rational curves".into()) }
+    // each clamped, so its end poles are its ends
+    let edges = edges.map(|c| c.segment(c.domain()));
+    let edges = [&edges[0],&edges[1],&edges[2],&edges[3]];
+    let unit = [0.,1.];
+    let (c0,d1) = (edges[0].over(unit),edges[1].over(unit));
+    let (c2,d0) = (edges[2].reversed().over(unit),edges[3].reversed().over(unit));
+    let first = |c: &BSpline| c.poles[0];
+    let last = |c: &BSpline| c.poles[c.poles.len()-1];
+    // the loop's corners, each where the two curves meeting there meet
+    let ends = [(last(edges[0]),first(edges[1])),(last(edges[1]),first(edges[2])),(last(edges[2]),first(edges[3])),
+        (last(edges[3]),first(edges[0]))];
+    let all: Vec<V> = edges.iter().flat_map(|c| c.poles.iter().copied()).collect();
+    let extent = (0..3).map(|k| {
+        let (lo,hi) = all.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| (lo.min(p[k]),hi.max(p[k])));
+        hi-lo
+    }).fold(0.,f64::max);
+    if let Some(k) = ends.iter().position(|&(a,b)| crate::util::space::distance(a,b) > super::geom::tolerance(extent)) {
+        return Err(format!("no Coons patch of curves whose loop is open: curve {k} ends where curve {} does not start",(k+1)%4))
+    }
+    let (c0,c2) = compatible(&c0,&c2)?;
+    let (d0,d1) = compatible(&d0,&d1)?;
+    let greville = |c: &BSpline| -> Vec<f64> {
+        (0..c.poles.len()).map(|i| c.knots[i+1..=i+c.degree].iter().sum::<f64>()/c.degree as f64).collect()
+    };
+    let (xi,eta) = (greville(&c0),greville(&d0));
+    let (p00,p10,p01,p11) = (c0.poles[0],last(&c0),c2.poles[0],last(&c2));
+    let (nu,nv) = (xi.len(),eta.len());
+    let poles: Vec<Vec<V>> = (0..nu).map(|i| (0..nv).map(|j| {
+        if j == 0 { return c0.poles[i] }
+        if j == nv-1 { return c2.poles[i] }
+        if i == 0 { return d0.poles[j] }
+        if i == nu-1 { return d1.poles[j] }
+        let (s,t) = (xi[i],eta[j]);
+        std::array::from_fn(|k| (1.-t)*c0.poles[i][k]+t*c2.poles[i][k]+(1.-s)*d0.poles[j][k]+s*d1.poles[j][k]
+            -((1.-s)*(1.-t)*p00[k]+s*(1.-t)*p10[k]+(1.-s)*t*p01[k]+s*t*p11[k]))
+    }).collect()).collect();
+    let net = Net {du:c0.degree,dv:d0.degree,uknots:c0.knots,vknots:d0.knots,poles,weights:None};
+    net.check()?;
+    Ok(net)
+}
+
+/// Two curves over one domain made one space: the lower raised to the other's degree, and each
+/// given every inner knot of the other as many times as the other has it.
+fn compatible(a: &BSpline,b: &BSpline) -> Result<(BSpline,BSpline),String> {
+    let p = a.degree.max(b.degree);
+    let (mut a,mut b) = (a.elevated(p-a.degree)?,b.elevated(p-b.degree)?);
+    let inner = |c: &BSpline| { let d = distinct(&c.knots); d[1..d.len()-1].to_vec() };
+    let times = |d: &[(f64,usize)],t: f64| d.iter().find(|k| k.0 == t).map_or(0,|k| k.1);
+    let (da,db) = (inner(&a),inner(&b));
+    for &(t,m) in &db { a = a.with_knots(t,m.saturating_sub(times(&da,t))); }
+    for &(t,m) in &da { b = b.with_knots(t,m.saturating_sub(times(&db,t))); }
+    Ok((a,b))
+}
+
 /// How a grid's parameters are spread: evenly, by chord length, or by its square root.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Parametrization { Even,ChordLength,Centripetal }
