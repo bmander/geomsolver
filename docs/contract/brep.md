@@ -876,12 +876,7 @@ solved for), or closed. Seeds come from the rim and the edges (sign changes and 
 caller, and a halving search: with `Field::bound` enclosing `f` and its gradient, each cell is
 cleared, shown monotone in a parameter (no closed curve inside; its edges' zeros isolated by the
 bound and seeded), or halved to the tolerance and answered beside a traced piece or returned in
-`Search::unresolved` — so every component is traced but one within the tolerance of another (in
-space; where the caller's chart passes through itself, `Field::folded`, as an offset sheet along its
-double curves with itself, near in the parameters too — its length from the chord's place in the
-metric within the reach, and a seed found twice likewise — so a second preimage of a curve is
-traced, not taken for the first: the crossed reverse member's sheet `+` dropped one at a triple
-point, #880 T1f; `zero_set::a_chart_through_itself_has_each_preimage_traced`), one in
+`Search::unresolved` — so every component is traced but one within the tolerance of another, one in
 an unresolved cell, and a touch of an inner edge between its samples (they are sampled at the
 caller's feature size); with a Lipschitz bound alone what it does not clear is answered beside a
 traced piece within the feature size of it, at once, and with none the search is sampled (`Search::sampled`): cells'

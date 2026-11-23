@@ -192,6 +192,31 @@ fn the_charts_sides_are_bounded_over_cells() {
     }
 }
 
+/// **A far cover continued into the point's own contact ends** (#880 T1f, `Depth::along`): on the
+/// full turn's sheet `−`, beside its second swallowtail point, the double curve's two instants meet
+/// (2.226 against the point's own 2.246); past there a cover continued from an instant beside the
+/// point's own finds its least at the stretch's cut toward that instant, the own contact's slope —
+/// no basin of another instant. Read on, each corrector's pass halved the way again and the cover
+/// slid into the own contact, nought everywhere on the sheet: a phantom branch along `t` = 2.246 to
+/// the cut `θ = π`, where the true depth is 1.28. Now it ends there (none read), and the point's
+/// least is its true far cover, clear above nought.
+#[test]
+fn a_far_cover_continued_into_the_points_own_contact_ends() {
+    use gcs_core::brep::swept::depth::Cover;
+    use gcs_core::brep::swept::tube::Depth;
+    use gcs_core::brep::zero_set::Field;
+    let (tool,path,roll,tol) = tumbling(180.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let field = Depth {tube:&tube,chart:Chart::Sheet(-1.),within:tol,holes:&[]};
+    let uv = [2.690779,2.245987];
+    let from = Cover {depth:0.,at:2.2459,point:[0.;3],piece:0};
+    let along = field.along(uv,&from);
+    assert!(along.is_none(),"a cover continued into the own contact: {:?}",along.map(|v| (v.f,v.at.at)));
+    let least = field.least(uv).unwrap();
+    assert!(least.f > 0.9,"the far cover there {} at {}",least.f,least.at.at);
+}
+
 /// **The half turn's seams traced from the depth on every chart** (#880 T1f, `tube::seams`): on the
 /// sheet `−`, about its swallowtail point, a disc of radius 0.01 (halved from the feature until every
 /// far cover on its rim is within the tolerance) cut from the depth's domain; its double curve's two
@@ -268,6 +293,86 @@ fn the_half_turn_builds_by_the_tube_road() {
     held(&solid,&tube,&path,roll,v);
 }
 
+/// **The full turn built by the tube road** (#880 T1f): a double curve's far cover continued until
+/// its instant closes on the point's own ends there (`Depth::along`, no phantom branch along the own
+/// contact); a preimage seeded across a cut traced though its other preimage stands on it in space
+/// (`zero_set`'s near test read in the chart); a switch whose sheet-covered side is the run kept,
+/// its rim crossing solved on its partner's rim; the two end poses' meeting read as the start
+/// pose's trims against the end pose (`depth::ends_met`'s two short arcs), each between two rim
+/// crossings standing on both poses; the cut from a swallowtail point ended at the first trim it
+/// meets, that trim split there; and an island of a window a hole of the face about it. 14 faces,
+/// `check`, its volume the old road's 23.6738852531 within 1e-7 of itself (23.6738858153 read),
+/// held to its mesh and to membership by the depth.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the full turn built by the tube road, ~90 s")]
+fn the_full_turn_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,roll,tol) = tumbling(180.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the full turn by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert_eq!(solid.faces.len(),14);
+    assert!((v/23.6738852531-1.).abs() <= 1e-7,"the volume {v}, the old road's 23.6738852531");
+    held(&solid,&tube,&path,roll,v);
+}
+
+/// **The thin built by the tube road** (#880 T1f, brep-bench's `tumbling-torus-thin`, tube 0.015): its
+/// sheet `−`'s depth crosses its rim at the roll's end shallowly, so the trace's rim root, read
+/// through the certified cover to its tolerance, changed sign twice about the one crossing — a
+/// way from one reading leaving at once onto the other, a two-point piece along the rim that the
+/// run joined and doubled back on past its crossing (misfit 3.3e-7 against 3e-8); now no piece
+/// (`zero_set`: a way's two points on the one side it started on are that side's crossing read
+/// twice). 10 faces, `check`, its volume the old road's 0.6963027896 within 1e-7 of itself
+/// (0.6963027945 read), held to its mesh and to membership by the depth.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the thin built by the tube road, ~300 s")]
+fn the_thin_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,roll,tol) = crate::common::bench::thin();
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the thin by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert_eq!(solid.faces.len(),10);
+    assert!((v/0.6963027896-1.).abs() <= 1e-7,"the volume {v}, the old road's 0.6963027896");
+    // (a tube of 0.015 fills a part in a hundred of its box: read at enough points for a thousand
+    // members)
+    held_at(&solid,&tube,&path,roll,v,160_000);
+}
+
+/// **The bench's tumbling torus built by the tube road** (#880 T1f, `tumbling-torus`, tube 0.5): its
+/// sheet `−`'s double curve with the end pose runs into a corner where the two stand within 1e-12
+/// of one another, its zero set the very edge of where the end pose is a cover past the point's own
+/// contact (no cover at all beyond: its basin merged into the own contact); the march ends there
+/// (`zero_set::End::Undefined`) and the run is joined straight to the corner, every point of the
+/// join within the tolerance of the end pose. Its trims on the sheet `−` run over 2.5 of a turn's
+/// angle and their partners on the end pose over the rest, so each chart has its own windows. 8
+/// faces, `check`, its volume the one made apart (`swept_rings`'s bench spelling, 25.2750727653)
+/// within 1e-7 of itself (25.2750727786 read, 5e-10 apart), held to its mesh and to membership by
+/// the depth. The old road at this spelling of the motion reads 25.2750392926, 1.3e-6 below: its
+/// solid's faces carry surface covered by other instants (nine points of its mesh at 0.003 covered
+/// 1e-5 to 3.4e-3 deep, on three faces), the tube road's none.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the tumbling torus built by the tube road, ~40 s")]
+fn the_tumbling_torus_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,roll,tol) = crate::common::bench::tumbling_torus();
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the tumbling torus by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert_eq!(solid.faces.len(),8);
+    assert!((v/25.2750727653-1.).abs() <= 1e-7,"the volume {v}, the one made apart 25.2750727653");
+    held(&solid,&tube,&path,roll,v);
+}
+
 /// **The 80° torus built by the tube road** (#880 T1f): the sheet `−`'s cuspidal edges run the whole
 /// roll with no swallowtail point, each meeting the roll's ends at corners. 8 faces, `check`, its
 /// volume the old road's 10.9393141414 within 1e-7 of itself (10.9393141712 read), held to its mesh
@@ -292,6 +397,12 @@ fn the_eighty_degree_torus_builds_by_the_tube_road() {
 /// seeded points over its box, each read where the solid or the depth stands clear of the
 /// boundary (`the_half_turn_builds_by_the_tube_road`'s reading).
 fn held(solid: &gcs_core::brep::topo::Brep,tube: &Tube,path: &gcs_core::brep::trajectory::Trajectory,roll: [f64;2],v: f64) {
+    held_at(solid,tube,path,roll,v,20_000)
+}
+
+/// `held` at `count` seeded points, three quarters of them read clear of the boundary and a
+/// thousand of those members: a thin body fills little of its box, and is read at more.
+fn held_at(solid: &gcs_core::brep::topo::Brep,tube: &Tube,path: &gcs_core::brep::trajectory::Trajectory,roll: [f64;2],v: f64,count: usize) {
     let bar = 1e-3;
     let m = gcs_core::brep::mesh::mesh(solid,bar,0.2).unwrap();
     let w = crate::brep::mesh_volume(&m);
@@ -318,7 +429,7 @@ fn held(solid: &gcs_core::brep::topo::Brep,tube: &Tube,path: &gcs_core::brep::tr
     };
     let mut rng = gcs_core::rng::Rng::new(880);
     let (mut read,mut members) = (0,0);
-    for _ in 0..20_000 {
+    for _ in 0..count {
         let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
         let Some(inside) = depth(p) else { continue };
         let s = body.signed_distance(p);
@@ -326,8 +437,8 @@ fn held(solid: &gcs_core::brep::topo::Brep,tube: &Tube,path: &gcs_core::brep::tr
         read += 1;
         if inside { members += 1 }
     }
-    eprintln!("{read} of 20000 points read clear of the boundary, {members} members");
-    assert!(read >= 15_000 && members >= 1_000,"{read} read, {members} members");
+    eprintln!("{read} of {count} points read clear of the boundary, {members} members");
+    assert!(4*read >= 3*count && members >= 1_000,"{read} of {count} read, {members} members");
 }
 
 /// **The crossed reverse member, its roll's end at 5°, built by the tube road** (#880 T1f): no pinch

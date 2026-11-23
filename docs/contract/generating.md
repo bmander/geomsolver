@@ -2613,12 +2613,13 @@ unborn toward the cut. Not yet: that, `ρ₀`'s rule, the rim as a chord and the
 by construction, the collar's net and its trim.
 
 **The tube road: a torus's sweep as the offset of its core circle's sweep** (#880 T1f,
-`swept::tube`; it builds the half turn, not yet called by `closed::ring`): a torus is the set of points
-within its tube `r` of its core circle, so its sweep's boundary lies on the offset at `r` of the
-surface `S(θ, t)` the circle sweeps, its two sheets `X± = S ± r N` (`Tube::point`, `S`'s rates in
-closed form but `S_tt`, one central difference) each one map over the whole rectangle wherever `S`
-is regular, plus the end poses' tori (`Chart::End`, over `(θ, ψ)`). A sheet's fold is a cuspidal
-edge of the map, the zero set of its Jacobian against the spine's `J = 1 − 2rH + r²K`
+`swept::tube`; it builds every ring case the old road builds, not yet called by `closed::ring`): a
+torus is the set of points within its tube `r` of its core circle, so its sweep's boundary lies on
+the offset at `r` of the surface `S(θ, t)` the circle sweeps, its two sheets `X± = S ± r N`
+(`Tube::point`, `S`'s rates in closed form but `S_tt`, one central difference) each one map over
+the whole rectangle wherever `S` is regular, plus the end poses' tori (`Chart::End`, over `(θ,
+ψ)`). A sheet's fold is a cuspidal edge of the map, the zero set of its Jacobian against the
+spine's `J = 1 − 2rH + r²K`
 (`tube::edges`, its metric the spine's), and `J`'s sign is the far cover's: `J ≤ 0` is `Near`
 (the half turn, every point of a 32 × 15 grid on both sheets,
 `swept_tube::the_half_turns_sheets_are_maps_with_one_cuspidal_edge_and_the_ring_roads_swallowtail_point`).
@@ -2707,12 +2708,9 @@ pose at every chord's point and middle. The sewing measures each edge's gap as i
 straight join 7.0e-9, the windows' cuts 1.06e-7 (the nets' fit), every other edge under 6.1e-8;
 `Brep::misfits` lists nothing at the call's tolerance nor at the size's (`geom::tolerance`, 7.9e-9
 over its diagonal): each edge's own measured tolerance is what `check` holds it to.
-**The two end poses meeting is not yet looked for** (the full turn's, `depth::ends_met`'s two short
-arcs on the old road): it is the depth's zero set on an end pose where the cover is the other end
-pose, as every other seam — `seams` on `Chart::End(k)` reads it already, `depth::cover` marching the
-whole roll to its far end — so the same tracer serves; what is not yet built is reading those runs
-(class: the other end, partner by `Tube::on_end` on the other pose) and their ends where they meet
-a contact circle, which is a rim crossing on an end pose's own rim rather than a sheet's.
+**The two end poses' meeting** is the depth's zero set on the start pose where the cover is
+the end pose, as every other seam — `seams` on `Chart::End(0)` reads it, the certified cover
+marching the whole roll to its far end — read as trims between the poses (below, `faces::met`).
 The old road stays what `closed::ring` calls. **The next cases, as checks:** the crossed reverse
 member with its roll's end at 5° (no pinch; the old road misclassifies a cell and refuses `Wrong`)
 builds in 0.4 s — 8 faces, `check`, volume 1.5608532821, no volume known apart, held to its mesh and
@@ -2765,20 +2763,90 @@ rim counts a cover clear above nought only from an instant inside the disc's spa
 end pose's, far off, is another basin's: the full turn's second swallowtail point, read 0.85 above
 by the start pose, had no disc); and two runs' ends on one cut are one point where they stand within
 the tolerance in space (each the root along the cut its own part's trace read: 2e-6 apart in `t` on
-the full turn). **Where the cases stand:** the full turn traces every chart's seams in some 10 s
-(the sheet `+` 3.6 s, 7 pieces; the sheet `−` 5.2 s, 10 pieces) and is refused building its trims:
-on the sheet `−` a piece leaves the cut `θ = π` at `t` 2.24599 covered at its own instant, where the
-depth is 1.28 — `Depth::along` continuing a far cover whose instant has run into the point's own
-contact, a phantom branch `least` does not undercut (reading the climb between the two instants
-to end it slowed the half turn fivefold through ordinary branches: not kept); and its two end
-poses' meeting is still not read. The thin traces every chart's seams in 54 s (the sheet `−` 33 s,
-its edges 19 s where they took 439) and is refused fitting its trims: the double curve from its
-second swallowtail point to the rim misfits at its start by 3.3e-7 against a bar of 3e-8, the rim
-crossing settled a tolerance off the traced run's next point. The bench's tumbling torus (`tube 0.5`,
-±75°, `tube_profile tumble`; the old road's 25.2750392926) is refused in 1.3 s: the sheet `−`'s
-depth's march stalls at (2.5074577, 1.3077056), 1.3e-3 short of the roll's end, a singular point
-of its zero set there (a corner of the double curve, the end pose and the cuspidal edge, by its
-place) that no event yet names. **The old march's step over a shallow fall** (asked of the tube's
+the full turn). **Every ring case the old road builds, built** (#880 T1f; each change keeping the half turn at
+12.2377154879 to 1e-10, the 80° torus at 10.9393141712, and the half turn's time):
+* **A far cover continued into the point's own contact ends** (`Depth::along`; gated by
+  `swept_tube::a_far_cover_continued_into_the_points_own_contact_ends`): its stretch is cut half
+  the way toward the point's own instant, and a least found at that cut, to the rounding of the
+  roll, is the own contact's slope — `d` falling there toward the own instant — no basin of another
+  instant: the double curve's two instants have met (its end, beside a swallowtail point), and the
+  cover ends. Read on, each corrector's pass halved the way again and the cover slid into the own
+  contact, nought everywhere on the sheet: on the full turn's sheet `−` a phantom branch ran along
+  `t` 2.24599 to the cut `θ = π`, where the depth is 1.28. It costs nothing: the half turn's ordinary
+  branches never settle at that cut (reading the climb between the instants instead slowed it
+  fivefold).
+* **A point is traced where it is so in the chart** (`zero_set`'s near test; gated by
+  `zero_set::a_loop_whose_image_crosses_a_traced_curve_is_found`): a seed, or a search cell's
+  middle, is answered as on a traced curve where a traced chord stands within the radius of it in
+  space *and*, by the metric at the point, in the parameters. A sheet meets itself along its double
+  curve, so another place of the chart comes to the same point: on the full turn the preimage
+  seeded across the cut `θ ≡ 0` stood in space on its other preimage, traced already in that part,
+  and was never traced.
+* **A switch solved where it falls** (`faces::switched`): where a run's cover passes from the sheet
+  `B`'s point at an instant inside the roll to the end pose `k`, the event is where `B`'s preimage
+  reaches its rim at `k` — a rim crossing on `B`. Where the run covered by `B` is the one kept (its
+  own instant the later), `B`'s run is not, and the crossing is solved there, on `B`'s rim, from
+  `B`'s point covered at the run's own instant; else it is `B`'s own run's rim crossing, read once
+  every run's ends are (the half turn's). Both runs beside a switch end at its one vertex.
+* **The two end poses' meeting** (`faces::met`, the old road's `depth::ends_met`): the start
+  pose's seams (`seams` on `Chart::End(0)`, its contact circles inner edges) where the end pose
+  covers it are trims of the start pose against the end pose, the partner of each point the end
+  pose's place in closed form (`Tube::on_end`). Each end of such a run is an event already found, a
+  vertex standing on both poses: on the start pose's contact circle the sheet's rim crossing at
+  the start covered by the end pose; where the start pose's cover passes to the end pose from the
+  instants before it, the sheet's rim crossing at the end covered by the start pose — the nearest
+  such vertex, held within the trace's longest step of the run's end, its parameters put there.
+  The full turn's are two short arcs, as the old road's; tracing the start pose costs the half turn
+  some 0.4 s.
+* **The cut from a swallowtail point ends at the first trim it meets** (`faces::met_by_cut`): it
+  runs at the point's angle toward the rim the swallowtail opens away from, and a trim's polyline
+  crossed before the rim (its own or its partner's on the chart) is met there — the point settled
+  on the double curve with its angle held, a vertex of both its charts, and the trim split there
+  into two. On the full turn's sheet `−` the cut from the second swallowtail point ran to the start
+  and crossed a double curve with the end pose with no vertex there, and one face used a trim on
+  both its sides.
+* **A window's island is a hole** (`faces::faces`): a loop of a window's graph turning clockwise is
+  the outside of its part of the graph — the window's own, or, where it meets no node of a loop
+  turning counter-clockwise and stands inside it, an island in that part, a hole of the least
+  such; a face is its outer loop and its holes, its inner point read clear of them (the full turn's
+  sheet `+` holds a lens bounded by a double curve with the sheet `−` and one with the end pose).
+* **Each chart its own windows** (`faces::windows`): the cuts split the largest gap of angle the
+  trims' uses *on that chart* leave free, in order within the turn; a sheet's rim is split at its
+  own cuts and its end pose's (one vertex where they coincide). On the bench's tumbling torus the
+  sheet `−`'s double curves with the end pose run near its rim over 2.5 of a turn's angle, their
+  partners on the end pose over the rest: no angle was free on every chart at once.
+* **A shallow crossing of a side read twice is no piece** (`zero_set`; gated by
+  `zero_set::a_rim_crossed_at_two_readings_of_one_place_is_no_piece`): a piece every point of which
+  lies on the one side it started on (on an inner edge, of two points) is that side's crossing read
+  twice. The far cover's depth is read to the cover's tolerance, and where the zero set crosses a
+  rim shallowly that changes sign twice about the one root: on the thin's sheet `−` two rim seeds
+  2.5 tolerances apart, the march from one arriving at the other, a piece along the rim the run
+  joined and doubled back on past its crossing (the misfit of 3.3e-7 against 3e-8 at its start).
+  Neither settling the trace's first point with the crossing nor holding that end to the tolerance
+  is true to it: the curve meets the rim once, at the crossing, which replaces the trace's own
+  reading of it.
+* **A curve run to the edge of its field's domain ends there** (`zero_set::End::Undefined`; gated
+  by `zero_set::a_curve_running_to_where_its_field_is_undefined_ends_there`): a march that can
+  step no farther — its step halved under the rounding — and finds the field undefined within a
+  tolerance of where it stands (ahead, or across its curve either way) ends there, where it was
+  refused as stalled. On the bench's tumbling torus the sheet `−`'s double curve with the end pose
+  runs into a corner of the cuspidal edge and the roll's end where the two stand within 1e-12 of
+  one another: there its zero set is the very edge of where the end pose is a cover past the point's
+  own contact (beyond, its basin has merged into the own contact and nothing covers the point), so
+  no chord keeps inside the field; the run ends there and is joined straight to the corner, every
+  point of the join within the tolerance of the end pose (`cornered`, the half turn's).
+
+**Measured** (`tube_profile … build`, beside a test build: the times are upper bounds): the full
+turn builds in 26 s (14 faces, volume 23.6738858153 against the old road's 23.6738852531, 2.4e-8
+of itself), the thin in 61 s (10 faces, 0.6963027945 against 0.6963027896, 6.5e-9), the bench's
+tumbling torus in 9.6 s (8 faces, 25.2750727786 against the volume made apart, 25.2750727653 —
+`swept_rings::the_tumbling_torus_as_the_bench_spells_it_is_built_closed` — 5e-10; the old road at
+this spelling of the motion reads 25.2750392926, 1.3e-6 below, and its solid's faces carry surface
+covered by other instants: nine points of its mesh at 0.003 covered 1e-5 to 3.4e-3 deep, on three
+faces, the tube road's none). Each passes `check` at the call's tolerance with no misfit at the
+size's tolerance, and each is held to its mesh and to membership by the depth in the slow tier
+(`swept_tube::the_full_turn_builds_by_the_tube_road`, `…the_thin_…` at 160 000 points, a tube of
+0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **The old march's step over a shallow fall** (asked of the tube's
 cover, `swept_tube::the_tubes_cover_reads_as_the_depths`): on the half turn's sheet `+` at
 (θ = 2.5π/12, t = −0.9163) the own contact climbs to 2.2120598518 at τ
 1.568359 and falls 2.96e-6 — under the tolerance, over the rounding — to the end pose's
@@ -2838,8 +2906,8 @@ the cut `θ = 2π` (t 1.4597, covered at −0.072) with no piece across it: at `
 within the tolerance in space of the run from (0, 0.6988) (covered at 1.4613, own 0.699), a triple
 point of the sheet with itself, and `zero_set`'s duplicate test (`near_traced`) read in space alone,
 so it dropped a second preimage there (`zero_set::through` from the same seed traces it to the
-roll's end at (0.9046, b)); it now reads the parameters too where the field's chart passes through
-itself (`Field::folded`, the tube's depth), and the sheet `+` traces 7 pieces in 4.8 s. The build
+roll's end at (0.9046, b)); it now reads the parameters too, by the metric (the tube road's sibling's
+change, merged), and the sheet `+` traces 7 pieces. The build
 then stops at the sheet `−`'s stall below. **Not yet**: three readings off the pinch — the reverse's near miss of a second whole-touch
 (`|(A, B)|` 6.3e-4, 3.6e-4 of the terms' scale, at (1.0764, 0.4611), no root, where the sheets fold
 through within a few ten-thousandths and a graded net asks 866 × 855 poles), and the sheet `−`'s

@@ -272,37 +272,33 @@ enum Kind { Trim(usize),Rim { side: f64,k: usize,th: [f64;2] },Across { chart: C
 #[derive(Clone,Debug)]
 struct Arc2 { kind: Kind,v: [usize;2],uses: Vec<(Chart,Vec<P>)> }
 
-/// The windows' cuts: two angles splitting the largest gap in angle every trim leaves free, at its
-/// thirds. Refused where no gap is wider than a hundredth of a turn (structural: a trim round
-/// every angle is a road not built).
-fn windows(trims: &[Trim],points: &[P]) -> Result<[f64;2],Unbuilt> {
-    let mut ths: Vec<f64> = trims.iter().flat_map(|t| t.uv.iter().chain(&t.partner).map(|p| p[0].rem_euclid(TAU))).collect();
-    ths.extend(points.iter().map(|p| p[0].rem_euclid(TAU)));
-    clear_cuts(ths)
-}
-
-/// **Each family of charts' windows' cuts** (`clear_cuts`): the sheets' and end poses' angle round
-/// the axis, clear of every trim's use on them, every swallowtail point and the pinch's hole on
-/// the sheets; and the collar's `ψ`, clear of every trim's use on it.
-fn chart_cuts(tube: &Tube,trims: &[Trim],points: &[P]) -> Result<([f64;2],[f64;2]),Unbuilt> {
-    let on = |collar: bool| -> Vec<f64> { trims.iter().flat_map(|t| [(t.own,&t.uv),(t.other,&t.partner)])
-        .filter(|(c,_)| (*c == Chart::Collar) == collar).flat_map(|(_,l)| l.iter().map(|p| p[0].rem_euclid(TAU))).collect() };
-    let mut ths = on(false);
-    ths.extend(points.iter().map(|p| p[0].rem_euclid(TAU)));
-    ths.extend(tube.hole(Chart::Sheet(1.))?.iter().flatten().map(|p| p[0].rem_euclid(TAU)));
-    Ok((clear_cuts(ths)?,clear_cuts(on(true))?))
-}
-
-/// Two angles splitting the largest gap in `ths` at its thirds (`windows`' rule).
-fn clear_cuts(mut ths: Vec<f64>) -> Result<[f64;2],Unbuilt> {
+/// **A chart's windows' cuts**: two angles splitting the largest gap in angle the trims' uses on
+/// it (and the swallowtail points on it, `points`) leave free, at its thirds — each chart its own,
+/// so a trim on one chart round every angle with its partner round the rest on another is cut on
+/// each (the bench's tumbling torus: its sheet `−`'s double curves with the end pose run near its
+/// rim over 2.5 of a turn's angle, their partners on the end pose over the rest). Refused where no
+/// gap is wider than a hundredth of a turn (structural: a trim round every angle is a road not
+/// built).
+fn windows(trims: &[Trim],points: &[(Chart,P)],chart: Chart) -> Result<[f64;2],Unbuilt> {
+    let mut ths: Vec<f64> = trims.iter().flat_map(|t| [(t.own,&t.uv),(t.other,&t.partner)])
+        .filter(|(c,_)| *c == chart).flat_map(|(_,l)| l.iter().map(|p| p[0].rem_euclid(TAU))).collect();
+    ths.extend(points.iter().filter(|(c,_)| *c == chart).map(|(_,p)| p[0].rem_euclid(TAU)));
     if ths.is_empty() { return Ok([0.5*PI,1.5*PI]) }
     ths.sort_by(f64::total_cmp);
     let n = ths.len();
     let (gap,at) = (0..n).map(|i| { let next = if i+1 < n { ths[i+1] } else { ths[0]+TAU }; (next-ths[i],ths[i]) })
         .max_by(|p,q| p.0.total_cmp(&q.0)).expect("some angles");
-    if gap < 0.01*TAU { return Err(failed("the trims leave no angle free for the windows' cuts".into())) }
-    Ok([(at+gap/3.).rem_euclid(TAU),(at+2.*gap/3.).rem_euclid(TAU)])
+    if gap < 0.01*TAU { return Err(failed(format!("the trims leave no angle of {chart:?} free for the windows' cuts"))) }
+    // (in order within the turn: the windows run from the first to the second and on round)
+    let (x,y) = ((at+gap/3.).rem_euclid(TAU),(at+2.*gap/3.).rem_euclid(TAU));
+    Ok([x.min(y),x.max(y)])
 }
+
+/// The charts, in the order their faces are read.
+const CHARTS: [Chart;4] = [Chart::Sheet(1.),Chart::Sheet(-1.),Chart::End(0),Chart::End(1)];
+
+/// A chart's windows' cuts, of each chart's.
+fn cuts_of(cuts: &[(Chart,[f64;2])],chart: Chart) -> [f64;2] { cuts.iter().find(|(c,_)| *c == chart).expect("every chart's cuts").1 }
 
 /// The chart's end-pose band: where the sheet `+`'s rim stands on the end pose `k` at `θ`, and
 /// which way round the tube the band runs from it (`side` above nought there).
@@ -352,48 +348,26 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
         if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
         let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
         let field = Depth {tube,chart,within:tol,holes:&discs};
-        // the pieces joined across the cuts `round` traces in
-        let mut runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
-        // (two ends on one cut, at one place to the rounding or, each the root along the cut its
-        // own part's trace read, within the tolerance of one another in space)
-        let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
-        let same = |p: P,q: P| (p[0]-q[0]+PI).rem_euclid(TAU)-PI == 0. && p[1] == q[1]
-            || ((p[0]-q[0]+PI).rem_euclid(TAU)-PI).abs() <= HALF_READ && ((p[1]-q[1]).abs() <= HALF_READ*(b-a) || near(p,q));
-        'merge: loop {
-            for i in 0..runs.len() { for j in 0..runs.len() {
-                if i == j { continue }
-                let (pi,pj) = (runs[i].0[runs[i].0.len()-1],runs[j].0[0]);
-                if same(pi,pj) {
-                    let (mut u,mut c) = runs.remove(j);
-                    let i = if j < i { i-1 } else { i };
-                    u.remove(0); c.remove(0);
-                    runs[i].0.extend(u); runs[i].1.extend(c);
-                    continue 'merge
-                }
-                let pj = runs[j].0[runs[j].0.len()-1];
-                if i < j && same(pi,pj) {
-                    let (mut u,mut c) = runs.remove(j);
-                    u.reverse(); c.reverse();
-                    u.remove(0); c.remove(0);
-                    runs[i].0.extend(u); runs[i].1.extend(c);
-                    continue 'merge
-                }
-            } }
-            break
-        }
-        // each piece cut into runs by what covers it, and the runs kept
+        let runs = merged(tube,chart,pieces,tol);
+        // each piece cut into runs by what covers it, and the runs kept; each switch of what covers
+        // it resolved once for both runs beside it (`switched`: its vertex, or none where it is the
+        // partner run's rim crossing, read once every run's ends are — a switch between a sheet's
+        // cover and the collar's is the partner's crossing of the pinch's rim, `rim_vertex`)
         // (an end pose's, a sheet's, or — its place inside the pinch's hole — the collar's)
         let in_hole = |c: &Cover| tube.pinch.as_ref().is_some_and(|p| {
             let l = tube.ring.frame.local(c.point);
             p.side([l[1].datan2(l[0]).rem_euclid(TAU),c.at]) < 0.
         });
         let class = |c: &Cover| on_rim(c.at).map_or(if in_hole(c) { 3 } else { 2 },|k| k);
-        let mut kept: Vec<(Vec<P>,Vec<Cover>,[bool;2])> = Vec::new();
+        let mut kept: Vec<(Vec<P>,Vec<Cover>,[Option<Option<usize>>;2])> = Vec::new();
         for (uv,at) in runs {
             let n = uv.len();
             let mut from = 0;
+            let mut before = None;
             for i in 1..=n {
                 if i < n && class(&at[i]) == class(&at[from]) { continue }
+                let after = if i < n { Some(if class(&at[i-1]) == 3 || class(&at[i]) == 3 { None }
+                    else { switched(tube,chart,(uv[i-1],&at[i-1]),(uv[i],&at[i]),&mut vertices,tol)? }) } else { None };
                 let (u,c) = (uv[from..i].to_vec(),at[from..i].to_vec());
                 let m = c.len()/2;
                 // (a double curve of the sheets traced on both preimages: the later one's kept)
@@ -405,9 +379,8 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                     let j = rim_vertex(tube,&mut vertices,sign,psi,cv.clone(),tol)?;
                     if let Some((_,[psi,_])) = vertices[j].on.iter().find(|(ch,_)| *ch == Chart::Collar) { on_hole.push((sign,*psi)) }
                 }
-                // (whether each end is a switch of what covers it)
-                if keep && !u.is_empty() { kept.push((u,c,[from > 0,i < n])) }
-                from = i;
+                if keep && !u.is_empty() { kept.push((u,c,[before,after])) }
+                (before,from) = (after,i);
             }
         }
         // each run's partner, and its ends resolved
@@ -434,8 +407,13 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             for e in 0..2 {
                 let t = &trims[ti];
                 let i = if e == 0 { 0 } else { t.uv.len()-1 };
-                let (q,c) = (t.uv[i],at[i].clone());
-                if switch[e] { continue }
+                // (the run's last cover, a switch at its start having put a point before it)
+                let (q,c) = (t.uv[i],at[if e == 0 { 0 } else { at.len()-1 }].clone());
+                match switch[e] {
+                    Some(Some(v)) => { ended(&mut trims[ti],e,v,&vertices)?; continue }
+                    Some(None) => continue,
+                    None => {}
+                }
                 // a crossing of the pinch's rim
                 if let Some((sign,psi)) = tube.on_hole(chart,q) {
                     let j = rim_vertex(tube,&mut vertices,sign,psi,c,tol)?;
@@ -490,27 +468,23 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             }
         }
     }
+    met(tube,&mut trims,&vertices,tol,feature)?;
     // the switches: each the partner of a rim crossing on the switching trim's chart
+    if debug() {
+        for (i,t) in trims.iter().enumerate() { eprintln!("tube: run {i} on {:?} against {:?}, ends {:?}, {:?} .. {:?}, partner {:?} .. {:?}",t.own,t.other,t.ends,t.uv[0],t.uv[t.uv.len()-1],t.partner[0],t.partner[t.partner.len()-1]) }
+        for (i,v) in vertices.iter().enumerate() { eprintln!("tube: vertex {i} {:?}",v.on) }
+    }
     for ti in 0..trims.len() {
         for e in 0..2 {
             if trims[ti].ends[e] != usize::MAX { continue }
             let t = &trims[ti];
-            let i = if e == 0 { 0 } else { t.uv.len()-1 };
-            let q = t.uv[i];
+            let q = t.uv[if e == 0 { 0 } else { t.uv.len()-1 }];
             let apart = |p: P| crate::plane2::dist([unwrap(p[0],q[0]),p[1]],q);
             let near = |v: &Vertex| v.on.iter().filter(|(c,_)| *c == t.own).map(|(_,p)| apart(*p)).fold(f64::INFINITY,f64::min);
             let (v,_) = vertices.iter().enumerate().filter(|(_,v)| v.on.len() >= 3)
                 .map(|(j,v)| (j,near(v))).min_by(|x,y| x.1.total_cmp(&y.1))
                 .ok_or_else(|| failed(format!("a trim's cover switches at {q:?}, at no rim crossing")))?;
-            // (the switch's own parameters: the rim crossing's partner on this chart, its partner
-            // here the crossing's point on the end pose)
-            let own = vertices[v].on.iter().filter(|(c,_)| *c == t.own).map(|(_,p)| *p)
-                .min_by(|x,y| apart(*x).total_cmp(&apart(*y))).expect("on the chart");
-            let other = vertices[v].on.iter().find(|(c,p)| *c == t.other && !(t.other == t.own && *p == own)).map(|(_,p)| *p)
-                .ok_or_else(|| failed("a switch whose crossing is not on the trim's partner".into()))?;
-            let t = &mut trims[ti];
-            if e == 0 { t.uv.insert(0,own); t.partner.insert(0,other) } else { t.uv.push(own); t.partner.push(other) }
-            t.ends[e] = v;
+            ended(&mut trims[ti],e,v,&vertices)?;
         }
     }
     // (each trim's angles unwrapped along it once its ends are in place, and an end pose's ψ)
@@ -518,10 +492,169 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
         for j in 1..t.uv.len() {
             t.uv[j][0] = unwrap(t.uv[j][0],t.uv[j-1][0]);
             t.partner[j][0] = unwrap(t.partner[j][0],t.partner[j-1][0]);
+            if let Chart::End(_) = t.own { t.uv[j][1] = unwrap(t.uv[j][1],t.uv[j-1][1]) }
             if let Chart::End(_) = t.other { t.partner[j][1] = unwrap(t.partner[j][1],t.partner[j-1][1]) }
         }
     }
-    build(tube,&mut vertices,&trims,&tails,tol)
+    build(tube,&mut vertices,&mut trims,&tails,tol)
+}
+
+/// **The pieces of a chart's seams joined across the cuts `round` traces in**: two ends on one
+/// cut are one point where they stand at one place to the rounding or — each the root along the cut
+/// its own part's trace read — within the tolerance of one another in space (an end pose's `ψ`, a
+/// whole turn too, read within its turn).
+fn merged(tube: &Tube,chart: Chart,pieces: Vec<crate::zero_set::Piece<Cover>>,tol: f64) -> Vec<(Vec<P>,Vec<Cover>)> {
+    let [a,b] = tube.roll;
+    let mut runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
+    let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
+    let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
+    let (dv,rv) = match chart { Chart::End(_) => (turn as fn(f64) -> f64,HALF_READ),Chart::Sheet(_) => ((|x| x) as fn(f64) -> f64,HALF_READ*(b-a)),
+        Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)) };
+    let same = |p: P,q: P| turn(p[0]-q[0]) == 0. && dv(p[1]-q[1]) == 0.
+        || turn(p[0]-q[0]).abs() <= HALF_READ && (dv(p[1]-q[1]).abs() <= rv || near(p,q));
+    'merge: loop {
+        for i in 0..runs.len() { for j in 0..runs.len() {
+            if i == j { continue }
+            let (pi,pj) = (runs[i].0[runs[i].0.len()-1],runs[j].0[0]);
+            if same(pi,pj) {
+                let (mut u,mut c) = runs.remove(j);
+                let i = if j < i { i-1 } else { i };
+                u.remove(0); c.remove(0);
+                runs[i].0.extend(u); runs[i].1.extend(c);
+                continue 'merge
+            }
+            let pj = runs[j].0[runs[j].0.len()-1];
+            if i < j && same(pi,pj) {
+                let (mut u,mut c) = runs.remove(j);
+                u.reverse(); c.reverse();
+                u.remove(0); c.remove(0);
+                runs[i].0.extend(u); runs[i].1.extend(c);
+                continue 'merge
+            }
+        } }
+        break
+    }
+    runs
+}
+
+/// **The two end poses' meeting** (the old road's `depth::ends_met`): the start pose's seams
+/// (`seams` on `Chart::End(0)`, its contact circles its inner edges) where the end pose covers it,
+/// each run a trim of the start pose against the end pose, its partner the end pose's place of each
+/// point (`Tube::on_end`, closed form). Each end of a run is an event found already, one vertex
+/// standing on both poses: where it meets the start pose's contact circle — the sheet's rim at the
+/// start — the sheet's rim crossing covered by the end pose; where the start pose's cover passes
+/// to the end pose from the instants before it, the sheet's rim crossing at the end covered by the
+/// start pose. Each is the vertex on both poses nearest the run's end, held within the trace's
+/// longest step (`feature`) of it in space, its parameters put at that end (in place of the
+/// trace's own reading of it, on the contact circle; before it, at a switch).
+fn met(tube: &Tube,trims: &mut Vec<Trim>,vertices: &[Vertex],tol: f64,feature: f64) -> Result<(),Unbuilt> {
+    let chart = Chart::End(0);
+    let [a,b] = tube.roll;
+    let (circles,_) = edges(tube,chart,tol,feature)?;
+    let circles: Vec<Vec<P>> = circles.into_iter().map(|p| p.uv).collect();
+    let (pieces,_,_) = seams(tube,chart,&circles,&[],&[],tol,feature)?;
+    let ended = |c: &Cover| (c.at-b).abs() <= HALF_READ*(b-a);
+    let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
+    for (uv,at) in merged(tube,chart,pieces,tol) {
+        let n = uv.len();
+        let mut from = 0;
+        for i in 1..=n {
+            if i < n && ended(&at[i]) == ended(&at[from]) { continue }
+            if ended(&at[from]) {
+                let mut u = uv[from..i].to_vec();
+                let mut partner = Vec::with_capacity(u.len());
+                for q in &u {
+                    let x = tube.at(chart,*q).ok_or_else(|| failed("no start pose at its meeting with the end pose".into()))?.x;
+                    partner.push(tube.on_end(1,x).ok_or_else(|| failed("no end pose at its meeting with the start pose".into()))?);
+                }
+                let mut ends = [usize::MAX;2];
+                for e in 0..2 {
+                    let j = if e == 0 { 0 } else { u.len()-1 };
+                    let q = u[j];
+                    let x = tube.at(chart,q).ok_or_else(|| failed("no start pose at a meeting's end".into()))?.x;
+                    let apart = |p: P| turn(p[0]-q[0]).dhypot(turn(p[1]-q[1]));
+                    let (v,on) = vertices.iter().enumerate()
+                        .filter_map(|(v,w)| {
+                            let p0 = w.on.iter().find(|(c,_)| *c == Chart::End(0))?.1;
+                            let p1 = w.on.iter().find(|(c,_)| *c == Chart::End(1))?.1;
+                            Some((v,[p0,p1]))
+                        })
+                        .min_by(|x,y| apart(x.1[0]).total_cmp(&apart(y.1[0])))
+                        .ok_or_else(|| failed(format!("the end poses' meeting ends at {q:?}, at no vertex on both")))?;
+                    if distance(vertices[v].x,x) > feature {
+                        return Err(failed(format!("the end poses' meeting ends at {q:?}, {:e} from the nearest vertex on both",distance(vertices[v].x,x))))
+                    }
+                    // (on the contact circle the trace's end is the event read again: replaced; at a
+                    // switch the event lies past the run's last point: put after it)
+                    let switch = if e == 0 { from > 0 } else { i < n };
+                    let (p0,p1) = (on[0],on[1]);
+                    match (switch,e) {
+                        (false,0) => { u[0] = p0; partner[0] = p1 }
+                        (false,_) => { let m = u.len()-1; u[m] = p0; partner[m] = p1 }
+                        (true,0) => { u.insert(0,p0); partner.insert(0,p1) }
+                        (true,_) => { u.push(p0); partner.push(p1) }
+                    }
+                    ends[e] = v;
+                }
+                trims.push(Trim {own:chart,other:Chart::End(1),uv:u,partner,ends,shape:Shape::Traced});
+            }
+            from = i;
+        }
+    }
+    Ok(())
+}
+
+/// **A switch of what covers a run**, between its points `a` and `b` on the sheet `chart`, one
+/// covered by an instant inside the roll (by the sheet `B`'s point there), the other by the end
+/// pose `k`: the triple point where `B`'s preimage of the double curve reaches its rim at `k` and
+/// the cover passes to the end pose there — a rim crossing on `B`. Where the run covered by `B` is
+/// the one kept (its own instant the later), `B`'s run is not, and the crossing is solved here, on
+/// `B`'s rim (`crossing`, from `B`'s point covered at the run's own instant), the vertex returned;
+/// else `B`'s run is kept and its own rim crossing is this switch (none returned: read once every
+/// run's ends are). A cover passing from one end pose to the other is the end poses' meeting, not
+/// yet read: refused by name.
+fn switched(tube: &Tube,chart: Chart,a: (P,&Cover),b: (P,&Cover),vertices: &mut Vec<Vertex>,tol: f64) -> Result<Option<usize>,Unbuilt> {
+    let [lo,hi] = tube.roll;
+    let on_rim = |t: f64| [lo,hi].iter().position(|&e| (t-e).abs() <= HALF_READ*(hi-lo));
+    let ((q,c),k) = match (on_rim(a.1.at),on_rim(b.1.at)) {
+        (None,Some(k)) => (a,k),
+        (Some(k),None) => (b,k),
+        _ => return Err(failed(format!("a run's cover passes from one end pose to the other at {:?}: the end poses' meeting, not yet read",a.0))),
+    };
+    if !(q[1] > c.at) { return Ok(None) }
+    let x = tube.at(chart,q).ok_or_else(|| failed("no sheet at a switch".into()))?.x;
+    let (other,p) = tube.partner(x,c).ok_or_else(|| failed(format!("no partner of the switch's point {q:?}")))?;
+    if let Chart::End(_) = other { return Err(failed(format!("a switch at {q:?} whose cover is no sheet"))) }
+    // (`B`'s point covered at the run's own instant, the cover `crossing` continues)
+    let y = tube.at(other,p).ok_or_else(|| failed("no sheet at a switch's partner".into()))?.x;
+    let pose = tube.path.pose(q[1]).map_err(|_| failed("no pose at a switch".into()))?;
+    let mine = Cover {depth:0.,at:q[1],point:pose.inverse().point(y),piece:0};
+    // (no disc of `B`'s cut about the rim: a swallowtail point is inside its chart)
+    let field = Depth {tube,chart:other,within:tol,holes:&[]};
+    let (th,cover) = crossing(&field,k,p[0],mine).ok_or_else(|| failed(format!("the switch at {q:?}: its rim crossing not settled")))?;
+    let own = [th.rem_euclid(TAU),tube.roll[k]];
+    let y = tube.at(other,own).ok_or_else(|| failed("no sheet at a switch's rim crossing".into()))?.x;
+    let (ch,pa) = tube.partner(y,&cover).ok_or_else(|| failed("no partner of a switch's rim crossing".into()))?;
+    if ch != chart { return Err(failed(format!("the switch at {q:?}: its rim crossing's partner on {ch:?}"))) }
+    let end = tube.on_end(k,y).ok_or_else(|| failed("no end pose at a switch's rim crossing".into()))?;
+    vertices.push(Vertex {x:y,on:vec![(other,own),(Chart::End(k),end),(ch,pa)]});
+    Ok(Some(vertices.len()-1))
+}
+
+/// **A trim's end `e` at its switch's vertex `v`**: the switch's own parameters on the trim's chart
+/// (of the vertex's places there, the nearest the run's end) and its partner the vertex's place on
+/// the trim's partner (another of them where that is the same chart), put at that end.
+fn ended(t: &mut Trim,e: usize,v: usize,vertices: &[Vertex]) -> Result<(),Unbuilt> {
+    let q = t.uv[if e == 0 { 0 } else { t.uv.len()-1 }];
+    let apart = |p: P| crate::plane2::dist([unwrap(p[0],q[0]),p[1]],q);
+    let on = &vertices[v].on;
+    let (j,own) = on.iter().enumerate().filter(|(_,(c,_))| *c == t.own).map(|(j,(_,p))| (j,*p))
+        .min_by(|x,y| apart(x.1).total_cmp(&apart(y.1))).ok_or_else(|| failed(format!("a switch at {q:?} not on the trim's chart")))?;
+    let other = on.iter().enumerate().find(|(i,(c,_))| *i != j && *c == t.other).map(|(_,(_,p))| *p)
+        .ok_or_else(|| failed("a switch whose crossing is not on the trim's partner".into()))?;
+    if e == 0 { t.uv.insert(0,own); t.partner.insert(0,other) } else { t.uv.push(own); t.partner.push(other) }
+    t.ends[e] = v;
+    Ok(())
 }
 
 /// **The vertex where a run crosses the pinch's rim** (`hole_crossing`, from the collar's angle
@@ -695,17 +828,17 @@ fn solve4(mut m: [[f64;4];4],mut f: [f64;4]) -> Option<[f64;4]> {
 fn unwrap(x: f64,near: f64) -> f64 { x-TAU*((x-near)/TAU).round() }
 
 /// The faces, their edges and vertices as the trims and the windows give them, sewn.
-fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,usize)],tol: f64) -> Result<Brep,Unbuilt> {
+fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(f64,P,usize)],tol: f64) -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
-    let points: Vec<P> = tails.iter().map(|t| t.1).collect();
-    let (cuts,collar_cuts) = if tube.pinch.is_some() { chart_cuts(tube,trims,&points)? } else { (windows(trims,&points)?,[0.;2]) };
-    let mut arcs: Vec<Arc2> = Vec::new();
-    for (i,t) in trims.iter().enumerate() {
-        arcs.push(Arc2 {kind:Kind::Trim(i),v:t.ends,uses:vec![(t.own,t.uv.clone()),(t.other,t.partner.clone())]});
-    }
-    // the cuts from each swallowtail point to the rim it opens away from: the way whose point a
-    // disc's span beside it is kept
-    let mut feet: Vec<(f64,usize,f64)> = Vec::new();
+    let mut points: Vec<(Chart,P)> = tails.iter().map(|t| (Chart::Sheet(t.0),t.1)).collect();
+    // (the sheets' windows clear of the pinch's hole, which lies whole in one of them)
+    for side in [1.,-1.] { points.extend(tube.hole(Chart::Sheet(side))?.into_iter().flatten().map(|p| (Chart::Sheet(side),p))) }
+    let mut cuts: Vec<(Chart,[f64;2])> = CHARTS.iter().map(|&c| windows(trims,&points,c).map(|w| (c,w))).collect::<Result<_,_>>()?;
+    if tube.pinch.is_some() { cuts.push((Chart::Collar,windows(trims,&points,Chart::Collar)?)) }
+    let collar_cuts = cuts_of(&cuts,Chart::Collar);
+    // the cuts from each swallowtail point toward the rim it opens away from (the way whose point a
+    // disc's span beside it is kept), each to the first trim it meets or else that rim
+    let mut across: Vec<Arc2> = Vec::new();
     for &(side,p,v) in tails {
         let chart = Chart::Sheet(side);
         let step = 0.02*(b-a);
@@ -713,23 +846,36 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,u
         let k = if kept(p[1]-step) { 0 } else if kept(p[1]+step) { 1 } else {
             return Err(failed(format!("neither way from the swallowtail point {p:?} is kept")))
         };
-        let e = tube.roll[k];
-        let x = tube.point(side,p[0],e).ok_or_else(|| failed("no sheet at a cut's foot".into()))?.x;
-        let end = tube.on_end(k,x).ok_or_else(|| failed("no end pose at a cut's foot".into()))?;
-        vertices.push(Vertex {x,on:vec![(chart,[p[0],e]),(Chart::End(k),end)]});
-        let foot = vertices.len()-1;
+        let (foot,e) = match met_by_cut(tube,chart,p,tube.roll[k],v,trims,vertices)? {
+            Some(f) => f,
+            None => {
+                let e = tube.roll[k];
+                let x = tube.point(side,p[0],e).ok_or_else(|| failed("no sheet at a cut's foot".into()))?.x;
+                let end = tube.on_end(k,x).ok_or_else(|| failed("no end pose at a cut's foot".into()))?;
+                vertices.push(Vertex {x,on:vec![(chart,[p[0],e]),(Chart::End(k),end)]});
+                (vertices.len()-1,e)
+            }
+        };
         let line: Vec<P> = (0..=32).map(|j| [p[0],p[1]+(e-p[1])*j as f64/32.]).collect();
-        arcs.push(Arc2 {kind:Kind::Across {chart,th:p[0],v:[p[1],e]},v:[v,foot],uses:vec![(chart,line.clone()),(chart,line)]});
-        feet.push((side,k,p[0]));
+        across.push(Arc2 {kind:Kind::Across {chart,th:p[0],v:[p[1],e]},v:[v,foot],uses:vec![(chart,line.clone()),(chart,line)]});
     }
-    // the rims, split at every vertex on them and at the cuts
+    let mut arcs: Vec<Arc2> = Vec::new();
+    for (i,t) in trims.iter().enumerate() {
+        arcs.push(Arc2 {kind:Kind::Trim(i),v:t.ends,uses:vec![(t.own,t.uv.clone()),(t.other,t.partner.clone())]});
+    }
+    arcs.extend(across);
+    // the rims, split at every vertex on them and at the cuts of the sheet's and the end pose's
     for side in [1.,-1.] {
         for k in 0..2 {
             let e = tube.roll[k];
             let chart = Chart::Sheet(side);
             let mut splits: Vec<(f64,usize)> = vertices.iter().enumerate()
                 .flat_map(|(j,v)| v.on.iter().filter(|(c,p)| *c == chart && p[1] == e).map(move |(_,p)| (p[0].rem_euclid(TAU),j))).collect();
-            for &c in &cuts {
+            // (an angle both charts cut at, one vertex)
+            let mut at: Vec<f64> = cuts_of(&cuts,chart).into_iter().chain(cuts_of(&cuts,Chart::End(k))).collect();
+            at.sort_by(f64::total_cmp);
+            at.dedup();
+            for c in at {
                 let x = tube.point(side,c,e).ok_or_else(|| failed("no sheet at a cut".into()))?.x;
                 let end = tube.on_end(k,x).ok_or_else(|| failed("no end pose at a cut".into()))?;
                 vertices.push(Vertex {x,on:vec![(chart,[c,e]),(Chart::End(k),end)]});
@@ -783,22 +929,78 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,u
     }
     // the cuts across each chart at the windows' angles
     let at_rim = |vs: &Vec<Vertex>,chart: Chart,q: P| vs.iter().position(|v| v.on.iter().any(|(c,p)| *c == chart && p[0] == q[0] && p[1] == q[1]));
-    for &c in &cuts {
-        for side in [1.,-1.] {
-            let chart = Chart::Sheet(side);
+    for side in [1.,-1.] {
+        let chart = Chart::Sheet(side);
+        for c in cuts_of(&cuts,chart) {
             let (v0,v1) = (at_rim(vertices,chart,[c,a]).expect("a rim's cut"),at_rim(vertices,chart,[c,b]).expect("a rim's cut"));
             let line: Vec<P> = (0..=32).map(|j| [c,a+(b-a)*j as f64/32.]).collect();
             arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[a,b]},v:[v0,v1],uses:vec![(chart,line.clone()),(chart,line)]});
         }
-        for k in 0..2 {
-            let chart = Chart::End(k);
+    }
+    for k in 0..2 {
+        let chart = Chart::End(k);
+        for c in cuts_of(&cuts,chart) {
             let (plus,way,width) = band(tube,k,c).ok_or_else(|| failed("no band on an end pose".into()))?;
             let (v0,v1) = (at_rim(vertices,Chart::Sheet(1.),[c,tube.roll[k]]).expect("a rim's cut"),at_rim(vertices,Chart::Sheet(-1.),[c,tube.roll[k]]).expect("a rim's cut"));
             let line: Vec<P> = (0..=32).map(|j| [c,plus+way*width*j as f64/32.]).collect();
             arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[plus,plus+way*width]},v:[v0,v1],uses:vec![(chart,line.clone()),(chart,line)]});
         }
     }
-    faces(tube,vertices,&arcs,trims,(cuts,collar_cuts),tol)
+    faces(tube,vertices,&arcs,trims,&cuts,tol)
+}
+
+/// **Where the cut from the swallowtail point `p` (its vertex `tail`) toward the roll's end `e`
+/// first meets a trim on its chart**, if it does before the rim: the trims' polylines on the chart
+/// (a run's own, or its partner's where that is the chart) crossed by the cut's angle strictly
+/// between `p` and `e`, the nearest `p`; the point settled on the double curve with its angle held
+/// (`settle`), a vertex of both its charts, and the trim split there into two (a traced one alone:
+/// a join is refused by name). The vertex and the instant the cut ends at. A cut crossing a trim
+/// with no vertex there is no planar graph: on the full turn's sheet `−` the cut from its second
+/// swallowtail point ran down to the start and crossed a double curve with the end pose there, and
+/// one face used a trim on both its sides (#880 T1f).
+fn met_by_cut(tube: &Tube,chart: Chart,p: P,e: f64,tail: usize,trims: &mut Vec<Trim>,vertices: &mut Vec<Vertex>)
+    -> Result<Option<(usize,f64)>,Unbuilt> {
+    // (the nearest crossing: its trim, whether on the partner's polyline, its segment, the point)
+    let mut best: Option<(usize,bool,usize,f64,f64)> = None;
+    for (i,t) in trims.iter().enumerate() {
+        if t.ends.contains(&tail) { continue }
+        for (mine,line,ch) in [(false,&t.uv,t.own),(true,&t.partner,t.other)] {
+            if ch != chart { continue }
+            for j in 0..line.len()-1 {
+                let (u,w) = (line[j],line[j+1]);
+                let c = unwrap(p[0],u[0]);
+                if u[0] == w[0] || (u[0]-c)*(w[0]-c) > 0. { continue }
+                let f = (c-u[0])/(w[0]-u[0]);
+                let t = u[1]+(w[1]-u[1])*f;
+                if !((t-p[1])*(e-t) > 0.) { continue }
+                if best.is_none_or(|q| (t-p[1]).abs() < (q.4-p[1]).abs()) { best = Some((i,mine,j,f,t)) }
+            }
+        }
+    }
+    let Some((i,mine,j,f,_)) = best else { return Ok(None) };
+    let t = &trims[i];
+    if !matches!(t.shape,Shape::Traced) { return Err(failed(format!("the cut from the swallowtail point {p:?} meets a join"))) }
+    let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
+    let (u,w) = (lerp(&t.uv),lerp(&t.partner));
+    // (the angle held on the cut's own chart: its place on the polyline crossed)
+    let [u,w] = if mine {
+        let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))?; [u,w]
+    } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))? };
+    let x = tube.at(t.own,u).ok_or_else(|| failed("no chart at a cut's foot on a trim".into()))?.x;
+    vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
+    let v = vertices.len()-1;
+    let mut first = t.clone();
+    let mut second = t.clone();
+    first.uv.truncate(j+1); first.uv.push(u);
+    first.partner.truncate(j+1); first.partner.push(w);
+    first.ends[1] = v;
+    second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
+    second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
+    second.ends[0] = v;
+    trims[i] = first;
+    trims.push(second);
+    let foot = if mine { w } else { u };
+    Ok(Some((v,foot[1])))
 }
 
 /// A use's polyline placed in a window from `w0` (its angle within a turn above `w0`, its middle's
@@ -823,7 +1025,7 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
 
 /// **The faces of every chart**, each window's planar graph walked, each part kept where its inner
 /// point bounds the sweep, sewn.
-fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],(sheet_cuts,collar_cuts): ([f64;2],[f64;2]),tol: f64) -> Result<Brep,Unbuilt> {
+fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(Chart,[f64;2])],tol: f64) -> Result<Brep,Unbuilt> {
     let fit = FIT*tol;
     // each arc's curve in space and its uses' pcurves, in the uses' own parameters
     let mut curves: Vec<(Arc<Curve>,Vec<BSpline>)> = Vec::new();
@@ -864,13 +1066,14 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],(sheet_cut
                 fitted(&f,&at,&[fit,fit])?
             }
         };
+        if debug() { eprintln!("tube: arc {} {:?} {:?} mid {:?} ends {:?} {:?}",curves.len(),arc.kind,arc.v,c.point(0.5),c.point(0.),c.point(1.)) }
         curves.push((Arc::new(Curve::BSpline(Arc::new(c))),pcs));
     }
     let mut pieces: Vec<Brep> = Vec::new();
-    let mut charts = vec![Chart::Sheet(1.),Chart::Sheet(-1.),Chart::End(0),Chart::End(1)];
+    let mut charts = CHARTS.to_vec();
     if tube.pinch.is_some() { charts.push(Chart::Collar) }
     for chart in charts {
-        let cuts = if chart == Chart::Collar { collar_cuts } else { sheet_cuts };
+        let cuts = cuts_of(cuts,chart);
         for w in 0..2 {
             let (w0,w1) = if w == 0 { (cuts[0],cuts[1]) } else { (cuts[1],cuts[0]+TAU) };
             // the window's edges: (arc, use, its polyline placed)
@@ -895,43 +1098,61 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],(sheet_cut
                 }
             }
             let loops = walk(&lines,arcs,vertices)?;
-            for l in loops {
+            // each loop's polygon in the window and its area (counter-clockwise a part on its left)
+            let polys: Vec<(Vec<P>,f64)> = loops.iter().map(|(l,_)| {
                 let poly: Vec<P> = l.iter().flat_map(|&(e,fwd)| {
-                    let p = &lines[e].2;
-                    let mut p = p.clone();
+                    let mut p = lines[e].2.clone();
                     if !fwd { p.reverse() }
                     p.pop();
                     p
                 }).collect();
                 let area: f64 = (0..poly.len()).map(|j| { let (p,q) = (poly[j],poly[(j+1)%poly.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
+                (poly,area)
+            }).collect();
+            // (a loop turning clockwise is the outside of its part of the graph: the window's own,
+            // or — where it meets no node of a part turning counter-clockwise and stands inside it —
+            // an island in that part, a hole of the least such)
+            let mut holes: Vec<Vec<usize>> = vec![Vec::new();loops.len()];
+            for (j,(pj,aj)) in polys.iter().enumerate() {
+                if *aj > 0. { continue }
+                let host = (0..loops.len()).filter(|&i| polys[i].1 > 0. && !loops[i].1.iter().any(|n| loops[j].1.contains(n))
+                    && inside(pj[0],&polys[i].0)).min_by(|&x,&y| polys[x].1.total_cmp(&polys[y].1));
+                if let Some(i) = host { holes[i].push(j) }
+            }
+            for (i,(l,_)) in loops.iter().enumerate() {
+                let (poly,area) = &polys[i];
                 if debug() {
                     let named = |e: usize| match arcs[lines[e].0].kind { Kind::Trim(i) => format!("trim {i}"),Kind::Rim {..} => "rim".into(),
                         Kind::Across {th,..} => format!("across {th}"),Kind::Hole {sign,..} => format!("the pinch's rim {sign}") };
-                    eprintln!("tube: {chart:?} window {w}: a loop {:?}, area {area:e}",l.iter().map(|&(e,f)| (arcs[lines[e].0].v,f,named(e))).collect::<Vec<_>>())
+                    eprintln!("tube: {chart:?} window {w}: a loop {:?}, area {area:e}, holes {:?}",l.iter().map(|&(e,f)| (arcs[lines[e].0].v,f,named(e))).collect::<Vec<_>>(),holes[i])
                 }
-                if area <= 0. { continue }
-                let inner = interior(&poly).ok_or_else(|| failed(format!("a part of {chart:?} with no inner point")))?;
+                if *area <= 0. { continue }
+                let rings: Vec<&[P]> = std::iter::once(&poly[..]).chain(holes[i].iter().map(|&j| &polys[j].0[..])).collect();
+                let inner = interior(&rings).ok_or_else(|| failed(format!("a part of {chart:?} with no inner point")))?;
                 let q = match chart { Chart::Sheet(_) | Chart::Collar => inner,Chart::End(k) => {
                     let (plus,way,_) = band(tube,k,inner[0]).ok_or_else(|| failed("no band".into()))?; [inner[0],plus+way*inner[1]] } };
                 let field = Depth {tube,chart,within:tol,holes:&[]};
                 let keep = match field.reading(q) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
                 if !keep { continue }
-                pieces.push(face(tube,chart,(w0,w1),&lines,&l,arcs,&curves,vertices,tol)?);
+                if debug() { eprintln!("tube: kept {chart:?} window {w}: {:?}",l.iter().map(|&(e,_)| lines[e].0).collect::<Vec<_>>()) }
+                let ls: Vec<&[(usize,bool)]> = std::iter::once(&l[..]).chain(holes[i].iter().map(|&j| &loops[j].0[..])).collect();
+                pieces.push(face(tube,chart,(w0,w1),&lines,&ls,arcs,&curves,vertices,tol)?);
             }
         }
     }
     crate::sew::sewn(&pieces,tol).map_err(|e| failed(format!("the faces sewn: {e}")))
 }
 
-/// A point inside a polygon: the middle of the widest run across it at the middle of its height.
-fn interior(poly: &[P]) -> Option<P> {
-    let (lo,hi) = poly.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p[1]),h.max(p[1])));
+/// A point inside a polygon with holes (`rings`, the outer first; even and odd crossings): the
+/// middle of the widest run across it at the middle of its height.
+fn interior(rings: &[&[P]]) -> Option<P> {
+    let (lo,hi) = rings[0].iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p[1]),h.max(p[1])));
     for f in [0.5,0.3,0.7,0.2,0.8] {
         let y = lo+(hi-lo)*f;
-        let mut xs: Vec<f64> = (0..poly.len()).filter_map(|j| {
+        let mut xs: Vec<f64> = rings.iter().flat_map(|poly| (0..poly.len()).filter_map(move |j| {
             let (a,b) = (poly[j],poly[(j+1)%poly.len()]);
             ((a[1] <= y) != (b[1] <= y)).then(|| a[0]+(y-a[1])/(b[1]-a[1])*(b[0]-a[0]))
-        }).collect();
+        })).collect();
         xs.sort_by(f64::total_cmp);
         if let Some(w) = xs.chunks(2).filter(|w| w.len() == 2).max_by(|a,b| (a[1]-a[0]).total_cmp(&(b[1]-b[0]))) {
             if w[1] > w[0] { return Some([0.5*(w[0]+w[1]),y]) }
@@ -940,10 +1161,20 @@ fn interior(poly: &[P]) -> Option<P> {
     None
 }
 
+/// Whether `p` lies inside the polygon `poly` (even and odd crossings of the way out along `u`).
+fn inside(p: P,poly: &[P]) -> bool {
+    (0..poly.len()).filter(|&j| {
+        let (a,b) = (poly[j],poly[(j+1)%poly.len()]);
+        (a[1] <= p[1]) != (b[1] <= p[1]) && a[0]+(p[1]-a[1])/(b[1]-a[1])*(b[0]-a[0]) > p[0]
+    }).count()%2 == 1
+}
+
 /// **A window's planar graph walked into loops**, each part on the left of its edges: at each
 /// vertex the edges leaving it in order of their way out, and from an edge arriving the next one
-/// clockwise from its own way back. Each loop its edges (a line of `lines`, and whether forward).
-fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Result<Vec<Vec<(usize,bool)>>,Unbuilt> {
+/// clockwise from its own way back. Each loop its edges (a line of `lines`, and whether forward)
+/// and the nodes it passes.
+#[allow(clippy::type_complexity)]
+fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Result<Vec<(Vec<(usize,bool)>,Vec<(usize,usize)>)>,Unbuilt> {
     use std::collections::BTreeMap;
     // (a node: a vertex at one of its places on the chart — a double curve's point has two on one
     // sheet — the place nearest the line's end, its angle and ψ read within a turn)
@@ -977,12 +1208,14 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
         for fwd0 in [true,false] {
             if used[e0][fwd0 as usize] { continue }
             let mut l = Vec::new();
+            let mut nodes = Vec::new();
             let (mut e,mut fwd) = (e0,fwd0);
             loop {
                 if used[e][fwd as usize] { break }
                 used[e][fwd as usize] = true;
                 l.push((e,fwd));
                 let v = if fwd { node(e,1) } else { node(e,0) };
+                nodes.push(v);
                 let ring = out.get(&v).ok_or_else(|| failed("a vertex left by nothing".into()))?;
                 // (the half-edge back along this one, and the next clockwise from it)
                 let back = ring.iter().position(|&(_,f,w)| f == e && w == !fwd).ok_or_else(|| failed("an edge not left".into()))?;
@@ -990,7 +1223,7 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
                 (e,fwd) = (next.1,next.2);
             }
             if l.len() < 2 { return Err(failed("a window's edge closing on itself".into())) }
-            loops.push(l);
+            loops.push((l,nodes));
         }
     }
     Ok(loops)
@@ -999,7 +1232,7 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
 /// **One kept part as a face**: on a sheet a net fitted over the window as a map, on an end pose its
 /// torus; its loop's edges each the arc's curve and its use's pcurve, in the surface's parameters.
 #[allow(clippy::too_many_arguments)]
-fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>)],l: &[(usize,bool)],arcs: &[Arc2],
+fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>)],loops: &[&[(usize,bool)]],arcs: &[Arc2],
     curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],tol: f64) -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
@@ -1022,9 +1255,13 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
         }
     };
     let mut out = Brep::default();
+    let mut rings: Vec<Vec<Coedge>> = Vec::new();
+    // (the outer loop's first point: on an end pose a hole begins within half a turn of `ψ` of it)
+    let mut start: Option<P> = None;
+    for (n,l) in loops.iter().enumerate() {
     let mut uses = Vec::new();
     // (an end pose's pcurves each moved by whole turns of `ψ` to start where the last ended)
-    let mut last: Option<P> = None;
+    let mut last: Option<P> = start;
     let mut first: Option<u32> = None;
     for (j,&(e,fwd)) in l.iter().enumerate() {
         let (i,u,ref placed) = lines[e];
@@ -1034,16 +1271,17 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
         // (the pcurve's own angle moved by the turns the line's placing moved it, and on an end
         // pose its ψ by the turns that meet the last)
         let shift_th = placed[0][0]-arc.uses[u].1[0][0];
-        let start = if fwd { pc.point(0.) } else { pc.point(1.) };
+        let begin = if fwd { pc.point(0.) } else { pc.point(1.) };
         let shift_v = match (chart,last) {
-            (Chart::End(_),Some(q)) => { let s = [start[0]+shift_th,start[1]]; unwrap(s[1],q[1])-s[1] }
+            (Chart::End(_),Some(q)) => { let s = [begin[0]+shift_th,begin[1]]; unwrap(s[1],q[1])-s[1] }
             _ => 0.,
         };
         let moved = |p: V| map([p[0]+shift_th,p[1]+shift_v]);
         let poles: Vec<V> = pc.poles.iter().map(|&p| { let q = moved(p); [q[0],q[1],0.] }).collect();
         let pcurve = BSpline {poles,..pc.clone()};
+        if start.is_none() { let b = if fwd { pcurve.point(0.) } else { pcurve.point(1.) }; start = Some([b[0],b[1]]) }
         let end = if fwd { pcurve.point(1.) } else { pcurve.point(0.) };
-        last = Some(match chart { Chart::End(_) => [end[0],end[1]],_ => [end[0],end[1]] });
+        last = Some([end[0],end[1]]);
         let [v0,v1] = arc.v;
         let (vs,ve) = if fwd { (v0,v1) } else { (v1,v0) };
         let start_v = if j == 0 { let id = out.vertex(vertices[vs].x); first = Some(id); id } else { (out.vertices.len()-1) as u32 };
@@ -1052,16 +1290,18 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
         out.edges.push(Edge {curve:EdgeCurve::Curve((**curve).clone()),t:[0.,1.],v:ends,tol:0.});
         uses.push(Coedge {edge:(out.edges.len()-1) as u32,reversed:!fwd,pcurve:Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pcurve))))});
     }
-    // (a loop counter-clockwise in the surface's own parameters: its pcurves' polygon's area says
-    // which way round it turns — an end pose's band may run down `ψ`)
+    // (the outer loop counter-clockwise in the surface's own parameters, a hole clockwise: its
+    // pcurves' polygon's area says which way round it turns — an end pose's band may run down `ψ`)
     let mut ring: Vec<P> = Vec::new();
     for c in &uses {
         let Pcurve::Curve(pc) = &c.pcurve else { unreachable!("a pcurve of its own") };
         for j in 0..8 { let s = j as f64/8.; let q = pc.point(if c.reversed { 1.-s } else { s }); ring.push([q[0],q[1]]) }
     }
     let area: f64 = (0..ring.len()).map(|j| { let (p,q) = (ring[j],ring[(j+1)%ring.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
-    if area < 0. { uses = crate::topo::reverse_loop(uses) }
-    out.faces.push(Face {surface,reversed:false,loops:vec![uses],name:format!("{chart:?}")});
+    if (area < 0.) == (n == 0) { uses = crate::topo::reverse_loop(uses) }
+    rings.push(uses);
+    }
+    out.faces.push(Face {surface,reversed:false,loops:rings,name:format!("{chart:?}")});
     Ok(out)
 }
 

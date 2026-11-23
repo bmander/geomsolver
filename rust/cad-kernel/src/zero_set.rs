@@ -96,12 +96,6 @@ pub trait Field {
     fn place(&self,uv: Uv) -> V { self.surface(uv).0 }
     /// Enclosures of `f` and its gradient over `cell`, where the caller has them.
     fn bound(&self,_cell: Rect) -> Option<Bound> { None }
-    /// **Whether two places of the parameters may be one point in space** — a chart through
-    /// itself, as an offset sheet along its double curves with itself: then a point near a traced
-    /// chord in space is that chord's only where it is near it in the parameters too (its length
-    /// from the chord's place in the metric within the reach), and a second preimage of a curve
-    /// is traced, not taken for the first.
-    fn folded(&self) -> bool { false }
 }
 
 /// An inner edge of the domain, a curve in the parameters (a fold curve, a hole's rim): its point
@@ -114,9 +108,11 @@ pub struct Edge<'a> { pub at: &'a dyn Fn(f64) -> Uv,pub side: &'a dyn Fn(Uv) -> 
 pub struct Question<'a> { pub rect: Rect,pub edges: &'a [Edge<'a>],pub seeds: &'a [Uv],pub tol: f64,pub feature: f64 }
 
 /// How a piece ends: on the rectangle's rim, on an inner edge (by index), at a corner where the
-/// minimiser switches branches (the next piece starts there), or closed on itself.
+/// minimiser switches branches (the next piece starts there), closed on itself, or where the field
+/// stops being defined (an edge of its own domain it states as no edge: the march could step no
+/// farther, and a tolerance ahead the field reads nothing).
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum End { Rim,Edge(usize),Switch,Closed }
+pub enum End { Rim,Edge(usize),Switch,Closed,Undefined }
 
 /// A traced piece: its points in the parameters, what each was read at, and its two ends. A
 /// closed piece's last point is its first.
@@ -176,6 +172,15 @@ fn inverse(g: [[f64;2];2]) -> Option<[[f64;2];2]> {
     (det.abs() > 0. && det.is_finite()).then(|| [[g[1][1]/det,-g[0][1]/det],[-g[1][0]/det,g[0][0]/det]])
 }
 fn apply(m: [[f64;2];2],x: [f64;2]) -> [f64;2] { [m[0][0]*x[0]+m[0][1]*x[1],m[1][0]*x[0]+m[1][1]*x[1]] }
+/// The distance from `uv` to the segment from `p` to `q` in the parameters, in the length the
+/// metric `g` reads (the nearest point the projection in `g`, held to the segment).
+fn metric_distance(g: [[f64;2];2],uv: Uv,p: Uv,q: Uv) -> f64 {
+    let (d,w) = ([q[0]-p[0],q[1]-p[1]],[uv[0]-p[0],uv[1]-p[1]]);
+    let dd = dot(d,apply(g,d));
+    let s = if dd > 0. { (dot(w,apply(g,d))/dd).clamp(0.,1.) } else { 0. };
+    let e = [w[0]-s*d[0],w[1]-s*d[1]];
+    dot(e,apply(g,e)).max(0.).sqrt()
+}
 /// **Newton's step onto a zero in the parameters themselves**, along the gradient: `uv` moved by
 /// `f ∇f / |∇f|²` against it, and that step; none where the gradient is nought.
 pub fn newton(uv: Uv,f: f64,grad: [f64;2]) -> Option<(Uv,[f64;2])> {
@@ -213,9 +218,8 @@ struct Tracer<'a,F: Field> {
     step: [f64;2],
     seeds: Vec<Seed>,
     pieces: Vec<Piece<F::At>>,
-    /// the traced pieces' chords in space, filed by their ends, and in the parameters
-    chords: Vec<(V,V)>,
-    chord_uv: Vec<(Uv,Uv)>,
+    /// the traced pieces' chords in space, filed by their ends, each with its ends' parameters
+    chords: Vec<(V,V,Uv,Uv)>,
     grid: Grid,
     steps: usize,
     /// the surface last read and where: the point, the metric and the tangent are read at one place
@@ -241,7 +245,7 @@ fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::A
     }
     let r = q.rect;
     let mut t = Tracer {field,q,step:[THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
-        pieces:Vec::new(),chords:Vec::new(),chord_uv:Vec::new(),grid:Grid::new(q.feature),steps:0,last:std::cell::Cell::new(None)};
+        pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0,last:std::cell::Cell::new(None)};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
     for k in (0..4).filter(|_| complete) {
@@ -406,37 +410,29 @@ impl<'a,F: Field> Tracer<'a,F> {
     /// branch covers the point.
     fn undercut(&self,uv: Uv,l: &Read<F::At>) -> bool { l.f < 0. && self.off(uv,l) > self.q.tol }
 
-    /// Whether a point in space lies within `r` of a traced piece's chord.
-    /// Whether the point at `uv` lies within `r` in space of a traced chord — and, where the field's
-    /// chart may pass through itself (`Field::folded`), near its place in the parameters too.
+    /// **Whether the point at `uv` lies within `r` of a traced piece's chord**: in space, and in
+    /// the parameters by the metric at `uv` (the chord's parameters, a segment, within `r` of `uv`
+    /// in the length it reads). A surface that meets itself — a sheet along its double curve —
+    /// brings another place of the chart to the same point in space, and a curve traced through
+    /// that place is not traced through this one: on the full turn's sheet `−` a double curve's
+    /// preimage, seeded across a cut, stood in space on its other preimage, traced already in that
+    /// part, and was never traced (#880 T1f).
     fn near_traced(&self,uv: Uv,r: f64) -> bool {
         let x = self.point(uv);
         let reach = r+self.q.feature;
-        let folded = self.field.folded();
+        let g = self.metric(uv);
         let mut hit = false;
         self.grid.in_box(x.map(|c| c-reach),x.map(|c| c+reach),|i| {
-            let (a,b) = self.chords[i as usize];
-            if hit || segment_distance(x,a,b) > r { return }
-            if !folded { hit = true; return }
-            // (the chord's place nearest in space, read in the parameters at its share along it)
-            let (ua,ub) = self.chord_uv[i as usize];
-            use crate::util::space::{dot,sub};
-            let ab = sub(b,a);
-            let l = dot(ab,ab);
-            let s = if l > 0. { (dot(sub(x,a),ab)/l).clamp(0.,1.) } else { 0. };
-            let d = [uv[0]-(ua[0]+(ub[0]-ua[0])*s),uv[1]-(ua[1]+(ub[1]-ua[1])*s)];
-            if self.length(uv,d) <= reach { hit = true }
+            let (a,b,p,q) = self.chords[i as usize];
+            if !hit && segment_distance(x,a,b) <= r && metric_distance(g,uv,p,q) <= r { hit = true }
         });
         hit
     }
 
     fn add_seed(&mut self,uv: Uv,end: End) {
         let x = self.point(uv);
-        // a point found twice (a rectangle's corner, on two sides) is one seed — where the chart
-        // passes through itself (`Field::folded`), only near in the parameters too
-        let folded = self.field.folded();
-        if self.seeds.iter().any(|s| distance(self.point(s.uv),x) <= 2.*self.q.tol
-            && (!folded || self.length(uv,[uv[0]-s.uv[0],uv[1]-s.uv[1]]) <= 2.*self.q.tol+self.q.feature)) { return }
+        // a point found twice (a rectangle's corner, on two sides) is one seed
+        if self.seeds.iter().any(|s| distance(self.point(s.uv),x) <= 2.*self.q.tol) { return }
         self.seeds.push(Seed {uv,end,used:false});
     }
 
@@ -590,11 +586,21 @@ impl<'a,F: Field> Tracer<'a,F> {
             for r in back { pieces.push(Piece {uv:r.uv.into_iter().rev().collect(),at:r.at.into_iter().rev().collect(),ends:[r.end,r.start.unwrap_or(End::Switch)]}); }
             for r in ahead { pieces.push(Piece {uv:r.uv,at:r.at,ends:[r.start.unwrap_or(End::Switch),r.end]}); }
         }
+        let r = self.q.rect;
         for p in pieces {
-            // a way that leaves the domain at once from a boundary seed is no piece
+            // a way that leaves the domain at once from a boundary seed is no piece: within the
+            // tolerance, or every point of it on the one side it started on (of an inner edge, its
+            // two points alone) — that side's crossing read twice (where the zero set crosses a side
+            // shallowly, `f` read to its caller's precision changes sign twice about the one root:
+            // the thin's sheet `−` at its rim, two readings 2.5 tolerances apart, and the run it
+            // joined doubled back past its crossing)
             let long: f64 = p.uv.windows(2).map(|w| distance(self.point(w[0]),self.point(w[1]))).sum();
             let bounded = |e: End| matches!(e,End::Rim | End::Edge(_));
-            if long <= self.q.tol && bounded(p.ends[0]) && bounded(p.ends[1]) { continue }
+            let one_side = p.ends[0] == p.ends[1] && match p.ends[0] {
+                End::Rim => (0..2).any(|k| r[k].iter().any(|&e| p.uv.iter().all(|q| q[k] == e))),
+                _ => p.uv.len() == 2,
+            };
+            if (long <= self.q.tol || one_side) && bounded(p.ends[0]) && bounded(p.ends[1]) { continue }
             self.record(p);
         }
         Ok(())
@@ -602,14 +608,13 @@ impl<'a,F: Field> Tracer<'a,F> {
 
     fn record(&mut self,p: Piece<F::At>) {
         let xs: Vec<V> = p.uv.iter().map(|&uv| self.point(uv)).collect();
-        for (j,w) in xs.windows(2).enumerate() {
+        for (w,u) in xs.windows(2).zip(p.uv.windows(2)) {
             let i = self.chords.len() as u32;
-            self.chords.push((w[0],w[1]));
-            self.chord_uv.push((p.uv[j],p.uv[j+1]));
+            self.chords.push((w[0],w[1],u[0],u[1]));
             self.grid.insert(w[0],i);
             self.grid.insert(w[1],i);
         }
-        if xs.len() == 1 { let i = self.chords.len() as u32; self.chords.push((xs[0],xs[0])); self.chord_uv.push((p.uv[0],p.uv[0])); self.grid.insert(xs[0],i); }
+        if xs.len() == 1 { let i = self.chords.len() as u32; self.chords.push((xs[0],xs[0],p.uv[0],p.uv[0])); self.grid.insert(xs[0],i); }
         self.pieces.push(p);
     }
 
@@ -641,6 +646,21 @@ impl<'a,F: Field> Tracer<'a,F> {
         let mut p = start;
         let mut h = feature;
         let mut moved = 0.;
+        // (a step halved under the rounding: refused, unless the field reads nothing within a
+        // tolerance of where it stands — the curve has run to the edge of the field's own domain,
+        // and ends there)
+        macro_rules! halved {
+            ($h:expr) => {{
+                if let Err(e) = self.halve($h,p,t) {
+                    if self.undefined_beside(p,t,&cur) {
+                        run.end = End::Undefined;
+                        runs.push(run);
+                        return Ok((runs,false))
+                    }
+                    return Err(e)
+                }
+            }};
+        }
         loop {
             self.steps += 1;
             if self.steps > CAP {
@@ -650,12 +670,8 @@ impl<'a,F: Field> Tracer<'a,F> {
             // a boundary seed, or the start, within the step ahead: arrived (a tangential end is
             // reached so, never solved for)
             let mut best: Option<(f64,usize)> = None;
-            let folded = self.field.folded();
             for (k,s) in self.seeds.iter().enumerate() {
                 let d = distance(xp,self.point(s.uv));
-                // (where the chart passes through itself, a seed within the step in space at
-                // another place of the parameters is another preimage's)
-                if folded && self.length(p,[s.uv[0]-p[0],s.uv[1]-p[1]]) > h+self.q.feature { continue }
                 if d > 0. && d <= h && best.is_none_or(|b| d < b.0) { best = Some((d,k)) }
             }
             let mut arrived: Option<(Uv,End,Option<usize>)> = None;
@@ -700,11 +716,11 @@ impl<'a,F: Field> Tracer<'a,F> {
                         return Ok((runs,false))
                     }
                 }
-                self.halve(&mut h,p,t)?;
+                halved!(&mut h);
                 continue
             }
-            let Some((q,rq)) = corrected else { self.halve(&mut h,p,t)?; continue };
-            let Some(lq) = self.least(q) else { self.halve(&mut h,p,t)?; continue };
+            let Some((q,rq)) = corrected else { halved!(&mut h); continue };
+            let Some(lq) = self.least(q) else { halved!(&mut h); continue };
             if self.undercut(q,&lq) {
                 // another branch covers `q`: the corner between, where both vanish
                 match self.corner(p,q,&cur,&lq.at,h) {
@@ -725,12 +741,12 @@ impl<'a,F: Field> Tracer<'a,F> {
                         p = c;
                         h = feature;
                     }
-                    None => self.halve(&mut h,p,t)?,
+                    None => halved!(&mut h),
                 }
                 continue
             }
-            if !self.chord(p,q,&cur) { self.halve(&mut h,p,t)?; continue }
-            let Some(tq) = self.tangent(q,rq.grad) else { self.halve(&mut h,p,t)?; continue };
+            if !self.chord(p,q,&cur) { halved!(&mut h); continue }
+            let Some(tq) = self.tangent(q,rq.grad) else { halved!(&mut h); continue };
             let s = if dot(apply(self.metric(q),tq),[q[0]-p[0],q[1]-p[1]]) >= 0. { 1. } else { -1. };
             t = [tq[0]*s,tq[1]*s];
             moved += distance(xp,self.point(q));
@@ -740,6 +756,24 @@ impl<'a,F: Field> Tracer<'a,F> {
             p = q;
             h = (2.*h).min(feature);
         }
+    }
+
+    /// **Whether the field reads nothing within the tolerance of `p`** on the branch `at`: a
+    /// tolerance ahead along the march's way `t` (unit in space) or across it either side (the
+    /// branch's normal in the metric). Where the zero set runs along the edge of the field's own
+    /// domain — on the bench's tumbling torus the end pose's cover read below nought on one side of
+    /// it and no cover at all on the other (its basin merged into the point's own contact), a
+    /// trillionth of the tube from nought — no step there keeps its chord inside it.
+    fn undefined_beside(&self,p: Uv,t: [f64;2],at: &F::At) -> bool {
+        let tol = self.q.tol;
+        let none = |d: [f64;2]| self.least([p[0]+tol*d[0],p[1]+tol*d[1]]).is_none();
+        if none(t) { return true }
+        let Some(r) = self.along(p,at) else { return false };
+        let Some(g) = inverse(self.metric(p)) else { return false };
+        let n = apply(g,r.grad);
+        let l = self.length(p,n);
+        if !(l > 0. && l.is_finite()) { return false }
+        none([n[0]/l,n[1]/l]) || none([-n[0]/l,-n[1]/l])
     }
 
     /// **Where the march leaves the domain** across `side`, between `p` (inside) and `q`

@@ -300,9 +300,6 @@ impl Depth<'_> {
 
 impl Field for Depth<'_> {
     type At = Cover;
-    /// A sheet passes through itself along its double curves with itself, each traced on both its
-    /// preimages: a seed of the second near the first in space is not the first.
-    fn folded(&self) -> bool { true }
     fn least(&self,uv: [f64;2]) -> Option<Value<Cover>> {
         match self.reading(uv)? {
             (p,Reading::Far(c)) => self.value(&p,c.at),
@@ -322,9 +319,17 @@ impl Field for Depth<'_> {
         let reach = if speed > 0. { 0.25*self.tube.ring.thickness/speed } else { b-a };
         let (mut lo,mut hi) = ((from.at-reach).max(a),(from.at+reach).min(b));
         let own = self.tube.own(self.chart,uv);
-        if own >= lo && own <= hi { if from.at > own { lo = 0.5*(own+from.at) } else { hi = 0.5*(own+from.at) } }
+        // (the stretch's end cut toward the own instant, if it is)
+        let mut cut = None;
+        if own >= lo && own <= hi { if from.at > own { lo = 0.5*(own+from.at); cut = Some(lo) } else { hi = 0.5*(own+from.at); cut = Some(hi) } }
         let d = |t: f64| self.tube.depth_at(p.x,t).map_or(f64::INFINITY,|r| r.0);
         let mut t = if hi > lo { golden(&d,lo,hi) } else { from.at };
+        // (a least at that cut, to the rounding of the roll, is no basin of another instant: `d`
+        // falls there toward the own instant, its own contact's slope. The cover continued has
+        // closed on the point's own instant — the double curve's two instants meeting, its end —
+        // and it ends; read on, each corrector's pass would halve the way again, and the far cover
+        // slide into the own contact, nought everywhere on the sheet: a phantom branch)
+        if cut.is_some_and(|c| (t-c).abs() <= HALF_READ*(b-a)) { return None }
         // (an end of the roll the stretch reaches read there too — the pose there may hold the
         // least, on its boundary: past the point's own contact, climbing toward that end, `d` is
         // no single basin over the stretch, and the golden section may settle on the climb)

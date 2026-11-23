@@ -208,8 +208,17 @@ fn main() {
         let solid = tube::faces::solid(&tb,tol);
         let covers = tube::covers_read();
         match solid {
-            Ok(s) => println!("built: {} faces, volume {:.10}, check {:?}, in {:?}; {covers} covers, {:?} a cover",s.faces.len(),
-                cad_kernel::props::volume(&s),s.check(tol).err(),clock.elapsed(),clock.elapsed()/covers.max(1) as u32),
+            Ok(s) => {
+                let took = clock.elapsed();
+                println!("built: {} faces, volume {:.10}, check {:?}, in {:?}; {covers} covers, {:?} a cover",s.faces.len(),
+                    cad_kernel::props::volume(&s),s.check(tol).err(),took,took/covers.max(1) as u32);
+                // the misfits at the size's tolerance (`geom::tolerance` over the box's diagonal)
+                let (lo,hi) = s.bounds();
+                let size = ((hi[0]-lo[0]).powi(2)+(hi[1]-lo[1]).powi(2)+(hi[2]-lo[2]).powi(2)).sqrt();
+                let m = s.misfits(cad_kernel::geom::tolerance(size));
+                println!("misfits at {:e}: {}",cad_kernel::geom::tolerance(size),m.len());
+                for (what,d,held) in &m { println!("  {what}: {d:e} (held to {held:e})") }
+            }
             Err(e) => println!("refused in {:?} ({covers} covers): {e:?}",clock.elapsed()),
         }
         return

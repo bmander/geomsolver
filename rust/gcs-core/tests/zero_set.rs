@@ -625,41 +625,91 @@ fn a_cell_spanning_a_whole_turn_is_halved_across_it() {
     assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
 }
 
-/// `f = cos πu` on the map `(u, v) ↦ (cos πu, sin πu, v)`, which wraps the rectangle round a
-/// cylinder once every two of `u`, saying whether it passes through itself (`Field::folded`).
-struct Wrapped { folded: bool }
-
-impl Field for Wrapped {
-    type At = At;
-    fn least(&self,uv: Uv) -> Option<Value<At>> {
-        let (s,c) = (std::f64::consts::PI*uv[0]).dsin_cos();
-        Some(Value {f:c,grad:Some([-std::f64::consts::PI*s,0.]),at:(0,0.)})
-    }
-    fn along(&self,uv: Uv,_: &At) -> Option<Value<At>> { self.least(uv) }
-    fn surface(&self,uv: Uv) -> ([f64;3],[f64;3],[f64;3]) {
-        let pi = std::f64::consts::PI;
-        let (s,c) = (pi*uv[0]).dsin_cos();
-        ([c,s,uv[1]],[-pi*s,pi*c,0.],[0.,0.,1.])
-    }
-    fn folded(&self) -> bool { self.folded }
+/// **A curve whose image lies on another's is still traced** (#880 T1f): a surface wound twice round
+/// a cylinder brings `u` and `u + 2π` to one point, as a sheet meeting itself along its double
+/// curve does. A line rim to rim at `u = 2` and a loop about `(2 + 2π, ½)` cross in space, never in
+/// the parameters; the loop, found only by the search, stood in space beside the traced line, and
+/// its cells were answered beside it — the test whether a point is traced is read in the chart now
+/// (the line's chord within the tolerance in space and, by the metric there, in the parameters).
+#[test]
+fn a_loop_whose_image_crosses_a_traced_curve_is_found() {
+    use std::f64::consts::TAU;
+    let (c,r) = ([2.+TAU,0.5],0.05);
+    let map = |uv: Uv| { let (s,co) = uv[0].dsin_cos(); ([co,s,uv[1]],[-s,co,0.],[0.,0.,1.]) };
+    // (the least of the line's and the loop's signed distances in the parameters, the cylinder's
+    // own metric: their zero sets the line and the circle)
+    let f = move |uv: Uv| {
+        let line = (uv[0]-2.,[1.,0.]);
+        let d = (uv[0]-c[0]).dhypot(uv[1]-c[1]);
+        let disc = (d-r,[(uv[0]-c[0])/d,(uv[1]-c[1])/d]);
+        if line.0 <= disc.0 { line } else { disc }
+    };
+    // (1-Lipschitz in the parameters: the cell's half diagonal bounds it there)
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        Bound::lipschitz(f(mid).0,1.,0.5*(cell[0][1]-cell[0][0]).dhypot(cell[1][1]-cell[1][0]))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let t = trace(&m,&question([[1.,2.*TAU-1.],[0.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"the line and the loop: {:?}",t.pieces.iter().map(|p| (p.uv[0],p.ends)).collect::<Vec<_>>());
+    let loops: Vec<_> = t.pieces.iter().filter(|p| p.closed()).collect();
+    let [lp] = loops[..] else { panic!("one loop") };
+    for uv in &lp.uv { assert!(((uv[0]-c[0]).dhypot(uv[1]-c[1])-r).abs() <= TOL,"a point {uv:?} off the loop") }
 }
 
-/// **A chart through itself has each preimage of a curve traced** (#880 T1f, `Field::folded`): over
-/// `u ∈ [0, 3]` the zero set of `cos πu` is three lines across the rectangle, `u = ½` and `u = 2½`
-/// one curve in space at two places of the parameters. A seed within the tolerance of a traced
-/// chord in space is that chord's — unless the field's chart passes through itself, where it is
-/// that chord's only near its place in the parameters too: so the folded field has all three
-/// traced, and the plain one, reading space alone, takes the second preimage for the first.
+/// **A rim crossed at two readings of one place is no piece** (#880 T1f): `f = v + g(u)` over
+/// `v ≥ 0`, `g` a parabola a hundredth of the tolerance deep between roots 2.5 tolerances apart —
+/// the curve within the tolerance of the rim from one root to the other, as a shallow crossing read
+/// through a field known to its tolerance changes sign twice about the one root (the thin's sheet
+/// `−` at its rim). The march from one root arrived at the other, a piece of two points along the
+/// rim, longer than the tolerance: kept, and the run it joined doubled back. Now no piece.
 #[test]
-fn a_chart_through_itself_has_each_preimage_traced() {
-    let q = question([[0.,3.],[-1.,1.]],TOL,0.1);
-    let lines = |t: &Traced<At>| { let mut us: Vec<f64> = t.pieces.iter().map(|p| (p.uv[0][0]*1e6).round()/1e6).collect(); us.sort_by(f64::total_cmp); us };
-    let folded = trace(&Wrapped {folded:true},&q).unwrap();
-    assert_eq!(lines(&folded),vec![0.5,1.5,2.5]);
-    for p in &folded.pieces {
-        assert_eq!(p.ends,[End::Rim,End::Rim]);
-        assert!(p.uv.iter().all(|uv| (uv[0]-p.uv[0][0]).abs() <= 1e-9));
-    }
-    let plain = trace(&Wrapped {folded:false},&q).unwrap();
-    assert_eq!(plain.pieces.len(),2,"{:?}",lines(&plain));
+fn a_rim_crossed_at_two_readings_of_one_place_is_no_piece() {
+    let (u0,d,h) = (0.5,1.25*TOL,0.01*TOL);
+    let g = move |u: f64| (h*((u-u0)*(u-u0)/(d*d)-1.),2.*h*(u-u0)/(d*d));
+    let m = Mapped {
+        f: Box::new(move |uv| { let (gu,gd) = g(uv[0]); (uv[1]+gu,[gd,1.]) }),
+        map: Box::new(flat),
+        bound: Some(Box::new(move |c: Rect| {
+            let (u,v) = (Iv::new(c[0][0],c[0][1]),Iv::new(c[1][0],c[1][1]));
+            let w = u-k(u0);
+            Bound {value:v+(sq(w).times(1./(d*d))-k(1.)).times(h),grad:Some([w.times(2.*h/(d*d)),k(1.)])}
+        })),
+    };
+    let t = trace(&m,&question([[0.,1.],[0.,0.5]],TOL,0.1)).unwrap();
+    assert!(t.pieces.is_empty(),"pieces: {:?}",t.pieces.iter().map(|p| (p.uv.clone(),p.ends)).collect::<Vec<_>>());
+}
+
+/// A function of the parameters defined only where `inside` holds: the depth's far cover, which
+/// is no cover where the point's own contact holds the instant.
+struct Partial { f: Mapped,inside: Box<dyn Fn(Uv) -> bool> }
+
+impl Field for Partial {
+    type At = At;
+    fn least(&self,uv: Uv) -> Option<Value<At>> { (self.inside)(uv).then(|| self.f.least(uv)).flatten() }
+    fn along(&self,uv: Uv,a: &At) -> Option<Value<At>> { self.f.along(uv,a) }
+    fn surface(&self,uv: Uv) -> ([f64;3],[f64;3],[f64;3]) { self.f.surface(uv) }
+    fn bound(&self,_: Rect) -> Option<Bound> { None }
+}
+
+/// **A curve running to where its field is not defined ends there** (#880 T1f, `End::Undefined`):
+/// the line `v = ½` from the rim at `u = 0`, its field defined only left of the oblique line
+/// `u = ½ + (v − ½)/5` (as the far cover is none past where its basin merges into the point's own
+/// contact: the bench's tumbling torus at its corner). The march halved its step under the rounding
+/// there and refused; now it ends there, within the tolerance of that edge.
+#[test]
+fn a_curve_running_to_where_its_field_is_undefined_ends_there() {
+    let edge = |uv: Uv| 0.5+0.2*(uv[1]-0.5)-uv[0];
+    let p = Partial {
+        f: Mapped {f:Box::new(|uv| (uv[1]-0.5,[0.,1.])),map:Box::new(flat),bound:None},
+        inside: Box::new(move |uv| edge(uv) >= 0.),
+    };
+    let t = trace(&p,&question([[0.,1.],[0.,1.]],TOL,0.1)).unwrap();
+    let [piece] = &t.pieces[..] else { panic!("one piece: {:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>()) };
+    let ends = [piece.uv[0],piece.uv[piece.uv.len()-1]];
+    let undefined = (0..2).find(|&e| piece.ends[e] == End::Undefined).expect("an end where the field stops");
+    assert_eq!(piece.ends[1-undefined],End::Rim);
+    let q = ends[undefined];
+    assert!(edge(q) >= 0. && edge(q) <= 2.*TOL,"the end {q:?} {:e} from the field's edge",edge(q));
+    for uv in &piece.uv { assert!((uv[1]-0.5).abs() <= TOL) }
 }
