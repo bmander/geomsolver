@@ -13,10 +13,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its axis, so nothing of the tool farther from the axis than the blank reaches ever enters it. The
   blank's reach about the axis is bounded first; the tool is clipped to a square prism about the
   axis a little past it, its candidates read with the faces lying wholly past the reach left out
-  (`swept::contacts::candidates_beyond`, a face in contact all over among them, no longer refused
-  there), and the sweep trimmed within a cylinder about the axis (`swept::trim::Reach::Turned`; the
-  trim's reach, a box before, is now `Reach::Box` or `Reach::Turned`, and the judge reads within it,
-  `swept::closed::judge_within`). Where it refuses, the whole road is taken. brep-bench's spline bar
+  (a face in contact all over among them, no longer refused there), and the sweep trimmed within a
+  cylinder about the axis (`swept::trim::Reach::Turned`; the trim's reach, a box before, is now
+  `Reach::Box` or `Reach::Turned`, and the judge reads within it). Where it refuses, the whole road
+  is taken. brep-bench's spline bar
   screwed through a rod builds in under 2 s where it took 17, to the same volume within 5e-10.
 - **A cylinder about the axis a sheet is carried round or along meets it in the sheet's paths**
   (`ssi::intersect`): the `Iso` of each of the section's crossings of the cylinder, read certified,

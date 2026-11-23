@@ -103,20 +103,14 @@ impl Reach {
             }
         }
     }
-    /// Whether the box `b` comes within `r` of the region: its box, and for the cylinder, no point
-    /// of `b` farther than `r` past its side (the box's nearest distance from the axis, read at its
-    /// middle less its half diagonal).
-    pub fn reaches(&self,b: (V,V),r: f64) -> bool {
-        let (lo,hi) = self.bounds();
-        if !crate::boolean::overlap(&b,&(lo,hi),r) { return false }
+    /// Whether the box `b` comes within `r` of the region, `own` its box (`bounds`, read once by
+    /// the caller): that box, and for the cylinder, no point of `b` farther than `r` past its side
+    /// (the box's nearest distance from the axis, read at its middle less its half diagonal).
+    pub fn reaches(&self,own: (V,V),b: (V,V),r: f64) -> bool {
+        if !crate::boolean::overlap(&b,&own,r) { return false }
         match *self {
             Reach::Box(..) => true,
-            Reach::Turned {o,z,r: radius,..} => {
-                let c = scale(add(b.0,b.1),0.5);
-                let q = sub(c,o);
-                let off = crate::util::space::norm(sub(q,scale(z,crate::util::space::dot(q,z))));
-                off-0.5*distance(b.0,b.1) <= radius+r
-            }
+            Reach::Turned {o,z,r: radius,..} => crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
         }
     }
     /// The region as a solid.
@@ -392,7 +386,8 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let mut report = Report {faces:candidates.iter().map(|c| c.faces.len()).sum(),..Report::default()};
     // (the reach: a ball reaches it where it comes within its radius of the box; a point is past it
     // farther than the tolerance outside)
-    let reaches = |b: ([f64;3],[f64;3]),r: f64| trim.reach.is_none_or(|reach| reach.reaches(b,r));
+    let own = trim.reach.map(|reach| (reach,reach.bounds()));
+    let reaches = |b: ([f64;3],[f64;3]),r: f64| own.is_none_or(|(reach,own)| reach.reaches(own,b,r));
     let held_box = trim.reach.map(|reach| reach.solid()).transpose().map_err(Unbuilt::Failed)?;
     let candidates: Vec<&Brep> = candidates.iter().chain(held_box.as_ref()).collect();
     let boxed = held_box.is_some().then(|| candidates.len()-1);
@@ -417,7 +412,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             cand.faces.len(),cand.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>().join(" "),mesh.tris.len()) }
         // (a triangle clear of the reach, by more than the sag, holds no ball within it: not zoned)
         let tris: Vec<(usize,[V;3])> = mesh.tris.iter().zip(&mesh.of).map(|(t,&f)| (f as usize,t.map(|i| mesh.pts[i as usize])))
-            .filter(|(_,t)| reaches((std::array::from_fn(|k| t[0][k].min(t[1][k]).min(t[2][k])),std::array::from_fn(|k| t[0][k].max(t[1][k]).max(t[2][k]))),sag))
+            .filter(|(_,t)| reaches(crate::geom::hull(*t),sag))
             .collect();
         let read = crate::util::par::map(&tris,|&(_,t)| zoned(&swept,t,sag,trim.resolution));
         let mut here = [0;3];
@@ -692,7 +687,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     };
     let clock = crate::util::clock::Instant::now();
     // (within a region not a box, its box's corners outside it: the solid holds nothing there)
-    let within = matches!(trim.reach,Some(Reach::Turned {..})).then_some(domain);
+    let within = matches!(trim.reach,Some(Reach::Turned {..}));
     super::closed::judge_within(&out,&swept,domain,None,within,&[],tol)?;
     if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))

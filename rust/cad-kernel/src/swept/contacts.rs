@@ -1977,7 +1977,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
 /// (`trim::Reach::Turned`) — sweeps nothing within, nor does any edge of it: it gives no sheet, no
 /// fan and no meeting, and is not refused where it is in contact all over. The tool posed at the
 /// roll's ends holds it still, outside the reach.
-pub fn candidates_beyond(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64,beyond: Option<f64>)
+pub(crate) fn candidates_beyond(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64,beyond: Option<f64>)
     -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
     use super::closed::Unbuilt;
     let screw = path.screw().ok_or(Unbuilt::Motion)?;
@@ -2019,18 +2019,13 @@ pub fn candidates_beyond(tool: &Brep,path: &crate::trajectory::Trajectory,roll: 
     let (axis_o,axis_z) = (screw.origin,crate::util::space::unit(screw.axis));
     // (the faces past the reach: on a cylinder about the axis wider than `beyond`, or a plane along
     // the axis farther than `beyond` from it)
-    let off: Vec<bool> = tool.faces.iter().map(|f| match (&f.surface,beyond) {
-        (Surface::Cylinder(frame,r),Some(beyond)) => {
-            let q = crate::util::space::sub(frame.o,axis_o);
-            let along = crate::util::space::dot(q,axis_z);
-            norm_of(crate::util::space::cross(frame.z,axis_z)) <= 1e-12
-                && norm_of(crate::util::space::sub(q,crate::util::space::scale(axis_z,along))) <= 1e-9*(1.+size)
-                && r.abs() > beyond
-        }
-        (Surface::Plane(frame),Some(beyond)) => crate::util::space::dot(frame.z,axis_z).abs() <= 1e-12
-            && crate::util::space::dot(crate::util::space::sub(frame.o,axis_o),crate::util::space::unit(frame.z)).abs() > beyond,
+    let off: Vec<bool> = tool.faces.iter().map(|f| beyond.is_some_and(|beyond| match &f.surface {
+        Surface::Cylinder(frame,r) => crate::geom::about_axis(frame,axis_o,axis_z,1e-9*(1.+size)) && r.abs() > beyond,
+        // (a plane along the axis stands its normal's distance from it all over)
+        Surface::Plane(frame) => { use crate::util::space::{dot,sub,unit};
+            dot(frame.z,axis_z).abs() <= 1e-12 && dot(sub(frame.o,axis_o),unit(frame.z)).abs() > beyond }
         _ => false,
-    }).collect();
+    })).collect();
     let sharp: Vec<(usize,[usize;2])> = sharp_edges(tool).map_err(|at| Unbuilt::Curved {at})?.into_iter()
         .filter(|&(_,[f1,f2])| !off[f1] && !off[f2]).collect();
     let mut out = Vec::new();

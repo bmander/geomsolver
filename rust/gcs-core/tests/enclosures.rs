@@ -164,9 +164,6 @@ fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
     ]
 }
 
-/// **Every kind of surface is held by its enclosure** (#814 P2): over random boxes, its point and
-/// both partial derivatives at a grid of samples each lie in the enclosure — nets with a kink, a
-/// double knot and uneven weights, blends carried along a line and by a screw.
 /// **A long curve's whole spans' forms, kept for it, enclose as blossoming each span does**: a
 /// cubic and a quintic of 64 spans, a knot off the even spacing, read over random stretches — many
 /// covering spans whole, read off the forms `Curve::BSpline` keeps for it — and over stretches a
@@ -198,6 +195,9 @@ fn a_long_curves_kept_span_forms_enclose_as_its_spans_blossomed() {
     }
 }
 
+/// **Every kind of surface is held by its enclosure** (#814 P2): over random boxes, its point and
+/// both partial derivatives at a grid of samples each lie in the enclosure — nets with a kink, a
+/// double knot and uneven weights, blends carried along a line and by a screw.
 #[test]
 fn every_kind_of_surface_is_held_by_its_enclosure() {
     let mut rng = Rng::new(812);
