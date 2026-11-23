@@ -427,8 +427,8 @@ const POSED: &str = "unit mm\nuse bracket\nuse std\nuse std.solids\nin std.top {
 /// joint, a claim under a posed frame, a component's formal given it in a posed instance.  Right:
 /// a body over a body made of it, written under a posed frame, stands where a body over any root
 /// solid does (no root solid's body rides a frame); a body made of it turned at an instant of a
-/// line; the solid it sweeps turning about one; and a `repeat`'s copies, each where the file put
-/// it.
+/// line; and a `repeat`'s copies, each where the file put it.  (The solid it sweeps about a line:
+/// `the_solid_a_given_body_sweeps_is_swept`, in the slow tier.)
 #[test]
 fn a_given_body_is_refused_wherever_it_would_have_to_be_placed() {
     let e106 = |src: &str, at: &str, words: &str| {
@@ -478,12 +478,6 @@ fn a_given_body_is_refused_wherever_it_would_have_to_be_placed() {
     let (v, lo, hi) = measure(&e, "turned");
     assert!(close(v, drilled_volume()) && boxed((lo, hi), [-30.0, 0.0, 0.0], [0.0, 40.0, 20.0],
                                                  1e-9), "{v} {lo:?} {hi:?}");
-    // the solid it sweeps turning a quarter about z: out to the far corner's radius, 50
-    let e = solved("unit mm\nuse bracket\nuse std\nswept := solid({ p | some t in (0deg, 90deg): \
-                    p in bracket at(under: std.z) t })\n");
-    let (v, lo, hi) = measure(&e, "swept");
-    assert!(v > drilled_volume() && boxed((lo, hi), [-30.0, 0.0, 0.0], [40.0, 50.0, 20.0], 1e-2),
-            "{v} {lo:?} {hi:?}");
     // a `repeat` turns nothing: each copy is the file's body where it stands
     let e = solved("unit mm\nuse bracket\nuse std\nrepeat 2 {\n  part := solid(bracket)\n}\n");
     for copy in ["#3.0.part", "#3.1.part"] {
@@ -689,4 +683,17 @@ fn the_librarys_case_drills_a_bought_block() {
     assert!(close(volume(&e, "block"), want), "{} against {want}", volume(&e, "block"));
     let (holds, _) = judged(&src.replace("21400 * 1mm^3", "21300 * 1mm^3"));
     assert_eq!(holds, Some(false));
+}
+
+/// **The solid a given body sweeps turning about a line is swept**: read at the document's root
+/// under a line, a quarter turn about the world's z, it reaches out to the far corner's radius, 50,
+/// and holds more than the body.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a given body's sweep meshed")]
+fn the_solid_a_given_body_sweeps_is_swept() {
+    let e = solved("unit mm\nuse bracket\nuse std\nswept := solid({ p | some t in (0deg, 90deg): \
+                    p in bracket at(under: std.z) t })\n");
+    let (v, lo, hi) = measure(&e, "swept");
+    assert!(v > drilled_volume() && boxed((lo, hi), [-30.0, 0.0, 0.0], [40.0, 50.0, 20.0], 1e-2),
+            "{v} {lo:?} {hi:?}");
 }
