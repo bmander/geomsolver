@@ -931,12 +931,18 @@ ends. A line named
 
 **A given body is a solid** **[0.230]**. The body a file gives, named by its given module's
 path (§14.4), is a set as any solid is: `solid(bracket)` is the body whose stock it is,
-`solid({ p | p in bracket; … })` the points of it a set's other terms keep, and it is the tool of
-a body word as any solid is (`bracket cut pin`). It is never a body word's body (**E080**: name the
-body made of it, `part := solid(bracket)`, then `drill cut part`). Its faces are the file's, each
-on its own surface, its edges and vertices where the file has them; a document that only names it
-(`part := solid(bracket)`) MUST build to that boundary unchanged, so its exact export is the same
-solid.
+`solid({ p | p in bracket; … })` the points of it a set's other terms keep, `bracket at(under:
+std.z) 90deg` it read at an instant (§6.14), and it is the tool of a body word as any solid is
+(`bracket cut pin`). It is never a body word's body (**E080**, below), and never itself an object:
+what the document makes of it is. Its faces are the file's, each on its own surface, its edges and
+vertices where the file has them; a document that only names it (`part := solid(bracket)`) MUST
+build to that boundary unchanged, so its exact export is the same solid.
+
+**One membership of a whole solid is its body** **[0.230]**. `solid({ p | p in S })`, `S` a
+solid named whole and nothing else in the set, is `solid(S)`: the same solid, its faces named
+alike, its exports the same to the byte — for a given body as for any. Where `S` is itself made
+of the set's solid (a cavity `{ c | c in B }` cut from `B`, as `std.rounds`' `shell` makes), the
+body of `S` would be made of itself, and the set is read as a region.
 
 **A region is a solid** **[0.62]**. `solid(R)`, its one operand a set, is the solid of the points
 inside `R` (§6.21): `R`'s body applied to a point, each number it bounds there a bound of the
@@ -3601,11 +3607,13 @@ A **module** is a Solvent document read for its components and relation words, o
 
 **[0.230] A given module.** A text a `use` resolves to whose first token, after an optional
 byte-order mark and white space, is `ISO-10303-21;` is an exchange file (ISO 10303-21, STEP), and
-its module is a **given module**: never parsed as Solvent, told by its content and not by a file's
-name. It contributes exactly one name, its **given body** — the solid the file gives, named by the
-module's whole path: `use bracket` names `bracket`, `use vendor.bracket` names `vendor.bracket`.
-It defines nothing else: a `use` listing a name of it is **E101**, and a file whose own top-level
-definition is named as the path's first segment is **E071** at the `use`.
+its module is a **given module**, never parsed as Solvent: told by its content, whatever the file is
+called — and a text a host found as `NAME.step` or `NAME.stp` is one whatever it holds, so a file
+found so that is empty or holds other text is **E072**, never a Solvent module. It contributes
+exactly one name, its **given body** — the solid the file gives, named by the module's whole path:
+`use bracket` names `bracket`, `use vendor.bracket` names `vendor.bracket`. It defines nothing else:
+a `use` listing a name of it is **E101**, and a file whose own top-level definition is named as the
+path's first segment is **E071** at the `use`.
 
 ```
 unit mm
@@ -3618,23 +3626,29 @@ part := solid(bracket)      // the points of the body the file gives
   (§6.21), the tool of a body word (`bracket cut pin`), a claim (`every q in part: q in bracket`,
   §9.8). Its faces are the file's, each on its own surface; no name a document can write reaches
   one.
-- **What is not read is not there.** A given body nothing reads makes nothing: `use bracket` alone
-  has no solid, and `part := solid(bracket)` has one object, `part`, its stock the given body. A
+- **What is not read is not there, and it is never an object.** A given body nothing reads makes
+  nothing: `use bracket` alone has no solid, and `part := solid(bracket)` has one object, `part`,
+  its stock the given body. However it is read — a body's stock, a set's membership, a claim, a
+  tool — the objects are what the document makes of it, never the given body beside them. A
   module gives one body however many files `use` it.
 - **It is never extended.** It is the file's, and stays nameable as given: a body word whose body
   is the given body (`drill cut bracket`, `boss union bracket`, `x common bracket`), or the
   primitive those words are written in said of it (`bracket and { p | p not in drill }`), is
-  **E080** at that statement, naming the body to make (`part := solid(bracket)`, then `drill cut
-  part`).
+  **E080** at that statement, once, naming the body to make and the author's own statement over it
+  (`part := solid(bracket)`, then `drill cut part`; through a definition's formal, `…, and give
+  `part` where it is given`).
 - **It stands in the document's own space.** The file's origin and axes are the world's
   (`std.origin`, `std.x`, `std.y`, `std.z`), whatever plane of the world a statement is written in
   (`in std.top { … }`). Its lengths are read in the file's own units and carried to the document's
-  `unit`. A read where it would have to be placed — in a definition's body, in a `ring`, or under
-  `in` of a frame that is not one of `std`'s — is **E106** at the read, never left at the world.
+  `unit`. It stands elsewhere read at an instant, as any solid does. A read where a frame would have
+  to place it — in a definition's body, in a `ring`, or under `in` of a frame that is not one of
+  `std`'s — is **E106** at the read, once, never left at the world. A set or a body made of it at
+  the root stands in the world wherever it is read later, as every root solid does.
 - **A file that gives no one solid** — one the implementation cannot read, or one giving several
   solids — is **E072** at the `use`, once: the reader's reason with the module's name in front, or
-  how many solids the file gives. What a statement reading the name would say besides follows from
-  that refusal and is not said.
+  how many solids the file gives. Nothing is said of what is made of it — a statement whose
+  references resolve to the given body, or to what is made of it — while a statement's own faults
+  are said as with a readable file.
 
 *Non-normative:* the reference implementation reads a manifold solid of AP203, AP214 or AP242
 advanced B-rep through its kernel's reader and hands the B-rep through untouched, so a document
@@ -3740,13 +3754,15 @@ statement are not exported. Component definitions and imports remain at file sco
 cannot be nested. Presentation still belongs in `.svd` files. Source editing in a preview MUST
 preserve the block and place newly drawn geometry inside it.
 
-Hosts resolving files SHOULD try the model's directory and then its ancestor directories,
-nearest first, before falling back to the shared library. **[0.230]** In each directory they
+Hosts resolving files SHOULD try the model's directory and then its ancestor directories, nearest
+first, before falling back to the shared library. Thus opening `components/cylinder.sv` directly
+can resolve `use components.dims` from the same project as an assembly beside the `components`
+directory. All transitive imports use the same root model. **[0.230]** In each directory hosts
 SHOULD try `NAME.sv`, then `NAME.step`, then `NAME.stp` (`NAME` the path, its dots directories),
 so a nearer file of either kind wins over a farther one and, in one directory, the Solvent
-document wins. Thus opening
-`components/cylinder.sv` directly can resolve `use components.dims` from the same project as
-an assembly beside the `components` directory. All transitive imports use the same root model.
+document wins. The document itself is never among them: `foo.sv` saying `use foo` reads
+`foo.step` beside it. The first candidate that is a file is the module; one that is there and
+does not read resolves nothing (**E070**, said with its path), never a farther file in its stead.
 
 *Non-normative:* an implementation may parse a module with its spans offset past everything linked before it, so that every span in a linked program is one integer into one virtual text and no consumer learns a second coordinate; a splice on the document then walks the root body alone, which no module span is ever in.
 
@@ -3801,7 +3817,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E067 | a plane that cannot stand on its held axes: two wholly held axes that do not meet or run alike, or a plane held where its held axes are not — a plane's axes pass through its origin (§6.7) **[0.43]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component or a relation word defined twice in one file (§14.4, §9.9) **[0.12]** **[0.30]**; **[0.48]** a relation word defined over a word of the language's own, and an import of a name twice, from two modules, over the file's own definition, or over a built-in word (§14.4); **[0.84]** an interface defined twice in one file, or over a component of the file (§8.1); **[0.230]** a `use` of a given module whose path's first segment the file defines at its top level (§14.4) |
-| E072 | **[0.230]** a `use` of a given module whose file gives no one solid: the reader's refusal, or how many solids it gives (§14.4) |
+| E072 | **[0.230]** a `use` of a given module whose file gives no one solid: the reader's refusal (a file found as `NAME.step` that is empty or no exchange text among them), or how many solids it gives (§14.4) |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body; **[0.42]** a face over a point standing in space, and a prism's side generating in a plane the solve places (§6.15.2) |
 | E081 | invalid revolution axis (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |

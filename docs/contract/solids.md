@@ -403,7 +403,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   was built — name the solid they were read of: a cap of a ball declared after a body kept above a
   plane is that ball's cap, not the plane's half-space within a box (#993's review, D1,
   `tests/region_solids.rs`, `a_body_kept_within_a_half_space_moves_no_later_solid`; through
-  0.230 the region was pushed between them, the resolver's names shifted past it and the terms
+  0.229 the region was pushed between them, the resolver's names shifted past it and the terms
   already read were not).  Through 0.220 such a region was read
   by the field alone and no exact construction made of it, so nothing could measure it.  A region
   of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read

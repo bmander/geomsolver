@@ -7,7 +7,8 @@ face on its original surface. The spelling was left open, with a preference — 
 module mechanism rather than add a constructor — and the bible's rule that new syntax waits for an
 experiment (principle 1). This is that experiment's record: the spellings put to the compiler
 before the change, the one taken and why, the rules as built with what `solventc` says to each, the
-later stages' documents written in it, and what it leaves.
+later stages' documents written in it, what review found and how each finding was settled, and
+what it leaves.
 
 The language is [0.230] ([changelog](solvent-changelog.md), [spec](../solvent-spec.md) §14.4 and
 §6.9); the rules the code holds are in [language.md](contract/language.md) ("A given body") and
@@ -60,8 +61,10 @@ its own: it is (C) read through a set literal, and under (C) it must mean the sa
   read from a file stands where the file puts it, so the instance would need placing work of its
   own (stage 5's) before `b := bracket() in f` meant anything. Until then it is a call with no
   arguments around a name.
-- **(B) makes a solid a value**, which nothing else in the language is: every solid is
-  `solid(…)` or a body word's result.
+- **(B) declares a second name for one body.** `part := bracket` would make `part` the given body
+  itself, where a declaration makes an entity of its own; the body made of the given one is
+  `solid(bracket)`, and a body standing elsewhere is a reading of it at an instant (`bracket
+  at(under: std.z) 90deg`, rule 7), both forms the language already has.
 - **(D) is a constructor, and puts a filesystem path in the model.** It is the kernel's view (a
   file is read) where the language's is a set; principle 2 ("a new capability arrives as a library
   definition …, not as new grammar, constructor arguments or options") rules it out.
@@ -75,27 +78,26 @@ What (C) costs, stated:
 - **A file of several solids has no spelling yet.** It is refused at the `use`, saying how many
   (one given body is one solid). Naming the solids of one file — and an assembly's product
   structure, which the kernel does not read yet — is later work.
-- **Placement is refused, not built.** A given body stands where its file puts it. Read where it
-  would have to be placed — a definition's body, a `ring`, an `in` of a frame of the document's
-  own — it is E106, never silently left at the world. Placing it, or part of it, is stage 5.
-- **A document named like its file reads itself.** In one directory `NAME.sv` is found before
-  `NAME.step`, so `bracket.sv` beside `bracket.step` links itself for `use bracket` and says
-  `` no such entity: `bracket` ``. That is the module search as it always was; it is met more
-  often now.
+- **Placement in a frame is refused, not built.** A given body stands where its file puts it, and
+  a reading at an instant stands it elsewhere as it does any solid. Read where a frame would have
+  to place it — a definition's body, a `ring`, an `in` of a frame of the document's own — it is
+  E106, never silently left at the world. Placing it, or part of it, so is stage 5.
 
 ## The rules as built
 
-Each document below was run through `solventc` at the merged commit of stage 2, with the kernel's
-fixtures (`rust/gcs-core/tests/step_file/`, written by OCCT 7.9.3) copied beside it. `bracket.step`
-is `drilled_ap214.step`: a 40 × 30 × 20 block from the origin, drilled through along z by a hole of
-radius 6 about (20, 15). Its volume is `24000 − 720π = 21738.053`, its area `5200 + 168π =
-5727.79`.
+Each document below was run through `solventc` at `375efd5`, stage 2 with review's fixes, with the
+kernel's fixtures (`rust/gcs-core/tests/step_file/`, written by OCCT 7.9.3) copied beside it.
+`bracket.step` is `drilled_ap214.step`: a 40 × 30 × 20 block from the origin, drilled through along
+z by a hole of radius 6 about (20, 15). Its volume is `24000 − 720π = 21738.053`, its area `5200 +
+168π = 5727.79`.
 
-**1. Recognised by content.** A text whose first token, after an optional byte-order mark and white
-space, is `ISO-10303-21;` is an exchange file and its module a given module (`modules::is_step`,
-one test every host asks). It is never parsed as Solvent; its extension plays no part beyond where
-a host looks (rule 9). A file of a different name, `drilled_inch.step` copied as `inchfile.step`,
-read as `use inchfile`, is the same block (`part.volume = 21738.1`).
+**1. Recognised by content, or by the name it was found by.** A text whose first token, after an
+optional byte-order mark and white space, is `ISO-10303-21;` is an exchange file and its module a
+given module (`modules::is_step`, one test every host asks), whatever the file is called: the
+drilled block copied as `odd.sv` and read as `use odd` is `part.volume = 21738.1`. A file a host
+found as `NAME.step` or `NAME.stp` is an exchange file whatever its text, so an empty one, or one
+of other text, is the reader's refusal at the `use` (rule 8), never a Solvent module. Neither is
+ever parsed as Solvent.
 
 **2. The name is the module's whole path.** `use bracket` names `bracket`; `use vendor.bracket`
 (`vendor/bracket.step`) names `vendor.bracket`:
@@ -128,20 +130,17 @@ in this file, and `use bracket` names the body its file gives: one name, two thi
 | written | `solventc` |
 |---|---|
 | `part := solid(bracket)` | `part.volume = 21738.1`, `part.area = 5727.79` |
-| `part := solid({ p \| p in bracket })` | `part.volume = 21738.1`, `part.area = 5727.79`, 7 faces, 15 edges |
+| `part := solid({ p \| p in bracket })` | the same report line for line, and the same STEP file byte for byte |
 | `upper := solid({ p \| p in bracket; p distance(>= 10mm, along: n) std.top })` | `upper.volume = 10869`, its upper half (`10869.026645 mm³` built) |
 | `bracket cut pin`, `pin` a prism of radius 3 at (5, 5) from z = −10 to 30 | `pin.volume = 565.487`, its two ends (`180π`) |
 | `claim every q in pin: q in part`, `pin` of radius 2 within the material | `holds, measured 3` |
-| `claim every q in part: q in bracket` | `undecided, measured 0 … unresolved: containment is within curved-faceting uncertainty` (their boundaries are one) |
+| `claim every q in part: q in bracket` | `undecided, measured 0`, `` nearest at (0, 0, 20), between a face of `bracket` and a face of `bracket` ``, `unresolved: containment is within curved-faceting uncertainty` (their boundaries are one) |
 
-`solid(bracket)` builds to the file's B-rep untouched (`3 ms`, `405` entities exported). The set
-spelling builds the same solid — the same volume to the last digit, the same 7 faces and 15 edges
-— but not the same bytes: it is built again (`52 ms`), one p-curve is written as a
-`B_SPLINE_CURVE_WITH_KNOTS` where `solid(bracket)` writes a `CIRCLE` (`1282` entities), and the
-report names its faces otherwise (`part.far.area = 4973.82`, where `solid(bracket)` lists
-`part.bracket.#given0` … `#given6`). The bible's "two spellings of one set give the same result"
-holds here for the set and not yet for its export; the record leaves it as an open item of the
-evaluator.
+`solid(bracket)` builds to the file's B-rep untouched (`405` entities exported), and so does the
+set spelling: one membership of a whole solid, `{ p | p in S }`, is `S`'s body, as `solid(S)` is,
+for a given body and for an authored one alike (sets.md; the gate is
+`given_bodies::two_spellings_of_a_given_body_are_one_solid`). The bible's "two spellings of one set
+give the same result" holds to the byte. (Review found it did not at first; below.)
 
 **4. Never extended.** The given body is the file's, and stays nameable as given:
 
@@ -155,7 +154,12 @@ makes of it, `part := solid(bracket)`, then `drill cut part`
 ```
 
 So are `drill union bracket`, `drill common bracket`, and the primitive the words are written in
-said of it, `bracket and { p | p not in drill }` (the same E080). The edit is said of a body made of
+said of it. The fix named is the author's own statement with the body made of the given one in its
+place: `bracket and { p | p not in drill }` says `` …, then `part and { p | p not in drill }` ``,
+and `drill bore bracket`, over a word `x bore B := B and { p | p not in x }` of the document's own,
+says `` …, then `drill bore part` ``. Extended through a definition's formal — `Drilled(bracket)`,
+whose body says `drill cut B` — it is the one E080 at that statement, ending `` …,
+`part := solid(bracket)`, and give `part` where it is given ``. The edit is said of a body made of
 it:
 
 ```
@@ -184,20 +188,31 @@ full` reads its export back.
 source names nothing there`, and `--step` says `this document has no solid to write`.
 `part := solid(bracket)` makes one object, `part`: the cut list is `1 part, 1 object`
 (`1 × part: 40 × 30 × 20 — part`), and `--step-assembly` writes one part (`1 parts, 0
-sub-assemblies, 1 objects placed`). The given body is its stock, not a second part.
+sub-assemblies, 1 objects placed`). The given body is its stock, not a second part — and is never
+an object however it is read: `upper := solid({ p | p in bracket; … })` alone lists `1 × upper`,
+`bracket cut pin` alone `1 × pin`, and `claims.sv` (rule 3's `part`, `pin` and two claims over
+`bracket`) writes an assembly of `2 parts`. `--where part` reports the body's own measures and no
+row per face of the given body.
 
 **6. One body per module.** `a := solid(bracket)` and `b := solid(bracket)` are two objects
 (`2 parts, 2 objects`) over one given body, however many files `use` the module.
 
 **7. Where it stands, and units.** The file's origin and axes are the world's: the block's bounds
 are `x 0–40, y 0–30, z 0–20` as the file has them, with or without `in std.top { … }` around the
-statement. A read where the body would have to be placed is refused at the read:
+statement. To stand it elsewhere it is read at an instant, as any solid is: `moved := bracket
+at(under: std.z) 90deg` is the block turned a quarter about the world's z (`moved.bounds.x0 = -30`,
+`moved.bounds.y1 = 40`, `moved.volume = 21738.1`), the one object. A read where the body would
+have to be placed is refused at the read:
 
 | read in | `solventc` |
 |---|---|
 | a component's body, `component Holder() { part := solid(bracket) }` | `error[E106]: `` `bracket` `` is the body a file gives, which stands in the document's own space, and this reads it in a definition's body, which its instance's frame places: placing a given body is not built yet (#993 stage 5), so read it at the document's root` |
-| a `ring 4 about std.z { … }` | the same E106, "in a `ring`, which turns each copy", beside the ring's own `` error[E021]: `bracket` is outside the `ring` and does not turn with it … `` |
+| a `ring 4 about std.z { … }` | the same E106, "in a `ring`, which turns each copy", and nothing else |
 | `f := frame`, `in f { … }` | the same E106, ``in `in f`, a frame that is not the world's`` |
+
+Only a direct read is refused. A set or a body made of the given body at the root stands in the
+world wherever it is later read, as every root solid does: `S := { p | p in bracket }` at the root
+and `part := solid(S)` inside `in f { … }` is the block at the world (`part.bounds.x1 = 40`).
 
 Lengths are the file's, read in its own units and carried to the document's: a `unit in` document
 reading the millimetre file has `part.volume = 1.32654` and `part.bounds.x1 = 1.5748`
@@ -205,7 +220,8 @@ reading the millimetre file has `part.volume = 1.32654` and `part.bounds.x1 = 1.
 `21738.1` in a `unit mm` document; the foot-unit cube to `1000`.
 
 **8. A refused file is said once, at the `use`**, in the kernel's words with the module's name in
-front — and whatever a statement reading the name would say besides is left unsaid:
+front — and nothing is said of what is made of it, while what a statement says wrong of its own is
+still said:
 
 | file | `solventc` |
 |---|---|
@@ -214,11 +230,20 @@ front — and whatever a statement reading the name would say besides is left un
 | `placed_ap214.step`, one cube XCAF located | `` error[E072]: `given`: #372: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies are not read yet `` |
 | a header with no `FILE_SCHEMA`, read by `part := solid(junk)` and `other := solid(part)` | `` error[E072]: `junk`: the file's header names no schema (FILE_SCHEMA) ``, and nothing else |
 | `drilled_ap214.step` with a second `MANIFOLD_SOLID_BREP` over its shell | `` error[E072]: `twice`: the file gives 2 solids, and a given body is one solid `` |
+| an empty `empty.step` | `` error[E072]: `empty`: line 1, byte 0: the file does not start `ISO-10303-21;` at the end `` |
+| `notstep.step` holding `hello` | `` error[E072]: `notstep`: line 1, byte 0: the file does not start `ISO-10303-21;` at `hello ` `` |
+| `shell_ap214.step` read by `part := solid(shell)`, `other := solid({ p \| p in part })` and `x := part.volume + nosuch` | the E072 at the `use`, and `` error[E101]: `x`: no such entity: `nosuch` ``: nothing of `part` or `other` |
 
 **9. Where hosts look.** `NAME.sv`, then `NAME.step`, then `NAME.stp` in each directory, the
 document's own first, then its ancestors, then the library (`modules::search_paths`, one answer for
 the CLI, the page and the fixtures crate). A document in `sub/` finds `bracket.stp` in its parent;
-a `bracket.sv` put beside the document then wins, and `solid(bracket)` is `no such entity`.
+a `bracket.sv` put beside the document then wins, and `solid(bracket)` is `no such entity`. A
+document is never its own module: `foo.sv` saying `use foo` reads the `foo.step` beside it
+(`part.volume = 21738.1`), and a `use` only the document itself would answer is `` error[E070]: no
+module `selfonly` ``. The first candidate that is a file is the module; one that is there and does
+not read is said and resolves nothing, never a farther file standing in for it — for a drawing
+whose model `use`s it, `` error[D001]: model `…/m.sv`: module `dims`: …/dims.sv: invalid utf-8
+sequence of 1 bytes from index 0 ``.
 
 ## Measurements
 
@@ -235,7 +260,7 @@ body of a second document; "read back" compares the two documents' whole `--wher
 | `drilled_metre` | AP203, metres | 21738.053289 | | 7, 15, 10 | 405 | identical |
 | `named_ap214` | AP214 through XCAF, named | 21738.053289 | | 7, 15, 10 | 405 | identical |
 | `box_ap242_foot` | AP242, feet | 1000.000000 | `10³` | 6, 12, 8 | 327 | identical |
-| `void_ap214` | AP214, a sphere's void | 7731.917427 | `8000 − 256π/3` | 7, 13, 10 | 360 | identical |
+| `void_ap214` | AP214, a sphere's void | 7731.917427 | `8000 − 256π/3` | 7, 13, 10 | 362 | identical |
 
 Every build took under 10 ms and every run under a second on a loaded machine (one solid of a few
 faces; these are not timings to quote). The in-process gate,
@@ -244,8 +269,9 @@ own reading face by face (`step_roundtrip::same`: every face on its original sur
 every edge and vertex where the file had it), and the kernel's writer holds what it writes to
 `step_check::verify`.
 
-*To be added by the stage's gate run:* `solventc` over a real file of many faces (benchy), the time
-to read, build and export it, and its round trip. Not measured here.
+*To be added by the stage's gate run:* `solventc` over real files of many faces — the 32
+CADGenBench editing inputs and benchy — read through a document: the time to read, build and
+export each, and its round trip. Not measured here.
 
 ## The later stages' documents, in this spelling
 
@@ -315,7 +341,7 @@ unit mm
 use input
 
 // not built: stage 3 chooses the faces by what they are; no written path reaches a given body's
-// faces today (`--where part` lists them as `part.input.#given0` …)
+// faces today
 top := …            // the plane face at z = 8
 bottom := …         // the plane face at z = 0
 sides := …          // the four plane faces square to it
@@ -351,6 +377,53 @@ authored case has 7 and 15. That is the reverse engineering the principle refuse
 `holes-widened-until-merged`, `l-block-riser-moved`, `rounded-block-top-moved-up`) all wait for the
 same two.
 
+## What review found, and how each was settled
+
+Stage 2 was reviewed once merged; each finding below was fixed in the core or the hosts, and each
+rule above is the fixed one, run against `375efd5`.
+
+- **A body kept within a half-space shifted every solid after it** (older than stage 2: `55c958d`
+  gives the same). A ball's cap declared after `upper := solid({ p | p in part; p distance(>=
+  10mm, along: n) std.top })` measured `cap.volume = 2.84677e+06` where alone it is `654.498`, and
+  two such sets over one ball were each E041 *made of itself*. The region is now pushed past every
+  solid once all are built: `cap.volume = 654.498` in both documents (solids.md,
+  `a_body_kept_within_a_half_space_moves_no_later_solid`).
+- **The set spelling was another solid's export.** `solid({ p | p in bracket })` had the volume
+  and the face count of `solid(bracket)` but was rebuilt as a region: 1282 STEP entities against
+  405, a circle p-curve written as a 880-point `B_SPLINE_CURVE_WITH_KNOTS`, its seven faces
+  reported as one `part.far`. One membership of a whole solid is now that solid's body (rule 3),
+  for any solid, except where the solid is made of the set's own (the cavity inside
+  `std.rounds`' `shell`), which stays a region.
+- **A given body was an object when read by a set, a claim or a tool**, listed beside what the
+  document made of it. It is never one now (rule 5).
+- **A refused file was found by spelling.** What it left unsaid was the statements whose text
+  named it; it is now what their references resolve to, and a statement's own faults are said
+  (rule 8).
+- **`bracket at(under: std.z) 90deg` was E040 and E105**; it is the body placed by the turn
+  (rule 7).
+- **Two diagnostics for one cause, and a fix in other words.** A read in a `ring` was E106 and the
+  ring's E021; a formal extended was E080 and E106; the fix named was always `drill cut part`. Each
+  is one diagnostic now, its fix the author's statement (rules 4 and 7).
+- **The faces' keys reached readers.** `--where part` listed `part.bracket.#given0.area` …
+  `#given6`, and a claim's witness said `between bracket.#given0 and bracket.#given2`, names no
+  document can write. The report lists no such row and the witness says `` a face of `bracket` ``.
+- **A given body's build was one in every unit.** Its key now reads the document's unit, so the
+  same file read in millimetres and in inches is two builds, never one mesh drawn in both
+  (solids.md).
+- **Where a set made of it stands.** A set or a body made of the given body at the root stands at
+  the world wherever it is read later; only a direct read under a posed `in` is E106 (rule 7,
+  language.md).
+- **The hosts.** An empty `NAME.step`, or one of other text, was E101 alone or a cascade of E100s;
+  it is one E072 at the `use` (rules 1 and 8). A document named like its file read itself for
+  `use bracket` and said `` no such entity: `bracket` ``; a document is never its own module now
+  (rule 9). A drawing's model whose module file is there and does not read had a farther file
+  stand in; the drawing now names the module and why (rule 9). The page hands a module to the core
+  with the path it was found at, and its text to each worker once, named by its digest after
+  (architecture.md).
+
+Left open, older than stage 2: a face path that names nothing is accepted until the solid is built
+(below).
+
 ## What reads better
 
 - **The document says what is given and what is changed.** `use bracket`, `part :=
@@ -359,8 +432,8 @@ same two.
 - **A given body is an operand like any other.** The tool of a body word, a term of a set, a
   claim's set: each reads it with no word of its own, because it is a set.
 - **The edit never rebuilds what it did not touch.** `part := solid(bracket)` is the file's B-rep
-  handed through, 3 ms and byte for byte what the file held; a hole drilled in it builds one
-  Boolean against it.
+  handed through, face for face what the file held; a hole drilled in it builds one Boolean
+  against it.
 - **Nothing in the document is the host's.** The same three lines read in the CLI, the page and
   the tests; where the file lives, and that it is a file, is said nowhere in them.
 
@@ -372,8 +445,6 @@ same two.
   stage 5's containment claim (`every q in region: q in bracket`) needs.
 - **A module name is now sometimes a solid.** A reader of `use vendor.bracket` cannot tell from the
   `use` whether it brings components or a body; the name's reads say so.
-- **The set spelling is the same solid but not yet the same export** (rule 3), so a document
-  written `solid({ p | p in bracket })` loses what makes the given body cheap.
 
 ## What is refused, and left
 
@@ -381,9 +452,13 @@ same two.
   E072 at the `use`.
 - **Placing a given body** — in a definition's body, a `ring`, an `in` of the document's own frame
   — is E106 (stage 5).
-- **Its faces have no name a document can write.** The report lists them (`part.bracket.#given0`
-  …, in the file's order) for a person to read, and nothing reaches them: rounds, deletes and moves
-  on a given body wait for stage 3's selection and stage 4's edits.
+- **Its faces have no name a document can write**, and no reader is shown a key for one: the
+  report gives the body's measures and no row per face, and a claim's witness says `` a face of
+  `bracket` ``. Rounds, deletes and moves on a given body wait for stage 3's selection and stage
+  4's edits.
+- **A face path that names nothing** (`input.near.side`, `ball.nosuch.side` alike) is accepted
+  until the solid is built (above). Older than stage 2; stage 3's selection is where it is
+  answered.
 - **The OCCT route** refuses a given body, naming `--kernel rust` (solids.md); the core's kernel is
   the export.
 
@@ -391,9 +466,9 @@ same two.
 
 - **The spelling (stage 2): answered.** `use NAME`, the body named by the module's path, read as a
   solid; no constructor and no path in the document.
-- **The spelling of a selection: stage 3's.** Nothing here chooses a face. The report's
-  `#given0` names are not that spelling and cannot be written; a selection by index or by stored id
-  is a non-goal of the issue and is not offered.
+- **The spelling of a selection: stage 3's.** Nothing here chooses a face; a face's internal key
+  reaches no reader, and a selection by index or by stored id is a non-goal of the issue and is
+  not offered.
 - **The ground truth of a given body.** For a given body the B-rep is the definition: membership is
   read off the boundary the kernel read, as the evaluator reads any built solid's, and the kernel's
   reader is held to OCCT's readings in tests (stage 1). Stage 2 adds nothing to evaluate: the body
