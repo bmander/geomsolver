@@ -586,7 +586,10 @@ pub fn dump_trim(dir: &std::path::Path,tool: &Brep,path: &crate::trajectory::Tra
     std::fs::write(dir.join("tool.json"),write(tool)?).map_err(io)?;
     for (k,c) in candidates.iter().enumerate() { std::fs::write(dir.join(format!("candidate-{k}.json")),write(c)?).map_err(io)? }
     let reading = object([("resolution",trim.resolution.into()),("hair",trim.hair.into()),
-        ("reach",trim.reach.map_or(Json::Null,|(lo,hi)| Json::Arr(vec![v3(lo),v3(hi)])))]);
+        ("reach",trim.reach.map_or(Json::Null,|r| match r {
+            super::trim::Reach::Box(lo,hi) => Json::Arr(vec![v3(lo),v3(hi)]),
+            super::trim::Reach::Turned {o,z,r,span} => object([("o",v3(o)),("z",v3(z)),("r",r.into()),("span",reals(&span))]),
+        }))]);
     let meta = object([("tol",tol.into()),("bar",bar.into()),("roll",reals(&roll)),("trim",reading),("trajectory",path),
         ("candidates",candidates.len().into()),("given",givens(given)?),("why",why.into())]);
     std::fs::write(dir.join("trim.json"),meta.dump(Some(2))).map_err(io)
@@ -601,7 +604,12 @@ pub fn load_trim(dir: &std::path::Path) -> Result<Trimming,String> {
     let tool = read(&std::fs::read_to_string(dir.join("tool.json")).map_err(io)?)?;
     let candidates = (0..n).map(|k| read(&std::fs::read_to_string(dir.join(format!("candidate-{k}.json"))).map_err(io)?)).collect::<Result<Vec<_>,_>>()?;
     let t = field(&meta,"trim")?;
-    let reach = match field(t,"reach")? { Json::Null => None,r => { let r = r.arr(); Some((rv3(&r[0]),rv3(&r[1]))) } };
+    // (a box its two corners; a cylinder about an axis its line, radius and span along it)
+    let reach = match field(t,"reach")? {
+        Json::Null => None,
+        r @ Json::Arr(_) => { let r = r.arr(); Some(super::trim::Reach::Box(rv3(&r[0]),rv3(&r[1]))) }
+        r => Some(super::trim::Reach::Turned {o:rv3(field(r,"o")?),z:rv3(field(r,"z")?),r:num(r,"r")?,span:pair(r,"span")?}),
+    };
     let trim = super::trim::Trim {resolution:num(t,"resolution")?,hair:num(t,"hair")?,reach};
     Ok(Trimming {tool,path:rtrajectory(field(&meta,"trajectory")?)?,roll:pair(&meta,"roll")?,candidates,given:rgivens(field(&meta,"given")?)?,
         bar:num(&meta,"bar")?,tol:num(&meta,"tol")?,trim})

@@ -56,6 +56,38 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `step_check` verifies the structure written: each solid, its shells and each face's sense in
   its shell.
 
+- **Cut from a blank under a screw, a turn or a slide, the contact's road works within the region
+  the cut can depend on** (`swept::closed::cut_from`): the motion keeps every point's distance from
+  its axis, so nothing of the tool farther from the axis than the blank reaches ever enters it. The
+  blank's reach about the axis is bounded first; the tool is clipped to a square prism about the
+  axis a little past it, its candidates read with the faces lying wholly past the reach left out
+  (a face in contact all over among them, no longer refused there), and the sweep trimmed within a
+  cylinder about the axis (`swept::trim::Reach::Turned`; the trim's reach, a box before, is now
+  `Reach::Box` or `Reach::Turned`, and the judge reads within it). Where it refuses, the whole road
+  is taken. brep-bench's spline bar screwed through a rod builds in under 2 s where it took 17, to
+  the same volume within 5e-10.
+
+- **A cylinder about the axis a sheet is carried round or along meets it in the sheet's paths**
+  (`ssi::intersect`): the `Iso` of each of the section's crossings of the cylinder, read certified,
+  where it was traced.
+
+- **A long non-rational curve's whole spans' Bézier forms are blossomed once for the curve and
+  kept** (`enclose`): a stretch across many of its spans — a sheet's section, read at every box of a
+  ray's search — reads each span it covers whole off them and blossoms only the two it ends in, the
+  same enclosure. And the judge of a swept solid reads its volume only where some face was not read
+  facing out: where every face was, the sum of their fluxes is that of what the solid holds.
+
+- **A sweep's contact and trim read faster, to the same answers** (brep-bench's spline bar
+  screwed through a rod, 33 s to 17 s, its STEP the same to the byte): an interval's product and
+  quotient take their ends by the operands' signs, two products rather than four, the enclosure
+  the same; a spline's derivative over many spans hulls each difference of neighbouring
+  coefficients once, not once a span; `BSpline::nearest_indexed` reads each span's seventeen
+  samples off the curve's index, evaluated once for the curve, a curve of few spans included (each
+  thread holding the indexes it asked for last, out of the store's lock); and a curve enclosed over
+  a stretch past its domain — a blend's edge over `[0, 1]` grown outward by a rounding — is
+  enclosed as it reads there, clamped, by its spans' Bézier forms over the stretch within, its
+  derivative with nought, rather than by de Boor's steps in intervals over every span.
+
 - **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
   a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
   the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
