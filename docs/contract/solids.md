@@ -1275,9 +1275,12 @@ what the document makes of it and never it beside them
 build read, is its B-rep's mesh (`evaluated::brep_facets`, shared with `from_brep`), never an empty
 term. Its material field is `BuiltField` where every face's surface has an exact foot, else refused
 naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
-reaches them; stage 3 chooses them by predicate); what reads the built B-rep's names shows them as
-they are, `--where part` as `part.bracket.#given0.area` and a containment claim's witness as
-`between bracket.#given0 and bracket.#given2`. The OCCT route refuses `Node::Given`, naming
+reaches them; stage 3 chooses them by predicate), and **no reader is shown their keys**: `--where
+part` lists no per-face row of a given body's faces (`report::positions_where`; their area is
+in the body's), and a containment claim's witness says one as `` a face of `bracket` ``
+(`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
+keeps the face's key, for a host to pick it by
+(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`). The OCCT route refuses `Node::Given`, naming
 `--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate: `tests/given_solids.rs` —
 `its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
 file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,

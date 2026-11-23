@@ -377,6 +377,23 @@ impl Given {
         format!("{GIVEN_FACE}{k}")
     }
 
+    /// **A face's path as a reader is told it** (#993's review, R9): a given body's face, which
+    /// no written path reaches (stage 3 chooses one by what it is, never by an index), is "a
+    /// face of `bracket`", the path up to it; any other path is as it is.
+    pub fn face_said(path: &str) -> String {
+        match Given::face_of(path) {
+            Some(of) => format!("a face of `{of}`"),
+            None => path.to_string(),
+        }
+    }
+
+    /// Where `path` names a given body's face (`bracket.#given4`, `part.bracket.#given0`), the
+    /// path up to it, never empty: what a reader can write of it.
+    pub fn face_of(path: &str) -> Option<&str> {
+        let at = path.find(&format!(".{GIVEN_FACE}"))?;
+        (at > 0).then(|| &path[..at])
+    }
+
     pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
         &self.brep
     }

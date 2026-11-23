@@ -533,6 +533,25 @@ fn a_given_body_refused_is_said_once_in_the_authors_words() {
             "{}", diags[0].message);
 }
 
+/// **No name a reader cannot write reaches them** (#993's review, R9): a given body's faces are
+/// named by no path until a face is chosen by what it is (stage 3), so the report lists none of
+/// them by its key — the body's area holds theirs — and a claim's witness says "a face of
+/// `bracket`".
+#[test]
+fn a_given_bodys_faces_are_said_as_its_faces() {
+    let e = solved(&format!("{DRILL}part := solid(bracket)\nclaim every q in drill: q in bracket\n"));
+    let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n == "part"
+                                                 || n == "bracket");
+    assert!(rows.iter().any(|(n, _)| n == "part.area"), "{rows:?}");
+    assert!(rows.iter().all(|(n, _)| !n.contains("#given")), "{rows:?}");
+    let v = gcs_core::diagnose::judge_solids(&e.sketch);
+    let text = gcs_core::report::solid_claim_text(&v[0]);
+    assert!(text.contains("a face of `bracket`") && !text.contains("#given"), "{text}");
+    assert_eq!(gcs_core::model::Given::face_said("part.bracket.#given0"),
+               "a face of `part.bracket`");
+    assert_eq!(gcs_core::model::Given::face_said("drill.hole"), "drill.hole");
+}
+
 /// **Statements no text holds are numbered apart** (#993's review, R10): a given body's
 /// declaration past every module's statements, a distance's foot's at the very top, so neither is
 /// ever another's, nor a statement of the document or a module.

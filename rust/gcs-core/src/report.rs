@@ -977,8 +977,12 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
                     *faces.entry(tail).or_default() += p.area();
                 }
             }
+            // a given body's face is no path a reader can write (#993 stage 2): its area is in
+            // the body's
             for (tail, a) in faces {
-                out.insert(format!("{n}.{tail}.area"), a);
+                if crate::model::Given::face_of(&format!("{n}.{tail}")).is_none() {
+                    out.insert(format!("{n}.{tail}.area"), a);
+                }
             }
         }
     }
@@ -2012,6 +2016,9 @@ fn point_text(x: [f64; 3]) -> String {
 /// touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they come no nearer.
 fn nearest_text(n: &crate::clear::Nearest) -> String {
     let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
+    // a given body's face said as one of its faces, which is all a reader can write of it
+    let said = |f: &str| crate::model::Given::face_said(f);
+    let n = crate::clear::Nearest { a: said(&n.a), b: said(&n.b), ..n.clone() };
     if n.deepest || n.at_a == n.at_b {
         let word = if n.deepest { "deepest" } else { "nearest" };
         format!("{word} at {at_a}, between {} and {}", n.a, n.b)
