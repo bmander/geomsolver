@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
+  distance from the origin, so a part built there was refused, or built hundreds of times slower,
+  once it stood a few of its own sizes off. A foot found from the last one on a face family's
+  wall, a blend, a B-spline sheet or its offset was taken for the nearest within a thousandth of
+  the *point's* distance from the origin (six millimetres, 6.3 m out); it is within a thousandth
+  of the patch's own size (`geom::NEAR`), and a foot refined from a hint is on its patch by that
+  size too. A rational spline's and a rational net's enclosures divided `A` by `W` with every pole
+  read from the origin, and a blend's read the point between its sections so, each as wide as the
+  distance from it; both are read from a point of the surface. A lofted blade unites with its hub
+  a metre out as at the origin, a NURBS ball is cut ten sizes out (refused before, after three
+  minutes), and a canal's cut ten thousand sizes out takes what it takes at the origin (700 times
+  that before). `family::Sheet::size` is new.
+
 - **Cut from a blank under a screw, a turn or a slide, the contact's road works within the region
   the cut can depend on** (`swept::closed::cut_from`): the motion keeps every point's distance from
   its axis, so nothing of the tool farther from the axis than the blank reaches ever enters it. The
@@ -16,11 +29,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (a face in contact all over among them, no longer refused there), and the sweep trimmed within a
   cylinder about the axis (`swept::trim::Reach::Turned`; the trim's reach, a box before, is now
   `Reach::Box` or `Reach::Turned`, and the judge reads within it). Where it refuses, the whole road
-  is taken. brep-bench's spline bar
-  screwed through a rod builds in under 2 s where it took 17, to the same volume within 5e-10.
+  is taken. brep-bench's spline bar screwed through a rod builds in under 2 s where it took 17, to
+  the same volume within 5e-10.
+
 - **A cylinder about the axis a sheet is carried round or along meets it in the sheet's paths**
   (`ssi::intersect`): the `Iso` of each of the section's crossings of the cylinder, read certified,
   where it was traced.
+
 - **A long non-rational curve's whole spans' Bézier forms are blossomed once for the curve and
   kept** (`enclose`): a stretch across many of its spans — a sheet's section, read at every box of a
   ray's search — reads each span it covers whole off them and blossoms only the two it ends in, the

@@ -19,6 +19,60 @@ pub fn tolerance(size: f64) -> f64 { 1e-9*size }
 /// `tolerance(size)`, never under `floor` (mm).
 pub fn tolerance_over(size: f64,floor: f64) -> f64 { tolerance(size).max(floor) }
 
+/// **How near its point a foot found from a start stands to be taken for the nearest, as a part
+/// of the surface's own size** (#1002): a patch whose foot is searched for — a face family's wall,
+/// a blend, a B-spline sheet and its offset — keeps the foot Newton's method settles on from the
+/// last one found where it stands within this of the point, and searches the whole patch
+/// otherwise. **Near is a part of what is searched, never of where it stands**: read as a part of
+/// the point's distance from the origin (`1 + |p|`), the reach grew with every metre a part stood
+/// off — six millimetres for a blade 6.3 m aft, wider than the blade's edge is thick — so a point
+/// lying on the patch kept a foot on its rim or its other side, and what was built at the origin
+/// was refused a metre from it; and a part a hundredth of a millimetre across at the origin read a
+/// thousandth of a millimetre as near, a tenth of itself.
+pub(crate) const NEAR: f64 = 1e-3;
+/// How near its point a foot refined from a hint stands to be on the patch there
+/// (`Surface::inverse_near`: an edge's point on its face), as a part of the patch's own size.
+/// (Two points of a patch are one, and a foot nearer than another, by `tolerance` of that size.)
+const ON_PATCH: f64 = 1e-6;
+/// How near a foot stands to be on a sheet with no more of it searched, as a part of its size.
+const ON_SHEET: f64 = 1e-10;
+
+/// The diagonal of a box: the size of what it holds.
+pub(crate) fn diagonal(b: Box3) -> f64 { crate::util::space::distance(b.0,b.1) }
+
+/// **A size read once for what is behind an `Arc`** (`net_size`, `curve_size`, a blend's): kept by
+/// its address on each thread with the thing itself, so no other takes its place, as a section's
+/// samples are (`carried_samples`); emptied past `KEPT_SIZES`. A size is a function of the thing:
+/// kept or read again, the same.
+fn kept_size<T: 'static>(of: &Arc<T>,read: impl FnOnce(&T) -> f64) -> f64 {
+    const KEPT_SIZES: usize = 256;
+    type Kept = std::collections::BTreeMap<usize,(Arc<dyn std::any::Any>,f64)>;
+    thread_local! { static KEPT: std::cell::RefCell<Kept> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) }; }
+    let key = Arc::as_ptr(of) as usize;
+    if let Some(size) = KEPT.with(|k| k.borrow().get(&key).map(|x| x.1)) { return size }
+    let size = read(of);
+    KEPT.with(|k| {
+        let mut kept = k.borrow_mut();
+        if kept.len() >= KEPT_SIZES { kept.clear() }
+        kept.insert(key,(of.clone(),size));
+    });
+    size
+}
+
+/// A B-spline sheet's own size: the diagonal of its poles' box, which holds it.
+fn net_size(net: &Arc<super::nurbs::Net>) -> f64 { kept_size(net,|n| diagonal(hull(n.poles.iter().flatten().copied()))) }
+
+/// The size of a curve a surface is swept or turned from, where its foot is refined from a hint
+/// (`Curve::refined`): its box over its own span — a spline's domain (its poles' box), the span of
+/// a curve read exactly in a frame. Nought for any other, none of whose feet is refined: nothing is
+/// near it, and its surface's foot is read whole.
+fn curve_size(c: &Arc<Curve>) -> f64 {
+    kept_size(c,|c| match c {
+        Curve::BSpline(b) => Some(b.domain()),
+        c => c.exact_span(),
+    }.map_or(0.,|span| diagonal(c.bounds(span))))
+}
+
 /// An axis-aligned box: its least and its greatest corner.
 pub type Box3 = (V,V);
 /// The box holding nothing, which anything widens.
@@ -588,6 +642,22 @@ impl Blend {
     fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
+    /// **The patch's own size**: the diagonal of the box its two sections fill, before they are
+    /// carried — what its foot is near by and its sections are one by (`NEAR`, `tolerance`),
+    /// wherever it stands. The sections' and not the whole sweep's: a wire's coil comes back within
+    /// its pitch of itself however long it runs, and a tube is as thin as its section. A section's
+    /// box is its own where that is a closed form or its poles' (a line, a conic, a spline); any
+    /// other's (a traced one's box is a projection a chord, and this is asked at every foot) the
+    /// box of its ends and its middle, no larger.
+    fn size(&self) -> f64 {
+        let section = |c: &Curve,t: [f64;2]| match c {
+            Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => c.bounds(t),
+            _ => hull([t[0],0.5*(t[0]+t[1]),t[1]].map(|x| c.point(x))),
+        };
+        let mut sections = section(&self.a,self.ta);
+        widen(&mut sections,section(&self.b,self.tb));
+        diagonal(sections)
+    }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
         let ((a,da,_),(b,db,_)) = self.ends(u);
@@ -622,9 +692,8 @@ impl Blend {
         // wrong stretch within the warm start's reach (on the leaning torus's sheet, 1.5e-2 off a
         // point of its own rim)
         if let Some(uv) = self.carried_uv(p) { return uv }
-        let near = 1e-3*(1.+dot(p,p).sqrt());
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
-            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= near);
+            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= NEAR*self.size());
         let uv = warm.or_else(|| self.from_level(p)).unwrap_or_else(|| self.searched(p));
         crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
@@ -658,7 +727,8 @@ impl Blend {
         let (Curve::BSpline(spline),Curve::BSpline(image)) = (&self.a,&self.b) else { return None };
         if self.ta != self.tb { return None }
         if !Arc::ptr_eq(spline,image) {
-            let same = |t: f64| crate::util::space::distance(self.a.point(t),self.b.point(t)) <= 1e-9*(1.+norm(p));
+            let near = tolerance(self.size());
+            let same = |t: f64| crate::util::space::distance(self.a.point(t),self.b.point(t)) <= near;
             if ![self.ta[0],0.5*(self.ta[0]+self.ta[1]),self.ta[1]].into_iter().all(same) { return None }
         }
         // the carry's invariants: a slide's shadow on the plane square to it (its frame's x and y);
@@ -741,7 +811,8 @@ impl Blend {
         let (Curve::Line {..},Curve::Line {..}) = (&self.a,&self.b) else { return None };
         let k = unit(axis);
         let (p0,p1) = (self.a.point(self.ta[0]),self.a.point(self.ta[1]));
-        let same = |q: V,p: V| crate::util::space::distance(q,p) <= 1e-9*(1.+norm(p));
+        let near = tolerance(crate::util::space::distance(p0,p1));
+        let same = |q: V,p: V| crate::util::space::distance(q,p) <= near;
         if angle == 0. || !same(self.b.point(self.tb[0]),p0) || !same(self.b.point(self.tb[1]),p1) { return None }
         Some(ScrewedLine {centre:center,axis:k,angle,rise:advance*dot(axis,k),p0,run:sub(p1,p0)})
     }
@@ -787,7 +858,8 @@ impl Blend {
         let (Curve::Circle(f,r),Curve::Circle(..)) = (&self.a,&self.b) else { return None };
         let k = unit(axis);
         if norm(cross(f.z,k)) > 1e-12 || angle == 0. || advance == 0. { return None }
-        let same = |q: V,x: V| crate::util::space::distance(q,x) <= 1e-9*(1.+norm(x));
+        let near = tolerance(r.abs());
+        let same = |q: V,x: V| crate::util::space::distance(q,x) <= near;
         let span = self.ta[1]-self.ta[0];
         if !(0..3).all(|i| same(self.b.point(self.tb[0]+(self.tb[1]-self.tb[0])*i as f64/2.),self.a.point(self.ta[0]+span*i as f64/2.))) { return None }
         Some(LevelCircle {centre:center,axis:k,angle,rise:advance*dot(axis,k),frame:*f,r:r.abs()})
@@ -805,9 +877,9 @@ impl Blend {
         if !self.closed || angle == 0. || advance == 0. { return None }
         // the image carried back the circle itself, read off the two frames (asked at every inverse,
         // so no point of either circle is evaluated)
-        let same = |q: V,x: V,scale: f64| crate::util::space::distance(q,x) <= 1e-9*scale;
-        let size = 1.+norm(f.o);
-        if !(same(g.o,f.o,size) && same(g.x,f.x,1.) && same(g.y,f.y,1.) && (s-r).abs() <= 1e-9*size && self.ta == self.tb) { return None }
+        let same = |q: V,x: V,scale: f64| crate::util::space::distance(q,x) <= tolerance(scale);
+        let size = r.abs();
+        if !(same(g.o,f.o,size) && same(g.x,f.x,1.) && same(g.y,f.y,1.) && (s-r).abs() <= tolerance(size) && self.ta == self.tb) { return None }
         let along = crate::util::space::normalised(self.carry.rate(f.o))?;
         (norm(cross(f.z,along)) <= 1e-9).then_some(Pipe {carry:self.carry,frame:*f,r:r.abs()})
     }
@@ -965,15 +1037,15 @@ fn continued_foot(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
 
 /// A point's foot on a sheet's continuation (`continued_foot`) where it stands `d` off it (an
 /// offset's points; 0 for the sheet's own): from the last foot this thread found on the sheet where
-/// that settles `d` off within a thousandth of the point's size — a point on an offset stands too far
-/// off for `net_inverse`'s warm start, which then searched the whole sheet at every reading — else
-/// from its foot on the sheet itself; that foot where the continuation's does not settle.
+/// that settles `d` off within a thousandth of the sheet's size (`NEAR`) — a point on an offset
+/// stands too far off for `net_inverse`'s warm start, which then searched the whole sheet at every
+/// reading — else from its foot on the sheet itself; that foot where the continuation's does not
+/// settle.
 fn offset_foot(n: &std::sync::Arc<super::nurbs::Net>,p: V,d: f64) -> Uv {
     use crate::util::warm::{get,put,Kind};
     let key = &**n as *const _ as usize;
-    let near = 1e-3*(1.+dot(p,p).sqrt());
     let warm = get(Kind::Net,key).and_then(|s| continued_foot(n,p,s))
-        .filter(|&uv| (crate::util::space::distance(n.d2_continued(uv[0],uv[1])[0],p)-d.abs()).abs() <= near);
+        .filter(|&uv| (crate::util::space::distance(n.d2_continued(uv[0],uv[1])[0],p)-d.abs()).abs() <= NEAR*net_size(n));
     let uv = warm.unwrap_or_else(|| { let uv = net_inverse(n,p); continued_foot(n,p,uv).unwrap_or(uv) });
     put(Kind::Net,key,uv);
     uv
@@ -1106,16 +1178,17 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
 
 
 /// The parameters of a B-spline sheet's point nearest `p`: Gauss–Newton from the last foot this
-/// thread found on it where `p` is near the sheet there (within a thousandth of its own size — off
-/// the surface a local foot need not be the nearest); else from the nearest pole's Greville
+/// thread found on it where `p` is near the sheet there (within a thousandth of the sheet's size —
+/// off the surface a local foot need not be the nearest); else from the nearest pole's Greville
 /// parameters (the net of a fitted sheet lies close to it); where that does not settle, from the
 /// nearest of a grid across its knot spans.
 fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv { net_search(net,p,true) }
 
 /// `net_inverse`, from the thread's last foot on the sheet and keeping this one (`warmed`), or
 /// **cold: a function of the point alone**. A warm start is kept where its foot stands within a
-/// thousandth of the point's size of the nearest span's box — the nearest to that, and no nearer —
-/// so on a sheet coming back within that of itself the foot read depends on what was asked before:
+/// thousandth of the sheet's size (`NEAR`) of the nearest span's box — the nearest to that, and no
+/// nearer — so on a sheet coming back within that of itself the foot read depends on what was asked
+/// before:
 /// `Surface::inverse_near`, which takes the whole sheet's foot only where it is strictly nearer than
 /// Newton's from its hint, searches cold (benchy's face #27487, its corner crumpled back within
 /// 9.5e-5 of its corner vertex: the vertex read on itself as one edge's end and on the crumple as
@@ -1123,7 +1196,8 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv { net_search(
 fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
     let n: &super::nurbs::Net = net;
     let key = n as *const _ as usize;
-    let near = 1e-3*(1.+dot(p,p).sqrt());
+    let size = net_size(net);
+    let near = NEAR*size;
     let start = if warmed { crate::util::warm::get(crate::util::warm::Kind::Net,key) } else { None };
     // The spans whose boxes stand nearest (each boxed by its Bézier points, `query::net_index`),
     // found best first by their boxes alone: the surface lies in its spans' boxes, so no foot is
@@ -1177,7 +1251,7 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
         // there by a seam or a pole: a ball's net read a point on it 2.2 off.)
         let [[u0,u1],[v0,v1]] = n.domain();
         let inside = |uv: Uv| uv[0] > u0 && uv[0] < u1 && uv[1] > v0 && uv[1] < v1;
-        let on = 1e-10*(1.+dot(p,p).sqrt());
+        let on = ON_SHEET*size;
         let mut best: Option<(f64,Uv)> = None;
         for &(_,at) in nearest.iter().filter(|c| c.0.is_finite()) {
             let Some((d,uv)) = net_settle(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]) else { continue };
@@ -1513,9 +1587,9 @@ impl Surface {
     /// point on the surface this is exact to rounding; off it, the foot of the normal through it
     /// (on the axis, where every `u` is nearest, `u = 0`).
     /// `inverse`, where the point's parameters are known to be near `hint`: a sheet's from there by
-    /// Newton where that lands on the surface (within a millionth of the point's size: an edge's
-    /// point on the face), and globally otherwise — off the surface a local foot need not be the
-    /// nearest. Any other surface's in closed form as ever.
+    /// Newton where that lands on the surface (within a millionth of the patch's own size,
+    /// `ON_PATCH`: an edge's point on the face), and globally otherwise — off the surface a local
+    /// foot need not be the nearest. Any other surface's in closed form as ever.
     /// A B-spline sheet's foot of `p` found by Newton from `hint` alone (a local search: the
     /// nearest foot where the hint is nearest it), or none where it does not settle.
     pub fn foot_from(&self,p: V,hint: Uv) -> Option<Uv> {
@@ -1550,28 +1624,28 @@ impl Surface {
             // foot is a function of the point and the hint alone, `net_search`)
             Surface::BSpline(_,n) => match net_newton(n,p,hint) {
                 Some(uv) => {
-                    let (d,scale) = (crate::util::space::distance(n.point(uv[0],uv[1]),p),1.+dot(p,p).sqrt());
-                    if d <= 1e-6*scale { return uv }
+                    let (d,size) = (crate::util::space::distance(n.point(uv[0],uv[1]),p),net_size(n));
+                    if d <= ON_PATCH*size { return uv }
                     let far = net_search(n,p,false);
-                    if crate::util::space::distance(n.point(far[0],far[1]),p) < d-1e-9*scale { far } else { uv }
+                    if crate::util::space::distance(n.point(far[0],far[1]),p) < d-tolerance(size) { far } else { uv }
                 }
                 None => net_search(n,p,false),
             },
             // from the hint where it settles on the wall near `p`, else the whole wall searched
             Surface::Family(_,w) => {
                 let uv = w.newton(p,hint);
-                if crate::util::space::distance(w.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { w.inverse(p) }
+                if crate::util::space::distance(w.d1(uv).0,p) <= ON_PATCH*w.size() { uv } else { w.inverse(p) }
             }
             // a swept section's patch likewise
             Surface::Blend(_,b) => {
                 let uv = b.newton(p,hint);
-                if crate::util::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
+                if crate::util::space::distance(b.d1(uv).0,p) <= ON_PATCH*kept_size(b,Blend::size) { uv } else { b.inverse(p) }
             }
             // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
             // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
             // samples were most of a turned build's time)
             Surface::Extrusion(_,c) | Surface::Revolution(_,c) => match self.swept_inverse(p,&|q,k| c.refined(q,hint[k])) {
-                Some(uv) if crate::util::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) => uv,
+                Some(uv) if crate::util::space::distance(self.point(uv),p) <= ON_PATCH*curve_size(c) => uv,
                 _ => self.inverse(p),
             },
             _ => self.inverse(p),
@@ -1880,10 +1954,7 @@ impl Surface {
             Surface::Family(_,ref w) => w.feature(),
             // a length a sheet turns over: a sixteenth of its poles' spread (an offset's the
             // sheet's: the spread is no radius of curvature to take `d` from)
-            Surface::BSpline(_,ref n) | Surface::Offset(_,ref n,_) => {
-                let (lo,hi) = hull(n.poles.iter().flatten().copied());
-                (crate::util::space::distance(lo,hi)/16.).max(f64::MIN_POSITIVE)
-            }
+            Surface::BSpline(_,ref n) | Surface::Offset(_,ref n,_) => (net_size(n)/16.).max(f64::MIN_POSITIVE),
         }
     }
     /// `feature` within the box `[lo, hi]`: a cone's least radius of curvature there, `ρ / cos α`
