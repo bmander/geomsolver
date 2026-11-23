@@ -8,11 +8,13 @@
 //! one comparison against the file is `step_roundtrip::same`, the clauses of the reader's own
 //! round trip: the same faces in the same order, each on its own surface with the same numbers.
 
+use crate::common::gestures::near;
 use crate::step_roundtrip::{measured,same,stages,Found};
 use gcs_core::brep::export;
 use gcs_core::brep::sweep::Say;
 use gcs_core::brep::topo::Brep;
 use gcs_core::model::{EntRef,Extent,Given,Sketch,SolidDef};
+use gcs_core::modules::digest;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
@@ -26,11 +28,6 @@ const DRILLED_AREA: f64 = 2.*(40.*30.+40.*20.+30.*20.)-2.*PI*36.+2.*PI*6.*20.;
 
 const QUIET: Say = Say {stage:&|_| {},mark:&|_| {}};
 
-/// A digest of a file's text (FNV-1a): any number the same on every run will do here.
-fn digest(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325,|h,b| (h^u64::from(b)).wrapping_mul(0x100_0000_01b3))
-}
-
 /// The one solid `text` gives, as the reader gives it.
 fn read(text: &str) -> Brep {
     let mut solids = gcs_core::brep::step_read::read(text).unwrap_or_else(|r| panic!("{r}"));
@@ -42,8 +39,6 @@ fn read(text: &str) -> Brep {
 fn given(sk: &mut Sketch,text: &str,name: &str) -> usize {
     sk.solid(SolidDef::Given(Arc::new(Given::new(read(text),digest(text)))),name)
 }
-
-fn near(a: f64,b: f64,rel: f64) -> bool { (a-b).abs() <= rel*b.abs().max(1.) }
 
 /// Solid `i`'s export (`brep::export::exact`, then `step`, which runs `step_check`) read back
 /// the same solid as `b`, every face on its original surface.

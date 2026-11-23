@@ -10,7 +10,8 @@
 //! around those calls — on opening, before the build arrives and after, and across an edit — and
 //! holds the count at none.
 
-use gcs_core::modules::{link, relink};
+use crate::common::linked::{linked_with, solving};
+use gcs_core::modules::relink;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solid::{brep_meshes, ApproximationPolicy, ObjectState};
 use gcs_core::syntax::parse;
@@ -20,20 +21,9 @@ const DOC: &str = "unit mm\nuse bracket\npart := solid(bracket)\n";
 
 /// `src` linked as a host links it (`bracket` the drilled block's file), elaborated and solved.
 fn read(src: &str) -> Elaborated {
-    let (mut prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{errs:?}");
-    let diags = link(&mut prog, &mut |name| match name {
-        "bracket" => Some(DRILLED.to_string()),
-        _ => gcs_core::library::resolve(name),
-    });
+    let (prog, diags) = linked_with(src, &|name| (name == "bracket").then(|| DRILLED.to_string()));
     assert!(diags.is_empty(), "{diags:?}");
-    solved(elaborate(&prog))
-}
-
-fn solved(mut e: Elaborated) -> Elaborated {
-    assert!(e.ok(), "{:?}", e.diags);
-    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
-    e
+    solving(elaborate(&prog))
 }
 
 /// What the page's thread asks of a drawing on opening and after every edit, each held to mesh
@@ -86,7 +76,7 @@ fn a_given_body_is_meshed_on_no_page_thread() {
     let (mut next, errs) = parse(&format!("{DOC}w := 5mm\n"));
     assert!(errs.is_empty());
     assert!(relink(&mut next, &page.program).is_empty());
-    let mut edited = solved(elaborate(&next));
+    let mut edited = solving(elaborate(&next));
     edited.sketch.supply_objects(true);
     let job = edited.sketch.object_jobs().into_iter().find(|j| j.objects.contains(&part)).unwrap();
     edited.sketch.supply_object(job.solid, display).unwrap();
