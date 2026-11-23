@@ -234,6 +234,7 @@ mod outline;
 mod ordinate;
 mod overview;
 mod paced_sweeps;
+mod page_thread;
 mod par;
 mod parameters;
 mod parts;

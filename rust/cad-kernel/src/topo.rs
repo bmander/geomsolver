@@ -677,6 +677,16 @@ impl Brep {
         for f in self.faces.iter().filter(|f| !f.loops.is_empty()) { widen(&mut b,f.surface.bounds_over(|| self.parameter_range(f))); }
         b
     }
+    /// A box about the boundary's vertices and edges (`bounds` less what a face's surface bulges
+    /// past them): read in a pass over the edges' own curves, never a surface inverted — what a
+    /// scale is picked by (how fine to mesh), where `bounds`' every point is not wanted and a
+    /// read file of thousands of faces would pay seconds for it. Empty where there is no vertex.
+    pub fn edge_bounds(&self) -> Box3 {
+        let mut b = EMPTY;
+        for v in &self.vertices { include(&mut b,v.p); }
+        for e in &self.edges { if let EdgeCurve::Curve(c) = &e.curve { widen(&mut b,c.bounds(e.t)); } }
+        b
+    }
     /// The parameters a face's loops (one or more) reach: read at 17 points along each use and
     /// widened by the largest step between two of them, so a range read off an inverted pcurve is
     /// not short.

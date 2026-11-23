@@ -274,6 +274,19 @@ pub(super) fn first_placed<T>(sk: &Sketch, si: usize,
 }
 
 pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Csg {
+    resolve_with(sk, si, unit, origin, false)
+}
+
+/// **A box about solid `si`'s additive material** at `unit`, less `origin`: `resolve_at`'s, with a
+/// body a file gives (#993 stage 2) stood in for by the box of its edges (`Brep::edge_bounds`)
+/// and not meshed — what `mesh_unit` picks a faceting by, on the page's thread on every edit,
+/// where meshing a read file of thousands of faces held the page for half a minute.
+pub(super) fn extent_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Box3 {
+    resolve_with(sk, si, unit, origin, true).bbox()
+}
+
+/// `resolve_at`; `boxed`, a given body is its edges' box (`extent_at`).
+fn resolve_with(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3], boxed: bool) -> Csg {
     let mut prims = Vec::new();
     let mut names = BTreeMap::new();
     let mut pending = vec![(si as u32, false)];
@@ -282,7 +295,7 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
         if names.contains_key(&i) { continue; }
         if sk.solids.get(i as usize).is_none() { continue; }
         if ready {
-            let term = build(sk, i, unit, origin, &mut prims, &names);
+            let term = build(sk, i, unit, origin, &mut prims, &names, boxed);
             names.insert(i, term);
             active.remove(&i);
         } else if active.insert(i) {
@@ -464,6 +477,7 @@ fn build(
     origin: [f64; 3],
     prims: &mut Vec<Prim>,
     names: &BTreeMap<u32, Term>,
+    boxed: bool,
 ) -> Term {
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
@@ -531,6 +545,14 @@ fn build(
             .collect();
         let index: Vec<usize> = (0..faces.len()).collect();
         let mm = super::cad::millimetres(sk);
+        if boxed {
+            let (lo, hi) = b.edge_bounds();
+            let (lo, hi) = if lo[0].is_finite() { (lo, hi) } else { b.bounds() };
+            if !lo[0].is_finite() { return Term::Empty }
+            let at = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| p[k] / mm - origin[k]) };
+            prims.push(super::primitive::cuboid(at(lo), at(hi), faces, &name));
+            return Term::Prim(prims.len() - 1);
+        }
         let Ok(m) = super::evaluated::brep_facets(b, mm, unit, &index, origin) else { return Term::Empty };
         if m.facets.is_empty() { return Term::Empty }
         prims.push(Prim { facets: m.facets, bbox: m.bbox, faces, of: name, exact: true });
