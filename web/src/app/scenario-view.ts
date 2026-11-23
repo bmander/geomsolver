@@ -16,7 +16,7 @@
  *
  * Nothing here is geometry: the picture's arrays are the core's, handed to the box as they came,
  * typed so the worker can transfer them rather than copy. */
-import { handed } from '../core/modules.js';
+import { handed, sending, type Handed } from '../core/modules.js';
 import { samePose } from './claim-judging.js';
 import type { Document, Scenario, ScenarioAnswer } from '../core/program.js';
 import type { PictureBody, ScenarioPicture } from '../core/scenario.js';
@@ -44,8 +44,9 @@ export type ScenarioJob = {
   kind: 'scenario';
   id: number;
   text: string;
-  /** The modules the page handed over and the text reaches, as `[use name, text]`. */
-  modules: [string, string][];
+  /** The modules the page handed over and the text reaches, as `[use name, digest, text]`, a text
+   *  the worker was sent before left out (`modules.sending`). */
+  modules: Handed[];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
   /** Where the page's meshes were made again, if they were (`Sketch.meshedAt`): the worker's
@@ -131,6 +132,8 @@ const spawnWorker = (): ReadWorker =>
 
 export class ScenarioReading {
   private worker: ReadWorker | null = null;
+  /** The digests of the modules' texts the worker was last sent (`modules.sending`). */
+  private sent = new Set<string>();
   private job = 0;
   /** The drawing and the choice the job in hand (or its reading) is of. */
   private of: { text: string; x: Float64Array; meshedAt: Float64Array | null; drawn: string }
@@ -187,8 +190,9 @@ export class ScenarioReading {
       w.onmessageerror =
         () => this.fail('the worker reading the scenarios sent what could not be read');
       this.worker = w;
+      this.sent = new Set();
     }
-    const modules = handed(doc.text);
+    const modules = sending(this.sent, handed(doc.text));
     this.worker.postMessage(
       { kind: 'scenario', id: this.job, text: doc.text, modules, x, meshedAt, drawn });
     this.told(this.state);

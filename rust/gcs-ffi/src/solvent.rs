@@ -37,13 +37,14 @@ thread_local! {
     /// `engine/parts.sv` beside the document and comes to the library second; a browser has no
     /// beside unless its page has a server to ask, and this is where what it fetched goes.
     /// Asked before the library, so a text the host supplies wins over the copy compiled in.
-    static HOST_MODULES: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
+    /// Each kept with its digest (`modules::digest`), taken once as it is handed over.
+    static HOST_MODULES: RefCell<BTreeMap<String, (String, u64)>> = RefCell::new(BTreeMap::new());
 }
 
 /// Resolve a `use`: what the host handed over first, then the library compiled in.
 fn resolve_module(name: &str) -> Option<String> {
     HOST_MODULES
-        .with(|m| m.borrow().get(name).cloned())
+        .with(|m| m.borrow().get(name).map(|(text, _)| text.clone()))
         .or_else(|| gcs_core::library::resolve(name))
 }
 
@@ -53,6 +54,21 @@ fn resolve_module(name: &str) -> Option<String> {
 pub unsafe extern "C" fn gcs_module_source(ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         resolve_module(as_str(ptr, len)).map_or(std::ptr::null_mut(), out_str)
+    })
+}
+
+/// **The digest of the text a `use` of `name` reads** (`modules::digest`, sixteen hex digits, the
+/// same on every target): the host's text where it handed one over, else the library's; null for
+/// a module there is none of.  A host names a module's text by it — a worker is given a text once
+/// and named it after, and two lists of modules are told the same by their digests — so a text of
+/// megabytes is neither copied out of the core nor compared again to learn it has not changed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_digest(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let name = as_str(ptr, len);
+        let digest = HOST_MODULES.with(|m| m.borrow().get(name).map(|(_, d)| *d))
+            .or_else(|| gcs_core::library::resolve(name).map(|t| gcs_core::modules::digest(&t)));
+        digest.map_or(std::ptr::null_mut(), |d| out_str(format!("{d:016x}")))
     })
 }
 
@@ -88,7 +104,8 @@ pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, pp: *const u8,
         };
         match gcs_core::modules::decode(path, bytes) {
             Ok(text) => {
-                HOST_MODULES.with(|m| m.borrow_mut().insert(name, text));
+                let digest = gcs_core::modules::digest(&text);
+                HOST_MODULES.with(|m| m.borrow_mut().insert(name, (text, digest)));
                 1
             }
             Err(e) => {

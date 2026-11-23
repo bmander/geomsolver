@@ -116,7 +116,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   bytes and the path the host found them at as `modules::decode` reads them, an exchange file
   lossily where its strings are not UTF-8, and refuses any other text that is not UTF-8 with 0 and
   `gcs_last_error`, never storing an empty module (`host_modules.rs`; `core.test.ts`, "an exchange
-  file is handed over as it came and never asked for its uses").  The dev server serves `rust/examples/` as
+  file is handed over as it came and never asked for its uses").  **A module's text crosses to a
+  worker once** (#993 stage 2): `gcs_module_digest` names the text a `use` reads by the core's
+  `modules::digest` (taken once, as it is handed over), so `related` copies a text out of the core
+  only when its digest is new, a job names each module `[name, digest, text]` with the text left
+  out where that worker was sent it last (`modules.sending`, the page's account of each worker;
+  `modules.received`, the worker's, as each message arrives), and a worker tells two lists apart
+  by `modulesKey` — names and digests — installing a list its core has already not again
+  (`core.test.ts`, "a module's text crosses to a worker once, and is named by its digest after";
+  `object-builds.test.ts`, "a module's text crosses to a pool worker once, …"; `host_modules.rs`).  The dev server serves `rust/examples/` as
   `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
   compiled-in copy is read.  **File ▸ Open GitHub project gathers texts and nothing more**:
   `app/github.ts` reads a repository's (or a folder's) project files — the tree from GitHub's API,

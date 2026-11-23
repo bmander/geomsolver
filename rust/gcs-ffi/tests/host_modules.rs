@@ -39,11 +39,17 @@ fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
         gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
                        module.as_ptr(), module.len());
         assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), module);
+        // its digest names its text, the core's own, without the text crossing the ABI
+        assert_eq!(take(gcs_module_digest(name.as_ptr(), name.len())),
+                   format!("{:016x}", gcs_core::modules::digest(module)));
+        assert_eq!(take(gcs_module_digest(b"std".as_ptr(), 3)).len(), 16, "the library's too");
+        assert!(gcs_module_digest(b"nosuch".as_ptr(), 6).is_null());
         assert!(take(gcs_module_source(b"std".as_ptr(), 3)).contains("component StandardDatums"));
         let r = report_of(doc);
         assert!(!r.contains("E070"), "the host's module resolves the use: {r}");
         gcs_module_forget();
         assert!(gcs_module_source(name.as_ptr(), name.len()).is_null());
+        assert!(gcs_module_digest(name.as_ptr(), name.len()).is_null());
         assert!(report_of(doc).contains("E070"), "forgotten, the use is unresolved again");
     }
 }

@@ -543,7 +543,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   — so a model's `use bracket` reads the body `bracket.step` gives, in the order every host looks
   (architecture.md, the CLI), and the page carries its text to the core and the workers unread:
   handed to the core with the path it was found at, so a `.step` that is no exchange file is the
-  reader's refusal at the `use` (E072).
+  reader's refusal at the `use` (E072), and to each worker once, named by the core's digest after
+  (`modules.sending`, architecture.md).
   The tree lists one (`givenFile`, a mark of its own) and the panel, picked, names it and its
   size read-only in place of its text (`program.ts::givenNotice`): it is not Solvent, and it may
   be megabytes, so neither the editor nor the parser is given it.  Saving it saves its text as it
