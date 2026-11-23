@@ -536,3 +536,49 @@ fn the_crossed_reverse_sheets_lobe_beside_its_fold_loop_is_traced() {
         assert!(tails.iter().any(|q| (q[0]-want[0]).abs() < 1e-3 && (q[1]-want[1]).abs() < 1e-3),"no swallowtail point at {want:?}: {tails:?}");
     }
 }
+
+/// **A crossed member built by the tube road, held** (#880 T1f): the bench's exact call
+/// (`Tube::pinched` over the bench's roll, its tolerance the tube's 50 000th), `check`, its volume
+/// within 1e-5 of the peer kernel cadrs's (`want`), held to its mesh and to membership by the depth,
+/// no misfit at the size's tolerance; and built again with the observer's origin moved by one ulp
+/// and by 1e-6, each to the same volume within 1e-5. The faces' count and the volume returned.
+fn crossed_held(observer: f64,want: f64) -> (usize,f64) {
+    use gcs_core::brep::swept::tube::faces;
+    let build = |moved: &dyn Fn(f64) -> f64| {
+        let (tool,path,roll,tol) = crate::common::bench::crossed_moved(observer,|o| o.map(moved));
+        let ring = Ring::read(&tool).unwrap();
+        let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+        let solid = faces::solid(&tube,tol).unwrap();
+        solid.check(tol).unwrap();
+        (gcs_core::brep::props::volume(&solid),solid,tool,path,roll,tol)
+    };
+    let clock = std::time::Instant::now();
+    let (v,solid,tool,path,roll,tol) = build(&|x| x);
+    eprintln!("the crossed member {observer:+}: {} faces, volume {v:.10} (cadrs {want}) in {:?}",solid.faces.len(),clock.elapsed());
+    assert!((v/want-1.).abs() <= 1e-5,"the volume {v}, cadrs's {want}");
+    let (lo,hi) = solid.bounds();
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    let misfits = solid.misfits(gcs_core::brep::geom::tolerance(size));
+    assert!(misfits.is_empty(),"misfits: {misfits:?}");
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    held(&solid,&tube,&path,roll,v);
+    for (what,moved) in [("one ulp",&(|x: f64| x.next_up()) as &dyn Fn(f64) -> f64),("1e-6",&|x: f64| x+1e-6)] {
+        let (w,..) = build(moved);
+        eprintln!("  the observer's origin moved by {what}: volume {w:.10}");
+        assert!((w/v-1.).abs() <= 1e-5,"moved by {what}: the volume {w} against {v}");
+    }
+    (solid.faces.len(),v)
+}
+
+/// **The crossed reverse member built by the tube road** (#880 T1f): its pinch charted by the
+/// collar, the closed cuspidal edge beside its fold loop traced (the lobe below the near-pinch), the
+/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898469012
+/// against cadrs's 13.7898472784. About a minute a build, most of it the two graded nets over the
+/// windows holding the near-pinch at `(θ, t)` (1.076, 0.461).
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed reverse built three times, ~4 min")]
+fn the_crossed_reverse_member_builds_by_the_tube_road() {
+    let (faces,_) = crossed_held(-1.,13.789847278416222);
+    assert_eq!(faces,15);
+}
