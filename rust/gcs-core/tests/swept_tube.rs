@@ -97,3 +97,65 @@ fn the_half_turns_seams_are_traced_from_the_depth_on_every_chart() {
     }).fold(f64::INFINITY,f64::min);
     assert!(near <= 8.*tol,"the end pose's seam {near:e} from the sheet's at the rim");
 }
+
+/// **The half turn built by the tube road** (#880 T1f, `tube::faces::solid`): its sheets' trims
+/// traced, each run's ends the events they meet found exactly — the double curve of the sheet `−`
+/// from its rim crossing (solved on the rim) joined to its swallowtail point along the normal form,
+/// its partner switching to the end pose where the crossing's cover passes there, and that run
+/// joined straight to the corner where the cuspidal edge reaches the roll's end — and the charts'
+/// kept parts sewn: a closed solid passing `check` at the call's tolerance, its volume the old
+/// road's within 1e-7 of itself and its mesh's within the mesh's bar, and twenty thousand seeded
+/// points over its box each a member of the solid exactly where the depth (the least over the roll
+/// of the distance to the posed core circle, less the tube) is below nought — read where either
+/// stands clear of the boundary: the depth sampled over the roll and settled about its least
+/// sample, a point outside only where every instant between the samples stands clear by the
+/// point's speed over half a step.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the half turn built by the tube road, ~60 s")]
+fn the_half_turn_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,roll,tol) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the half turn by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert!((v/12.2377154283-1.).abs() <= 1e-7,"the volume {v}, the old road's 12.2377154283");
+    let bar = 1e-3;
+    let m = gcs_core::brep::mesh::mesh(&solid,bar,0.2).unwrap();
+    let w = crate::brep::mesh_volume(&m);
+    assert!((w-v).abs() <= 4.*bar*v.powf(2./3.)*6.,"the mesh's volume {w}, the solid's {v}");
+    // membership by the solid and by the depth
+    let body = gcs_core::brep::swept::member::Solid::new(&solid,bar,1.).unwrap();
+    let (lo,hi) = solid.bounds();
+    let [a,b] = roll;
+    let n = 256;
+    let domain = gcs_core::brep::util::interval::Interval::new(a,b).unwrap();
+    let depth = |x: [f64;3]| -> Option<bool> {
+        let d = |t: f64| tube.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+        let samples: Vec<f64> = (0..=n).map(|i| d(a+(b-a)*i as f64/n as f64)).collect();
+        let (i,&least) = samples.iter().enumerate().min_by(|p,q| p.1.total_cmp(q.1)).unwrap();
+        // (settled by golden section between the samples beside the least)
+        let step = (b-a)/n as f64;
+        let (mut l,mut h) = ((a+step*i as f64-step).max(a),(a+step*i as f64+step).min(b));
+        let g = 0.5*(5f64.sqrt()-1.);
+        while h-l > 1e-12 { let (x1,x2) = (h-g*(h-l),l+g*(h-l)); if d(x1) < d(x2) { h = x2 } else { l = x1 } }
+        let settled = d(0.5*(l+h)).min(least);
+        let speed = path.inverse_point_speed_bound(x,domain).unwrap();
+        let margin = 10.*bar;
+        if settled < -margin { Some(true) } else if least-0.5*speed*step > margin { Some(false) } else { None }
+    };
+    let mut rng = gcs_core::rng::Rng::new(880);
+    let (mut read,mut members) = (0,0);
+    for _ in 0..20_000 {
+        let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
+        let Some(inside) = depth(p) else { continue };
+        let s = body.signed_distance(p);
+        assert_eq!(inside,s < 0.,"at {p:?}: a member by the depth {inside}, the solid's distance {s}");
+        read += 1;
+        if inside { members += 1 }
+    }
+    eprintln!("{read} of 20000 points read clear of the boundary, {members} members");
+    assert!(read >= 15_000 && members >= 1_000,"{read} read, {members} members");
+}

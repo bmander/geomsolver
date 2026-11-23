@@ -1863,53 +1863,80 @@ fn joined(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],pair: [(f64,f64,f64);2],a
     // the offsets in `(θ, t)` from the point, the angle taken beside it — and the point's angle
     // unwrapped as the curve's is
     let off = |(th,t,_): (f64,f64,f64)| [(th-tha+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI,t-ta];
-    let [d1,d2] = pair.map(off);
-    let tha = pair[0].0-d1[0];
-    if d1[0].dhypot(d1[1]) > crate::plane2::dist(d2,d1) { return None }
-    let kn = 1f64.dhypot(apex.way);
-    let (k,n) = ([1./kn,apex.way/kn],[-apex.way/kn,1./kn]);
-    let parts = |d: [f64;2]| (d[0]*k[0]+d[1]*k[1],d[0]*n[0]+d[1]*n[1]);
-    let (p1,p2) = (parts(d1),parts(d2));
-    let at = |(al,be): (f64,f64),f: f64,sg: f64| (tha+f*al*k[0]+f*f*be*n[0],ta+f*al*k[1]+f*f*be*n[1],sa+f*(sg-sa));
-    // (as many chords as the double curve's longest step takes of the join's length in space,
-    // each read at its middle too)
+    let d = pair.map(off);
+    let tha = pair[0].0-d[0][0];
     let (x,_) = sheet_at(ring,path,pair[0].0,pair[0].1,pair[0].2)?;
     let (xa,_) = sheet_at(ring,path,tha,ta,sa)?;
-    let first = (crate::util::space::distance(x,xa)/(8.*tol*ring.thickness).sqrt()).ceil().max(1.) as usize;
-    let outer = |(th,t,sg): (f64,f64,f64)| -> Option<V> {
+    let outer = |leaf: usize,o: [f64;2],f: f64| -> Option<V> {
+        let (th,t,sg) = (tha+o[0],ta+o[1],sa+f*(pair[leaf].2-sa));
         let (w,dw) = rates(path,t,[a,b]).ok()?;
         let th = th.rem_euclid(TAU);
         let (_,r) = ring.root_near(&w,th,sg)?;
         (ring.bend(&w,&dw,th,&r) > 0.).then(|| path.pose(t).ok().map(|m| m.point(r.x)))?
     };
-    // (and as many again, twice over, until each leaf's chord straight in its `(θ, t)` — what a
-    // tube's face draws between two of its points, #942 the full turn — stands at its middle within
-    // the tolerance of the curve's own middle: across the kernel each preimage is the parabola
-    // `x = −2τ²`, and the two leaves bend opposite ways, so their straight chords part, the full
-    // turn's by 3.8e-4 beside its point at the cut 2.2318; doubled no further than chords no longer
-    // in space than the tolerance, whose middles stand within it of anything between their ends)
-    let mid = |q: (f64,f64,f64),r: (f64,f64,f64)| (0.5*(q.0+r.0),0.5*(q.1+r.1),0.5*(q.2+r.2));
+    let join = joined_by_normal_form(d,apex.way,crate::util::space::distance(x,xa),(8.*tol*ring.thickness).sqrt(),&outer,tol)?;
+    if ring_debug() { eprintln!("ring: joined to {:?} in {} points",apex.at,join.len()) }
+    let at = |o: [f64;2],f: f64,leaf: usize| (tha+o[0],ta+o[1],sa+f*(pair[leaf].2-sa));
+    Some(((tha,ta,sa),join.into_iter().map(|(o,f)| [at(o[0],f,0),at(o[1],f,1)]).collect()))
+}
+
+/// **The swallowtail's normal form through a pair**: the two preimages' offsets from the point at
+/// the fraction `f` of the way from it to the pair, whose offsets are `d` — each taken along the
+/// kernel `k = (1, dt/dθ)` (`way` its `dt/dθ`) linearly and across it quadratically.
+pub(crate) fn normal_form(d: [[f64;2];2],way: f64) -> impl Fn(f64) -> [[f64;2];2] {
+    let kn = 1f64.dhypot(way);
+    let (k,n) = ([1./kn,way/kn],[-way/kn,1./kn]);
+    let parts = |d: [f64;2]| (d[0]*k[0]+d[1]*k[1],d[0]*n[0]+d[1]*n[1]);
+    let (p1,p2) = (parts(d[0]),parts(d[1]));
+    let at = move |(al,be): (f64,f64),f: f64| [f*al*k[0]+f*f*be*n[0],f*al*k[1]+f*f*be*n[1]];
+    move |f| [at(p1,f),at(p2,f)]
+}
+
+/// **A double curve's pair joined to its swallowtail point along the swallowtail's normal form**
+/// (`joined`'s rule, the ring road's and the tube road's one): the pair's two preimages' offsets
+/// `d` from the point in the sheet's parameters, the kernel's way `dt/dθ` there, the pair's
+/// distance in space from the point `span`, the double curve's longest step in space `step`, and
+/// `outer`, a leaf's point in space at an offset and fraction of the way from the point (none off
+/// an outer leaf). Each preimage's offset is taken along the kernel `k = (1, dt/dθ)` linearly and
+/// across it quadratically (`(x, ±τ)` with `x = −2τ²`), once the pair stands within its parting of
+/// the point (the normal form's `τ` within its `2τ`), and every point of the join stands within
+/// `tol` of its partner and on an outer leaf. Its points from the pair toward the point, each with
+/// its fraction, the point itself not among them; as many chords as `step` takes of `span`, each
+/// read at its middle too, and twice over until each leaf's chord straight in the parameters — what
+/// a face draws between two of its points, #942 the full turn — stands at its middle within `tol`
+/// of the curve's own middle: across the kernel each preimage is the parabola `x = −2τ²`, and the
+/// two leaves bend opposite ways, so their straight chords part, the full turn's by 3.8e-4 beside
+/// its point at the cut 2.2318; doubled no further than chords no longer in space than `tol`, whose
+/// middles stand within it of anything between their ends. `None` where it does not hold.
+#[allow(clippy::type_complexity)]
+pub(crate) fn joined_by_normal_form(d: [[f64;2];2],way: f64,span: f64,step: f64,outer: &dyn Fn(usize,[f64;2],f64) -> Option<V>,tol: f64)
+    -> Option<Vec<([[f64;2];2],f64)>> {
+    let [d1,d2] = d;
+    if d1[0].dhypot(d1[1]) > crate::plane2::dist(d2,d1) { return None }
+    let form = normal_form(d,way);
+    let first = (span/step).ceil().max(1.) as usize;
+    let mid = |q: ([f64;2],f64),r: ([f64;2],f64)| ([0.5*(q.0[0]+r.0[0]),0.5*(q.0[1]+r.0[1])],0.5*(q.1+r.1));
     let mut chords = first;
     loop {
         let mut out = Vec::new();
         let mut straight = true;
-        let mut last: Option<[(f64,f64,f64);2]> = None;
+        let mut last: Option<([[f64;2];2],f64)> = None;
         for j in (1..2*chords).rev() {
             let f = j as f64/(2*chords) as f64;
-            let (q1,q2) = (at(p1,f,pair[0].2),at(p2,f,pair[1].2));
-            let (y1,y2) = (outer(q1)?,outer(q2)?);
+            let [q1,q2] = form(f);
+            let (y1,y2) = (outer(0,q1,f)?,outer(1,q2,f)?);
             if crate::util::space::distance(y1,y2) > tol { return None }
-            if j%2 == 0 { out.push([q1,q2]); last = Some([q1,q2]); continue }
+            if j%2 == 0 { out.push(([q1,q2],f)); last = Some(([q1,q2],f)); continue }
             // (the middle of the chord from the point after it, or the pair, to the point before)
-            let after = last.unwrap_or(pair);
+            let after = last.unwrap_or((d,1.));
             let g = (j-1) as f64/(2*chords) as f64;
-            let before = if j == 1 { [(tha,ta,sa);2] } else { [at(p1,g,pair[0].2),at(p2,g,pair[1].2)] };
-            for (k,y) in [y1,y2].into_iter().enumerate() {
-                if outer(mid(after[k],before[k])).is_none_or(|z| crate::util::space::distance(z,y) > tol) { straight = false }
+            let before = if j == 1 { ([[0.;2];2],0.) } else { (form(g),g) };
+            for (leaf,y) in [y1,y2].into_iter().enumerate() {
+                let (o,h) = mid((after.0[leaf],after.1),(before.0[leaf],before.1));
+                if outer(leaf,o,h).is_none_or(|z| crate::util::space::distance(z,y) > tol) { straight = false }
             }
         }
-        if ring_debug() { eprintln!("ring: joined to {:?} in {chords} chords, straight {straight}",apex.at) }
-        if straight || crate::util::space::distance(x,xa) <= tol*chords as f64 { return Some(((tha,ta,sa),out)) }
+        if straight || span <= tol*chords as f64 { return Some(out) }
         chords *= 2;
     }
 }

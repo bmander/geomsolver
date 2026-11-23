@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The tube road builds the half turn** (#880 T1f, `swept::tube::faces::solid`): each sheet's
+  depth zero set read as runs by what covers it (a double curve of the sheets kept on its later
+  preimage, its partner read off its cover; a double curve with an end pose traced on the sheet
+  alone), every end an event found once and shared by everything meeting there — a rim crossing
+  solved on the rim (`Tube::on_end`, the crossing's root along it), the switch where its partner's
+  cover passes to the end pose, a swallowtail point joined along the normal form
+  (`rings::joined_by_normal_form`, the ring road's rule lifted out of `rings::joined`, which now
+  calls it, with `rings::normal_form`), a corner where a cuspidal edge reaches the roll's end
+  (`Tube::corner`, `J`'s root along the rim) joined straight; the charts cut into windows clear of
+  every trim and from each swallowtail point to the rim it opens away from, each window walked as a
+  planar graph, each part kept where its inner point bounds the sweep, sheets on nets fitted over
+  their windows and end poses on their tori, sewn. The half turn: 9 faces, `check` at its
+  tolerance, volume 12.2377154879 against the old road's 12.2377154283.
 - **The tube road's charts and depth** (#880 T1f, `swept::tube`; not yet a road that builds): a
   torus's sweep read as the offset of the surface `S` its core circle sweeps — its two sheets
   `X± = S ± r N` in closed form (`Tube::point`), each one map over the whole `(θ, t)` rectangle

@@ -2613,7 +2613,7 @@ unborn toward the cut. Not yet: that, `ρ₀`'s rule, the rim as a chord and the
 by construction, the collar's net and its trim.
 
 **The tube road: a torus's sweep as the offset of its core circle's sweep** (#880 T1f,
-`swept::tube`; its charts and depth, not yet a road that builds): a torus is the set of points
+`swept::tube`; it builds the half turn, not yet called by `closed::ring`): a torus is the set of points
 within its tube `r` of its core circle, so its sweep's boundary lies on the offset at `r` of the
 surface `S(θ, t)` the circle sweeps, its two sheets `X± = S ± r N` (`Tube::point`, `S`'s rates in
 closed form but `S_tt`, one central difference) each one map over the whole rectangle wherever `S`
@@ -2662,9 +2662,32 @@ passing to the end pose; on the end pose one seam from its contact circle at `θ
 `θ ≡ 0` to its contact circle at 0.13633. The two charts' crossings of their shared rim are one
 crossing read twice, 1.64e-5 apart (five tolerances: the end pose touches the sheet along that rim,
 so a crossing of it is ill-conditioned along it) — such a vertex is to be found once, on the rim.
-**Not yet**: the corner where the cuspidal edge reaches the roll's end, (0.13863, `b`) — like a
-swallowtail point every far cover about it is within 1e-8, the second preimage runs into it and the
-end pose's seam stops 2.3e-3 short of it in `θ` — asks a disc of its own; then the faces.
+**The faces sewn** (`tube::faces::solid`): each sheet's zero set is read as runs by what covers
+it — a double curve of the sheets is traced on both its preimages and kept on the later one (its
+own instant past its cover's), its partner read off the cover and settled on the sheet; a double
+curve with an end pose is traced on the sheet alone, the end pose's seam its image — and every end
+of a run is an event found once, one vertex of everything meeting there: a **rim crossing**,
+solved on the rim as the root along it of the far cover's depth (one curve read in two charts:
+`Tube::on_end` gives the end pose's place in closed form), its partner on the covering instant the
+**switch** where the partner preimage's cover passes to the end pose; a **swallowtail point**, the
+run joined to it from its disc's rim along the normal form by the ring road's rule
+(`rings::joined_by_normal_form`, lifted out of `rings::joined`, which calls it); a **corner**, where
+the cuspidal edge reaches the roll's end (`Tube::corner`, `J`'s root along the rim, (0.1386336,
+`b`) on the half turn), the run joined to it straight in the sheet's parameters, every point of the
+join within the tolerance of the end pose (about it every far cover is within the rounding, and the
+trace stops short). Each run and join is fitted as a curve with both pcurves on one parameter, a
+traced run's points settled on the double curve (`X₁(u₁) = X₂(u₂)`), the joins held to the
+tolerance alone on their partner. The charts are cut across their angle at two angles clear of
+every trim (the windows) and from each swallowtail point to the rim it opens away from (so no face
+meets itself along its double curve); each window is walked as a planar graph whose nodes are a
+vertex at each of its places on the chart (a double curve's point has two on one sheet), and each
+part kept where its inner point bounds the sweep; a sheet's face lies on a net fitted over its
+window, an end pose's on its torus; sewn by `sew::sewn`. **The half turn builds**: 9 faces, `check`
+at the call's tolerance, volume 12.2377154879 against the old road's 12.2377154283 (4.9e-9 of
+itself), its mesh's volume within its bar, and 19 119 of 20 000 seeded points read clear of the
+boundary each a member of the solid exactly where the depth is below nought, in some 40 s, nearly
+all of it the sheet `−`'s trace (`swept_tube::the_half_turn_builds_by_the_tube_road`, slow tier).
+The old road stays what `closed::ring` calls.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
