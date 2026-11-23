@@ -901,8 +901,10 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
 /// a face of the crossed forward member.  The reads come to the cells the face's uses span in each
 /// strip (a hole's too) by a tensor rule, plus each stretch's nodes by one span's rule: linear in
 /// the net, where `G` gathered from the face's middle across every span between read the spans
-/// crossed once for every node of every stretch.  The rules are the ones that reading took: two
-/// ten-point Gauss pieces across a span, and along a stretch or a cell.
+/// crossed once for every node of every stretch.  Each span across, each cell along and each
+/// stretch is read by ten nodes where their Kronrod extension says they read it (`checked`), as a
+/// stretch of a use is: a rational net's arc of 170° (its weight 0.09) is no polynomial ten nodes
+/// read.
 struct Cells<'a> {
     s: &'a Surface,
     what: What<'a>,
@@ -932,17 +934,17 @@ impl<'a> Cells<'a> {
         let (s,what,a) = (self.s,self.what,self.us[i]);
         let mut at_u = |w: f64| integrand(s,[w,v],what);
         let cuts = s.breaks(0,[a,u]);
-        if cuts.is_empty() { return gauss(a,u,2,&mut at_u) }
+        if cuts.is_empty() { return checked(a,u,0.,&mut at_u) }
         let mut at = vec![a];
         if u >= a { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
         at.push(u);
-        at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_u)).sum()
+        at.windows(2).map(|w| checked(w[0],w[1],0.,&mut at_u)).sum()
     }
     /// `∫ I_j dv` from `a` to `b` (within a cell).
     fn column(&self,j: usize,a: f64,b: f64) -> f64 {
         if a == b { return 0. }
         let k = self.us[j+1];
-        gauss(a,b,2,&mut |v| self.g(j,k,v))
+        checked(a,b,0.,&mut |v| self.g(j,k,v))
     }
     /// `H_j(v)`, from the `v` knot its table was started at: the whole cells between, each read once,
     /// and the cell holding `v` by its part `above` `v` or below it, the face's side.

@@ -3624,7 +3624,7 @@ fn a_nets_face_is_read_cell_by_cell() {
         assert!((f/flux-1.).abs() <= 1e-12,"weights {w:?}: the flux {f}, the closed form's {flux}: {:e} apart",f-flux);
     }
     // the cost: the knots doubled each way under the same face, the reads grow as the cells the
-    // face covers (twice as many each way), not as their square (298 000, 582 800, 1 046 800)
+    // face covers (twice as many each way), not as their square
     let reads: Vec<u64> = [(32,24),(64,24),(64,48)].iter().map(|&(n,m)| cells::measured(&annulus(paraboloid(n,m,None))).2).collect();
     assert!(reads[1] as f64 <= 2.*reads[0] as f64 && reads[2] as f64 <= 2.*reads[1] as f64,
         "the reads {reads:?}, the knots doubled in u then in v: more than twice as many each time");

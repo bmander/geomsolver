@@ -1519,8 +1519,8 @@ hands over from one knot to another at `v_c` add the strips' columns between, `�
 starts from cancels: a closed loop crosses each knot line as often each way).  The cell holding a
 crossing is read by its part on the face's side of it along the knot line, so nothing beyond the
 trim is read: a sheet trimmed at its fold folds back past it, `|S_u × S_v|` kinked there, and a
-cell read whole across it was 1.1e-7 off a face of the crossed forward member.  The rules are those
-`G` from the middle took (two ten-point Gauss pieces a span, along a stretch, along a cell); the
+cell read whole across it was 1.1e-7 off a face of the crossed forward member.  Each span across, cell
+along and stretch is read by ten nodes where their Kronrod extension agrees (`checked`); the
 cost is the cells the face spans and its uses' nodes, where `G` gathered across every span from the
 middle cost each node the spans between — 34 to 50 million integrand reads a face of the crossed
 forward member, its area 78 s, now 3 to 11 million and 18 s.  A face reaching a collapsed row
