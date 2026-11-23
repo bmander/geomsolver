@@ -79,6 +79,30 @@ fn checked(a: f64,b: f64,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     if off <= within { ten } else if size > 0. && size*(200.*off/size).dpowf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
 }
 
+/// **`checked`, its work bounded**: the ten-point rule where its Kronrod extension agrees with it,
+/// else the extension on each half of `[a, b]` — never refined further.  A cell's spans and
+/// columns (`Cells`) are read so: a span across a fold of a sheet trimmed there (`|S_u × S_v|`
+/// kinked, beyond the face, where the table's whole cells cancel) refined to its last bits, a
+/// column's span by span inside a column's node by node, read a face of the crossed forward member
+/// 1.23e9 times.
+fn checked_halves(a: f64,b: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+    let (mid,h) = ((a+b)/2.,(b-a)/2.);
+    let mut at = Vec::with_capacity(GAUSS.len());
+    let ten = gauss(a,b,1,&mut |t| { let y = f(t); at.push(y); y });
+    let (mut k,mut size) = (0.,0.);
+    for (&y,&w) in at.iter().zip(&KRONROD_GAUSS) { k += w*y; size += w*y.abs(); }
+    for &(x,w) in &KRONROD { let y = f(mid+x*h); k += w*y; size += w*y.abs(); }
+    if (k*h-ten).abs() <= 1e-13*size*h.abs() { return ten }
+    let kronrod = |a: f64,b: f64,f: &mut dyn FnMut(f64) -> f64| {
+        let (mid,h) = ((a+b)/2.,(b-a)/2.);
+        let mut k = 0.;
+        for (&(x,_),&w) in GAUSS.iter().zip(&KRONROD_GAUSS) { k += w*f(mid+x*h) }
+        for &(x,w) in &KRONROD { k += w*f(mid+x*h) }
+        k*h
+    };
+    kronrod(a,mid,f)+kronrod(mid,b,f)
+}
+
 /// The two-point Gauss rule over `[a, b]`: exact for a cubic.
 fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
     let (m,h) = ((a+b)/2.,(b-a)/2.);
@@ -901,10 +925,10 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
 /// a face of the crossed forward member.  The reads come to the cells the face's uses span in each
 /// strip (a hole's too) by a tensor rule, plus each stretch's nodes by one span's rule: linear in
 /// the net, where `G` gathered from the face's middle across every span between read the spans
-/// crossed once for every node of every stretch.  Each span across, each cell along and each
-/// stretch is read by ten nodes where their Kronrod extension says they read it (`checked`), as a
-/// stretch of a use is: a rational net's arc of 170° (its weight 0.09) is no polynomial ten nodes
-/// read.
+/// crossed once for every node of every stretch.  Each span across and each cell along is read by
+/// ten nodes where their Kronrod extension agrees, else by the extension on its halves
+/// (`checked_halves`): a rational net's arc of 170° (its weight 0.09) is no polynomial ten nodes
+/// read; each stretch as a use's is (`checked`).
 struct Cells<'a> {
     s: &'a Surface,
     what: What<'a>,
@@ -934,17 +958,17 @@ impl<'a> Cells<'a> {
         let (s,what,a) = (self.s,self.what,self.us[i]);
         let mut at_u = |w: f64| integrand(s,[w,v],what);
         let cuts = s.breaks(0,[a,u]);
-        if cuts.is_empty() { return checked(a,u,0.,&mut at_u) }
+        if cuts.is_empty() { return checked_halves(a,u,&mut at_u) }
         let mut at = vec![a];
         if u >= a { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
         at.push(u);
-        at.windows(2).map(|w| checked(w[0],w[1],0.,&mut at_u)).sum()
+        at.windows(2).map(|w| checked_halves(w[0],w[1],&mut at_u)).sum()
     }
     /// `∫ I_j dv` from `a` to `b` (within a cell).
     fn column(&self,j: usize,a: f64,b: f64) -> f64 {
         if a == b { return 0. }
         let k = self.us[j+1];
-        checked(a,b,0.,&mut |v| self.g(j,k,v))
+        checked_halves(a,b,&mut |v| self.g(j,k,v))
     }
     /// `H_j(v)`, from the `v` knot its table was started at: the whole cells between, each read once,
     /// and the cell holding `v` by its part `above` `v` or below it, the face's side.
@@ -994,6 +1018,17 @@ fn by_cells(b: &Brep,f: &Face,what: What,net: &Net,mid: f64,uvs: &[Vec<Vec<Uv>>]
         xs.dedup();
         xs
     };
+    // the face's own scale and the floor an edge's tolerance sets its stretches, as `integrated`
+    // reads them: `G` from the middle at the box's corners across its span in `v`
+    let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+    for &q in uvs.iter().flatten().flatten() { for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
+    let (scale,size) = if lo.iter().chain(&hi).all(|x| x.is_finite()) {
+        let corners = [[lo[0],lo[1]],[lo[0],hi[1]],[hi[0],lo[1]],[hi[0],hi[1]]];
+        let at: Vec<V> = corners.iter().map(|&q| s.point(q)).collect();
+        let size = (0..4).flat_map(|i| (0..4).map(move |j| (i,j))).map(|(i,j)| crate::util::space::distance(at[i],at[j])).fold(0.,f64::max);
+        (corners.iter().map(|&[u,v]| cells.g(cells.base,u,v).abs()).fold(0.,f64::max)*(hi[1]-lo[1]),size)
+    } else { (0.,0.) };
+    let floor = |tol: f64| scale*if size > 0. { (1e-4*tol/size).max(1e-13) } else { 1e-13 };
     let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
     for (l,uvs) in f.loops.iter().zip(uvs) {
         let mut row: Vec<(f64,f64)> = Vec::new();
@@ -1061,7 +1096,7 @@ fn by_cells(b: &Brep,f: &Face,what: What,net: &Net,mid: f64,uvs: &[Vec<Vec<Uv>>]
                     last = Some((t,uv,d));
                     if d[1] == 0. { 0. } else { cells.g(i,uv[0],uv[1])*d[1] }
                 };
-                line += if whole { settled(w[0],w[1],pieces(span,periodic),0.,&mut integrand) } else { checked(w[0],w[1],0.,&mut integrand) };
+                line += if whole { settled(w[0],w[1],pieces(span,periodic),floor(e.tol),&mut integrand) } else { checked(w[0],w[1],floor(e.tol),&mut integrand) };
                 own.push((i,at(w[0])[1],at(w[1])[1]));
             }
             if c.reversed { own.reverse() }

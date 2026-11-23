@@ -3540,7 +3540,7 @@ mod cells {
     use std::sync::Arc;
     pub fn knots(a: f64,b: f64,n: usize,grade: f64) -> Vec<f64> {
         let mut k = vec![a;3];
-        k.extend((0..=n).map(|i| { let s = 2.*i as f64/n as f64-1.; a+(b-a)*(0.5+0.5*((1.-grade)*s+grade*s*s.abs())) }));
+        k.extend((0..=n).map(|i| { let s = 2.*i as f64/n as f64-1.; if i == n { b } else { a+(b-a)*(0.5+0.5*((1.-grade)*s+grade*s*s.abs())) } }));
         k.extend([b;3]);
         k
     }
@@ -3628,6 +3628,20 @@ fn a_nets_face_is_read_cell_by_cell() {
     let reads: Vec<u64> = [(32,24),(64,24),(64,48)].iter().map(|&(n,m)| cells::measured(&annulus(paraboloid(n,m,None))).2).collect();
     assert!(reads[1] as f64 <= 2.*reads[0] as f64 && reads[2] as f64 <= 2.*reads[1] as f64,
         "the reads {reads:?}, the knots doubled in u then in v: more than twice as many each time");
+    // and a sheet folded inside its cells, `(x, y) = (u², v)` on a net whose knots stand a third of a
+    // span off the fold `u = 0`, `|S_u × S_v| = 2|u|` kinked there across the face: the reads still
+    // grow as the cells (the crossed forward member's face trimmed at its cuspidal edge, which read
+    // 1.23e9 times while a cell's rules refined without bound, is held by the probe, not here: this
+    // fold does not draw that refinement out)
+    let folded = |n: usize,m: usize| {
+        let h = 2./n as f64;
+        let net = cells::net(cells::knots(-1.+h/3.,1.+h/3.,n,0.),cells::knots(-1.,1.,m,0.),|_,tt,s,_| [tt,s,0.],None);
+        let p = [[-0.5,-0.6],[0.7,-0.6],[0.7,0.5],[-0.5,0.5]];
+        cells::face(cells::surface(net),vec![(0..4).map(|i| (cells::line(p[i],p[(i+1)%4]),false,false)).collect()])
+    };
+    let reads: Vec<u64> = [(32,24),(64,24),(64,48)].iter().map(|&(n,m)| cells::measured(&folded(n,m)).2).collect();
+    assert!(reads[1] as f64 <= 2.*reads[0] as f64 && reads[2] as f64 <= 2.*reads[1] as f64,
+        "the folded sheet's reads {reads:?}, the knots doubled in u then in v: more than twice as many each time");
 }
 
 /// **A polygon with a hole on a net, its sides along knot lines** (#880): `z = x²/2` on a cubic
