@@ -479,16 +479,29 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)],weld: f64) -> Ve
     let mut sizes = Vec::new();
     for (li,l) in f.loops.iter().enumerate() {
         let first = chords.len();
-        for c in l {
+        // where each use starts in the face's parameters: the corner a use arriving there ends at,
+        // as the face's mesh lays it (its last sample left for the next use's first), so that two
+        // uses whose ends at a vertex stand apart — a file's vertex gathering points its tolerance
+        // apart, CADGenBench 248's crescent between two arcs, each one chord, 3e-3 mm apart at
+        // one end — are read as the polygon the mesh is given: there, two chords between the same
+        // two corners
+        let starts: Vec<Uv> = l.iter().map(|c| {
+            let (e,ts) = (&b.edges[c.edge as usize],&samples[c.edge as usize].0);
+            c.pcurve.at(if c.reversed { ts[ts.len()-1] } else { ts[0] },e,&f.surface,&b.vertices)
+        }).collect();
+        for (j,c) in l.iter().enumerate() {
             let e = c.edge as usize;
             if matches!(b.edges[e].curve,EdgeCurve::Degenerate) { continue }
             let (ts,ids) = &samples[e];
             let at = |t: f64| c.pcurve.at(t,&b.edges[e],&f.surface,&b.vertices);
             let mut pairs: Vec<usize> = (1..ts.len()).collect();
             if c.reversed { pairs.reverse(); }
+            // (the sample the use ends at: its last, or its first walked against)
+            let end = if c.reversed { 0 } else { ts.len()-1 };
+            let read = |k: usize| if k == end { starts[(j+1)%l.len()] } else { at(ts[k]) };
             for k in pairs {
                 let place = chords.len()-first;
-                let uv = [corner(ids[k-1],at(ts[k-1])),corner(ids[k],at(ts[k]))];
+                let uv = [corner(ids[k-1],read(k-1)),corner(ids[k],read(k))];
                 chords.push(Chord {uv,id:[ids[k-1],ids[k]],e,t:[ts[k-1],ts[k]],l:li,place});
             }
         }

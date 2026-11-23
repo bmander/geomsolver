@@ -880,9 +880,7 @@ impl Brep {
                     }
                 }
                 if settled { continue }
-                let area = self.loop_area(f,l);
-                let ccw = area > 0.;
-                if (li == 0) != (ccw != f.reversed) && !self.sliver(f,l,area,tol) {
+                if let Some(area) = self.turned(fi,li,tol) {
                     return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name).into())
                 }
             }
@@ -988,8 +986,19 @@ impl Brep {
 
     /// `self_touching`'s lines by their edges: each edge with another between the same vertices
     /// after it whose middle is its own, within `tol` or either edge's tolerance — the first such —
-    /// in the edges' order.
+    /// in the edges' order. Two edges one after the other in a loop are a face's two sides, the
+    /// face between them however thin (a lune of two edges, as real files hold between tangent
+    /// rounds: CADGenBench 246's, 248's and 250's, 3e-2 mm wide and less), never two pieces of
+    /// material meeting along a line.
     pub fn self_touching_edges(&self,tol: f64) -> Vec<[u32;2]> {
+        // (the pairs of edges one after the other in a loop, the lower first)
+        let mut sides: std::collections::BTreeSet<[u32;2]> = Default::default();
+        for l in self.faces.iter().flat_map(|f| &f.loops) {
+            for (k,c) in l.iter().enumerate() {
+                let next = l[(k+1)%l.len()].edge;
+                if next != c.edge { sides.insert([c.edge.min(next),c.edge.max(next)]); }
+            }
+        }
         // the edges between each pair of vertices, then each against the ones after it there
         let mut between: std::collections::BTreeMap<[u32;2],Vec<usize>> = Default::default();
         for (i,e) in self.edges.iter().enumerate() {
@@ -1003,7 +1012,8 @@ impl Brep {
             let mids: Vec<V> = list.iter().map(|&i| mid(&self.edges[i])).collect();
             for (j,&i) in list.iter().enumerate() {
                 let a = &self.edges[i];
-                let twin = (j+1..list.len()).find(|&k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol));
+                let twin = (j+1..list.len()).find(|&k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol)
+                    && !sides.contains(&[i.min(list[k]) as u32,i.max(list[k]) as u32]));
                 if let Some(k) = twin { out.push([i as u32,list[k] as u32]); }
             }
         }
@@ -1038,12 +1048,28 @@ impl Brep {
         out
     }
 
-    /// **Whether a loop is a sliver its edges' tolerance cannot orient** (#993): the area it
-    /// encloses in its face's parameters (`area`), carried into space at its first corner, no
-    /// more than its length times the largest tolerance among its edges and vertices, or the one
-    /// the check is asked for — a face thinner than its edges stand off their vertices, as a file's
-    /// sloppy edges leave one, which turns whichever way they stray. Never one built exact and
-    /// checked exactly, whose tolerances are nought.
+    /// **Whether loop `li` of face `fi` turns against the face's sense** (`check`'s rule, and the
+    /// reader's, `step_read::sound`): the outer loop counter-clockwise in the face's parameters
+    /// about its sense, each hole clockwise, by the signed area it encloses there (`loop_area`) —
+    /// that area where it turns the other way and is no `sliver`, else `None`.
+    pub fn turned(&self,fi: usize,li: usize,tol: f64) -> Option<f64> {
+        let f = &self.faces[fi];
+        let l = &f.loops[li];
+        let area = self.loop_area(f,l);
+        ((li == 0) != ((area > 0.) != f.reversed) && !self.sliver(f,l,area,tol)).then_some(area)
+    }
+
+    /// **Whether a loop is a sliver its edges' tolerance cannot orient** (#993): a face thinner
+    /// than its edges stand off their vertices, as a file's sloppy edges leave one, which turns
+    /// whichever way they stray. Thin by its area: the area it encloses in its face's parameters
+    /// (`area`), carried into space at its first corner, no more than its length times the largest
+    /// tolerance among its edges and vertices, or the one the check is asked for. Or thin across
+    /// (`thin`): every point of each of its uses within twice that of another of them — two
+    /// edges of a strip narrower than their tolerance, each standing off it by as much, are no
+    /// farther apart — where its area in its parameters is no measure (CADGenBench 242's face
+    /// #75264, a spline's strip some 1e-5 mm wide whose feet wander along its narrow way, its
+    /// area read 1.7e-3 there and -9.8e-3 off the same edges written again). Never one built
+    /// exact and checked exactly, whose tolerances are nought.
     fn sliver(&self,f: &Face,l: &[Coedge],area: f64,tol: f64) -> bool {
         let widest = l.iter().map(|c| { let e = &self.edges[c.edge as usize]; e.v.iter().map(|&v| self.vertices[v as usize].tol).fold(e.tol,f64::max) })
             .fold(tol,f64::max);
@@ -1056,7 +1082,26 @@ impl Brep {
             let pts: Vec<V> = (0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&self.vertices)).collect();
             length += pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>();
         }
-        area.abs()*norm(crate::util::space::cross(su,sv)) <= length*widest
+        area.abs()*norm(crate::util::space::cross(su,sv)) <= length*widest || self.thin(l,2.*widest)
+    }
+
+    /// **Whether every point of a loop's uses lies within `bar` of another of its uses** (`sliver`):
+    /// each use's edge read at its sixteenths in space, each point against the polylines of the
+    /// others so read. A loop of one use, or whose uses are all degenerate, is never thin by it.
+    fn thin(&self,l: &[Coedge],bar: f64) -> bool {
+        let lines: Vec<(u32,Vec<V>)> = l.iter().filter(|c| matches!(self.edges[c.edge as usize].curve,EdgeCurve::Curve(_))).map(|c| {
+            let e = &self.edges[c.edge as usize];
+            (c.edge,(0..=16).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/16.,&self.vertices)).collect())
+        }).collect();
+        if lines.len() < 2 { return false }
+        let to_segment = |p: V,a: V,b: V| {
+            let (d,w) = (crate::util::space::sub(b,a),crate::util::space::sub(p,a));
+            let dd = dot(d,d);
+            let s = if dd > 0. { (dot(w,d)/dd).clamp(0.,1.) } else { 0. };
+            distance(p,[a[0]+s*d[0],a[1]+s*d[1],a[2]+s*d[2]])
+        };
+        lines.iter().enumerate().all(|(i,(_,pts))| pts.iter().all(|&p| lines.iter().enumerate()
+            .any(|(k,(_,q))| k != i && q.windows(2).any(|w| to_segment(p,w[0],w[1]) <= bar))))
     }
 
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive), by

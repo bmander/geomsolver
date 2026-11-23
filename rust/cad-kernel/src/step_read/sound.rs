@@ -172,7 +172,13 @@ fn edges(b: &Brep,context: &Context,size: f64) -> Result<(),Unsound> {
 }
 
 /// One face held to its rules: its loops crossing nowhere deeper than their tolerance, nested as
-/// its sense says, of some area, and apart from their images a period along.
+/// its sense says, of some area, apart from their images a period along, and each turning as its
+/// sense says — the outer loop about the face's normal, each hole against it (`Brep::turned`, the
+/// rule the export's `check` holds a solid to, a sliver its tolerance cannot orient let be). A
+/// face whose loop turns the other way states a normal into the material its own edges bound it
+/// on: its sense and its boundary contradict each other, and which the file meant is not read
+/// (CADGenBench 240's face #92335, its `ADVANCED_FACE` `.F.` on a cylinder whose two edges its
+/// neighbours, tangent across both, use as a face turned the other way would).
 fn face(b: &Brep,fi: usize,floor: f64) -> Result<(),Unsound> {
     let f = &b.faces[fi];
     if f.loops.is_empty() || f.loops.iter().any(Vec::is_empty) { return Ok(()) }
@@ -180,7 +186,15 @@ fn face(b: &Brep,fi: usize,floor: f64) -> Result<(),Unsound> {
     d.passages()?;
     d.crossings(None)?;
     d.holes()?;
-    d.turns()
+    d.turns()?;
+    for li in 0..f.loops.len() {
+        if let Some(area) = b.turned(fi,li,floor) {
+            let which = if li == 0 { "its outer loop".to_string() } else { format!("its hole {li}") };
+            return Err(Unsound::face(fi,format!("face {fi}: {which} turns against the face's sense ({area:e} enclosed in its \
+                parameters): the face's normal points into the material its edges bound it on")))
+        }
+    }
+    Ok(())
 }
 
 /// One use of an edge read in its face's parameters along its own way, `s` from 0 at its start to
