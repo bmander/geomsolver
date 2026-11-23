@@ -258,8 +258,11 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
         let field = Depth {tube,chart,within:tol,holes:&discs};
         // the pieces joined across the cuts `round` traces in
         let mut runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
+        // (two ends on one cut, at one place to the rounding or, each the root along the cut its
+        // own part's trace read, within the tolerance of one another in space)
+        let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
         let same = |p: P,q: P| (p[0]-q[0]+PI).rem_euclid(TAU)-PI == 0. && p[1] == q[1]
-            || ((p[0]-q[0]+PI).rem_euclid(TAU)-PI).abs() <= HALF_READ && (p[1]-q[1]).abs() <= HALF_READ*(b-a);
+            || ((p[0]-q[0]+PI).rem_euclid(TAU)-PI).abs() <= HALF_READ && ((p[1]-q[1]).abs() <= HALF_READ*(b-a) || near(p,q));
         'merge: loop {
             for i in 0..runs.len() { for j in 0..runs.len() {
                 if i == j { continue }
@@ -496,7 +499,18 @@ fn fitted(f: &dyn Fn(f64) -> (V,Vec<P>),at: &dyn Fn(usize,P) -> Option<V>,bars: 
             }
         } }
         if worst <= fit { return Ok((curve,pcs)) }
-        if n >= MOST_FIT { return Err(failed(format!("a curve fits within {fit:e} only to {worst:e}"))) }
+        if n >= MOST_FIT {
+            if debug() {
+                for i in 0..n { for q in [0.25,0.5,0.75] {
+                    let t = (i as f64+q)/n as f64;
+                    let y = curve.point(t);
+                    let e0 = distance(y,f(t).0);
+                    let es: Vec<f64> = pcs.iter().enumerate().map(|(u,pc)| { let p = pc.point(t); at(u,[p[0],p[1]]).map_or(f64::INFINITY,|z| distance(z,y))*fit/bars[u] }).collect();
+                    if e0 > fit || es.iter().any(|&e| e > fit) { eprintln!("tube: misfit at {t}: {e0:e} {es:?} {:?}",f(t).1) }
+                } }
+            }
+            return Err(failed(format!("a curve fits within {fit:e} only to {worst:e}")))
+        }
         n *= 2;
     }
 }

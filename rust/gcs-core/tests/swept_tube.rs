@@ -140,6 +140,23 @@ fn the_tubes_cover_reads_as_the_depths() {
         } }
     }
     assert!(far >= 100 && alone >= 10,"{far} far covers, {alone} alone");
+    // one such point, the depth sampled densely as the oracle: on the sheet `+` its own contact
+    // climbs to a top 2.2120598518 at τ 1.568359, inside the roll's last stretch, then falls
+    // 2.96e-6 — less than the tolerance, more than the rounding — to the end pose's 2.2120568897.
+    // `depth::cover`'s march steps from below the top to the roll's end and reads no fall (`Alone`),
+    // within its contract (no stretch held more than the tolerance deep is stepped over); the tube's
+    // reads the far cover at the end. Both read it uncovered, by more than two units: no decision of
+    // the old road on the sign of a cover reads it otherwise.
+    let (th,t) = (TAU*12.5/48.,a+(b-a)*5./24.);
+    let x = tube.point(1.,th,t).unwrap().x;
+    let n = 200_000;
+    let ds: Vec<(f64,f64)> = (0..=n).map(|k| { let s = t+(b-t)*k as f64/n as f64; (s,tube.depth_at(x,s).unwrap().0) }).collect();
+    let top = ds.iter().cloned().fold((0.,f64::NEG_INFINITY),|m,p| if p.1 > m.1 { p } else { m });
+    let fall = top.1-ds[n].1;
+    assert!(top.0 < b && fall > 1e-12 && fall < tol,"the top {top:?}, the fall {fall:e} to the end");
+    assert!(matches!(cover(&ring,&path,roll,x,t,0.,tol).unwrap(),Reading::Alone));
+    let Reading::Far(c) = tube.cover(x,t,tol).unwrap() else { panic!("the tube's cover reads no far cover") };
+    assert!(c.at == b && (c.depth-ds[n].1).abs() <= 1e-12,"{c:?} against the end's {}",ds[n].1);
 }
 
 /// **The charts' sides are proved over cells** (#880 T1f, `Tube::jacobian_bound` and

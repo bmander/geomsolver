@@ -22,6 +22,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   cell bounded by the circle's rates, Weyl), and `Tube::contact_bound` an end pose's side: the
   search of `tube::edges` clears cells by them where it sampled every cell of the feature's size.
   The half turn builds in 3.9 s where it took 28 s, its volume 12.2377154879 to the digit.
+- **The tube road read beyond the half turn** (#880 T1f): `tube::Depth`'s bound has a top where
+  its middle is covered deeper than its reach; a swallowtail point held inside by another instant
+  has no disc, and a disc's rim does not count another basin's cover; runs' ends on one cut within
+  the tolerance in space are joined. The 80° torus builds in 2.2 s (volume 10.9393141712, the old
+  road's 10.9393141414); the full turn and the thin trace every seam and are refused by name.
 
 - **`zero_set` halves a cell spanning a whole turn across it** (#880 T1f): a cell's longer way is
   read along its path through its middle, not between its sides' ends, which over a whole turn are

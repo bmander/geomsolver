@@ -83,7 +83,19 @@ fn main() {
                 match (new,old) {
                     (Some(Reading::Far(a)),Some(Reading::Far(b))) => { if (a.depth-b.depth).abs() > tol { apart += 1; if apart <= 8 { println!("  ({th:.4},{t:.4}) new {:.3e} at {:.5}, old {:.3e} at {:.5}",a.depth,a.at,b.depth,b.at) } } worst = worst.max((a.depth-b.depth).abs()) }
                     (Some(Reading::Near),Some(Reading::Near)) | (Some(Reading::Alone),Some(Reading::Alone)) => {}
-                    (a,b) => { apart += 1; if apart <= 8 { println!("  ({th:.4},{t:.4}) new {a:?} old {b:?}") } }
+                    (a,b) => {
+                        apart += 1;
+                        if apart <= 8 {
+                            println!("  ({th:.4},{t:.4}) new {a:?} old {b:?}");
+                            // the oracle: the depth sampled densely each way from the point's own instant
+                            for (lo,hi) in [(roll[0],t),(t,roll[1])] {
+                                let n = 200_000;
+                                let ds: Vec<(f64,f64)> = (0..=n).map(|k| { let s = lo+(hi-lo)*k as f64/n as f64; (s,tb.depth_at(p.x,s).map_or(f64::NAN,|r| r.0)) }).collect();
+                                let top = ds.iter().cloned().fold((0.,f64::NEG_INFINITY),|m,x| if x.1 > m.1 { x } else { m });
+                                println!("    oracle over [{lo:.5}, {hi:.5}]: greatest {:.12} at {:.6}, ends {:.12} and {:.12}",top.1,top.0,ds[0].1,ds[n].1);
+                            }
+                        }
+                    }
                 }
             } }
             let c = Instant::now();

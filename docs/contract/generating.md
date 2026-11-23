@@ -2755,6 +2755,38 @@ standing above `r |II'|/w`. The middle's `S_tt`, a central difference, is off by
 on the last), 9 faces, volume 12.2377154879 to the digit, its edges' search 0.7 and 1.9 s where it
 sampled 29 000 cells a sheet for 3 and 4.5 s; the 80° torus (`tumbling(80)`) builds in 2.2 s,
 8 faces, volume 10.9393141712 against the old road's 10.9393141414 (2.7e-9 of itself).
+**Read beyond the half turn** (each change keeping it at 12.2377154879): the depth's bound has a
+top where the middle is covered deeper than the reach (its covering instant holds the whole cell,
+so it lies past each point's own contact), so a rim covered for a stretch is cleared, where the
+full turn's rim at its start was halved to the tolerance and every leaf of it touched (some
+32 000 leaves, 64 covers each); a swallowtail point every far cover about whose feature's disc is
+covered deeper than the tolerance is held inside by another instant and given no disc; a disc's
+rim counts a cover clear above nought only from an instant inside the disc's span of the roll (an
+end pose's, far off, is another basin's: the full turn's second swallowtail point, read 0.85 above
+by the start pose, had no disc); and two runs' ends on one cut are one point where they stand within
+the tolerance in space (each the root along the cut its own part's trace read: 2e-6 apart in `t` on
+the full turn). **Where the cases stand:** the full turn traces every chart's seams in some 10 s
+(the sheet `+` 3.6 s, 7 pieces; the sheet `−` 5.2 s, 10 pieces) and is refused building its trims:
+on the sheet `−` a piece leaves the cut `θ = π` at `t` 2.24599 covered at its own instant, where the
+depth is 1.28 — `Depth::along` continuing a far cover whose instant has run into the point's own
+contact, a phantom branch `least` does not undercut (reading the climb between the two instants
+to end it slowed the half turn fivefold through ordinary branches: not kept); and its two end
+poses' meeting is still not read. The thin traces every chart's seams in 54 s (the sheet `−` 33 s,
+its edges 19 s where they took 439) and is refused fitting its trims: the double curve from its
+second swallowtail point to the rim misfits at its start by 3.3e-7 against a bar of 3e-8, the rim
+crossing settled a tolerance off the traced run's next point. The bench's tumbling torus (`tube 0.5`,
+±75°, `tube_profile tumble`; the old road's 25.2750392926) is refused in 1.3 s: the sheet `−`'s
+depth's march stalls at (2.5074577, 1.3077056), 1.3e-3 short of the roll's end, a singular point
+of its zero set there (a corner of the double curve, the end pose and the cuspidal edge, by its
+place) that no event yet names. **The old march's step over a shallow fall** (asked of the tube's
+cover, `swept_tube::the_tubes_cover_reads_as_the_depths`): on the half turn's sheet `+` at
+(θ = 2.5π/12, t = −0.9163) the own contact climbs to 2.2120598518 at τ
+1.568359 and falls 2.96e-6 — under the tolerance, over the rounding — to the end pose's
+2.2120568897: `depth::cover` steps from below the top to the roll's end and reads `Alone`, the
+tube's cover the far cover at the end. Within `depth::cover`'s contract (no stretch held deeper
+than the tolerance is stepped over, so the sign of a cover is never misread), not #998's fall
+(which read a covered point `Alone`); the old road's `covered`, `ends_met` and `passed_back` decide
+on that sign alone.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

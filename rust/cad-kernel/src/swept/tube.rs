@@ -323,8 +323,12 @@ impl Field for Depth<'_> {
     /// 13.6 s, not 32.7. Where nothing else covers the middle (`Alone`) there is no far cover to
     /// bound from: the nine are read, their least far cover less their spread, all nine `Alone` read
     /// clear — sampled evidence, not proof: a cover born and dying between the nine is missed, as the
-    /// search's sampling would miss it. None where a point is not kept or the middle's neighbours
-    /// hold it (the cell meets the chart's edge).
+    /// search's sampling would miss it. Above, where the middle is covered deeper than the reach,
+    /// the middle's far cover plus the reach (its covering instant holds the whole cell, so it is
+    /// past each point's own contact): so a run of a rim or a cell covered through is cleared, where
+    /// the full turn's rim at its start, covered for a stretch, was halved to the tolerance and every
+    /// piece of it touched. None where a point is not kept or the middle's neighbours hold it (the
+    /// cell meets the chart's edge).
     fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
         // (the middle's cover read, the others' points only for the reach)
         let mid = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
@@ -335,6 +339,10 @@ impl Field for Depth<'_> {
             xs.push(self.kept(uv)?.x);
         } }
         let reach = xs.iter().map(|x| crate::util::space::distance(*x,pm.x)).fold(0.,f64::max);
+        // (where the middle is held below nought deeper than the reach, the covering instant holds
+        // every point of the cell: its depth there, 1-Lipschitz, is below nought, so that instant
+        // lies past each point's own contact and the far cover is at most it)
+        let hi = match rm { Reading::Far(cv) if cv.depth+reach < 0. => cv.depth+reach,_ => f64::MAX };
         let lo = match rm {
             Reading::Far(cv) => cv.depth-reach,
             Reading::Near => return None,
@@ -349,7 +357,7 @@ impl Field for Depth<'_> {
                 if least.is_finite() { least-all } else { all }
             }
         };
-        Some(crate::zero_set::Bound {value:crate::util::interval::Iv::new(lo,f64::MAX),grad:None})
+        Some(crate::zero_set::Bound {value:crate::util::interval::Iv::new(lo,hi),grad:None})
     }
 }
 
@@ -621,8 +629,9 @@ const RIM: usize = 64;
 
 /// **The disc about a swallowtail point `at` of a chart** inside which the depth is read as
 /// nought: within it the far cover's depth is within the tolerance everywhere the rim shows — the
-/// double curve's two leaves and the tail between them within the tolerance of the sheet beyond,
-/// so the trim may run to the point along any path in it — its radius halved from the feature size
+/// double curve's two leaves and the tail between them within the tolerance of the sheet beyond (a
+/// cover clear above nought from an instant outside the disc's span of the roll is another
+/// basin's, not counted), so the trim may run to the point along any path in it — its radius halved from the feature size
 /// until every far cover read on its rim (`RIM` points) is within `tol`; refused where that asks a
 /// disc under the tolerance.
 pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Result<Disc,Unbuilt> {
@@ -632,7 +641,12 @@ pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Resul
     let mut radius = feature;
     while radius >= tol {
         let d = Disc {at,metric,radius};
-        let deep = (0..RIM).any(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth.abs() > tol));
+        // (a cover standing clear above nought from an instant outside the disc's own span of the
+        // roll is another basin's — an end pose's, far off — not the swallowtail's lens, whose two
+        // leaves pair points of the disc: it does not count)
+        let span = (0..RIM).map(|k| d.rim(k as f64/RIM as f64)[1]).fold([f64::INFINITY,f64::NEG_INFINITY],|s,t| [s[0].min(t),s[1].max(t)]);
+        let deep = (0..RIM).any(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c)))
+            if c.depth < -tol || c.depth > tol && c.at >= span[0] && c.at <= span[1]));
         if !deep { return Ok(d) }
         radius *= 0.5;
     }
@@ -648,12 +662,24 @@ pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Resul
 pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],seeds: &[[f64;2]],tol: f64,feature: f64)
     -> Result<(Vec<crate::zero_set::Piece<Cover>>,Vec<crate::zero_set::Search>,Vec<Disc>),Unbuilt> {
     let periodic = [true,matches!(chart,Chart::End(_))];
-    let holes: Vec<Disc> = tails.iter().map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
+    // (a swallowtail point held inside by another instant — every far cover on the rim of the
+    // feature's disc about it below nought by more than the tolerance — bounds nothing: the double
+    // curve it ends is covered through, and no trim comes near it)
+    let held = |at: [f64;2]| -> bool {
+        let Some(sp) = tube.spine(at[0],at[1]) else { return false };
+        let metric = [[dot(sp.s_th,sp.s_th),dot(sp.s_th,sp.s_t)],[dot(sp.s_th,sp.s_t),dot(sp.s_t,sp.s_t)]];
+        let d = Disc {at,metric,radius:feature};
+        let field = Depth {tube,chart,within:tol,holes:&[]};
+        (0..RIM).all(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth < -tol))
+    };
+    let holes: Vec<Disc> = tails.iter().filter(|&&at| !held(at)).map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
     let mut inner: Vec<Vec<[f64;2]>> = edges.to_vec();
     inner.extend(holes.iter().map(|d| d.polygon(RIM)));
     let side = |uv: [f64;2]| holes.iter().map(|d| d.side(uv)).fold(tube.side(chart,uv).unwrap_or(-1.),f64::min);
+    let clock = std::time::Instant::now();
     let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,seeds,&inner,&side,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))?;
+    if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() { eprintln!("seams of {chart:?}: {} pieces in {:?}",pieces.len(),clock.elapsed()) }
     Ok((pieces,search,holes))
 }
 
