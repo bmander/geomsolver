@@ -408,3 +408,64 @@ fn a_given_body_is_never_an_object() {
         assert_eq!(listed, want.to_vec(), "{src}");
     }
 }
+
+/// **Two spellings of one set, by identity** (#993's review, R3): `solid({ p | p in bracket })`
+/// is the body whose stock is the given body, as `solid(bracket)` is — the same face names and
+/// the same STEP to the byte, and that STEP read back is the file's solid, every face on its own
+/// surface (`step_roundtrip::same`).
+#[test]
+fn two_spellings_of_a_given_body_are_one_solid() {
+    use crate::step_roundtrip::{measured, same, stages, Found};
+    use gcs_core::brep::{export, step::Fit, sweep::Say};
+    let e = solved("unit mm\nuse bracket\nwhole := solid(bracket)\nset := solid({ p | p in bracket })\n");
+    assert!(matches!(e.sketch.solids[solid(&e, "set")].def,
+                     gcs_core::model::SolidDef::Body { ref on, ref through, ref bound, .. }
+                     if on.is_empty() && through.is_empty() && bound.is_empty()));
+    // the built B-rep's names, which the report reads (no written path reaches a given face)
+    let names = |n: &str| -> Vec<String> {
+        let x = e.sketch.exact_solid(solid(&e, n)).unwrap_or_else(|m| panic!("`{n}`: {m}"));
+        x.brep.faces.iter().map(|f| f.name.clone()).collect()
+    };
+    assert_eq!(names("whole"), names("set"));
+    assert_eq!(names("set").len(), 7);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let step = |n: &str| {
+        let x = export::exact(&e.sketch, solid(&e, n), None, None, &say)
+            .unwrap_or_else(|m| panic!("{m:?}"));
+        export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"))
+    };
+    let text = step("set");
+    assert!(text == step("whole"), "the two spellings' STEP alike");
+    let original = stages(DRILLED).unwrap_or_else(|(by, r, _)| panic!("{by:?}: {r}"));
+    let back = stages(&text).unwrap_or_else(|(by, r, _)| panic!("read back, {by:?}: {r}"));
+    let b = &original[0].brep;
+    let tol = original[0].context.uncertainty.unwrap_or(1e-7);
+    same(b, &measured(b), &text, &back[0], Fit::Exact, tol, &mut Found::default())
+        .unwrap_or_else(|d| panic!("not the same solid: {d}"));
+}
+
+/// **One cause, one diagnostic, the fix in the author's words** (#993's review, R8): a given body
+/// read in a `ring` is refused as one (E106), not also as a name outside the ring (E021); a body
+/// word extending it through a definition's formal is refused as extended (E080), not also as
+/// read in a definition's body; and the fix an E080 names is the author's own statement, its word
+/// as written (`drill bore part`).
+#[test]
+fn a_given_body_refused_is_said_once_in_the_authors_words() {
+    let (_, diags) = read("unit mm\nuse bracket\nuse std\nring 3 about std.origin {\n  \
+                           part := solid(bracket)\n}\n");
+    assert_eq!(diags.iter().map(|d| d.code).collect::<Vec<_>>(), vec![Code::E106], "{diags:?}");
+    let src = format!("{DRILL}component Adds(B: solid, T: solid) {{\n  T cut B\n}}\n\
+                       a := Adds(bracket, drill)\n");
+    let (_, diags) = read(&src);
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].code, Code::E080, "{diags:?}");
+    assert!(diags[0].message.ends_with("`part := solid(bracket)`, and give `part` where it is \
+                                        given"), "{}", diags[0].message);
+    let src = format!("{DRILL}x bore B := B and {{ p | p not in x }}\ndrill bore bracket\n");
+    let (_, diags) = read(&src);
+    let at = src.find("drill bore bracket").unwrap() as u32;
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!((diags[0].code, diags[0].span.lo), (Code::E080, at), "{diags:?}");
+    assert!(diags[0].message.ends_with("`part := solid(bracket)`, then `drill bore part`"),
+            "{}", diags[0].message);
+}

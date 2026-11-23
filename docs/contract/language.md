@@ -1019,8 +1019,13 @@ before ports 0.9 s to 0.4 s.
   makes nothing and `part := solid(bracket)` one object (`model::objects`), the given body its
   stock.  **Never extended**: a body statement whose body is the given one (`drill cut
   bracket`, `x union bracket`, `x common bracket`, or the primitive they are written in) is E080
-  where it is written, naming the body to make — `` `part := solid(bracket)`, then `drill cut
-  part` `` (`program::solids::body_rule`).  **Where it stands**: the document's own space, the
+  where it is written, naming the body to make and the statement **as the author wrote it**,
+  their own word and the given body renamed — `` `part := solid(bracket)`, then `drill bore
+  part` `` for `drill bore bracket` over a word `x bore B` of their own, or, where it is read
+  through a definition's formal, `` …, and give `part` where it is given `` — and nothing more of
+  that read (no E106 for a formal's read inside the statement: the body made of it is the one fix)
+  (`program::solids::body_rule`,
+  `given_bodies::a_given_body_refused_is_said_once_in_the_authors_words`).  **Where it stands**: the document's own space, the
   file's origin and axes the world's, whatever plane of the world a statement is in (`in
   std.top { … }`); a read in a definition's body (the document's or a module's, its file `use`ing
   the module), in a `ring`, or under an `in` of a frame that is not one of `std`'s is E106 at the

@@ -2050,7 +2050,11 @@ impl<'a> Walk<'a> {
                 let invariant = s.abs == *centre
                     || centres.get(&s.abs).is_some_and(|c| c.as_ref() == Some(centre))
                     || centres.contains_key(&s.abs) && *centre == format!("{}.center", s.abs);
-                if !invariant {
+                // a given body read in a ring is refused as one, where it is read (E106,
+                // `Walk::given_bodies`): one cause, said once, and passing it as part of the ring
+                // is no fix for it
+                let given = self.standard.given.gives(&s.abs);
+                if !invariant && !given {
                     self.once(Code::E021, s.span, format!("`{}` is outside the `ring` and does not \
                         turn with it: from inside, only its centre `{centre}`, a circle about it and \
                         values may be read — pass what turns as part of the ring", s.written));

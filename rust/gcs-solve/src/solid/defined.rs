@@ -88,6 +88,28 @@ fn boolean(terms: &[RegionTerm]) -> Option<SolidDef> {
     Some(SolidDef::Body { stock, on, through: cut, bound })
 }
 
+/// **One membership of a whole solid is that solid's body** (#993's review, R3): solid `i`, a
+/// region whose one term keeps it within a solid `S` named whole and nothing more — `solid({ p |
+/// p in S })` — made the body whose stock is `S`, as `solid(S)` is: two spellings of one set, one
+/// solid, its faces named and built as the body's.  Asked once the body rule has joined every
+/// body (the elaborator's), since a region within `S`'s faces reads them as `S`'s other terms
+/// leave it (its stratum, `faces::cached`): where `S` is made of `i` — a shell's cavity, within the
+/// body it is then cut from (`std.rounds`'s `shell`) — the body of `S` would be made of itself,
+/// and the set is that stratum, which no body of `S`'s says, so `i` stays the region.  `false`,
+/// leaving `i` as it is, for any other set.
+pub fn membership(sk: &mut Sketch, i: usize) -> bool {
+    let Some(SolidDef::Region { terms, .. }) = sk.solids.get(i).map(|s| &s.def) else {
+        return false;
+    };
+    let [t] = &terms[..] else { return false };
+    let Some((s, Cmp::Le)) = whole(t) else { return false };
+    if s as usize == i || super::reaches(sk, s, i as u32) {
+        return false;
+    }
+    sk.solids[i].def = SolidDef::Body { stock: s, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
+    true
+}
+
 /// **A body trimmed by sets that read no face** (#953): solid `i`, a region whose terms keep it
 /// within one solid named whole or more (`p in hull`), outside any others named whole, and within
 /// terms that read no face (`p in water`, a half-space) — the hull in water.  It is made the body
