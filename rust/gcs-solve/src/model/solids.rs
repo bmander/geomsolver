@@ -383,23 +383,6 @@ impl Given {
         format!("{GIVEN_FACE}{k}")
     }
 
-    /// **A face's path as a reader is told it** (#993's review, R9): a given body's face, which
-    /// no written path reaches (stage 3 chooses one by what it is, never by an index), is "a
-    /// face of `bracket`", the path up to it; any other path is as it is.
-    pub fn face_said(path: &str) -> String {
-        match Given::face_of(path) {
-            Some(of) => format!("a face of `{of}`"),
-            None => path.to_string(),
-        }
-    }
-
-    /// Where `path` names a given body's face (`bracket.#given4`, `part.bracket.#given0`), the
-    /// path up to it, never empty: what a reader can write of it.
-    pub fn face_of(path: &str) -> Option<&str> {
-        let at = path.find(&format!(".{GIVEN_FACE}"))?;
-        (at > 0).then(|| &path[..at])
-    }
-
     pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
         &self.read.brep
     }
@@ -485,6 +468,25 @@ impl SolidDef {
             (SolidDef::Body { bound, .. }, BodyWord::Common) => Some(bound),
             _ => None,
         }
+    }
+
+    /// **A bare `solid(S)`**: the stock of a body with nothing on, through or bound by it
+    /// (`part := solid(bracket)`), `None` for any other solid.
+    pub fn bare_stock(&self) -> Option<usize> {
+        match self {
+            SolidDef::Body { stock, on, through, bound }
+                if on.is_empty() && through.is_empty() && bound.is_empty() => Some(*stock as usize),
+            _ => None,
+        }
+    }
+}
+
+impl Sketch {
+    /// **The body a file gives that solid `i` is, untouched** (#993 stage 2): `i` itself where it
+    /// is one, or the stock of a bare `solid(bracket)` over one; `None` for any other solid.
+    pub fn given_untouched(&self, i: usize) -> Option<usize> {
+        let given = |k: usize| matches!(self.solids.get(k)?.def, SolidDef::Given(_)).then_some(k);
+        given(i).or_else(|| self.solids.get(i)?.def.bare_stock().and_then(given))
     }
 }
 

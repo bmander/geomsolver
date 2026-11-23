@@ -271,9 +271,10 @@ impl BodyFaces {
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
     pub fn paths(&self) -> &[FacePath] { &self.paths }
 
-    /// Face `fi` as a refusal names it: its path as the document reads it, in backticks.
+    /// Face `fi` as a refusal names it: its path as the document reads it, in backticks, or a
+    /// face of a body a file gives as one of its faces (`vocab::face_quoted`).
     pub fn said(&self, fi: usize) -> String {
-        format!("`{}`", crate::vocab::public_path(&self.paths[fi].text()))
+        crate::vocab::face_quoted(&self.paths[fi].text())
     }
 
     /// The boundary the faces are read off: in millimetres about `origin` (model units), `mm` of

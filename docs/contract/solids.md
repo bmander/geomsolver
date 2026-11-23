@@ -1253,7 +1253,7 @@ holds a B-rep `brep::step_read` read — millimetres and radians about the world
 the document's unit — and a digest of the file's text; it is made of nothing in the drawing, has
 no face of the drawing and no frame (`frame_origin` is the world's), and is held sound where it was
 read (`validate_at` checks nothing more). `Given::new` names face `k` `#given` and `k`
-(`Given::face_name`, `GIVEN_FACE`): one segment, distinct, no statement's use and no name a written
+(`Given::face_name`, `GIVEN_FACE`, read back by `vocab::given_face`): one segment, distinct, no statement's use and no name a written
 path reaches; the file's own `ADVANCED_FACE` names are dropped, since equal names would make two
 faces one in `from_brep` and drop the edges between them, and face `k` stays face `k`. The recipe
 hands it through as `recipe::Node::Given` — the same faces in the same order, each on its own
@@ -1289,11 +1289,13 @@ term. Its material field is `BuiltField` where every face's surface has an exact
 naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
 reaches them; stage 3 chooses them by predicate), and **no reader is shown their keys**: `--where
 part` lists no per-face row of a given body's faces (`report::positions_where`; their area is
-in the body's), and its volume and area are its B-rep's, read there (`report::given_untouched`):
+in the body's), and its volume and area are its B-rep's, read there (`Sketch::given_untouched`):
 it is evaluated — meshed at the report's fineness, CADGenBench 201's 435 faces some eight million
 facets and half a minute — only where its box is asked, and a containment claim's witness says one as `` a face of `bracket` ``
-(`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
-keeps the face's key, for a host to pick it by
+(`vocab::face_said`, `between drill.hole and a face of `bracket``) — every namer says one so,
+`vocab::face_quoted` where a path is quoted: a round's refusal (`BodyFaces::said`,
+`given_bodies::a_round_says_a_given_bodys_faces_as_its_faces`) and the export's warning; the
+claim's JSON keeps the face's key, for a host to pick it by
 (`given_bodies::a_given_bodys_faces_are_said_as_its_faces`); the export's warning of faces
 thinner than its tolerance says each as `` a face of `bracket` `` too, once however many it stands
 beside, and where the body is the file's untouched it gives no advice to move a cut's end, for the
@@ -1301,7 +1303,7 @@ document made no cut: "The file `bracket` gives it so, and the document states n
 written as it is given" (`brep::export::said_slivers`;
 `given_solids::a_sliver_a_files_body_holds_is_said_as_the_files`).
 **A body whose stock is another solid, nothing on,
-through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, the two
+through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, by `SolidDef::bare_stock`, the two
 evaluations standing alike), so a containment between them, either way, holds exactly — its
 interval nothing — where the facets of a curved face alone would leave it within the faceting's
 uncertainty; a body anything is taken from is judged by its boundary as before, never the wrong way

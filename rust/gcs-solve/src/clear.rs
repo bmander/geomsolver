@@ -317,14 +317,10 @@ fn one_set(sk: &Sketch, a: usize, b: usize) -> bool {
     let root = |mut i: usize| {
         // a chain of such bodies is acyclic (a body's stock is made before it), and bounded
         for _ in 0..sk.solids.len() {
-            match sk.solids.get(i) {
-                Some(crate::model::SolidE {
-                    def: crate::model::SolidDef::Body { stock, on, through, bound },
-                    binding: None, ..
-                }) if on.is_empty() && through.is_empty() && bound.is_empty() => {
-                    i = *stock as usize
-                }
-                _ => break,
+            let solid = sk.solids.get(i).filter(|s| s.binding.is_none());
+            match solid.and_then(|s| s.def.bare_stock()) {
+                Some(stock) => i = stock,
+                None => break,
             }
         }
         i

@@ -881,9 +881,10 @@ fn a_given_bodys_faces_are_said_as_its_faces() {
     let v = gcs_core::diagnose::judge_solids(&e.sketch);
     let text = gcs_core::report::solid_claim_text(&v[0]);
     assert!(text.contains("a face of `bracket`") && !text.contains("#given"), "{text}");
-    assert_eq!(gcs_core::model::Given::face_said("part.bracket.#given0"),
-               "a face of `part.bracket`");
-    assert_eq!(gcs_core::model::Given::face_said("drill.hole"), "drill.hole");
+    assert_eq!(gcs_core::vocab::face_said("part.bracket.#given0"), "a face of `part.bracket`");
+    assert_eq!(gcs_core::vocab::face_said("drill.hole"), "drill.hole");
+    assert_eq!(gcs_core::vocab::face_quoted("part.bracket.#given0"), "a face of `part.bracket`");
+    assert_eq!(gcs_core::vocab::face_quoted("drill.hole"), "`drill.hole`");
 }
 
 /// **Statements no text holds are numbered apart** (#993's review, R10): a given body's
@@ -996,4 +997,23 @@ fn a_given_bodys_measures_are_read_off_its_b_rep() {
     let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n.starts_with("part"));
     let x1 = rows.iter().find(|(n, _)| n == "part.bounds.x1").map(|r| r.1);
     assert!(x1.is_some_and(|x| (x - 40.0).abs() < 1e-6), "{rows:?}");
+}
+
+/// **A round says a given body's faces as its faces** (#993's review, C3): the faces a round reads
+/// of a body made of the file's (`solid::faces`) are named by keys no document writes
+/// (`bracket.#given4`), and a lowering's refusal names each as `BodyFaces::said` says it —
+/// through `vocab::face_quoted`, as a claim's witness and the export's warning say them — so
+/// `` a face of `bracket` ``, never the key, while a face the document cut keeps its path.
+#[test]
+fn a_round_says_a_given_bodys_faces_as_its_faces() {
+    let e = solved(&format!("{DRILL}part := solid(bracket)\ndrill cut part\n"));
+    let faces = gcs_core::solid::faces::cached(&e.sketch, solid(&e, "part"))
+        .unwrap_or_else(|m| panic!("{m}"));
+    let said: Vec<(String, String)> = (0..faces.paths().len())
+        .map(|fi| (faces.paths()[fi].text(), faces.said(fi))).collect();
+    let given: Vec<_> = said.iter().filter(|(path, _)| path.contains("#given")).collect();
+    assert_eq!(given.len(), 7, "{said:?}");
+    assert!(given.iter().all(|(_, s)| s.starts_with("a face of `") && !s.contains("#given")),
+            "{said:?}");
+    assert!(said.iter().any(|(path, s)| *s == format!("`{path}`")), "{said:?}");
 }
