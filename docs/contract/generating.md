@@ -2845,10 +2845,20 @@ against 5.9 (8 faces, 25.2750727786 against the volume made apart, 25.2750727653
 `swept_rings::the_tumbling_torus_as_the_bench_spells_it_is_built_closed` — 5e-10; the old road at
 this spelling of the motion reads 25.2750392926, 1.3e-6 below, and its solid's faces carry surface
 covered by other instants: nine points of its mesh at 0.003 covered 1e-5 to 3.4e-3 deep, on three
-faces, the tube road's none). Each passes `check` at the call's tolerance with no misfit at the
+faces, the tube road's none: gated in `swept_tube::the_tumbling_torus_builds_by_the_tube_road`). Each passes `check` at the call's tolerance with no misfit at the
 size's tolerance, and each is held to its mesh and to membership by the depth in the slow tier
 (`swept_tube::the_full_turn_builds_by_the_tube_road`, `…the_thin_…` at 160 000 points, a tube of
-0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **What `closed::ring`
+0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **Read again at moved inputs**
+(the observer's origin moved by an ulp and by 1e-6): every case builds by both roads with the same
+faces; at the ulp the tube road's volumes are the same to the digit, at 1e-6 both roads' move
+alike (the tumbling torus by 1.07e-5 each), and the tube road's misfits stay none where the old
+road's are 10 to 43 at the size's tolerance. **Not yet answered:** on the half turn and the thin
+both roads' faces reach past a double curve beside a swallowtail point — mesh points 1.5e-5 to
+7e-5 past an edge whose own points stand on the depth's zero set (to 6e-11), covered 0.6e-6 to
+1.4e-5 deep (the tube road's one on the half turn at 1.35e-5, seven on the thin; the old road's six
+and eight, to 1.2e-4), where the sheet's map is near singular — and on the thin's end pose one
+point 3.7e-4 inside its contact circle held 2.5e-6 deep by the instants beside its own; the full turn, the 80° torus and
+the tumbling torus have none on the tube road. **What `closed::ring`
 would need to call it first** (not switched): the tool a torus (`Tube::new`, else the old road);
 no meridian touched whole over the roll until the collar chart is built (`Ring::touched_once`; the
 tube road has no pinch); the motion's rate bounds given (`Tube::rates`, else every cover is

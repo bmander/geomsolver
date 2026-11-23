@@ -359,9 +359,11 @@ fn the_thin_builds_by_the_tube_road() {
 /// within 1e-7 of itself (25.2750727786 read, 5e-10 apart), held to its mesh and to membership by
 /// the depth. The old road at this spelling of the motion reads 25.2750392926, 1.3e-6 below: its
 /// solid's faces carry surface covered by other instants (nine points of its mesh at 0.003 covered
-/// 1e-5 to 3.4e-3 deep, on three faces), the tube road's none.
+/// 1e-5 to 3.4e-3 deep, on three faces), the tube road's none — gated here (`covered`). The three
+/// volumes: the tube road's 25.2750727786, the one made apart 25.2750727653, the old road's
+/// 25.2750392467 (25.2750392926 as main reads it).
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the tumbling torus built by the tube road, ~40 s")]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the tumbling torus built by both roads, ~120 s")]
 fn the_tumbling_torus_builds_by_the_tube_road() {
     use gcs_core::brep::swept::tube::faces;
     let (tool,path,roll,tol) = crate::common::bench::tumbling_torus();
@@ -374,6 +376,40 @@ fn the_tumbling_torus_builds_by_the_tube_road() {
     assert_eq!(solid.faces.len(),8);
     assert!((v/25.2750727653-1.).abs() <= 1e-7,"the volume {v}, the one made apart 25.2750727653");
     held(&solid,&tube,&path,roll,v);
+    // the boundary's points under other instants: the tube road's none; the old road's, at this
+    // spelling of the motion, some, deep
+    let (n,_) = covered(&solid,&tube,roll,tol);
+    assert_eq!(n,0,"the tube road's boundary covered deeper than the tolerance at {n} points");
+    let old = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.5/250.,tol).unwrap();
+    let w = gcs_core::brep::props::volume(&old);
+    let (n,worst) = covered(&old,&tube,roll,tol);
+    eprintln!("the old road: volume {w:.10}, {n} points of its mesh covered deeper than the tolerance, the deepest {worst:e}");
+    assert!((w/25.2750727653-1.).abs() > 1e-6,"the old road's volume {w}, within 1e-6 of the one made apart");
+    assert!(n > 0 && worst < -100.*tol,"the old road's boundary: {n} points covered, the deepest {worst:e}");
+}
+
+/// **How many points of a solid's boundary lie under other instants**, and the deepest: its mesh at
+/// 0.003 read by the depth (the least over the roll of the distance to the posed core circle less
+/// the tube, sampled at 512 instants and settled by golden section about each sampled basin), a
+/// point counted where it stands deeper than the tolerance.
+fn covered(solid: &gcs_core::brep::topo::Brep,tube: &Tube,[a,b]: [f64;2],tol: f64) -> (usize,f64) {
+    let m = gcs_core::brep::mesh::mesh(solid,0.003,0.2).unwrap();
+    let depth = |x: [f64;3]| -> f64 {
+        let d = |t: f64| tube.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+        let n = 512;
+        let step = (b-a)/n as f64;
+        let s: Vec<f64> = (0..=n).map(|i| d(a+step*i as f64)).collect();
+        let mut best = f64::INFINITY;
+        for i in 0..=n {
+            if i > 0 && i < n && !(s[i] <= s[i-1] && s[i] <= s[i+1]) { continue }
+            let (mut l,mut h) = ((a+step*i as f64-step).max(a),(a+step*i as f64+step).min(b));
+            let g = 0.5*(5f64.sqrt()-1.);
+            while h-l > 1e-13 { let (x1,x2) = (h-g*(h-l),l+g*(h-l)); if d(x1) < d(x2) { h = x2 } else { l = x1 } }
+            best = best.min(d(0.5*(l+h))).min(s[i]);
+        }
+        best
+    };
+    m.pts.iter().map(|&x| depth(x)).filter(|&d| d < -tol).fold((0,0f64),|(n,w),d| (n+1,w.min(d)))
 }
 
 /// **The 80° torus built by the tube road** (#880 T1f): the sheet `−`'s cuspidal edges run the whole
