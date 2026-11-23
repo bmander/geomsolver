@@ -2797,7 +2797,7 @@ the full turn). **Every ring case the old road builds, built** (#880 T1f; each c
   instants before it, the sheet's rim crossing at the end covered by the start pose — the nearest
   such vertex, held within the trace's longest step of the run's end, its parameters put there.
   The full turn's are two short arcs, as the old road's; tracing the start pose costs the half turn
-  some 0.4 s.
+  some 0.4 s (it builds in 4.3 s, the old road in 6.6; the 80° torus in 2.3 against 6.2).
 * **The cut from a swallowtail point ends at the first trim it meets** (`faces::met_by_cut`): it
   runs at the point's angle toward the rim the swallowtail opens away from, and a trim's polyline
   crossed before the rim (its own or its partner's on the chart) is met there — the point settled
@@ -2836,19 +2836,30 @@ the full turn). **Every ring case the old road builds, built** (#880 T1f; each c
   no chord keeps inside the field; the run ends there and is joined straight to the corner, every
   point of the join within the tolerance of the end pose (`cornered`, the half turn's).
 
-**Measured** (`tube_profile … build`, beside a test build: the times are upper bounds): the full
-turn builds in 26 s (14 faces, volume 23.6738858153 against the old road's 23.6738852531, 2.4e-8
-of itself), the thin in 61 s (10 faces, 0.6963027945 against 0.6963027896, 6.5e-9), the bench's
-tumbling torus in 9.6 s (8 faces, 25.2750727786 against the volume made apart, 25.2750727653 —
+**Measured** (`tube_profile … build` against `… old`, on a quiet machine): the full turn builds in
+25.8 s where the old road takes 36.6 (14 faces, volume 23.6738858153 against the old road's
+23.6738852805, 2.3e-8 of itself), the thin in 63.0 s against 45.7 (10 faces, 0.6963027945 against
+0.6963027896, 6.5e-9; the sheet `−`'s seams 33 s of it, its edges' search most of the rest, where
+`jacobian_bound` is weak with `S_θ` and `S_t` near parallel), the bench's tumbling torus in 9.5 s
+against 5.9 (8 faces, 25.2750727786 against the volume made apart, 25.2750727653 —
 `swept_rings::the_tumbling_torus_as_the_bench_spells_it_is_built_closed` — 5e-10; the old road at
 this spelling of the motion reads 25.2750392926, 1.3e-6 below, and its solid's faces carry surface
 covered by other instants: nine points of its mesh at 0.003 covered 1e-5 to 3.4e-3 deep, on three
 faces, the tube road's none). Each passes `check` at the call's tolerance with no misfit at the
 size's tolerance, and each is held to its mesh and to membership by the depth in the slow tier
 (`swept_tube::the_full_turn_builds_by_the_tube_road`, `…the_thin_…` at 160 000 points, a tube of
-0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **The old march's step over a shallow fall** (asked of the tube's
-cover, `swept_tube::the_tubes_cover_reads_as_the_depths`): on the half turn's sheet `+` at
-(θ = 2.5π/12, t = −0.9163) the own contact climbs to 2.2120598518 at τ
+0.015 filling a part in a hundred of its box, `…the_tumbling_torus_…`). **What `closed::ring`
+would need to call it first** (not switched): the tool a torus (`Tube::new`, else the old road);
+no meridian touched whole over the roll until the collar chart is built (`Ring::touched_once`; the
+tube road has no pinch); the motion's rate bounds given (`Tube::rates`, else every cover is
+`depth::cover`'s and every edge's cell sampled, at a time unmeasured); any refusal by name read as
+a fall back to the old road, never a wrong solid; and its time no worse — today the thin (63 s
+against 45.7) and the tumbling torus (9.5 against 5.9) are slower, the sheet `−`'s seams and the
+edges' search where `S_θ` and `S_t` near parallel weaken `jacobian_bound`. Gates pinned to the old
+road's digits through `closed::ring` move with it: the tumbling torus by 1.3e-6, toward the volume
+made apart. **The old march's step
+over a shallow fall** (asked of the tube's cover, `swept_tube::the_tubes_cover_reads_as_the_depths`):
+on the half turn's sheet `+` at (θ = 2.5π/12, t = −0.9163) the own contact climbs to 2.2120598518 at τ
 1.568359 and falls 2.96e-6 — under the tolerance, over the rounding — to the end pose's
 2.2120568897: `depth::cover` steps from below the top to the roll's end and reads `Alone`, the
 tube's cover the far cover at the end. Within `depth::cover`'s contract (no stretch held deeper
