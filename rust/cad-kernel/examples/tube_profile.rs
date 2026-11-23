@@ -332,6 +332,26 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`FEET=x,y,z,…`: each point's foot on every B-spline face of A and B it stands on, the
+        // net's area factor there and at the faces' feet a hair around it)
+        if let Some(m) = std::env::var("FEET").ok() {
+            let v: Vec<f64> = m.split(',').map(|x| x.parse().unwrap()).collect();
+            for p in v.chunks(3).map(|c| [c[0],c[1],c[2]]) {
+                for (name,s) in [("A",&a),("B",&b)] {
+                    for (k,f) in s.faces.iter().enumerate() {
+                        if !matches!(f.surface,cad_kernel::geom::Surface::BSpline(..)) { continue }
+                        let uv = f.surface.inverse(p);
+                        let off = cad_kernel::util::space::distance(f.surface.point(uv),p);
+                        if off > 1e-3 { continue }
+                        let ring: Vec<f64> = (0..8).map(|j| { let a = j as f64*std::f64::consts::TAU/8.;
+                            f.surface.area_factor([uv[0]+1e-3*a.cos(),uv[1]+1e-3*a.sin()]) }).collect();
+                        println!("{p:?} on {name}{k}: uv {uv:?} off {off:.1e} area factor {:.2e}, a thousandth round {:?}",
+                            f.surface.area_factor(uv),ring.iter().map(|x| format!("{x:.1e}")).collect::<Vec<_>>());
+                    }
+                }
+            }
+            return
+        }
         // (`MEET=i,j,x,y,z`: face i of A and face j of B traced from the seed (x, y, z) alone)
         if let Some(m) = std::env::var("MEET").ok() {
             let v: Vec<f64> = m.split(',').map(|x| x.parse().unwrap()).collect();
