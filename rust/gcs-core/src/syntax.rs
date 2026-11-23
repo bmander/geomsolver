@@ -1503,6 +1503,10 @@ pub enum Sweep {
     /// (#398 B).  The instance is written in place and drawn once, hidden, at the middle of the
     /// interval; the family solves it again at every station (`solid::family`).
     Family(Box<FamilySpec>),
+    /// **The body a file gives** (#993 stage 2): what a given module contributes, named by the
+    /// module's path (`bracket`) — made by the flattener where a document reads that name
+    /// (`flatten::given`), never parsed.  The file and what the kernel read of it, shared.
+    Given(std::sync::Arc<crate::modules::Given>),
 }
 
 /// A face of an instance written in place, as one of the instance's numbers runs — what a face
@@ -1540,7 +1544,7 @@ impl Sweep {
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { from, to, .. } => from.iter_mut().chain(to).collect(),
             Sweep::Body | Sweep::Through | Sweep::Region { .. }
-                | Sweep::Rolled { .. } | Sweep::Family(_) => Vec::new(),
+                | Sweep::Rolled { .. } | Sweep::Family(_) | Sweep::Given(_) => Vec::new(),
         }
     }
 
@@ -1569,7 +1573,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Region { probe } => vec![probe],
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Through
-                | Sweep::Family(_) => Vec::new(),
+                | Sweep::Family(_) | Sweep::Given(_) => Vec::new(),
         }
     }
 
@@ -1580,7 +1584,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Region { probe } => vec![probe],
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body | Sweep::Through
-                | Sweep::Family(_) => Vec::new(),
+                | Sweep::Family(_) | Sweep::Given(_) => Vec::new(),
         }
     }
 }

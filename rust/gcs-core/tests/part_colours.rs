@@ -99,7 +99,7 @@ fn coloured(sk: &Sketch, e: &Elaborated, svd: &str) -> Result<BTreeMap<String, [
     let model = drawing::Model { sketch: sk, names: &e.map };
     drawing::colours(svd, "parts/model.svd", "parts/model.sv", model, &mut |path, from| {
         let name = drawing::relative_path(path, from);
-        files.get(&name).map(|t| (name, t.clone()))
+        files.get(&name).map(|t| Ok((name, t.clone())))
     }).map(|c| by_name(sk, &c)).map_err(|e| e.message)
 }
 

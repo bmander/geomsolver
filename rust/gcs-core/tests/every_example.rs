@@ -35,7 +35,8 @@ pub(crate) fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Every error `text` gives, parsed, linked through `resolve` and elaborated: the syntax's, the
 /// linker's and the elaborator's, each as `CODE: message`.
-fn errors(text: &str, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<String> {
+fn errors<F: Into<modules::Found>>(text: &str, resolve: &mut dyn FnMut(&str) -> Option<F>)
+    -> Vec<String> {
     let (mut prog, errs) = syntax::parse(text);
     if !errs.is_empty() {
         return errs.iter().map(|e| format!("E100: {}", e.message)).collect();
@@ -68,11 +69,7 @@ fn failing() -> Vec<(String, Vec<String>)> {
     let read = par::map(&jobs, |(name, path, in_lib)| {
         let text = std::fs::read_to_string(path).unwrap();
         let dir = path.parent().unwrap().to_path_buf();
-        let mut beside = |m: &str| -> Option<String> {
-            modules::search_paths(m, name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| library::resolve(m))
-        };
+        let mut beside = |m: &str| fixtures::module_beside(&dir, name, m);
         let errs = if *in_lib {
             errors(&text, &mut library::resolve)
         } else {

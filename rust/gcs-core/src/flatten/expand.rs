@@ -339,7 +339,8 @@ impl<'a> Walk<'a> {
 
     /// What a reading of the declaration named `abs` is: what its kind makes it, or, where that
     /// declaration is one way of writing out a reading, what that reading turned out to be —
-    /// `None` while it is not yet known.  A name nothing in the walk declares is a frame's.
+    /// `None` while it is not yet known.  A name nothing in the walk declares is a frame's, but a
+    /// given body's.
     fn read_of(&self, abs: &str, read: &[Option<super::carried::Read>])
         -> Option<super::carried::Read> {
         for (st, _, sc) in &self.out {
@@ -355,6 +356,10 @@ impl<'a> Walk<'a> {
                     None => return None,
                 },
             }
+        }
+        // a given body (#993 stage 2), declared only once the walk is done, is a solid
+        if self.standard.given.gives(abs) {
+            return Some(super::carried::Read::Solid);
         }
         Some(super::carried::Read::Frame)
     }

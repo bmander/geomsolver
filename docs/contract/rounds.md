@@ -952,7 +952,9 @@ whole) are the gate.
 **No round or chamfer leaves the body touching itself alone** (#996 item 4,
 `recipe::touching_alone`): where applying one of a body's late terms leaves it touching itself
 along a line (the Boolean holds such a line twice, `Brep::unpinched`; read as the export reads it,
-`Brep::self_touching_edges` to its tolerance and each edge's own) that this term made, and no round
+`Brep::self_touching_edges` to its tolerance and each edge's own — two edges one after the other
+in one face's loop being that face's two sides, however thin, never a touch: a lune of two edges, as
+files hold between tangent rounds, `brep::a_lunes_two_sides_do_not_touch`) that this term made, and no round
 or chamfer applied before it made a face at that line, the line is between that one's material and
 the body's own, which no reading of separate rounds against each other makes; it is refused there,
 by the round's name and the line, before anything — a `--where`, a later Boolean or round, an

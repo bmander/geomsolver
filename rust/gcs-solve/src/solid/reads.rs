@@ -349,6 +349,16 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, t
                     }));
                 }
             }
+            // a body a file gives (#993 stage 2): the digest of its file, in two halves that are
+            // each a whole number an f64 holds exactly (raw bits could be a NaN, never equal), and
+            // the document's unit — every other solid's numbers are the document's own, so a
+            // drawing in other units reads other numbers, but the file's are millimetres
+            // whatever the document's unit, and its display is in the document's
+            SolidDef::Given(g) => {
+                poses.world();
+                v.extend([16.0, (g.digest() >> 32) as f64, (g.digest() & 0xffff_ffff) as f64,
+                          sk.units.mm_per()]);
+            }
             SolidDef::Prism { face, from, to, draft } => {
                 v.push(0.0);
                 v.push(from.value);

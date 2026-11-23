@@ -110,6 +110,12 @@ pub(super) fn build_solid(
         }
         Sweep::Body => body(&ops, kids, sk.solids.len(), st, &mut say)?,
         Sweep::Family(f) => family(sk, res, f, &ops, st, &mut say)?,
+        // the body a file gives (#993 stage 2), as the kernel read it: the flattener declares
+        // one only where the file gave one (`flatten::given`)
+        Sweep::Given(file) => match &file.body {
+            Ok(body) => SolidDef::Given(body.clone()),
+            Err(_) => return None,
+        },
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
@@ -117,9 +123,6 @@ pub(super) fn build_solid(
     // what it is made of (#510 P3), where the flattener found it a material it stated
     sk.solids[i].material = d.material.as_ref().map(crate::syntax::ref_text)
         .filter(|m| sk.materials.contains_key(m));
-    // solids named whole kept within sets that read no face — the hull in water — are the body over
-    // those solids, kept in common with a region of the rest (#953)
-    crate::solid::defined::trimmed(sk, i);
     // a sweep rides on its observer (#383): the material a generating cut leaves is the blank's
     if matches!(sweep, Sweep::Swept { .. } | Sweep::Rolled { .. }) {
         if let Some(path) = super::super::generated::observer_path(sk, res, d) {

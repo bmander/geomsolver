@@ -3459,3 +3459,78 @@ fn a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere() {
         crate::common::close(volume(&both),4.*PI*r.powi(3)/3.+slab-shared([lo[0],hi[0]],[lo[1],hi[1]]));
     }
 }
+
+/// **A face's two sides are no touch** (`Brep::self_touching_edges`, #993 stage 2): two edges
+/// between the same vertices whose middles stand within their tolerance are material meeting
+/// along a line where each bounds faces of its own, and a face's two sides where one face's loop
+/// runs along one and back along the other — a lune of two edges, however thin, as files hold
+/// between tangent rounds (CADGenBench 246's, 248's and 250's, the export refused once as touching
+/// itself, after minutes).
+#[test]
+fn a_lunes_two_sides_do_not_touch() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    let vertices = vec![Vertex {p:[0.;3],tol:0.},Vertex {p:[10.,0.,0.],tol:0.}];
+    let edge = || Edge {curve:EdgeCurve::Curve(Curve::Line {p:[0.;3],d:[1.,0.,0.]}),t:[0.,10.],v:[0,1],tol:1e-6};
+    let edges = vec![edge(),edge()];
+    let usage = |e: u32,reversed: bool| Coedge {edge:e,reversed,pcurve:Pcurve::Line {a:[0.;2],b:[10.,0.]}};
+    let face = |loops: Vec<Vec<Coedge>>| Face {surface:Surface::Plane(Frame::WORLD),reversed:false,loops,name:String::new()};
+    // one face between them, along the one and back along the other
+    let lune = Brep {vertices:vertices.clone(),edges:edges.clone(),faces:vec![face(vec![vec![usage(0,false),usage(1,true)]]),
+        face(vec![vec![usage(0,true)]]),face(vec![vec![usage(1,false)]])]};
+    assert!(lune.self_touching_edges(1e-9).is_empty());
+    // each the edge of faces of its own: material meets along the line
+    let touching = Brep {vertices,edges,faces:vec![face(vec![vec![usage(0,false)]]),face(vec![vec![usage(0,true)]]),
+        face(vec![vec![usage(1,false)]]),face(vec![vec![usage(1,true)]])]};
+    assert_eq!(touching.self_touching_edges(1e-9),vec![[0,1]]);
+}
+
+/// **A face thinner than its edges' tolerance turns no way** (`Brep::turned`, its `sliver`): a
+/// loop whose every point lies within twice the widest tolerance of another of its uses is
+/// oriented by nothing its parameters say — CADGenBench 242's face #75264, a spline's strip some
+/// 1e-5 mm wide, its feet wandering along its narrow way, read turning one way from the file and
+/// the other from the same edges written again — while a loop as wide as its parameters say
+/// turning against its face's sense is refused.
+#[test]
+fn a_face_thinner_than_its_tolerance_turns_no_way() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    let triangle = |h: f64| {
+        let p = [[0.,0.,0.],[10.,0.,0.],[5.,h,0.]];
+        let vertices = p.iter().map(|&p| Vertex {p,tol:0.}).collect();
+        let edges = (0..3).map(|k| {
+            let (a,b) = (p[k],p[(k+1)%3]);
+            Edge {curve:EdgeCurve::Curve(Curve::Line {p:a,d:[b[0]-a[0],b[1]-a[1],b[2]-a[2]]}),t:[0.,1.],v:[k as u32,((k+1)%3) as u32],tol:1e-6}
+        }).collect();
+        // (in its parameters a triangle five square units in area, counter-clockwise, on a face
+        // whose sense asks the other turn)
+        let uv = [[0.,0.],[10.,0.],[5.,1.]];
+        let l = (0..3).map(|k| Coedge {edge:k as u32,reversed:false,pcurve:Pcurve::Line {a:uv[k],b:uv[(k+1)%3]}}).collect();
+        Brep {vertices,edges,faces:vec![Face {surface:Surface::Plane(Frame::WORLD),reversed:true,loops:vec![l],name:String::new()}]}
+    };
+    assert_eq!(triangle(1e-7).turned(0,0,1e-9),None);
+    assert!(triangle(1.).turned(0,0,1e-9).is_some_and(|a| (a-5.).abs() <= 1e-12));
+}
+
+/// **A crescent whose sides' ends stand apart at a vertex still meshes** (`mesh`'s crossings, #993
+/// stage 2): a file's vertex gathers points its tolerance apart, so a face's two sides, each one
+/// chord at the bar, can end 3 µm apart at it — CADGenBench 248's plane crescent between two arcs,
+/// whose loop the mesh lays as two corners (each use's last sample the next one's first) and which
+/// closed no triangulation, so neither the body's volume nor its mesh was had. The crossings read
+/// the corners where the mesh lays them, find the two chords between the same two corners, and
+/// split them, as they split chords that cross.
+#[test]
+fn a_crescent_whose_ends_stand_apart_at_a_vertex_meshes() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    // its first side ends at (10, 0), its second starts 3 µm off it, at the vertex's tolerance
+    let (a,z,w) = ([0.;3],[10.,0.,0.],[10.,0.003,0.]);
+    let vertices = vec![Vertex {p:a,tol:0.},Vertex {p:[10.,0.0015,0.],tol:0.0015}];
+    let side = |p: V,q: V,v: [u32;2]| Edge {curve:EdgeCurve::Curve(Curve::Line {p,d:[q[0]-p[0],q[1]-p[1],q[2]-p[2]]}),t:[0.,1.],v,tol:1e-9};
+    let edges = vec![side(a,z,[0,1]),side(w,a,[1,0])];
+    let l = vec![Coedge {edge:0,reversed:false,pcurve:Pcurve::Line {a:[0.;2],b:[10.,0.]}},
+        Coedge {edge:1,reversed:false,pcurve:Pcurve::Line {a:[10.,0.003],b:[0.;2]}}];
+    let b = Brep {vertices,edges,faces:vec![Face {surface:Surface::Plane(Frame::WORLD),reversed:false,loops:vec![l],name:String::new()}]};
+    let m = gcs_core::brep::mesh::mesh(&b,0.01,0.2).unwrap_or_else(|e| panic!("{e}"));
+    assert!(m.tris.len() >= 2 && m.turned == 0,"{} triangles, {} turned",m.tris.len(),m.turned);
+}

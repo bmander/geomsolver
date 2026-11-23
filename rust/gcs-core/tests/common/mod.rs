@@ -8,8 +8,8 @@
 //! Beside them, by what they read a document as: `text` (`read` and solved), `parsed`
 //! (`common::parse`, a link diagnostic left to the elaboration), `linked` (a host's parse, the
 //! elaboration unchecked), `lenient` (every diagnostic returned rather than asserted) and
-//! `gestures` (the edit tests' harness); `rounds`, the closed forms rounds are held to; and
-//! `bench`, brep-bench's swept cases the swept tests read.
+//! `gestures` (the edit tests' harness); `rounds`, the closed forms rounds are held to;
+//! `bench`, brep-bench's swept cases the swept tests read; and `step`, a STEP file written by hand.
 #![allow(dead_code)]
 
 pub mod bench;
@@ -18,6 +18,7 @@ pub mod lenient;
 pub mod linked;
 pub mod parsed;
 pub mod rounds;
+pub mod step;
 pub mod text;
 
 use gcs_core::brep::{export, sweep::Say};

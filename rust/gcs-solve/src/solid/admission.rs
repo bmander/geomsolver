@@ -302,7 +302,7 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             Some(turns)
         }
         SolidDef::Prism {..} | SolidDef::Through {..} | SolidDef::Swept {..}
-            | SolidDef::Family {..} => None,
+            | SolidDef::Family {..} | SolidDef::Given(_) => None,
     }
 }
 

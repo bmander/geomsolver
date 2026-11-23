@@ -340,6 +340,78 @@ pub enum SolidDef {
     /// link `k`'s while the running number is in `(k, k + 1)`, its own running number the place
     /// on that link's run.  Empty for a family over one path.
     Family { face: u32, station: Vec<EntRef>, over: super::Running, legs: Vec<FamilyLeg> },
+    /// **A body a file gives** (#993 stage 2): a B-rep the kernel read (`brep::step_read`),
+    /// exact and untouched, its faces in the file's order.  It is made of nothing in the drawing.
+    Given(std::sync::Arc<Given>),
+}
+
+/// **A body a file gives** (#993 stage 2): the B-rep `brep::step_read` read, in millimetres and
+/// radians about the world origin, and a digest of the file's text — the same on every target,
+/// so a memo keys on it rather than on the B-rep.  Its faces' names are its own: face `k` is
+/// named `GIVEN_FACE` and `k` (`Given::face_name`), a name no written path can reach, and the
+/// file's (`ADVANCED_FACE`'s, the file's vocabulary, usually empty or shared) are dropped —
+/// equal names would merge faces in a mesh and drop the edges between them.  Face `k` of the
+/// solid is face `k` of the read B-rep.  It holds the recipe's node as the file gives it,
+/// unmoved (`brep::recipe::Given`), so a recipe shares its B-rep, and the box about it a scale is
+/// picked by, read once (`extent`).
+pub struct Given {
+    read: crate::brep::recipe::Given,
+    extent: crate::brep::geom::Box3,
+}
+
+/// What a given body's face names start with, the face's index following: `#` opens no name a
+/// document can write, and the name is one segment of a path (no `.`), whose `#` and letters are
+/// no statement's use (`#17`, `rim#17`) a route reads.
+pub const GIVEN_FACE: &str = "#given";
+
+impl Given {
+    /// `brep` as `brep::step_read` gives it: millimetres and radians, about the world origin.
+    /// `digest` is a digest of the file's text, the same on every target.
+    pub fn new(mut brep: crate::brep::topo::Brep, digest: u64) -> Given {
+        for (k, f) in brep.faces.iter_mut().enumerate() {
+            f.name = Given::face_name(k);
+        }
+        let (lo, hi) = brep.edge_bounds();
+        let extent = if lo[0].is_finite() { (lo, hi) } else { brep.bounds() };
+        let brep = std::sync::Arc::new(brep);
+        let read = crate::brep::recipe::Given { brep, digest, by: [0.0; 3] };
+        Given { read, extent }
+    }
+
+    /// The name `Given::new` gives face `k`.
+    pub fn face_name(k: usize) -> String {
+        format!("{GIVEN_FACE}{k}")
+    }
+
+    pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
+        &self.read.brep
+    }
+
+    pub fn digest(&self) -> u64 {
+        self.read.digest
+    }
+
+    /// A box about it (millimetres): its vertices' and edges' (`Brep::edge_bounds`, what a scale
+    /// is picked by, never a surface inverted), or its whole bounds where it has none of them;
+    /// empty where neither has a point.
+    pub fn extent(&self) -> crate::brep::geom::Box3 {
+        self.extent
+    }
+
+    /// The recipe's node of it, written about `about` (millimetres, the world's where `None`): the
+    /// B-rep shared, the build moving it there.
+    pub fn node(&self, about: Option<[f64; 3]>) -> crate::brep::recipe::Given {
+        let by = about.map_or([0.0; 3], |a| a.map(|x| -x));
+        crate::brep::recipe::Given { by, ..self.read.clone() }
+    }
+}
+
+/// The node's: the digest and the B-rep's size, never its every face (a read B-rep may be
+/// megabytes).
+impl std::fmt::Debug for Given {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.read.fmt(f)
+    }
 }
 
 /// One leg of a face family over a chain (#243 L4): the face its station sweeps, its running
@@ -396,6 +468,25 @@ impl SolidDef {
             (SolidDef::Body { bound, .. }, BodyWord::Common) => Some(bound),
             _ => None,
         }
+    }
+
+    /// **A bare `solid(S)`**: the stock of a body with nothing on, through or bound by it
+    /// (`part := solid(bracket)`), `None` for any other solid.
+    pub fn bare_stock(&self) -> Option<usize> {
+        match self {
+            SolidDef::Body { stock, on, through, bound }
+                if on.is_empty() && through.is_empty() && bound.is_empty() => Some(*stock as usize),
+            _ => None,
+        }
+    }
+}
+
+impl Sketch {
+    /// **The body a file gives that solid `i` is, untouched** (#993 stage 2): `i` itself where it
+    /// is one, or the stock of a bare `solid(bracket)` over one; `None` for any other solid.
+    pub fn given_untouched(&self, i: usize) -> Option<usize> {
+        let given = |k: usize| matches!(self.solids.get(k)?.def, SolidDef::Given(_)).then_some(k);
+        given(i).or_else(|| self.solids.get(i)?.def.bare_stock().and_then(given))
     }
 }
 
@@ -749,7 +840,9 @@ impl SolidE {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
             SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. }
-                | SolidDef::Region { .. } | SolidDef::Family { .. } => Vec::new(),
+                | SolidDef::Region { .. } | SolidDef::Family { .. } | SolidDef::Given(_) => {
+                Vec::new()
+            }
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -779,7 +872,7 @@ impl SolidE {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } => Some(*face),
             // a family's face is its station's, at one station of many: no profile to sweep
             SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
-                | SolidDef::Region { .. } | SolidDef::Family { .. } => None,
+                | SolidDef::Region { .. } | SolidDef::Family { .. } | SolidDef::Given(_) => None,
         }
     }
 }
@@ -799,6 +892,10 @@ impl SolidE {
 /// of `a`'s shape, and `a` is still where it was drawn, so being read at a value does not make
 /// `a` a feature — only being made into something else does.  A sweep is made of its stock: the
 /// swept body is what the stock passes through.
+///
+/// **A body a file gives is never an object** (#993 stage 2): it is what the document reads, an
+/// operand of what it makes, however it is read — a body's stock, a set's membership, a claim's,
+/// a tool — and never a part of its own in the report, the cut list, the picture or an assembly.
 pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
     for s in sk.solids.iter().filter(|s| !matches!(s.def, SolidDef::Placed { .. })) {
@@ -810,6 +907,7 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
     }
     (0..sk.solids.len())
         .filter(|&i| !used[i] && !sk.roles_of(EntRef::solid(i)).construction)
+        .filter(|&i| !matches!(sk.solids[i].def, SolidDef::Given(_)))
         .collect()
 }
 
@@ -937,6 +1035,7 @@ impl SolidDef {
                 over: over.clone(),
                 legs: legs.iter().map(|l| l.remapped(map)).collect::<Option<_>>()?,
             },
+            SolidDef::Given(g) => SolidDef::Given(g.clone()),
         })
     }
 }
