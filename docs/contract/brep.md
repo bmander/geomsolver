@@ -570,7 +570,12 @@ point (a layered wall's within `HALF_READ` of it), and searches the patch otherw
 refined from a hint (`Surface::inverse_near`) is on its patch within a millionth of that size, and
 two of a blend's sections are one within the tolerance of theirs (`geom::tolerance`). The size is the patch's: a
 wall's the box its pieces' boxes fill (`Sheet::size`), a blend's the box of its two sections (not
-of its sweep: a coil comes back within its pitch of itself however long it runs), a sheet's its
+of its sweep: a coil comes back within its pitch of itself however long it runs) — and its foot
+near by no more than the rise a turn of a screw carrying it (`Blend::reach`, #1004: a section
+longer than its lead comes back within the lead of itself, and twists within it about the axis;
+the screw's domain in brep-bench's fine thread with sharp crests, its edges 116 long screwed
+thirty turns at a lead of 1, kept a stationary foot a tenth of the lead off a point of its own
+rim, and the thread was refused) — a sheet's its
 poles' box, a swept or turned curve's its own (the last two read once and kept by address,
 `geom`'s `kept_size`). Read as a part of `1 + |p|`, the point's distance from the origin, the
 reach was a millimetre for a wall a metre out and six for a blade 6.3 m aft — wider than its
@@ -615,7 +620,14 @@ on it and a millionth off, asked in no order, where it stands and a thousand siz
 own foot within the tolerance and a sheet's `1e-12 |p|`) and
 `a_surface_is_enclosed_as_closely_far_from_the_origin_as_at_it` (`enclosures`' surfaces of every
 kind over the same boxes, moved 30 000 out: every sample held, no enclosure wider but by the
-coordinates' rounding).
+coordinates' rounding). #1004's, `tests/swept_closed.rs`:
+`a_point_of_a_long_section_screwed_a_fine_lead_is_its_own_foot` (a line 116 long screwed thirty
+turns at a lead of 1, twenty thousand of its points asked in no order, a third on each rim, each
+its own foot within the tolerance — and a point of its first rim, whose level start
+(`Blend::from_level`) is on it, kept that foot though Newton's method reads it a unit in the last
+place farther, not searched onto the next turn), `a_thread_with_sharp_crests_is_cut` (the bench's
+thread a unit long, a twentieth of its volume within ten tolerances) and, slow tier,
+`the_benchs_thread_with_sharp_crests_is_cut` (the bench's case itself, 20 s).
 
 **A B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
 (`geom::net_newton`): its other parameter settled alone, the foot was returned on the rim a long

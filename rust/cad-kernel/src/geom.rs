@@ -643,12 +643,12 @@ impl Blend {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
     /// **The patch's own size**: the diagonal of the box its two sections fill, before they are
-    /// carried — what its foot is near by and its sections are one by (`NEAR`, `tolerance`),
-    /// wherever it stands. The sections' and not the whole sweep's: a wire's coil comes back within
-    /// its pitch of itself however long it runs, and a tube is as thin as its section. A section's
-    /// box is its own where that is a closed form or its poles' (a line, a conic, a spline); any
-    /// other's (a traced one's box is a projection a chord, and this is asked at every foot) the
-    /// box of its ends and its middle, no larger.
+    /// carried — what its sections are one by (`tolerance`), and its foot near by no more than
+    /// (`reach`), wherever it stands. The sections' and not the whole sweep's: a wire's coil comes
+    /// back within its pitch of itself however long it runs, and a tube is as thin as its section.
+    /// A section's box is its own where that is a closed form or its poles' (a line, a conic, a
+    /// spline); any other's (a traced one's box is a projection a chord, and this is asked at every
+    /// foot) the box of its ends and its middle, no larger.
     fn size(&self) -> f64 {
         let section = |c: &Curve,t: [f64;2]| match c {
             Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => c.bounds(t),
@@ -657,6 +657,22 @@ impl Blend {
         let mut sections = section(&self.a,self.ta);
         widen(&mut sections,section(&self.b,self.tb));
         diagonal(sections)
+    }
+    /// **The length the patch's foot is near by** (`NEAR`, `ON_PATCH`): its own size, and no more
+    /// than a screw's rise a turn where one carries it. A section screwed round comes back within
+    /// its pitch of itself however long the section is, and about the axis it twists within the
+    /// rise a radian; read by the section alone, a long one screwed a fine lead kept a foot settled
+    /// near a point a turn's part away from it (#1004: the screw's domain, its edges 116 long
+    /// screwed thirty turns at a lead of 1, kept a stationary foot 0.099 off a point of its own
+    /// rim, a tenth of the lead, and a thread with sharp crests that built was refused).
+    fn reach(&self) -> f64 {
+        let size = self.size();
+        match self.carry {
+            // (the axis a unit: `Carry::turn`'s)
+            Carry::Screw {angle,advance,..} if angle != 0. && advance != 0. =>
+                size.min((advance*std::f64::consts::TAU/angle).abs()),
+            _ => size,
+        }
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
@@ -693,7 +709,7 @@ impl Blend {
         // point of its own rim)
         if let Some(uv) = self.carried_uv(p) { return uv }
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
-            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= NEAR*self.size());
+            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= NEAR*self.reach());
         let uv = warm.or_else(|| self.from_level(p)).unwrap_or_else(|| self.searched(p));
         crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
@@ -800,7 +816,10 @@ impl Blend {
         let start = [if self.closed { start[0] } else { start[0].clamp(0.,1.) },start[1]];
         let uv = self.newton(p,start);
         let far = |uv: Uv| crate::util::space::distance(self.d1(uv).0,p);
-        (far(uv) <= far(start)*(1.+1e-12)+1e-300).then_some(uv)
+        // (no farther but by the rounding of the point's coordinates: from a start on `p` itself,
+        // Newton's foot is as near, and may read a few units in their last place farther — #1004,
+        // a point of the domain's rim refused so, and searched onto the next turn 0.63 off)
+        (far(uv) <= far(start)*(1.+1e-12)+4.*f64::EPSILON*(1.+norm(p))).then_some(uv)
     }
     /// **The line this patch screws, where it is one** (`build::screwed`'s sheet: a line and its
     /// own image carried by a screw, so `S(u, v) = carry_v(p₀ + u Δ)`): the one reading every closed
@@ -1650,7 +1669,7 @@ impl Surface {
             // a swept section's patch likewise
             Surface::Blend(_,b) => {
                 let uv = b.newton(p,hint);
-                if crate::util::space::distance(b.d1(uv).0,p) <= ON_PATCH*kept_size(b,Blend::size) { uv } else { b.inverse(p) }
+                if crate::util::space::distance(b.d1(uv).0,p) <= ON_PATCH*kept_size(b,Blend::reach) { uv } else { b.inverse(p) }
             }
             // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
             // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
