@@ -15,5 +15,6 @@ tests only; nothing of it enters the kernel.
 | `shell_ap214.step` | a 10-cube's shell as a `SHELL_BASED_SURFACE_MODEL` | AP214, mm |
 | `assembly_ap214.step` | two cubes placed by `NEXT_ASSEMBLY_USAGE_OCCURRENCE`s (XCAF) | AP214, mm |
 | `placed_ap214.step` | one cube translated (5, 6, 7), as XCAF writes a located shape | AP214, mm |
+| `two_solids_ap214.step` | two solids in one product's shape: `drilled_ap214.step` with `void_ap214.step`'s outer shell (renumbered by 1000) as a second `MANIFOLD_SOLID_BREP` — written by hand, not by `make.py` | AP214, mm |
 
 Each run of `make.py` rewrites them (their time stamps change); the tests assert what does not.
