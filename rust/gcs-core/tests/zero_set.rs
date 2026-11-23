@@ -583,3 +583,44 @@ fn the_pieces_through_a_callers_seeds_alone() {
     xs.sort_by(f64::total_cmp);
     assert_eq!(xs,[-1.,1.]);
 }
+
+/// **A cell spanning a whole turn is halved across it** (#880 T1f): on a cylinder over `θ` in a
+/// whole turn and its height, the distance from a ball off its axis less its radius closes a loop
+/// on the far side of the turn; the search halves the whole rectangle across `θ` too (measured
+/// between its sides' ends, which over a whole turn are one point, it was halved along the height
+/// alone and never settled), and the loop is traced once, closed, on the ball's sphere.
+#[test]
+fn a_cell_spanning_a_whole_turn_is_halved_across_it() {
+    use std::f64::consts::{PI,TAU};
+    let (c,r) = ([-1.,0.,0.5],0.3);
+    let at = |uv: Uv| { let (s,co) = uv[0].dsin_cos(); [co,s,uv[1]] };
+    let map = move |uv: Uv| { let (s,co) = uv[0].dsin_cos(); ([co,s,uv[1]],[-s,co,0.],[0.,0.,1.]) };
+    let f = move |uv: Uv| {
+        let (x,xu,xv) = map(uv);
+        let d = [x[0]-c[0],x[1]-c[1],x[2]-c[2]];
+        let l = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt();
+        let g = |w: [f64;3]| (d[0]*w[0]+d[1]*w[1]+d[2]*w[2])/l;
+        (l-r,[g(xu),g(xv)])
+    };
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        let m = at(mid);
+        let mut reach: f64 = 0.;
+        for i in 0..3 { for j in 0..3 {
+            let p = at([cell[0][0]+(cell[0][1]-cell[0][0])*i as f64/2.,cell[1][0]+(cell[1][1]-cell[1][0])*j as f64/2.]);
+            reach = reach.max(((p[0]-m[0]).powi(2)+(p[1]-m[1]).powi(2)+(p[2]-m[2]).powi(2)).sqrt());
+        } }
+        // (a chord's sag over a cell's arc of the unit circle widens the reach: its square over two)
+        Bound::lipschitz(f(mid).0,1.,reach*(1.+reach))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let tol = 1e-6;
+    let t = trace(&m,&Question {rect:[[0.,TAU],[0.,1.]],edges:&[],seeds:&[],tol,feature:0.1}).unwrap();
+    let [p] = &t.pieces[..] else { panic!("one loop: {} pieces",t.pieces.len()) };
+    assert!(p.closed(),"the loop closed: {:?}",p.ends);
+    for uv in &p.uv {
+        assert!(f(*uv).0.abs() <= tol,"a point {:e} off the sphere",f(*uv).0);
+        assert!((uv[0]-PI).abs() < 0.5,"a point at {uv:?}, off the far side");
+    }
+    assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
+}

@@ -2633,18 +2633,27 @@ Newton on `(J, ∇J · k)`): the half turn's one, on the sheet `−`, is the rin
 over a chart (`tube::Depth`, `tube::seams`) is traced by `zero_set::trace` over the rectangle cut in
 two across each whole turn (`tube::round`: the search halves a cell across its longer way read
 between its sides' ends, and over a whole turn those are one point, so it halved one way only and
-never settled). Its bound is sampled evidence, not proof: the least far cover of the cell's nine
-points less their spread, a cell whose nine nothing else covers read clear — a Lipschitz bound from
-the middle alone clears nothing along the rims, where a sheet touches its end pose and the end's
-depth goes as the square of the distance. **What the trim's completeness is:** a curve through a point found
-exactly — a swallowtail point (its disc's rim), a crossing of a rim or a cut, an end pose's contact
-circle — is certain; a closed double curve touching none of them is found only where the search's
-sampled bound does not clear its cell, so one born and dying between a cell's nine points is
-missed. Not yet: the certified form where it costs little — away from the rims the 1-Lipschitz bound
-from the middle clears cells, and along a rim the quadratic touch can be bounded by the rim's own
-exact reading. **A defect of `zero_set` worked round, not fixed:** a cell spanning a whole period
-measures its longer way between its sides' ends, which over a whole turn are one point, so it is
-never halved that way and the search does not settle; to fix there, with a gate. `Depth::along`, continuing a cover held at an end of the
+never settled; `zero_set` now halves such a cell across the turn, below). Its bound reads the cell's
+middle alone: each instant's depth is 1-Lipschitz in space, so where the same basins of the roll
+cover the cell the far cover's depth lies within the cell's reach of its middle's — one certified
+cover a cell where nine were read, the half turn's sheet `−` traced in 13.6 s, not 32.7, and the
+half turn built in 19 s, not 39. Where nothing else covers the middle (`Alone`) the nine are read
+and a cell whose nine are all `Alone` is read clear: sampled evidence, not proof. **What the
+trim's completeness is:** a curve through a point found exactly — a swallowtail point (its disc's
+rim), a crossing of a rim or a cut, a corner, an end pose's contact circle — is certain; a closed
+double curve touching none of them is found where the search does not clear its cell, so one born
+and dying in a region nothing else covers, between a cell's nine points, is missed, and one in a
+covered region is found wherever its basins hold over the cell. What remains of the time is the
+march: `zero_set` reads the certified least at each step and chord's quarters (a third instant
+undercutting the branch, a triple point), and `depth::cover`'s certified march creeps where the far
+depth is near nought — all along a seam — its steps the larger of the depth and the tolerance over
+the point's speed (some 2.7 ms a cover on the sheet `−`, 0.36 ms on the sheet `+`). Not yet: the
+least read only at checkpoints with a switch bisected where one is found, or a second-order step
+(the depth's rate in the roll bounded) in the cover's march. **`zero_set`'s whole turn** (#880 T1f):
+a cell's longer way is read along its path through its middle (both half-chords), so a cell spanning
+a whole turn, whose sides' ends are one point, is halved across it
+(`zero_set::a_cell_spanning_a_whole_turn_is_halved_across_it`, a loop on a cylinder: without it
+the search never settles); `tube::round`'s halves stay, for its seeds across the cuts. `Depth::along`, continuing a cover held at an end of the
 roll, reads that end too: past the point's own contact `d` is no single basin over the stretch, and
 the golden section settled on the climb, 7e-6 off. A piece leaving one part across a cut seeds
 the part beside it (`round`): beside a seam the far cover may be read on one side only, so the cut's

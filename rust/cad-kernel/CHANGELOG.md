@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **`zero_set` halves a cell spanning a whole turn across it** (#880 T1f): a cell's longer way is
+  read along its path through its middle, not between its sides' ends, which over a whole turn are
+  one point (the search halved such a cell one way only and never settled). And `tube::Depth`'s
+  bound reads its cell's middle alone (each instant's depth 1-Lipschitz in space), one certified
+  cover a cell where nine were: the half turn built in 19 s, not 39.
 - **The tube road builds the half turn** (#880 T1f, `swept::tube::faces::solid`): each sheet's
   depth zero set read as runs by what covers it (a double curve of the sheets kept on its later
   preimage, its partner read off its cover; a double curve with an end pose traced on the sheet

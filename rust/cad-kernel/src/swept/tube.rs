@@ -280,29 +280,40 @@ impl Field for Depth<'_> {
         match self.tube.at(self.chart,uv) { Some(p) => (p.x,p.x_th,p.x_t),None => ([f64::NAN;3],[f64::NAN;3],[f64::NAN;3]) }
     }
 
-    /// **The depth's bound over a cell**: a depth is 1-Lipschitz in space, so over the cell it lies
-    /// within the cell's reach of its value at any point of it. Read at the cell's middle, corners
-    /// and sides' middles (its reach from each the greatest distance to another, as `zero_set` reads
-    /// a reach): the least of those covered by another instant (`Far`) less the reach. A point
-    /// nothing else covers (`Alone`) has no far cover to bound, and where all nine are so the cell is
-    /// read clear — sampled evidence, not proof: a cover born and dying between the nine is missed,
-    /// as the search's sampling would miss it. None where a point is not kept or its neighbours hold
-    /// it (the cell meets the chart's edge).
+    /// **The depth's bound over a cell**: the tool's depth at each instant is 1-Lipschitz in space,
+    /// so where the same basins of the roll cover the cell the far cover's depth lies within the
+    /// cell's reach of its value at its middle: the middle's far cover less the reach (the greatest
+    /// distance from the middle's point to the corners' and sides' middles', as `zero_set` reads a
+    /// reach), one certified cover a cell where nine were read — the half turn's sheet `−` traced in
+    /// 13.6 s, not 32.7. Where nothing else covers the middle (`Alone`) there is no far cover to
+    /// bound from: the nine are read, their least far cover less their spread, all nine `Alone` read
+    /// clear — sampled evidence, not proof: a cover born and dying between the nine is missed, as the
+    /// search's sampling would miss it. None where a point is not kept or the middle's neighbours
+    /// hold it (the cell meets the chart's edge).
     fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        // (the middle's cover read, the others' points only for the reach)
+        let mid = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
+        let (pm,rm) = self.reading(mid)?;
         let mut xs = Vec::with_capacity(9);
-        let mut least = f64::INFINITY;
         for i in 0..3 { for j in 0..3 {
             let uv = [c[0][0]+(c[0][1]-c[0][0])*i as f64/2.,c[1][0]+(c[1][1]-c[1][0])*j as f64/2.];
-            let (p,r) = self.reading(uv)?;
-            match r {
-                Reading::Far(c) => least = least.min(c.depth),
-                Reading::Alone => {}
-                Reading::Near => return None,
-            }
-            xs.push(p.x);
+            xs.push(self.kept(uv)?.x);
         } }
-        let reach = xs.iter().flat_map(|x| xs.iter().map(move |y| crate::util::space::distance(*x,*y))).fold(0.,f64::max);
-        let lo = if least.is_finite() { least-reach } else { reach };
+        let reach = xs.iter().map(|x| crate::util::space::distance(*x,pm.x)).fold(0.,f64::max);
+        let lo = match rm {
+            Reading::Far(cv) => cv.depth-reach,
+            Reading::Near => return None,
+            // (nothing else covers the middle: the nine read, as evidence)
+            Reading::Alone => {
+                let mut least = f64::INFINITY;
+                for i in 0..3 { for j in 0..3 {
+                    let uv = [c[0][0]+(c[0][1]-c[0][0])*i as f64/2.,c[1][0]+(c[1][1]-c[1][0])*j as f64/2.];
+                    match self.reading(uv)?.1 { Reading::Far(cv) => least = least.min(cv.depth),Reading::Alone => {},Reading::Near => return None }
+                } }
+                let all = xs.iter().flat_map(|x| xs.iter().map(move |y| crate::util::space::distance(*x,*y))).fold(0.,f64::max);
+                if least.is_finite() { least-all } else { all }
+            }
+        };
         Some(crate::zero_set::Bound {value:crate::util::interval::Iv::new(lo,f64::MAX),grad:None})
     }
 }
@@ -341,8 +352,9 @@ fn golden(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
 
 /// **A field's zero set over a chart's whole rectangle**: traced over the rectangle cut in two
 /// across each parameter that runs a whole turn (`periodic`), each part searched for closed curves
-/// too (`zero_set::trace`) — the search halves a cell across its longer way in space, read between
-/// its sides' ends, and over a whole turn those ends are one point — and the pieces of every part
+/// too (`zero_set::trace`; its search once read a cell's longer way between its sides' ends, which
+/// over a whole turn are one point, and is mended, the halves kept for their seeds across the cuts)
+/// — and the pieces of every part
 /// returned (a curve across a cut in two, each ending on the rim there), with each part's search.
 /// Inner edges (`edges`, polylines in the parameters) are given to each part as their runs inside
 /// it, all with the one side function `side`; seeds to the part holding them, each brought into the

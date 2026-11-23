@@ -842,10 +842,15 @@ impl<'a,F: Field> Tracer<'a,F> {
                 }
                 if 2.*reach <= tol { out.unresolved.push(c); continue }
             }
-            // halved across its longer way in space
+            // halved across its longer way in space, each way read along its path through the
+            // middle (its two half-chords): over a parameter running a whole turn the sides' ends
+            // are one point and the chord between them nought, so such a cell was never halved that
+            // way and the search did not settle (#880 T1f)
+            let m = self.point(mid);
             let (pu,pv) = (self.point([c[0][0],mid[1]]),self.point([c[0][1],mid[1]]));
             let (qu,qv) = (self.point([mid[0],c[1][0]]),self.point([mid[0],c[1][1]]));
-            if distance(pu,pv) >= distance(qu,qv) {
+            let way = |a: V,b: V| distance(a,m)+distance(m,b);
+            if way(pu,pv) >= way(qu,qv) {
                 cells.push([[mid[0],c[0][1]],c[1]]);
                 cells.push([[c[0][0],mid[0]],c[1]]);
             } else {
