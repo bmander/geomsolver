@@ -1,6 +1,7 @@
 //! Solvent: the program a sketch is written as, elaborated, coloured and reported.
 
 use super::*;
+use gcs_core::modules::Found;
 
 /* -- Solvent: the program a sketch is written as ----------------------------------- */
 
@@ -37,14 +38,19 @@ thread_local! {
     /// `engine/parts.sv` beside the document and comes to the library second; a browser has no
     /// beside unless its page has a server to ask, and this is where what it fetched goes.
     /// Asked before the library, so a text the host supplies wins over the copy compiled in.
-    static HOST_MODULES: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
+    /// Each kept as `link` is handed it (`modules::Found`): its text, shared, whether it was found
+    /// as an exchange file, and its digest (`modules::digest`), taken once as it is handed over —
+    /// so a fresh link finds a file read before by its digest, its text neither copied nor hashed.
+    /// Beside it, the path the host found it at.
+    static HOST_MODULES: RefCell<BTreeMap<String, (Found, String)>> =
+        RefCell::new(BTreeMap::new());
 }
 
 /// Resolve a `use`: what the host handed over first, then the library compiled in.
-fn resolve_module(name: &str) -> Option<String> {
+fn resolve_module(name: &str) -> Option<Found> {
     HOST_MODULES
-        .with(|m| m.borrow().get(name).cloned())
-        .or_else(|| gcs_core::library::resolve(name))
+        .with(|m| m.borrow().get(name).map(|(found, _)| found.clone()))
+        .or_else(|| gcs_core::library::resolve(name).map(Found::from))
 }
 
 /// The module text an elaboration would use: the host's copy, then the built-in library.
@@ -52,7 +58,23 @@ fn resolve_module(name: &str) -> Option<String> {
 #[no_mangle]
 pub unsafe extern "C" fn gcs_module_source(ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        resolve_module(as_str(ptr, len)).map_or(std::ptr::null_mut(), out_str)
+        let found = resolve_module(as_str(ptr, len));
+        found.map_or(std::ptr::null_mut(), |f| out_str(f.text.to_string()))
+    })
+}
+
+/// **The digest of the text a `use` of `name` reads** (`modules::digest`, sixteen hex digits, the
+/// same on every target): the host's text where it handed one over, else the library's; null for
+/// a module there is none of.  A host names a module's text by it — a worker is given a text once
+/// and named it after, and two lists of modules are told the same by their digests — so a text of
+/// megabytes is neither copied out of the core nor compared again to learn it has not changed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_digest(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let name = as_str(ptr, len);
+        let digest = HOST_MODULES.with(|m| m.borrow().get(name).and_then(|(f, _)| f.digest))
+            .or_else(|| gcs_core::library::resolve(name).map(|t| gcs_core::modules::digest(&t)));
+        digest.map_or(std::ptr::null_mut(), |d| out_str(format!("{d:016x}")))
     })
 }
 
@@ -63,18 +85,79 @@ pub unsafe extern "C" fn gcs_module_provided(ptr: *const u8, len: usize) -> i32 
     guard(0, move || HOST_MODULES.with(|m| m.borrow().contains_key(as_str(ptr, len))) as i32)
 }
 
-/// Hand the core a module's text under the name a `use` asks for (`engine.parts`).  Kept until
-/// `gcs_module_forget`; a second `set` under one name replaces the first.  Nothing already
-/// elaborated changes: an edit relinks from the texts it has (`program::reparse`), so the table
-/// is read only when a program is read whole.
+/// **The path the host handed module `name` over with** (`gcs_module_set`: `parts/bracket.step`,
+/// or empty where it gave none); null where it handed none over.  A host passing its modules on
+/// passes each with its path, so a worker reads a file found by an exchange file's name as the
+/// page does, and names the file as the page found it.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, tp: *const u8, tn: usize) {
-    guard((), move || {
-        let (name, text) = (as_str(np, nn).to_string(), as_str(tp, tn).to_string());
-        HOST_MODULES.with(|m| {
-            m.borrow_mut().insert(name, text);
-        });
+pub unsafe extern "C" fn gcs_module_path(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        HOST_MODULES.with(|m| m.borrow().get(as_str(ptr, len)).map(|(_, path)| path.clone()))
+            .map_or(std::ptr::null_mut(), out_str)
     })
+}
+
+/// Hand the core a module's text under the name a `use` asks for (`engine.parts`), found at
+/// `path` in the host's project (`parts/engine.step`; empty where the host has no path, a text
+/// told by its content alone).  Kept until `gcs_module_forget`; a second `set` under one name
+/// replaces the first.  Nothing already elaborated changes: an edit relinks from the texts it has
+/// (`program::reparse`), so the table is read only when a program is read whole.
+///
+/// The text is a Solvent document or an ISO 10303-21 exchange file (#993 stage 2), its bytes read
+/// as `modules::decode` reads a file's where it was found: an exchange file's few bytes that are
+/// not UTF-8 (Latin-1 in its strings) are taken lossily, as `solventc` takes them, and a file
+/// found by an exchange file's name is one whatever its text (`modules::Found::at`), refused by
+/// the kernel's reader at the `use` where it is none.  Any other text that is not UTF-8 is
+/// refused, never stored as an empty module: 0, with why in `gcs_last_error`, and whatever was
+/// under the name is forgotten, so a `use` of it is unresolved rather than an older text's.  1
+/// when the text is kept.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, pp: *const u8, pn: usize,
+                                        tp: *const u8, tn: usize) -> i32 {
+    guard(0, move || {
+        let name = as_str(np, nn).to_string();
+        let path = as_str(pp, pn);
+        let bytes = match tp.is_null() || tn == 0 {
+            true => Vec::new(),
+            false => std::slice::from_raw_parts(tp, tn).to_vec(),
+        };
+        match gcs_core::modules::decode(path, bytes) {
+            Ok(text) => {
+                let digest = Some(gcs_core::modules::digest(&text));
+                let found = Found { digest, ..Found::at(path, text) };
+                HOST_MODULES.with(|m| m.borrow_mut().insert(name, (found, path.to_string())));
+                1
+            }
+            Err(e) => {
+                set_error(format!("module `{name}`: its text is not UTF-8 ({e})"));
+                HOST_MODULES.with(|m| m.borrow_mut().remove(&name));
+                0
+            }
+        }
+    })
+}
+
+/// Where a host looks for module `name` used by the document at `source` (a path in the host's
+/// project, `parts/arm.sv`): `["parts/name.sv", "parts/name.step", "parts/name.stp", "name.sv",
+/// …]`, nearest directory first, each a path in the project (`modules::search_paths`, read from
+/// `source` as a drawing's loader reads one).  The first the host has is the module; the library
+/// is asked when it has none.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_search_paths(np: *const u8, nn: usize, sp: *const u8, sn: usize)
+    -> *mut u8 {
+    json_out(move || {
+        let (name, source) = (as_str(np, nn), as_str(sp, sn));
+        Json::Arr(gcs_core::modules::search_paths(name, source).iter()
+            .map(|rel| Json::Str(gcs_core::drawing::relative_path(rel, source))).collect())
+    })
+}
+
+/// 1 when a text is an ISO 10303-21 exchange file and not Solvent (`modules::is_step`): a module
+/// that gives a body (#993 stage 2), which a host hands over as it is and never asks for its
+/// `use`s.  The test reads the text's first token only, so a host may ask it of the text's head.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_text_is_step(ptr: *const u8, len: usize) -> i32 {
+    guard(0, move || gcs_core::modules::is_step(as_str(ptr, len)) as i32)
 }
 
 /// Forget every module the host handed over: the next program read links against the library.
@@ -87,10 +170,16 @@ pub extern "C" fn gcs_module_forget() {
 /// with somewhere to fetch from asks this of the document, hands each text over with
 /// `gcs_module_set`, and asks it again of each text it fetched, since a module's own `use`s are
 /// followed too.  A parse error costs nothing here: the `use` lines that did parse are listed.
+/// An exchange file (`modules::is_step`) `use`s nothing, and is told so without being put
+/// through the Solvent parser: it is not Solvent, and it may be megabytes.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8 {
     json_out(move || {
-        let (prog, _) = syntax::parse(as_str(ptr, len));
+        let text = as_str(ptr, len);
+        if gcs_core::modules::is_step(text) {
+            return Json::Arr(Vec::new());
+        }
+        let (prog, _) = syntax::parse(text);
         Json::Arr(prog.uses.iter().map(|u| Json::Str(u.name.clone())).collect())
     })
 }

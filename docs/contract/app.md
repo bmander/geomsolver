@@ -537,6 +537,19 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   acts on (Compile, Isolate/Show all).  The outline reads its tree only while shown
   (`OutlinePane.show`).  Turning from the program applies a draft as a blur does; a way to
   source (`goToSource`) and a file picked in the project's tree turn the panel to the program.
+  **A project's exchange files are its files too** (#993 stage 2): `.step`/`.stp` beside the
+  sources is read by every gatherer — a folder picked, a GitHub project (`github.test.ts`), the
+  examples from the dev server and the packed `sources.json` (`project-explorer.ts::projectFile`,
+  over the one list of a project's file kinds, `EXTENSIONS`, which the tools read too) — so a
+  model's `use bracket` reads the body `bracket.step` gives, in the order every host looks
+  (architecture.md, the CLI), and the page carries its text to the core and the workers unread:
+  handed to the core with the path it was found at, so a `.step` that is no exchange file is the
+  reader's refusal at the `use` (E072), and to each worker with that path (`gcs_module_path`),
+  its text once, named by the core's digest after (a `ModuleOutbox` per worker, architecture.md).
+  The tree lists one (`givenFile`, a mark of its own) and the panel, picked, names it and its
+  size read-only in place of its text (`program.ts::givenNotice`): it is not Solvent, and it may
+  be megabytes, so neither the editor nor the parser is given it.  Saving it saves its text as it
+  was read.
   On a narrow screen the panel is a drawer above the footer: the head's chevron folds it, and
   choosing a pane opens it (`bindDrawer`).  A component selected names itself in the
   status line (`describeEntity`) and brings up one floating window listing the constraints that
@@ -672,7 +685,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `githubProject`'s `arriving`), then the file it reads.  **Nothing of a solid is read on the
   page's thread before its objects are built**: the diagnosis leaves refused solids to the pool
   (`refusals: false`, solids.md), and an object the pool builds is not validated here (fields.md),
-  so a sweep's roll is found by the worker building it, never by the page drawing it.
+  so a sweep's roll is found by the worker building it, never by the page drawing it.  **Nor
+  is a body a file gives meshed there** (#993 stage 2): its B-rep may be thousands of faces, and
+  what the page asks on opening and every edit — the objects not drawn (`overview::unbuilt`), an
+  object's evaluation from its build, the unit a mesh is cut at (`solid::mesh_unit`,
+  `gcs_solid_mesh_unit`), the diagnosis without refusals — reads it as its edges' box, read
+  once (`model::Given::extent`, `solid::document::extent_at`), and its build, never its
+  mesh.  Gate: `page_thread.rs`'s `a_given_body_is_meshed_on_no_page_thread`, which counts the
+  B-reps meshed on the thread (`solid::brep_meshes`) around those calls and holds it at none.
   **The page's own thread builds no object** (#671): its
   objects are built by the pool (`SketchView.builds`, `app/object-builds.ts`; fields.md, "The page
   never does") and drawn as they arrive, an object not yet built drawn as nothing and its outline

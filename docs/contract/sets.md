@@ -879,6 +879,18 @@ outsides.  A set whose terms are solids named whole (`FaceSide` of a bare solid 
 within one, within or outside others, or one `Outside` of several outsides — is built as
 `SolidDef::Body` over them (`solid::defined`'s `boolean`): the stock, what is in union with it,
 what cuts it, what it is in common with — so `{ p | p inside plate; p outside bore }` is the body
-`bore cut` makes, to the byte.  A union of regions is read point by point (the meridian fold takes
-no complement yet).  `tests/solids_as_sets.rs::a_boolean_of_solids_is_the_body_term` and
-`outside_a_conjunction_is_a_union` are the gates.
+`bore cut` makes, to the byte.  **One membership of a whole solid and nothing more**, `{ p | p in
+S }`, is `S`'s body (`solid::defined::membership`, asked once the body rule has joined every
+body): `SolidDef::Body { stock: S }` with nothing on, through or bound, which is what `solid(S)`
+is — two spellings of one set, one solid: the same definition, face names, volume, STEP and STL
+to the byte, for a prism, a given body (#993) or any solid
+(`solids_as_sets::one_membership_of_a_solid_is_its_body`,
+`given_bodies::two_spellings_of_a_given_body_are_one_solid`).  Where `S` is made of the set's
+solid — a shell's cavity `{ c | c in B }`, then cut from `B` (`std.rounds`'s `shell`) — the
+body of `S` would be made of itself, and the membership reads `S`'s faces as its other terms leave
+them (its stratum), which no body of `S`'s says: it stays the region.  A face's side named by a
+path (`p in plate.near.side`, `p in cut_ball.ball.side`) is another set and stays a region.
+Through 0.229 the one membership was a region read off `S`'s faces, named and exported as a
+region is (a given body's seven faces reported as one `far`, a circle written as a spline).  A union of regions is read point by point (the meridian
+fold takes no complement yet).  `tests/solids_as_sets.rs::a_boolean_of_solids_is_the_body_term`
+and `outside_a_conjunction_is_a_union` are the gates.

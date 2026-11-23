@@ -47,6 +47,7 @@ mod framed;
 mod bound;
 mod members;
 mod lists;
+mod given;
 pub(crate) mod said;
 
 pub use faces::{FaceAxis, FacePlane};
@@ -341,6 +342,8 @@ struct Datums {
     /// reads under one is its image (`keys::image`), and its `b.std.D` its image's datums
     /// (`keys::image_datum`).
     mirrored: BTreeSet<String>,
+    /// **The given bodies** (#993 stage 2): the given modules, and what has been read of them.
+    given: given::Given,
 }
 
 /// A frame declared (#524, #542): a reading at an instant (`Walk::walk_reading_at`) is one where
@@ -418,6 +421,10 @@ pub struct Expansion {
     /// Where a declaration reads through a name already said to name nothing — a formal its
     /// call gave nothing that is (#253): the elaborator, finding nothing there, says no more.
     pub quiet: BTreeSet<Span>,
+    /// **Each read of a given body refused where it would have to be placed** (E106, #993 stage
+    /// 2), by where it is read: the body's path — so where the same read is a body statement's
+    /// body, refused as extending it (E080), the elaborator says that one alone (`body_rule`).
+    pub misplaced: BTreeMap<Span, String>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
     /// **Some points of sets** ([0.212]): each point a `some` binds, by absolute key (a probe,
@@ -1234,6 +1241,10 @@ impl<'a> Walk<'a> {
             .chain((0..prog.modules.len()).map(Some))
             .filter(|&f| made && prog.uses_of(f).contains(&"std"))
             .collect();
+        // a given module's body is a name of the document's root, where the document `use`s it
+        let given = given::Given::new(prog);
+        let given_names: BTreeSet<String> =
+            if sym.is_none() { given.document_names().cloned().collect() } else { BTreeSet::new() };
         Walk {
             private_names: BTreeMap::new(),
             prog,
@@ -1241,8 +1252,8 @@ impl<'a> Walk<'a> {
             out: Vec::new(),
             names: if !files.is_empty() {
                 declared(standard.unwrap()).map(|(n, _)| format!("std.{n}")).collect()
-            } else { BTreeSet::new() },
-            solid_names: BTreeSet::new(),
+            } else { BTreeSet::new() }.into_iter().chain(given_names.iter().cloned()).collect(),
+            solid_names: given_names,
             said: BTreeMap::new(),
             aliases: Vec::new(),
             listed: Vec::new(),
@@ -1259,6 +1270,7 @@ impl<'a> Walk<'a> {
                 files,
                 own: std_module.and_then(|k| prog.component_in(Some(k), "FrameDatums"))
                     .into_iter().flat_map(declared).collect(),
+                given,
                 ..Datums::default()
             },
             group_names: BTreeSet::new(),
@@ -1425,6 +1437,10 @@ impl<'a> Walk<'a> {
         self.expand_fits();
         self.listed_names();
         let (mut flat, mut aliases) = self.resolve();
+        // the given bodies the document read, declared before everything else (#993 stage 2)
+        let (mut given, misplaced) = self.given_bodies();
+        given.append(&mut flat);
+        flat = given;
         let lowered = self.to_judge(&aliases);
         if let Some((comp, scope)) = self.datums() {
             // A document that says `use std` has the standard datums, as a CAD part has its
@@ -1461,6 +1477,7 @@ impl<'a> Walk<'a> {
             charts: self.charts,
             joints: self.joints,
             quiet: self.quiet,
+            misplaced,
             probes: self.sets.probes,
             binders: self.sets.binders,
             sheets: self.sets.sheets,

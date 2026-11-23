@@ -30,6 +30,9 @@ pub(super) struct Resolver {
     pub(super) charts: std::collections::BTreeSet<String>,
     /// The frames whose joint the document reads (`Expansion::joints`), by key (#383).
     pub(super) joints: std::collections::BTreeSet<String>,
+    /// Each read of a given body refused where it would have to be placed, by where it is read:
+    /// the body's path (`Expansion::misplaced`).
+    pub(super) misplaced: BTreeMap<Span, String>,
     /// Each jointed frame's value, by the frame's index (#391 S3): the instant `fix(value == τ) f`
     /// states, as worked out text, and where it was written — what a reading of something drawn
     /// in the frame (`x in f`) is read at.  A frame stating none stands at rest, `0deg`.

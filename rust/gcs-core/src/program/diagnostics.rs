@@ -67,6 +67,9 @@ pub enum Code {
     E070,
     /// a component defined twice, across the document and its modules (§14.4)
     E071,
+    /// a `use` of a STEP file that gives no body the language reads (#993 stage 2): one the
+    /// kernel refuses, in its words, or one that gives several solids
+    E072,
     /// a face that is not a loop on one plane (§6.8)
     E080,
     /// a revolution's axis: not a line, or not in the face's own plane (§6.9)
@@ -189,6 +192,7 @@ impl Code {
             Code::E067 => "E067",
             Code::E070 => "E070",
             Code::E071 => "E071",
+            Code::E072 => "E072",
             Code::E080 => "E080",
             Code::E081 => "E081",
             Code::E082 => "E082",

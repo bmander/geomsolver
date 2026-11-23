@@ -106,6 +106,7 @@ fn kinds(sk: &Sketch,i: usize) -> std::collections::BTreeSet<String> {
                 out.extend(terms.iter().map(|t| format!("region term {}",variant(&t.shape))));
             }
             SolidDef::Family {legs,..} => { out.insert(if legs.is_empty() { "face family" } else { "face family, chained" }.into()); }
+            SolidDef::Given(_) => { out.insert("given".into()); }
         }
     }
     if sk.is_swept(i) {
@@ -184,12 +185,13 @@ const HELD_IN: [&str; 2] = [include_str!("object_builder.rs"),include_str!("soli
 
 /// **A document of every kind of object the library builds** (`kinds`), besides those `NAMED`'s
 /// tests hold: chosen from the library as the fewest and quickest documents that, with the swept
-/// objects of `NAMED`, hold every kind it has (11 documents, about five seconds of building where
+/// objects of `NAMED`, hold every kind it has (14 documents, about five seconds of building where
 /// the library's 282 took minutes).  `the_corpus_holds_every_kind_the_library_builds` says when
 /// one is missing.
-const CORPUS: [&str; 11] = ["rounds/by_hand.sv","rounds/disc.sv","rounds/blank.sv",
+const CORPUS: [&str; 14] = ["rounds/by_hand.sv","rounds/disc.sv","rounds/blank.sv",
     "vtwin/components/piston.sv","developable/frustum.sv","solid_twist.sv","swept_tumble.sv",
-    "lofts/squares.sv","generation/cam_plate.sv","turbine_blade.sv","wankel/wankel.sv"];
+    "lofts/squares.sv","generation/cam_plate.sv","turbine_blade.sv","wankel/wankel.sv",
+    "given/bought_block.sv","hydrostatics/punt.sv","joins.sv"];
 
 /// **Every kind of object the library builds, the builder builds as the export does**
 /// (`every_static_object_builds_as_the_export_builds_it` over the `CORPUS`): each document solved

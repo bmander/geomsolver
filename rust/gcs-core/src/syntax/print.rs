@@ -768,6 +768,8 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
         Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),
+        // a given body is the module's, written nowhere but its `use`
+        Sweep::Given(_) => Vec::new(),
         // the face family is the whole of the brackets: `Station(g).f over s`, `s` declared
         Sweep::Family(f) => {
             let mut text = String::new();

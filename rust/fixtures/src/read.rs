@@ -1,6 +1,7 @@
 //! Reading a fixture: parse, link, elaborate and solve, asserting each step — and reading the
 //! example corpus as solventc reads it.
 use gcs_core::{program,syntax,solve};
+use gcs_core::modules::Found;
 use std::path::{Path,PathBuf};
 
 /// The accuracy the recorded numbers were taken at: every hard row to 1e-12 of its units.
@@ -9,7 +10,8 @@ pub fn accurate() -> solve::SolveOpts {
 }
 
 /// Parse one source, link it through `resolver`, elaborate and solve it `accurate`ly.
-pub fn elaborate(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) -> program::Elaborated {
+pub fn elaborate<F: Into<Found>>(source: &str,resolver: &mut dyn FnMut(&str) -> Option<F>)
+    -> program::Elaborated {
     let mut e = unsolved(source,resolver);
     let result = solve::solve(&mut e.sketch,accurate());
     assert!(result.success,"{result:?}");
@@ -17,7 +19,8 @@ pub fn elaborate(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) 
 }
 
 /// Parse one source, link it through `resolver` and elaborate it, left where its seeds put it.
-pub fn unsolved(source: &str,resolver: &mut dyn FnMut(&str) -> Option<String>) -> program::Elaborated {
+pub fn unsolved<F: Into<Found>>(source: &str,resolver: &mut dyn FnMut(&str) -> Option<F>)
+    -> program::Elaborated {
     let source = &crate::imported(source);
     let (mut p,errors) = syntax::parse(source);
     // each error beside the line it is on: a generated fixture has no file to look in
@@ -43,17 +46,40 @@ pub fn read(source: &str) -> program::Elaborated {
     e
 }
 
-/// The module `name` as the CLI resolves it: `<name>.sv` beside `base` (a dotted name in a
-/// subdirectory, `engine.parts` as `engine/parts.sv`), then the library.
-pub fn module(base: &Path,name: &str) -> Option<String> {
-    std::fs::read_to_string(base.join(format!("{}.sv",name.replace('.',"/")))).ok()
-        .or_else(|| gcs_core::library::resolve(name))
+/// The module `name` as the CLI resolves it: `<name>.sv`, `<name>.step` or `<name>.stp` beside
+/// `base`, the first that is there (a dotted name in a subdirectory, `engine.parts` as
+/// `engine/parts.sv`), then the library.
+pub fn module(base: &Path,name: &str) -> Option<Found> {
+    let rel = name.replace('.',"/");
+    gcs_core::modules::MODULE_EXTENSIONS.iter().map(|ext| base.join(format!("{rel}.{ext}")))
+        .find(|p| p.is_file()).map(|p| found(&p))
+        .or_else(|| gcs_core::library::resolve(name).map(Found::from))
+}
+
+/// A module file's text as every host reads it where it found it (`modules::decode`): one that is there and does
+/// not read fails the test, rather than reading as no module.
+pub fn file(p: &Path) -> String {
+    let bytes = std::fs::read(p).unwrap_or_else(|e| panic!("{}: {e}",p.display()));
+    gcs_core::modules::decode(&p.to_string_lossy(),bytes).unwrap_or_else(|e| panic!("{}: {e}",p.display()))
+}
+
+/// A module file as a host hands it on: its text (`file`), and where it was found.
+pub fn found(p: &Path) -> Found { Found::at(&p.to_string_lossy(),file(p)) }
+
+/// The module `name` a document `source` (a path relative to `dir`, the directory it is in)
+/// `use`s, as solventc resolves it: the first of `modules::search_paths` that is a file, else the
+/// library.
+pub fn module_beside(dir: &Path,source: &str,name: &str) -> Option<Found> {
+    gcs_core::modules::search_paths(name,source).iter().map(|rel| dir.join(rel))
+        .find(|p| p.is_file()).map(|p| found(&p))
+        .or_else(|| gcs_core::library::resolve(name).map(Found::from))
 }
 
 /// A resolver reading each `module` beside `base`, with a rewrite of each module's text.
 pub fn beside<'a>(base: &'a Path,rewrite: &'a mut dyn FnMut(&str,String) -> String)
-    -> impl FnMut(&str) -> Option<String>+'a {
-    move |name: &str| module(base,name).map(|text| rewrite(name,text))
+    -> impl FnMut(&str) -> Option<Found>+'a {
+    move |name: &str| module(base,name)
+        .map(|f| Found {text:rewrite(name,f.text.to_string()).into(),digest:None,..f})
 }
 
 /// A document whose modules are read beside `base`, each rewritten.
@@ -106,11 +132,7 @@ pub fn example(name: &str) -> Option<program::Elaborated> {
     let (mut prog,errs) = syntax::parse(&text);
     if !errs.is_empty() { return None; }
     let dir = path.parent().unwrap().to_path_buf();
-    let mut resolve = |m: &str| -> Option<String> {
-        gcs_core::modules::search_paths(m,name).iter()
-            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-            .or_else(|| gcs_core::library::resolve(m))
-    };
+    let mut resolve = |m: &str| module_beside(&dir,name,m);
     let _ = gcs_core::modules::link(&mut prog,&mut resolve);
     Some(program::elaborate(&prog))
 }

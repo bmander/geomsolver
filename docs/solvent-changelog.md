@@ -4,6 +4,57 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.230] A given body: a `use` of a STEP file names the body it gives** (#993). A text a `use`
+resolves to that is an ISO 10303-21 exchange file (its first token `ISO-10303-21;`, or any text a
+host found as `NAME.step` or `NAME.stp`) is a *given module* (§14.4): never parsed, it contributes
+one name, the solid the file gives, by the module's whole path. `use bracket` then `part :=
+solid(bracket)` is the body `bracket.step` gives, each face on its own surface, and exports as that
+solid. The name is read wherever a solid's is — `solid(bracket)`, `p in bracket` in a set's body,
+a body word's tool, a claim, a reading at an instant (`bracket at(under: std.z) 90deg`) — at the
+root of a file that `use`s it; what nothing reads makes nothing, one module gives one body, and the
+given body is never itself an object, however it is read. It is never extended: `drill cut bracket`
+(and `union`, `common`, a word of the document's own, and `bracket and { … }`) is one E080 naming
+the body to make and the author's statement over it, `part := solid(bracket)`, then `drill cut
+part`. It stands where the file puts it, in the document's own space, its lengths carried to the
+document's `unit`; a read in a definition's body, a `ring`, or under `in` of a frame not the
+world's is one E106 (placing it so is later work), while a set or body made of it at the root
+stands in the world wherever it is read. A file that gives no one solid is E072 at the `use`, once
+— the kernel's words with the module's name in front (`` `shell`: #15: the file holds a
+shell-based surface model (SHELL_BASED_SURFACE_MODEL) and no solid ``, `` `empty`: line 1, byte 0:
+the file does not start `ISO-10303-21;` at the end ``), or `` `twice`: the file gives 2 solids,
+and a given body is one solid `` — and nothing is said of what is made of it, while a statement's
+own faults still are. `use bracket (x)` is E101 (`` `bracket` defines no `x` ``); a top-level
+`bracket` of the file's own beside `use bracket` is E071. Hosts look for `NAME.sv`, then
+`NAME.step`, then `NAME.stp`, in each directory nearest first, then the library; the document is
+never its own module, and a module file that is there and does not read resolves nothing rather
+than a farther one standing in. Through 0.229 `use bracket` beside `bracket.step` was E070 (`` no
+module `bracket` ``) and `solid(bracket)` E101 (`` no such entity: `bracket` ``); no document named
+a file it did not write, and `foo.sv` saying `use foo` linked itself.
+
+**Where it is refused, and where it stands.** E106 is said at a read in a mirrored instance's
+body, once for all closed instances of one binding, in a joint's frame, and in a claim or a formal
+under a posed `in`; a `repeat` copies it where it stands, and `part at(under: std.z) 90deg` turns
+the body made of it. A body whose stock is the given body, nothing taken or added, is one set with
+it: `claim every q in part: q in bracket` holds exactly, `measured 0 (interval [0, 0])`, either
+way. A file holding a face whose loops turn against its sense is E072 at the `use` (`` `input`:
+#92335: face 965: its outer loop turns against the face's sense (…): the face's normal points
+into the material its edges bound it on ``), and every STEP export is read back by the kernel's
+reader, one it refuses not written (`` the STEP file does not read back: the kernel's reader
+refuses it: … ``). The library's case is `given/bought_block.sv`.
+
+**One membership of a whole solid is its body.** `solid({ p | p in S })`, `S` a solid named whole,
+is `solid(S)`: the same faces and names, the same STEP and STL to the byte, for an authored solid
+as for a given one; where `S` is made of the set's solid (the cavity of `std.rounds`' `shell`) it
+stays a region. Through 0.229 it was a region read off `S`'s faces, exported as one (a circle
+p-curve written as a spline, the faces named as one `far`).
+
+**A body kept within a half-space moves no later solid.** A region such a body makes is pushed past
+every solid the document declares, never between two, so a set declared after it reads the solid
+it names: a ball's cap after `upper := solid({ p | p in part; p distance(>= 10mm, along: n)
+std.top })` measures `654.498`, where through 0.229 it measured `2.84677e+06`, and two such sets
+over one ball were each E041 *made of itself*. The experiment, the spellings tried, what review
+found and why this spelling was taken: [given-bodies.md](given-bodies.md).
+
 **[0.229] Where a round ends, what a face and a round's ball are, and a round over a whole body
 walked by its edges** (#994). The CADGenBench fixtures re-run on v0.1.28 found rounds whose exact
 construction left out what their words say, a regression where two faces lie on one plane, and

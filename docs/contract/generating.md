@@ -102,7 +102,9 @@ read after the solve where the solve left it (`MotionE::rotation`, `advance`, `F
 motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean
 operands; copy keeps source and motions, and the source stays an object of its own unless it
 is `construction` or something else is made of it ([app.md](app.md), #904 A10). `make
-solventc OCCT=1` enables native STEP via a C ABI over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. A
+solventc OCCT=1` enables native STEP via a C ABI over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. The
+core's own STEP is parsed back by `step_check` and read by the kernel's reader (`step_read::read`,
+`brep::export::step`: a file the reader refuses is refused, in its words, #993 stage 2). A native
 written STEP is parsed back by `native::step_check`; `--verify-step full`
 (`SOLVENT_STEP_VERIFY=full`, slow tier) also reads it through the kernel. Native `--stl` defaults
 to OCCT (`--stl-backend mesh` legacy). STEP+STL build once, check both, then replace each. Native

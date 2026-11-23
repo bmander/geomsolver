@@ -34,7 +34,14 @@ pub fn remove(
     ents: &[EntRef],
     cons: &[u32],
 ) -> Edit {
-    let (mut doomed, mut names, left) = selected(e, prog, ents, cons);
+    let (mut doomed, mut names, mut left) = selected(e, prog, ents, cons);
+    // a body a file gives (#993 stage 2) is made by its `use`, no statement of its own: it stays,
+    // and a selection of nothing else is refused naming what to delete instead
+    let given: Vec<&str> = ents.iter().filter(|r| r.kind == EntKind::Solid)
+        .filter_map(|r| sk.solids.get(r.i()))
+        .filter(|s| matches!(s.def, crate::model::SolidDef::Given(_)))
+        .map(|s| s.name.as_str()).collect();
+    left += given.len();
     doom_mentioning(prog, &mut doomed, &mut names);
     // what the model builds over the gone without naming it — a solid placed under a frame
     // whose joint turned about a deleted line (#383) — goes too, and then what names that
@@ -43,11 +50,16 @@ pub fn remove(
     }
     doom_inferred(e, prog, sk, &names, &mut doomed);
     if doomed.is_empty() {
-        let why = (left > 0).then(|| {
-            "that comes from a component, so deleting it would edit the component and everything \
-             else drawn from it"
-                .to_string()
-        });
+        let why = match given.first() {
+            Some(g) if left == given.len() => Some(format!(
+                "`{g}` is the body a file gives, made by its `use` and by no statement of its \
+                 own: delete the statements that read it, or the `use`")),
+            _ => (left > 0).then(|| {
+                "that comes from a component, so deleting it would edit the component and \
+                 everything else drawn from it"
+                    .to_string()
+            }),
+        };
         return Edit::none(prog, why);
     }
     // a link of a chain has no deletion splice, so the gesture is refused rather than half-done

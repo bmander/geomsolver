@@ -163,6 +163,8 @@ impl Session {
                 walls exactly (`--kernel rust`), and OCCT's lofts are its oracle only later (#243 L10)".into()),
             Node::Carried {..} => return Err("native CAD export does not build a face carried up a screw or along a slide; \
                 the core's kernel builds it exactly (`--kernel rust`), held to its field (#846)".into()),
+            Node::Given(_) => return Err("native CAD export does not build a body a file gives; the core's kernel hands \
+                its B-rep through exactly as it was read (`--kernel rust`)".into()),
             Node::Prism {draft:Some(_),..} => return Err("native CAD export does not build a drafted prism; the core's kernel \
                 builds it (`--kernel rust`)".into()),
             Node::Prism {profile,from,to,..} => (profile,*from,*to),

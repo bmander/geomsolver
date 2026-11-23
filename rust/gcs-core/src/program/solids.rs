@@ -18,7 +18,9 @@ use build::build_solid;
 pub(super) use build::carry_legs;
 
 /// Build faces and solids in dependency order, then fold body operations into stock solids.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn solids(
+    doc: &crate::syntax::Program,
     sk: &mut Sketch,
     res: &mut Resolver,
     map: &mut SourceMap,
@@ -36,7 +38,19 @@ pub(super) fn solids(
     }
     faces(sk, res, map, body, skip, probes, diags);
     build_solids(sk, res, map, body, skip, probes, diags);
-    body_rule(sk, res, map, body, skip, diags);
+    // solids named whole kept within sets that read no face — the hull in water — are the body over
+    // those solids, kept in common with a region of the rest (#953), that region pushed past every
+    // solid the document declares: never between two of them, where every solid declared after
+    // would stand one further on than the terms already read of it say (#993's review, D1)
+    for i in 0..sk.solids.len() {
+        crate::solid::defined::trimmed(sk, i);
+    }
+    body_rule(doc, sk, res, map, body, skip, diags);
+    // one membership of a whole solid, `solid({ p | p in S })`, is `S`'s body, as `solid(S)` is,
+    // wherever that makes nothing of itself (#993's review, R3)
+    for i in 0..sk.solids.len() {
+        crate::solid::defined::membership(sk, i);
+    }
     layers(sk, map, diags);
     derived(sk, res, map, body, skip, diags);
     made_of_itself(sk, body, diags);
@@ -120,22 +134,16 @@ fn build_solids(
         match build_solid(sk, res, d, st, probes, diags) {
             Some(i) => {
                 let e = EntRef::solid(i);
-                // the solids declared after it stand where the solids built so far end: a solid
-                // that made more than itself (a body kept within a half-space makes the
-                // half-space's region past itself, `defined::trimmed`, #953) puts them as many
-                // further on, one refused before it one nearer — so a second body kept within
-                // the water is not read as the first's region
-                if let Some(was) = res.of.get(&name).copied().filter(|w| w.kind == EntKind::Solid) {
-                    let by = sk.solids.len() as i64 - (was.idx as i64 + 1);
-                    for x in res.of.values_mut() {
-                        if x.kind == EntKind::Solid && x.idx > was.idx {
-                            x.idx = (x.idx as i64 + by) as u32;
-                        }
-                    }
-                }
+                // where phase 1 put it: a solid makes nothing past itself while the solids are
+                // built (a body kept within a half-space pushes its region once all are,
+                // `solids`), and one refused before it shifted the resolver (`res_forget`)
                 res.of.insert(name.clone(), e);
                 map.bind(&name, e, d.name.named());
-                map.record(st, Made::Ent(e));
+                // a given body (#993 stage 2) is no statement's: the document's `use` names it
+                // and an edit never makes or moves it, so it has no site to keep
+                if !matches!(d.sweep, Some(crate::syntax::Sweep::Given(_))) {
+                    map.record(st, Made::Ent(e));
+                }
                 // The solid owns its inline section and that section's closing lines.
                 // Record the solid first, as source editing expects for every declaration.
                 for fi in first_face..sk.faces.len() {
@@ -156,6 +164,7 @@ fn build_solids(
 
 /// **The body rule**: `bore cut cyl`, `boss union cyl`, folded into the body they name.
 fn body_rule(
+    doc: &crate::syntax::Program,
     sk: &mut Sketch,
     res: &mut Resolver,
     map: &mut SourceMap,
@@ -172,6 +181,26 @@ fn body_rule(
         }
         let StmtKind::SolidRel(r) = &st.kind else { continue };
         match body_operands(sk, res, r) {
+            // **a given body is never extended** (#993 stage 2): it is the file's, and stays
+            // nameable as given — the body a statement makes of it is named, and extended
+            Ok((_, b)) if matches!(sk.solids[b.i()].def, SolidDef::Given(_)) => {
+                let given = &r.body.root.text;
+                // the fix in the author's own words: the statement as written there — a word of
+                // their own (`drill bore bracket`) or the primitive — with the body named for the
+                // given one; read through a formal, the body given in its place
+                let then = match doc.span_text(r.span).and_then(|w| renamed(w, given, "part")) {
+                    Some(fixed) => format!("then `{fixed}`"),
+                    None => "and give `part` where it is given".to_string(),
+                };
+                // and where the same read would also have to be placed (E106 at the read, a
+                // definition's body), that is not said as well: one cause, and the body made of
+                // it the one fix
+                let inside = |s: Span| r.span.lo <= s.lo && s.hi <= r.span.hi;
+                diags.retain(|d| !(d.code == Code::E106 && inside(d.span)
+                    && res.misplaced.get(&d.span).is_some_and(|p| p == given)));
+                diags.push(Diag::within(Code::E080, r.span, st.id, never_extended(given,
+                    &format!("this makes of it, `part := solid({given})`, {then}"))));
+            }
             Ok((a, b)) => stated.push((*st, r.word, r.span, a, b)),
             Err((code, span, m)) => diags.push(Diag::within(code, span, st.id, m)),
         }
@@ -247,6 +276,27 @@ fn body_rule(
         sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(),
                                             bound: Vec::new() };
     }
+}
+
+/// `text`, one statement on one line, with each whole name `from` in it written `to` — `None`
+/// where it has none (a name is read as the expression lexer reads one, `substitute_with`: never
+/// part of a longer one, nor a member past a dot).
+fn renamed(text: &str, from: &str, to: &str) -> Option<String> {
+    let found = std::cell::Cell::new(false);
+    let out = crate::flatten::substitute_with(text, |w| {
+        (w == from).then(|| {
+            found.set(true);
+            to.to_string()
+        })
+    });
+    found.get().then(|| out.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// **A given body extended, refused** (#993 stage 2; E080, and the edit's refusal of a gesture
+/// that would): `given` is the file's, never extended, and the fix is the body named of it —
+/// `fix`, how the rest of the sentence reads.
+pub(crate) fn never_extended(given: &str, fix: &str) -> String {
+    format!("`{given}` is the body a file gives, and it is never extended: name the body {fix}")
 }
 
 /// **Strata in layers** (#183 F6, [0.149]): a body whose rounds name one another's faces laid
