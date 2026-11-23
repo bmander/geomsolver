@@ -23,18 +23,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   Six of its nine sheet faces read as before to 12 digits; three move, 13.397730012278 to
   13.397730012206, 11.629456925629 to 11.629456926940 and 1.234519263683 to 1.234519269024 — the
   last the old reading's error, the face read transposed 1.234519269094 and on four and eight
-  Gauss pieces 1.234519269096.  `props::reads` counts the integrand's reads on the thread, what the
-  gates hold the cost to.
-- **A knot a use's step lands on is crossed there** (`props::crossings`): read between a step's two
-  ends alone, a knot at a step's end lay in neither step and the stretch across it went uncut — a
-  rational torus with knots on the steps' eighths read 2.9e-8 off its area, and a sheet face of the
-  crossed reverse member its flux −4.602553423 where read with its net's parameters transposed it
-  is −4.602553430438, as it now reads (the member's volume 13.7898471917 now 13.7898471844).
-- **A row of poles in one point is read where its parameters run** (`props::integrated`): on a
-  polynomial net's table a degenerate use was taken to run along `u` and skipped, but a pole row
-  at the domain's last `u` runs along `v`, where `G` from the table's knot is not nought: a plane
-  triangle with one read its flux 0.1875 against 0.25.
-
+  Gauss pieces 1.234519269096.  A face reaching a collapsed row keeps `integrated`'s reading along
+  the parameter collapsed; a stretch is read as `integrated` reads one (ten nodes, `checked`), a
+  use's ends closed where its curve arrives; a line in the parameters is cut at every knot line
+  it crosses, in closed form.  A creased net needs nothing: each cell's nodes lie inside it.
+  `props::reads` counts the integrand's reads on the thread, what the gates hold the cost to.
+- **A kink a use's sixteenth lands on exactly is crossed there** (`props::crossings`): read
+  between a sixteenth's two ends alone, a knot (or a spindle torus's or a cone's kink) at a
+  sixteenth's end lay in neither and the stretch across it went uncut — a rational torus with
+  knots on the sixteenths read 2.9e-8 off its area, and a sheet face of the crossed reverse member
+  its flux −4.602553423 where read with its net's parameters transposed it is −4.602553430438, as
+  it now reads (the member's volume 13.7898471917 now 13.7898471844).  An offset net's knot lines
+  are crossed as a B-spline's are.
 - **The crossed tumbling tori built by the tube road** (#880 T1f): the reverse member (15 faces,
   13.7898471844 against cadrs's 13.7898472784; 13.7898471917 before a knot a step lands on was
   crossed, below) and the forward (14 faces, 16.6109998153 against
@@ -60,8 +60,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   meridian touched whole for an instant by name (`Curved`, `Ring::touched_once`) and no two instants
   touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`, `tube::faces::solid`);
   nowhere else, and cut from a blank it stays refused. Forward: 14 faces, 16.6109998153 (cadrs
-  16.6109997999), about 15 s; reverse: 15 faces, 13.7898471844 (cadrs 13.7898472784; 13.7898471917 before a knot a step lands on was crossed), about a
-  minute; each built again with the observer's origin one ulp and 1e-6 off to the same volume.
+  16.6109997999), about 15 s; reverse: 15 faces, 13.7898471844 (cadrs 13.7898472784; 13.7898471917
+  before a knot a step lands on was crossed), about a minute; each built again with the observer's
+  origin one ulp and 1e-6 off to the same volume.
 - **A trim against an end pose reaching that pose's rim is the corner** (#880 T1f, `faces::solid`):
   beside the rim the end pose stands from the sheet by half its depth's second rate times the
   square of the way to the end, nought only on the cuspidal edge, so the run reaches the rim at the
@@ -70,7 +71,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   reverse one ulp off fitted only to 1.2e-5). And a run's end on the pinch's rim read twice (the
   tracer's seed and its exit, one crossing) keeps the end alone: the forward one ulp off left its
   collar face by a segment 7e-15 long and was not sewn.
-
 - **The collar about the pinch as the tube road's third chart** (#880 T1f): `Tube::pinched` reads
   the tool as a tube and, where an instant inside the roll touches a meridian whole, charts the
   pinch by `rings::Collar` over `(ψ, ρ)` (`Chart::Collar`, `tube::Pinch`): its point and rates in
@@ -83,6 +83,28 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (`Tube::net_point`), which is also the depth's metric there; a sheet's window holding the hole is
   fitted with its parameters graded toward it (`tube::faces::sheet_net`). The collar's trims beside
   its cuspidal edges are seeded on its rim (`tube::beside_edges`). Not yet faces.
+- **An upright tool of revolution under a motion keeping its plane, swept closed** (#880 T1f,
+  `swept::upright`, new): a convex tool of revolution with flat ends whose axis stands along the
+  normal of a plane every pose keeps sweeps, at each height, the region within the radius there
+  of the path its axis's foot runs (`{(p, h) : d(p) ≤ ρ(h)}`). Each piece of the meridian is a
+  slab; the region's offsets and end discs are its sheets, their double curves traced exactly by
+  continuation in `(p₁, p₂, σ)` from the region's corners (`region::SweptRegion`), ended on rims,
+  joins, triple points (solved with the third foot) and swallowtail births (a pair on one side in
+  its divided chart, its stretch into the birth read in its normal form); each sheet parted as a
+  planar graph, cut from each birth to the rim, each part kept by the path's certified distance;
+  sides fitted as nets with their pcurves, ends the tool's own faces posed, caps the regions; the
+  faces sewn and judged. The closed class asks it before K2, whose pencil reads no contact
+  touched whole (a flat bottom under a translation). brep-bench's bull nose along a looping
+  spline builds through `closed::cut_from` (10956.98646, 2.3 s; with its area, volume, check, mesh
+  and STEP 4.9 s — a double curve's run is halved where 64 spans do not hold it, where one fitted
+  whole on 2048 spans read its faces' area in 6.9 s each). `region::SweptRegion::held`
+  (new) says which candidates are edges held at an end pose; `planar_solid::holding` is
+  `pub(super)`.
+- **K2 refuses a flat end its instant touches whole, by name** (#880 T1f, `patches::touched_whole`):
+  a face square to the tool's axis with `n · v` nought all over it (the twist turning about the
+  axis alone, the face's middle moving in its plane) is `Curved` at that face before any fit; its
+  pencil's sign test on the noughts had put the root at whichever corner the rounding favoured,
+  and the bull nose's sheet was reported fitting to 1.9.
 - **The tube road builds every ring case the old road builds** (#880 T1f): the full turn (14
   faces, volume 23.6738858153 against the old road's 23.6738852531), the thin (10 faces,
   0.6963027945 against 0.6963027896) and the bench's tumbling torus (8 faces, 25.2750727786
@@ -122,7 +144,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   has no disc, and a disc's rim does not count another basin's cover; runs' ends on one cut within
   the tolerance in space are joined. The 80° torus builds in 2.2 s (volume 10.9393141712, the old
   road's 10.9393141414); the full turn and the thin trace every seam and are refused by name.
-
 - **`zero_set` halves a cell spanning a whole turn across it** (#880 T1f): a cell's longer way is
   read along its path through its middle, not between its sides' ends, which over a whole turn are
   one point (the search halved such a cell one way only and never settled). And `tube::Depth`'s
@@ -151,7 +172,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `zero_set::Field` with a bound (`tube::Depth`, `tube::seams`), each rectangle traced in parts
   across a whole turn (`tube::round`, a piece leaving a part seeding the next), a disc about each
   swallowtail point cut from its domain (`tube::disc`). Probe: `tube_profile`.
-
 - **The crossed tori's tubes fitted through a meridian touched whole for an instant, with a hole**
   (#880 T1f, `swept::rings::Hole`, `closed::ring_fitted_holed`, `rings::pairs_over`; not yet the
   road's): the roll cut at the instant, each tube read inside `|(A, B)| < ρ₀` as a smooth stand-in
@@ -182,6 +202,210 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   0.21.0's phase 0 (`Arrangement::classed`) a ring's pose turned about its own axis lost the
   meetings given it: the ring road's 80° tumbling torus was judged wrong with its start pose's
   seam at −2.78, and its full turn refused at every end pose's seam but its own; both build again.
+
+## [0.22.0] - 2026-11-23
+
+- **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
+  distance from the origin, so a part built there was refused, or built hundreds of times slower,
+  once it stood a few of its own sizes off. A foot found from the last one on a face family's
+  wall, a blend, a B-spline sheet or its offset was taken for the nearest within a thousandth of
+  the *point's* distance from the origin (six millimetres, 6.3 m out); it is within a thousandth
+  of the patch's own size (`geom::NEAR`), and a foot refined from a hint is on its patch by that
+  size too. A rational spline's and a rational net's enclosures divided `A` by `W` with every pole
+  read from the origin, and a blend's read the point between its sections so, each as wide as the
+  distance from it; both are read from a point of the surface. A lofted blade unites with its hub
+  a metre out as at the origin, a NURBS ball is cut ten sizes out (refused before, after three
+  minutes), and a canal's cut ten thousand sizes out takes what it takes at the origin (700 times
+  that before). `family::Sheet::size` is new.
+
+- **Real files through a document** (#993 stage 2), each found by a CADGenBench input:
+  - The reader refuses a face whose outer loop turns against the face's sense, or a hole the
+    other way (`Brep::turned`, the rule `Brep::check` holds a solid to, at the measured
+    tolerances of the loop's edges and vertices, never the uncertainty the file states): its
+    normal points into the material its own edges bound it on, and which the file meant is not
+    guessed. Such a face was read and refused only when written.
+  - A sliver thinner than its edges' tolerance turns no way (`topo`'s `sliver`): its area carried
+    into space no more than its length times that tolerance, or every point of each use within
+    twice it of another use, so a strip some 1e-5 mm wide is neither refused nor read the other
+    way when written again.
+  - A lune of two edges, one after the other in a loop, is a face's two sides however thin, never
+    two pieces meeting along a line (`Brep::self_touching_edges`).
+  - The mesher reads a use's last corner where the triangulation laid it, so a crescent whose two
+    ends stand apart at a vertex by less than its tolerance meshes; it was refused, and the body's
+    volume with it.
+  - `Brep::edge_bounds`: a box about the vertices and edges, read off the edges' own curves with
+    no surface inverted.
+
+- **The kernel writes every solid its reader reads** (#993 stage 2): a face on a surface swept or
+  turned from a line, a circle or an ellipse (`Surface::Extrusion`, `Surface::Revolution`, as a
+  reading makes them) is written as STEP's own `SURFACE_OF_LINEAR_EXTRUSION` or
+  `SURFACE_OF_REVOLUTION` of that curve, exactly; `step::write` panicked on one. A curve no entity
+  writes is refused with a reason, and a `Brep` whose indices leave its arrays, or whose geometry
+  is not finite, is refused rather than followed. `step_check::verify` holds a swept surface's
+  axis or direction and its curve, and an offset's distance and basis, to the solid's.
+
+- **A body of several lumps, or with a void, is written as the solids it is** (#993 stage 2,
+  `step::lumps`): a `Brep`'s shells (its faces' components) are nested as the reader judges them
+  (`step_read::sound::nesting`), each lump written as its own `MANIFOLD_SOLID_BREP` among the
+  representation's items, a lump with voids as a `BREP_WITH_VOIDS` whose voids are
+  `ORIENTED_CLOSED_SHELL`s turned (`.F.`). Every shell went into one `CLOSED_SHELL`, which ISO
+  10303-42 holds to be a connected face set. `write_assembly` writes a part so, and
+  `step_check` verifies the structure written: each solid, its shells and each face's sense in
+  its shell.
+
+- **Cut from a blank under a screw, a turn or a slide, the contact's road works within the region
+  the cut can depend on** (`swept::closed::cut_from`): the motion keeps every point's distance from
+  its axis, so nothing of the tool farther from the axis than the blank reaches ever enters it. The
+  blank's reach about the axis is bounded first; the tool is clipped to a square prism about the
+  axis a little past it, its candidates read with the faces lying wholly past the reach left out
+  (a face in contact all over among them, no longer refused there), and the sweep trimmed within a
+  cylinder about the axis (`swept::trim::Reach::Turned`; the trim's reach, a box before, is now
+  `Reach::Box` or `Reach::Turned`, and the judge reads within it). Where it refuses, the whole road
+  is taken. brep-bench's spline bar screwed through a rod builds in under 2 s where it took 17, to
+  the same volume within 5e-10.
+
+- **A cylinder about the axis a sheet is carried round or along meets it in the sheet's paths**
+  (`ssi::intersect`): the `Iso` of each of the section's crossings of the cylinder, read certified,
+  where it was traced.
+
+- **A long non-rational curve's whole spans' Bézier forms are blossomed once for the curve and
+  kept** (`enclose`): a stretch across many of its spans — a sheet's section, read at every box of a
+  ray's search — reads each span it covers whole off them and blossoms only the two it ends in, the
+  same enclosure. And the judge of a swept solid reads its volume only where some face was not read
+  facing out: where every face was, the sum of their fluxes is that of what the solid holds.
+
+- **A sweep's contact and trim read faster, to the same answers** (brep-bench's spline bar
+  screwed through a rod, 33 s to 17 s, its STEP the same to the byte): an interval's product and
+  quotient take their ends by the operands' signs, two products rather than four, the enclosure
+  the same; a spline's derivative over many spans hulls each difference of neighbouring
+  coefficients once, not once a span; `BSpline::nearest_indexed` reads each span's seventeen
+  samples off the curve's index, evaluated once for the curve, a curve of few spans included (each
+  thread holding the indexes it asked for last, out of the store's lock); and a curve enclosed over
+  a stretch past its domain — a blend's edge over `[0, 1]` grown outward by a rounding — is
+  enclosed as it reads there, clamped, by its spans' Bézier forms over the stretch within, its
+  derivative with nought, rather than by de Boor's steps in intervals over every span.
+
+- **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
+  a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
+  the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
+  face, edge and vertex naming its entity (`Given`). A file is read correctly or refused with a
+  `Refusal {why, entity, msg}` naming the entity at fault; an open shell, a face that crosses
+  itself, an unsupported surface and an assembly's product structure are refusals. Units and the
+  stated uncertainty are read (`step_read::context`), tolerances measured and never widened, and
+  the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
+  writes reads back to the same solid.
+
+- **A torus whose hole is a hair wide has a pole** (#993 stage 1): `topo::poleless` called any
+  torus whose major radius passes its minor poleless, so a horn torus built a bit open (its minor
+  radius one bit under its major, as a platform whose `sin` rounds lower builds one) had its pole's
+  degenerate edge left unlaid by the reader and `close_poles`, though `pole_at` reads a pole there.
+  A ring torus is now one whose hole is wider than a millionth of its radius.
+
+- **How far an edge stands off its face is the boundary's to say** (#993 stage 1): the measure
+  `step::write` states a file's uncertainty from is `Brep::standing`, one function for the writer
+  and whatever holds a file to it.
+
+- **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
+  inverse curve off its face read the surface's second derivatives as differences a millionth of
+  a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
+  millionth past a quadratic net's knot ran at 0.92 where its feet run at 0.99). A net's second
+  derivatives are its own, in the span holding the foot; any other surface's differences are
+  taken on the foot's side of a break within them.
+
+- **A polynomial net's `G` is read along its iso curve** (#993 stage 1): away from the flux's
+  table, `props` integrated `G` from a face's middle across every span to each node of every use,
+  each point a two-way evaluation of the sheet; it now reads the net's rows across the held
+  parameter once a node and each point as a curve's (`Iso`), the same values to rounding.
+  brep-bench's bull-nose carried along a spline (a 91 × 143 quintic) had its area read in 13 s,
+  and now in 6.5 s.
+
+- **A net creased at its knots is measured as a smooth one** (#993 stage 1): `props` tabled a
+  polynomial net's `G` per `v` span through Chebyshev nodes that include the span's far end, and
+  read the net there in the next span, so across a knot of the degree's multiplicity (a net joined
+  in value only, where `S_v` jumps) a column was tabled from the wrong side: a face family's wall
+  written piece by piece between its stations read its flux 2.8e-5 off (`paths/bent_pipe.sv`'s
+  bar).  Each column's rows are read in its own span.  A pcurve that is a line is also cut where
+  it crosses such a crease, in closed form, where `G` jumps.
+
+- **A stretch of a use is read by ten nodes only where they read it** (#993 stage 1): `props`
+  read each stretch of an edge between its breaks by one ten-point Gauss rule, unchecked, so an
+  edge whose curve had a knot a hair past its start had its whole half turn about a rational net
+  read by ten points (brep-bench's frustum screwed across a ring sector, one face's area 3.8e-5
+  off; its drum leaning across a turn, two 1.7e-6).  Each stretch is checked by the rule's 21-point
+  Kronrod extension, which reuses its nodes: kept where they agree to rounding (to the bit as
+  before), the extension where its own error estimate is within the budget, else settled.
+
+- **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
+  face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
+  solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
+  distance, as it was read.
+
+- **A face family's wall and rail that turn at their stations' joints are written** (#993 stage
+  1): a family's numbers are a polynomial through six stations a piece, two pieces meeting in value
+  only, and `step` fitted its wall and rails smooth across the joints, which no net closes in on
+  (`lofts/pipe.sv`'s tube 1.7e-2 mm off at the fit's cap, refused).  Where the smooth fit misses
+  `step::FIT`, the wall is fitted piece by piece on one grid along its edge and the rail stretch
+  by stretch between its breaks, joined with a knot of the degree's multiplicity.
+
+- **A STEP file prefers the curve in space where that is the exact one** (#993 stage 1): every
+  `SURFACE_CURVE` and `SEAM_CURVE` was written with `master_representation` `.PCURVE_S1.`, which
+  ISO 10303-42 reads as the representation preferred where they differ, though the kernel's
+  pcurves are fitted to its curve in space or read off it.  It is now `.CURVE_3D.`, and
+  `.PCURVE_Sk.` only where the curve in space is a fit and the `k`th pcurve is the kernel's own
+  spline in the parameters of a surface written exactly.
+
+- **A STEP file never states less than it holds** (#993 stage 1): `step::write` stated the
+  uncertainty asked (1e-7 in the tests) over a loft's net and rails fitted within `step::FIT`
+  (1e-6) and over a solid's own edges standing up to 2e-5 off their faces, so a reader measured 26
+  of the library's solids looser than their files said.  The file now states the tolerance asked
+  where it covers a quarter more than its geometry holds, and else what it holds, up to the next
+  of 1, 2 and 5 times a power of ten — each edge's distance off its faces measured afresh at 64
+  points, its knots and halfway between, plus its curve's, its faces' and its pcurves' measured
+  misses, and each vertex's tolerance.  `step::write_stating` returns that uncertainty with the
+  text (`write` is it without), and the export says so where it is past the one asked.
+
+- **No curve of a STEP file is written in more than `3 MOST + 1` points** (`step::MOST`, 4096
+  pieces; #993 stage 1): where no cubic closed in on an edge's curve in a toolpath's net, the
+  writer fell back to a polyline within the stated uncertainty, one pcurve of 2.5 million points
+  (a 257 MB file for `capped_thread`, 3.1 GB for `whole_turn`, a drill not written in a minute).
+  A pcurve no cubic and no polyline of `MOST` points holds is now left out (a reader puts the edge
+  on the face itself, as where a file writes none; a seam's two are written both or neither), and
+  a traced curve's polyline is written within the bar `MOST` points hold, which the file states.
+  A fitted pcurve is held no nearer the edge's foot than the edge stands off the face: the cubic
+  held to 1e-9 against an edge standing 1e-7 off chased a rate read wrongly just past a joint into
+  pieces of `2⁻³⁰` of the edge.
+
+- **A cone's curves in its parameters are written along its axis, as the standard reads them**
+  (#993 stage 1): ISO 10303-42's `conical_surface` runs `v` along the axis, `C + (R + v tan α)(cos u
+  x + sin u y) + v z`, where the kernel's cone (and OCCT's) runs it along the generator; `step`
+  wrote the kernel's `v`, so every pcurve on a cone lay off its edge (a frustum's by 0.2 mm, a
+  drilled frustum's traced edges by 2.5 mm, which OCCT read 1.4e-4 off in volume).  The file's `v`
+  is now the kernel's times `cos α`.
+
+- **A pcurve in a net's parameters is written as a line only where it is one** (#993 stage 1): an
+  affine image's face is written as its preimage's net, whose parameters reach an angle at the arc
+  parameter, and the test that an edge's curve in them is a line looked only at eighths of a turn,
+  where the two agree by symmetry: a sheared torus's circles were written as lines 0.075 mm off
+  their edges between.  The test reads sixteen uneven fractions, and such a curve is the cubic
+  fitted within `step::EXACT`.
+
+- **A spindle torus's lemon is written as a degenerate torus** (#993 stage 1): a toroidal surface's
+  radii are positive lengths, and the kernel's torus of negative major radius was written as one.
+  It is now `DEGENERATE_TOROIDAL_SURFACE` of major radius `−big` with `select_outer` false, its
+  pcurves in that surface's parameters `(u + π, π − v)` and its face's sense turned with them
+  (`step::turned`; `step_check` reads the degenerate torus and the turned sense).
+
+- **A rational net's foot is not stopped by a seam or a pole** (#993 stage 1): `geom::net_inverse`
+  took the first foot Newton's method settled on from a pole's Greville point, one held on the
+  domain's edge among them, and a warm start held there; a ball's net read a point on it 2.2 off.
+  A foot held on an edge is sought again across a closed net's seam and from beside a collapsed
+  row (`net_settle`), the first foot inside the domain or on the sheet taken, else the nearest;
+  the grid's last resort polishes its eight nearest distinct samples by Newton's method.
+
+- **A sheet's offset at a pole is the pole's offset** (#993 stage 1): `Surface::Offset` returned the
+  sheet's own point where `S_u × S_v` vanished (and a garbage normal where rounding left it a hair
+  off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
+  the ball grown, and its partials there carried from beside it.
 
 ## [0.21.0] - 2026-11-22
 

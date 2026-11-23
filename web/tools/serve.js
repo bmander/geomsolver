@@ -5,6 +5,8 @@ import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// the project's file kinds, the app's one list (`npm run build` writes it before this serves)
+import { EXTENSIONS, projectFile } from '../dist/app/project-explorer.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = {
@@ -29,9 +31,11 @@ const EXAMPLE = /^(.*)\/example\/([^/]+)\/?$/;
  *  directory beside the document, which is where `solventc` looks first.  The app fetches a case
  *  and the modules it `use`s from here before falling back to the copies compiled into the core,
  *  so editing a document and refreshing the page shows the edit with no wasm rebuilt.  Read-only,
- *  `.sv`, `.svd` and the plain text beside them (`.md`, `.txt`) only, one word per path segment,
- *  so nothing above that directory can be named. */
-const EXAMPLES = /^(?:.*)\/examples\/((?:[\w-]+\/)*[\w-]+\.(?:svd?|md|txt))$/;
+ *  `.sv`, `.svd`, the exchange files a `use` reads a body from (`.step`, `.stp`, #993 stage 2)
+ *  and the plain text beside them (`.md`, `.txt`) only, one word per path segment, so nothing
+ *  above that directory can be named. */
+const SERVED = Object.values(EXTENSIONS).flat().join('|');
+const EXAMPLES = new RegExp(`^(?:.*)\\/examples\\/((?:[\\w-]+\\/)*[\\w-]+\\.(?:${SERVED}))$`);
 
 const port = Number(process.env.PORT ?? 8123);
 createServer((req, res) => {
@@ -59,7 +63,7 @@ createServer((req, res) => {
       for (const entry of readdirSync(join(base, path), { withFileTypes: true })) {
         const name = path ? `${path}/${entry.name}` : entry.name;
         if (entry.isDirectory()) collect(name);
-        else if (/\.(?:svd?|md|txt)$/.test(name)) paths.push(name);
+        else if (projectFile(name)) paths.push(name);
       }
     };
     collect();

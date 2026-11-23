@@ -144,10 +144,22 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     if let Some([a,b]) = solid.self_touching(tol).first() {
         let line = format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm",
             a[0],a[1],a[2],b[0],b[1],b[2]);
-        return Err(ExportRefusal::at(Stage::Blank,match mixed_vertex(sk,body,[*a,*b]) {
-            Some(why) => format!("{line}: {why}"),
-            None => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate statements \
-                leave them where each reads the body before the other): no manifold file describes it"),
+        // (a body a file gives untouched has no rounds whose vertex it could be: its faces are not
+        // read as a body's rounds read them, which takes minutes on a file's thousand faces)
+        let given = given_read(sk,body);
+        let mixed = if given.as_ref().is_some_and(|g| g.1) { None } else { mixed_vertex(sk,body,[*a,*b]) };
+        return Err(ExportRefusal::at(Stage::Blank,match (mixed,given) {
+            (Some(why),_) => format!("{line}: {why}"),
+            // a body a file gives (#993 stage 2): no statement made its faces, so no round of one
+            // is the cause; the file's own faces meet there, or the document's Booleans over them
+            (None,Some((given,true))) => format!("{line} (the faces the file `{given}` gives meet there and nowhere \
+                else near, and the document states nothing of them): the body the file gives is no manifold solid, \
+                and no manifold file describes it"),
+            (None,Some((given,false))) => format!("{line} (two of its pieces meet there and nowhere else near: faces \
+                the file `{given}` gives, or where the document's statements over its body leave them): no manifold \
+                file describes it"),
+            (None,None) => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate \
+                statements leave them where each reads the body before the other): no manifold file describes it"),
         }))
     }
     if let Some(p) = solid.pinches().first() {
@@ -157,6 +169,16 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
     Ok(Exact {solid,pattern:None,indexed:None,swept:false,emptied:None})
+}
+
+/// **The body a file gives that `body` reads** (#993 stage 2), by its name, and whether `body` is
+/// that body untouched — the file's, or `solid(bracket)` with nothing on, through or bound by it.
+/// `None` where it reads none.
+fn given_read(sk: &Sketch,body: usize) -> Option<(String,bool)> {
+    use crate::model::SolidDef;
+    let reached = crate::solid::operands_reached(sk,body).ok()?;
+    let given = reached.into_iter().find(|&i| matches!(sk.solids[i].def,SolidDef::Given(_)))?;
+    Some((sk.solids[given].name.clone(),sk.given_untouched(body) == Some(given)))
 }
 
 /// **Where the solid touches itself at a vertex of edges of both turns** (#962): the line `ends`
@@ -313,14 +335,23 @@ pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
 }
 
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
-/// counts, units, and each face's surface and its numbers), with what the check counted.
+/// counts, units, and each face's surface and its numbers), with what the check counted; and read
+/// by the kernel's own reader (`step_read::read`), so no file is given back that the reader
+/// refuses — a body a file gives is read again from what the document writes of it (#993 stage
+/// 2), and a file `step_check` passes that the reader refuses was a hole in the gate (#3DBenchy's,
+/// a pcurve leaping across a spline sheet's fold, refused at its second reading).
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let (uncertainty,fit) = step_accuracy(tolerance);
-    let text = super::step::write(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
-    let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
+    let (text,stated,lumps) = super::step::write_stating(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
+    let verified = super::step_check::verify(&text,&super::step_check::Solid::of_lumps(&exact.solid,&lumps))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
-    (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
+    super::step_read::read(&text)
+        .map_err(|r| ExportRefusal::at(Stage::Step,format!("the STEP file does not read back: the kernel's reader refuses it: {r}")))?;
+    // (a file states what its fits and the solid's own edges hold where that is past what was asked)
+    let held = if stated > uncertainty { format!("; it states an uncertainty of {stated:e} mm, what its geometry holds, past the {uncertainty:e} asked") }
+        else { String::new() };
+    (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's{held} ({:?})",
         verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
     (say.mark)(Stage::Step);
     Ok(text)
@@ -550,7 +581,12 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
     let found = super::sliver::slivers(b,bar);
     let first = found.first()?;
     let name = |f: usize| face_name(&b.faces,f as u32);
-    let names = |of: &[usize]| all_of(&of.iter().map(|&f| name(f)).collect::<Vec<_>>());
+    // (each name once: the faces of a body a file gives are all said alike, by the body)
+    let names = |of: &[usize]| {
+        let mut said: Vec<String> = Vec::new();
+        for &f in of { let n = name(f); if !said.contains(&n) { said.push(n) } }
+        all_of(&said)
+    };
     let solid = sk.solid_name(body);
     let faces = found.iter().filter(|s| matches!(s.thin,Thin::Face(_))).count();
     let edges = found.len()-faces;
@@ -568,16 +604,25 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
     let beside = if first.beside.is_empty() { String::new() } else { format!(", beside {}",names(&first.beside)) };
     let at = crate::space::add(first.at,at);
     let scale = cad::millimetres(sk);
+    // a body a file gives untouched (#993 stage 2): no cut of the document's ends there, so there
+    // is no end to move; the sliver is the file's, and is written as the file gives it
+    let advice = match given_read(sk,body) {
+        Some((given,true)) => format!("The file `{given}` gives it so, and the document states nothing of it: it is \
+            written as it is given"),
+        _ => "A sliver that thin is most often where one cut ends all but flush with another's face: move that end onto \
+            the face or clear of it".to_string(),
+    };
     Some(Sliver {witness:at.map(|x| x/scale),
-        message:format!("`{solid}` holds {counted}: the first, {what}{beside}, near ({:.4}, {:.4}, {:.4}) mm. A sliver that \
-            thin is most often where one cut ends all but flush with another's face: move that end onto the face or clear of it",
+        message:format!("`{solid}` holds {counted}: the first, {what}{beside}, near ({:.4}, {:.4}, {:.4}) mm. {advice}",
             at[0],at[1],at[2])})
 }
 
-/// A face of a built solid as a reader writes it (`face 3` where it has no name).
+/// A face of a built solid as a reader writes it (`face 3` where it has no name; a face of a body
+/// a file gives, which no written path reaches, as a face of that body: `vocab::face_quoted`).
 fn face_name(faces: &[super::topo::Face],f: u32) -> String {
-    faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
-        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| format!("`{n}`"))
+    faces.get(f as usize).map(|x| crate::solid::exact::joined(&x.name))
+        .filter(|n| !crate::vocab::public_path(n).is_empty())
+        .map_or_else(|| format!("face {f}"),|n| crate::vocab::face_quoted(&n))
 }
 
 /// A length in millimetres, written in the unit that suits it.

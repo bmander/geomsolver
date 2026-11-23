@@ -117,6 +117,7 @@ use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
 pub use evaluated::{DrawnFrom, Unbuilt};
 pub use evaluated::{Renamed, Rigid};
+pub use evaluated::brep_meshes;
 
 use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};
@@ -176,8 +177,10 @@ pub fn mesh_unit(sk: &Sketch, i: usize) -> f64 {
     // pick a faceting, and paying for a fine boundary to decide how fine a boundary to build
     // would be the tail wagging the dog.  A coarse tessellation gives a box right to its own
     // sagitta, which is far below anything this then rounds to.
+    // A body a file gives is its edges' box here, never meshed (`document::extent_at`): this is
+    // asked on the page's thread every edit
     let origin = frame_origin(sk, i, REPORT_UNIT * 20.0);
-    let b = resolve_at(sk, i, REPORT_UNIT * 20.0, origin).bbox();
+    let b = document::extent_at(sk, i, REPORT_UNIT * 20.0, origin);
     if b.is_empty() {
         return REPORT_UNIT;
     }
@@ -612,6 +615,8 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
+            // a body a file gives was held sound as it was read (`brep::step_read`)
+            SolidDef::Given(_) => continue,
             // its terms on one axis, bounded all round: what its meridian says; else in general
             // position, bounded all round
             SolidDef::Region { .. } => {

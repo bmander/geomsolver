@@ -1705,15 +1705,10 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
 }
 
-/// **A net whose first and last rows of poles each collapse to a point is a ball**
-/// (brep-bench's geometry/nurbs-sphere): the standard biquadratic NURBS sphere, a 9 × 5 rational
-/// net, cut by `build::grid_sheet` two round and two up. Each collapsed row is a pole — one vertex
-/// and a degenerate edge in each face it bounds, as a sphere's are — so the sheet is a closed
-/// boundary `check` holds: the ball, `500π/3` and `100π`.
-#[test]
-fn a_net_closed_round_onto_two_poles_is_a_ball() {
+/// The standard biquadratic NURBS sphere of radius 5 about the origin, a 9 × 5 rational net closed
+/// round onto two poles, cut by `build::grid_sheet` two round and two up.
+pub(crate) fn nurbs_ball() -> gcs_core::brep::topo::Brep {
     use gcs_core::brep::nurbs::Net;
-    use gcs_core::brep::topo::EdgeCurve;
     let (r,h) = (5.,std::f64::consts::FRAC_1_SQRT_2);
     let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
     let circle_w = [1.,h,1.,h,1.,h,1.,h,1.];
@@ -1722,7 +1717,18 @@ fn a_net_closed_round_onto_two_poles_is_a_ball() {
     let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,0.,0.5,0.5,1.,1.,1.],
         poles:circle.iter().map(|c| meridian.iter().map(|m| [m[0]*c[0],m[0]*c[1],m[1]]).collect()).collect(),
         weights:Some(circle_w.iter().map(|wi| meridian_w.iter().map(|wj| wi*wj).collect()).collect())};
-    let ball = gcs_core::brep::build::grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap();
+    gcs_core::brep::build::grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap()
+}
+
+/// **A net whose first and last rows of poles each collapse to a point is a ball**
+/// (brep-bench's geometry/nurbs-sphere): the standard biquadratic NURBS sphere, a 9 × 5 rational
+/// net, cut by `build::grid_sheet` two round and two up. Each collapsed row is a pole — one vertex
+/// and a degenerate edge in each face it bounds, as a sphere's are — so the sheet is a closed
+/// boundary `check` holds: the ball, `500π/3` and `100π`.
+#[test]
+fn a_net_closed_round_onto_two_poles_is_a_ball() {
+    use gcs_core::brep::topo::EdgeCurve;
+    let ball = nurbs_ball();
     ball.check(1e-9).unwrap();
     assert_eq!(ball.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count(),4,"each face ends at a pole");
     assert_eq!(ball.vertices.len(),4,"a vertex at each pole, two round the equator");
@@ -3678,6 +3684,56 @@ fn a_polygon_on_a_net_is_read_cell_by_cell() {
     }
 }
 
+/// **A net creased at its knots read cell by cell** (#880): `z = x²/2 + |x|/2` on a cubic net of
+/// uniform knots (`1/64`s of `[−1, 1]`), the knot `x = 0` of multiplicity three, the net joined in
+/// value only there (`S_u` jumps across it); the pentagon with its square hole of
+/// `a_polygon_on_a_net_is_read_cell_by_cell` across the crease. Each cell's rule reads its own
+/// span's side of a knot line (its nodes inside it), so `Cells` reads a creased net as it reads a
+/// smooth one; area `∬ √(1 + (x ± 1/2)²)` and flux `∬ −x²/2` in closed form, round the polygon's
+/// sides (`Φ` the area integrand's antiderivative in `x`, continuous across the crease), to 1e-12
+/// of themselves — the polynomial net's flux by its table, the rational one's (weights 2) cell by
+/// cell.
+#[test]
+fn a_creased_net_is_read_cell_by_cell() {
+    let c = 0.5;
+    let mut ku = cells::knots(-1.,1.,128,0.);
+    let zero = ku.iter().position(|&k| k == 0.).unwrap();
+    ku.splice(zero..zero,[0.,0.]);
+    let kv = cells::knots(-1.,1.,96,0.);
+    let net = |w: Option<f64>| {
+        let (nu,nv) = (ku.len()-4,kv.len()-4);
+        // (each pole's knots on one side of the crease: its window's sum says which)
+        let poles = (0..nu).map(|i| { let (t,tt) = cells::polar(&ku,i); let side = (ku[i+1]+ku[i+2]+ku[i+3]).signum();
+            (0..nv).map(|j| [t,cells::polar(&kv,j).0,tt/2.+c*side*t]).collect() }).collect();
+        let net = gcs_core::brep::nurbs::Net {du:3,dv:3,uknots:ku.clone(),vknots:kv.clone(),poles,weights:w.map(|w| vec![vec![w;nv];nu])};
+        net.check().unwrap();
+        net
+    };
+    let outer = [[-0.75,-0.5],[0.5,-0.5],[0.875,0.2],[0.5,0.75],[-0.75,0.75]];
+    let hole = [[-0.25,0.],[0.25,0.],[0.25,0.3],[-0.25,0.3]];
+    let poly = |p: &[[f64;2]],reversed: bool| -> Vec<(gcs_core::brep::geom::Curve,bool,bool)> {
+        let mut l: Vec<_> = (0..p.len()).map(|k| (cells::line(p[k],p[(k+1)%p.len()]),reversed,false)).collect();
+        if reversed { l.reverse() }
+        l
+    };
+    let around = |p: &[[f64;2]],phi: &dyn Fn(f64) -> f64,int: &dyn Fn(f64) -> f64| -> f64 {
+        (0..p.len()).map(|k| { let (a,b) = (p[k],p[(k+1)%p.len()]);
+            if a[0] == b[0] { phi(a[0])*(b[1]-a[1]) } else { (b[1]-a[1])/(b[0]-a[0])*(int(b[0])-int(a[0])) } }).sum()
+    };
+    let f1 = |x: f64| (x*(1.+x*x).sqrt()+x.asinh())/2.;
+    let i1 = |x: f64| ((1.+x*x).powf(1.5)/3.+x*x.asinh()-(1.+x*x).sqrt())/2.;
+    let sgn = |x: f64| if x < 0. { -1. } else { 1. };
+    let phi = |x: f64| f1(x+c*sgn(x))-f1(c)*sgn(x);
+    let int_phi = |x: f64| i1(x+c*sgn(x))-f1(c)*x.abs();
+    let area = around(&outer,&phi,&int_phi)-around(&hole,&phi,&int_phi);
+    let flux = around(&outer,&|x| -x.powi(3)/6.,&|x| -x.powi(4)/24.)-around(&hole,&|x| -x.powi(3)/6.,&|x| -x.powi(4)/24.);
+    for w in [None,Some(2.)] {
+        let (a,f,_) = cells::measured(&cells::face(cells::surface(net(w)),vec![poly(&outer,false),poly(&hole,true)]));
+        assert!((a/area-1.).abs() <= 1e-12,"weights {w:?}: the creased area {a}, the closed form's {area}: {:e} apart",a-area);
+        assert!((f/flux-1.).abs() <= 1e-12,"weights {w:?}: the creased flux {f}, the closed form's {flux}: {:e} apart",f-flux);
+    }
+}
+
 /// **A torus as a rational net, read across its seams** (#880): the circle as a rational quadratic,
 /// its knots put in to 40 spans, the torus its revolution (`R = 2`, `r = 0.6`), the face its whole
 /// chart — its loop the domain's sides, each seam used once either way; the area `4π² R r` and the
@@ -3704,4 +3760,79 @@ fn a_rational_torus_is_read_cell_by_cell_across_its_seams() {
     let (area,flux) = (4.*PI*PI*big*r,6.*PI*PI*big*r*r);
     assert!((a/area-1.).abs() <= 1e-12,"the torus's area {a}, the closed form's {area}: {:e} apart",a-area);
     assert!((f.abs()/flux-1.).abs() <= 1e-12,"the torus's flux {f}, the closed form's {flux}: {:e} apart",f.abs()-flux);
+}
+
+/// **A face's two sides are no touch** (`Brep::self_touching_edges`, #993 stage 2): two edges
+/// between the same vertices whose middles stand within their tolerance are material meeting
+/// along a line where each bounds faces of its own, and a face's two sides where one face's loop
+/// runs along one and back along the other — a lune of two edges, however thin, as files hold
+/// between tangent rounds (CADGenBench 246's, 248's and 250's, the export refused once as touching
+/// itself, after minutes).
+#[test]
+fn a_lunes_two_sides_do_not_touch() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    let vertices = vec![Vertex {p:[0.;3],tol:0.},Vertex {p:[10.,0.,0.],tol:0.}];
+    let edge = || Edge {curve:EdgeCurve::Curve(Curve::Line {p:[0.;3],d:[1.,0.,0.]}),t:[0.,10.],v:[0,1],tol:1e-6};
+    let edges = vec![edge(),edge()];
+    let usage = |e: u32,reversed: bool| Coedge {edge:e,reversed,pcurve:Pcurve::Line {a:[0.;2],b:[10.,0.]}};
+    let face = |loops: Vec<Vec<Coedge>>| Face {surface:Surface::Plane(Frame::WORLD),reversed:false,loops,name:String::new()};
+    // one face between them, along the one and back along the other
+    let lune = Brep {vertices:vertices.clone(),edges:edges.clone(),faces:vec![face(vec![vec![usage(0,false),usage(1,true)]]),
+        face(vec![vec![usage(0,true)]]),face(vec![vec![usage(1,false)]])]};
+    assert!(lune.self_touching_edges(1e-9).is_empty());
+    // each the edge of faces of its own: material meets along the line
+    let touching = Brep {vertices,edges,faces:vec![face(vec![vec![usage(0,false)]]),face(vec![vec![usage(0,true)]]),
+        face(vec![vec![usage(1,false)]]),face(vec![vec![usage(1,true)]])]};
+    assert_eq!(touching.self_touching_edges(1e-9),vec![[0,1]]);
+}
+
+/// **A face thinner than its edges' tolerance turns no way** (`Brep::turned`, its `sliver`): a
+/// loop whose every point lies within twice the widest tolerance of another of its uses is
+/// oriented by nothing its parameters say — CADGenBench 242's face #75264, a spline's strip some
+/// 1e-5 mm wide, its feet wandering along its narrow way, read turning one way from the file and
+/// the other from the same edges written again — while a loop as wide as its parameters say
+/// turning against its face's sense is refused.
+#[test]
+fn a_face_thinner_than_its_tolerance_turns_no_way() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    let triangle = |h: f64| {
+        let p = [[0.,0.,0.],[10.,0.,0.],[5.,h,0.]];
+        let vertices = p.iter().map(|&p| Vertex {p,tol:0.}).collect();
+        let edges = (0..3).map(|k| {
+            let (a,b) = (p[k],p[(k+1)%3]);
+            Edge {curve:EdgeCurve::Curve(Curve::Line {p:a,d:[b[0]-a[0],b[1]-a[1],b[2]-a[2]]}),t:[0.,1.],v:[k as u32,((k+1)%3) as u32],tol:1e-6}
+        }).collect();
+        // (in its parameters a triangle five square units in area, counter-clockwise, on a face
+        // whose sense asks the other turn)
+        let uv = [[0.,0.],[10.,0.],[5.,1.]];
+        let l = (0..3).map(|k| Coedge {edge:k as u32,reversed:false,pcurve:Pcurve::Line {a:uv[k],b:uv[(k+1)%3]}}).collect();
+        Brep {vertices,edges,faces:vec![Face {surface:Surface::Plane(Frame::WORLD),reversed:true,loops:vec![l],name:String::new()}]}
+    };
+    assert_eq!(triangle(1e-7).turned(0,0,1e-9),None);
+    assert!(triangle(1.).turned(0,0,1e-9).is_some_and(|a| (a-5.).abs() <= 1e-12));
+}
+
+/// **A crescent whose sides' ends stand apart at a vertex still meshes** (`mesh`'s crossings, #993
+/// stage 2): a file's vertex gathers points its tolerance apart, so a face's two sides, each one
+/// chord at the bar, can end 3 µm apart at it — CADGenBench 248's plane crescent between two arcs,
+/// whose loop the mesh lays as two corners (each use's last sample the next one's first) and which
+/// closed no triangulation, so neither the body's volume nor its mesh was had. The crossings read
+/// the corners where the mesh lays them, find the two chords between the same two corners, and
+/// split them, as they split chords that cross.
+#[test]
+fn a_crescent_whose_ends_stand_apart_at_a_vertex_meshes() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+    // its first side ends at (10, 0), its second starts 3 µm off it, at the vertex's tolerance
+    let (a,z,w) = ([0.;3],[10.,0.,0.],[10.,0.003,0.]);
+    let vertices = vec![Vertex {p:a,tol:0.},Vertex {p:[10.,0.0015,0.],tol:0.0015}];
+    let side = |p: V,q: V,v: [u32;2]| Edge {curve:EdgeCurve::Curve(Curve::Line {p,d:[q[0]-p[0],q[1]-p[1],q[2]-p[2]]}),t:[0.,1.],v,tol:1e-9};
+    let edges = vec![side(a,z,[0,1]),side(w,a,[1,0])];
+    let l = vec![Coedge {edge:0,reversed:false,pcurve:Pcurve::Line {a:[0.;2],b:[10.,0.]}},
+        Coedge {edge:1,reversed:false,pcurve:Pcurve::Line {a:[10.,0.003],b:[0.;2]}}];
+    let b = Brep {vertices,edges,faces:vec![Face {surface:Surface::Plane(Frame::WORLD),reversed:false,loops:vec![l],name:String::new()}]};
+    let m = gcs_core::brep::mesh::mesh(&b,0.01,0.2).unwrap_or_else(|e| panic!("{e}"));
+    assert!(m.tris.len() >= 2 && m.turned == 0,"{} triangles, {} turned",m.tris.len(),m.turned);
 }

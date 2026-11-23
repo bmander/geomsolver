@@ -1,0 +1,501 @@
+# brep-bench 7d811e9ed73eaa8772a31b74d2288011e31efbe9: each settled case's closed forms (its header's values) and the relative tolerance the bench grades at (its own, else 1e-06); `measured`, which of them the case says are no closed form but a measure (kernels' values, or the bench's measurer's)
+case	volume	area	tolerance	centroid	reference	measured
+boolean/box-minus-through-cylinder	717.2566611769187	731.9468914507713	1e-06			
+boolean/boxes-common	250.0	250.0	1e-06			
+boolean/boxes-cut	750.0	550.0	1e-06			
+boolean/boxes-sharing-a-face	2000.0	1000.0	1e-06			
+boolean/boxes-sharing-part-of-a-face	2000.0	1100.0	1e-06			
+boolean/boxes-union	1750.0	950.0	1e-06			
+boolean/chain-of-three-balls	859.7791094624408	529.9418007655469	1e-06			
+boolean/chain-of-three-balls-halved	429.8895547312204	407.7455565115006	1e-06			
+boolean/cross-drilled-cube	19755.260919448436	9970.346538825268	1e-06			
+boolean/drilled-plate	18869.026644707676	7304.77868423386	1e-06			
+boolean/golf-ball	4124.028109767963	1314.8501805536118	1e-06			
+boolean/half-cylinder-boss-tangent	1392.699081698724	735.6194490192345	1e-06			
+boolean/half-torus	394.78417604357435	419.9169172722927	1e-06			
+boolean/hemisphere	261.79938779914943	235.61944901923448	1e-06			
+boolean/indexed-pattern	5906.194188748813	3367.7873246482577	1e-06			
+boolean/linked-tori	29.608813203268074	118.4352528130723	1e-06			
+boolean/napkin-ring	268.082573106329	402.1238596594935	1e-06			
+boolean/nested-shells	2714.336052701581	2764.601535159018	1e-06			
+boolean/offset-hole-sphere	29240.844399008805	6171.861947620873	1e-06			volume,area
+boolean/reuleaux-tetrahedron	422.1577331158267	297.5471716584401	1e-06			
+boolean/ring-of-balls	1320.5635370580605	1170.8697754126144	1e-06			
+boolean/sphere-lens	108.90854532444617	125.66370614359172	1e-06			
+boolean/sphere-pocket	3738.2006122008506	1678.539816339745	1e-06			
+boolean/spheres-union	938.2890058721515	502.6548245743669	1e-06			
+boolean/steinmetz-common	666.6666666666666	400.0	1e-06			
+boolean/steinmetz-union	4045.722313718023	1799.114857512855	1e-06			
+boolean/stepped-shaft	1068.1415022205297	659.7344572538566	1e-06			
+boolean/tori-common	154.36148884166312	263.1894506957162	1e-06			
+boolean/tube	502.6548245743669	603.1857894892403	1e-06			
+boolean/tube-flush-ends	502.6548245743669	603.1857894892403	1e-06			
+boolean/unequal-lens-aslant	42.245011348187795	69.39098850747226	1e-06			
+chamfer/ball-in-conical-seat-distance-1-angle-45	2049.073935638824	974.9194626975325	1e-06			
+chamfer/ball-in-conical-seat-distance-2-angle-30	2068.632865720577	969.224372600028	1e-06			
+chamfer/ball-in-conical-seat-distance-3-angle-15	2069.684817232869	969.9348965610062	1e-06			
+chamfer/ball-on-plate-rim-distance-1-angle-50	1490.4652682829003	766.2425785974384	1e-06			
+chamfer/ball-on-plate-rim-distance-2-angle-40	1534.4334183861206	758.1851142781885	1e-06			
+chamfer/ball-on-plate-rim-distance-2-angle-45	1552.9939684245544	759.2257044092357	1e-06			
+chamfer/ball-on-post-two-distances	693.237118930332	423.89936851941917	1e-06			
+chamfer/ball-segment-rim-chamfered-to-its-center	438.15810042271795	289.6751040616139	1e-06			
+chamfer/ball-segment-rim-two-distances	449.84164171796965	291.4328301882486	1e-06			
+chamfer/block-ridge	200.0	216.5685424949238	1e-06			
+chamfer/bored-ball-rim-chamfered-through-its-bore	345.34065321131214	406.0016975604648	1e-06			
+chamfer/bored-ball-rim-two-distances	390.29889434434466	389.2813887198173	1e-06			
+chamfer/box-top-asymmetric	1142.6666666666667	709.2198067399883	1e-06			
+chamfer/capped-frustum-rim-distance-1-angle-45	127.5907201864641	127.68324248488022	1e-06			
+chamfer/capped-frustum-rim-distance-1-angle-60	116.51530940897516	120.8960173869281	1e-06			
+chamfer/capped-frustum-rim-distance-2-angle-45	95.34575251209515	105.86288066000466	1e-06			
+chamfer/cube-all-edges	802.6666666666666	447.3595659028278	1e-06			
+chamfer/cube-all-edges-mitered	808.0	453.58787847867995	1e-06			
+chamfer/cylinder-rim-to-point	523.5987755982989	346.69152247319363	1e-06			
+chamfer/elliptic-cylinder-rim	1414.234058679081	720.4044601968868	1e-06			
+chamfer/elliptic-hole-rim	2158.2254590595167	1587.439248694166	1e-06			
+chamfer/hemisphere-rim-chamfered-to-its-center	209.70196741867787	202.79020046415667	1e-06			
+chamfer/hemisphere-rim-distance-1-angle-45	248.05368192979512	214.8469731174213	1e-06			
+chamfer/hemisphere-rim-distance-2-angle-45	213.87538998678968	190.1204034655881	1e-06			
+chamfer/hemisphere-rim-two-distances	234.3961446790214	207.32544246695443	1e-06			
+chamfer/l-block-inside-consumed	755.0	509.99494936611666	1e-06			
+chamfer/lens-rim-two-distances	85.16359511686179	101.47582231191416	1e-06			
+chamfer/narrow-sector-rim-distance-2-angle-45	28.8296987523047	48.45011937959886	1e-06			
+chamfer/octahedron-all-edges	917.3333333333334	478.3802556600424	1e-06			
+chamfer/octahedron-all-edges-mitered	981.3333333333334	518.1447576478596	1e-06			
+chamfer/spherical-sector-rim-distance-1-angle-45	94.27222633261515	108.40482826592172	1e-06			
+chamfer/spherical-sector-rim-distance-2-angle-60	57.15190093778444	75.60396091120487	1e-06			
+chamfer/spherical-sector-rim-distance-3-angle-30	61.21513124398033	82.15384080378502	1e-06			
+chamfer/spherical-sector-rim-two-distances	84.0726472409148	100.89094182778022	1e-06			
+chamfer/spline-boss-rim	1265.3106524626564	736.405589840441	1e-06			
+chamfer/variable-distance-edge	980.0	584.6818133753055	1e-06			
+chamfer/variable-distance-semicircular-rim	219.25698728178764	215.00765053698686	1e-06			
+chamfer/wide-sector-rim-distance-1-angle-45	148.77091778445643	149.57725669661036	1e-06			
+chamfer/wide-sector-rim-distance-2-angle-30	134.42060465930686	139.4976173787534	1e-06			
+chamfer/wide-sector-rim-distance-3-angle-20	125.65854505287898	136.6218396584814	1e-06			
+cnc/ball-end-surface-raster	119999.9438165	21722.69118005	1e-06			volume,area
+cnc/bull-nose-profile	208489.64862880707	41667.55857176368	1e-06			
+cnc/flat-end-mill-profile	147468.74388142145	32743.752039526185	1e-06			
+cnc/pocket-with-an-island	257360.11215824084	52871.636273475	1e-06			
+draft/boss-on-plate	10168.518301825494	4532.980531504529	1e-06			
+draft/box-about-its-middle	2402.551422081851	1123.9755492768527	1e-06			
+draft/box-cross-drilled	9508.995905883501	3564.816490476812	1e-06			
+draft/box-four-sides	2130.2419650444463	1034.384515466381	1e-06			
+draft/box-one-side	2294.203811574921	1083.059257670427	1e-06			
+draft/box-outward	2690.16941161036	1216.6282895855456	1e-06			
+draft/box-top-drafted-away	1154.7005383792516	900.0	1e-06			
+draft/cylinder-parted-both-ways	5959.649932324679	1789.574330861596	1e-06			
+draft/hole-tapered	15319.89828721478	4751.804244415088	1e-06			
+draft/l-block-sides	4593.026514919725	2034.022842053666	1e-06			
+draft/l-block-sides-drafted-until-its-arms-close	306.7173305069887	450.0	1e-06			
+draft/pocket-walls	14297.337390274086	5228.479128158012	1e-06			
+draft/rounded-box-sides	5463.267400412602	2000.7496007461252	1e-06			
+draft/rounded-pocket-walls	14466.913089757878	5158.670564596014	1e-06			
+draft/t-block-sides-drafted-until-its-bar-and-stem-close	182.0	366.9604614807104	1e-06			
+edit/ball-flat-deleted	523.5987755982989	314.1592653589793	1e-06			
+edit/ball-on-plate-root-bevel-deleted	485.89966375522135	552.9203070318035	1e-06			
+edit/ball-on-plate-root-round-deleted	485.89966375522135	552.9203070318035	1e-06			
+edit/blind-bore-floor-bevel-deleted	3698.40710525538	1750.79644737231	1e-06			
+edit/blind-bore-floor-round-deleted	3698.40710525538	1750.79644737231	1e-06			
+edit/block-bevel-deleted	2000.0	1000.0	1e-06			
+edit/block-edge-round-deleted	2000.0	1000.0	1e-06			
+edit/block-top-moved-up	17943.36293856408	4985.575191894877	1e-06			
+edit/block-two-rounds-deleted	2000.0	1000.0	1e-06			
+edit/boss-deleted	804.247719318987	603.1857894892403	1e-06			
+edit/boss-root-round-deleted	1030.4423903774523	753.9822368615504	1e-06			
+edit/box-every-round-deleted	3840.0	1504.0	1e-06			
+edit/countersink-deleted	1874.3362938564082	1100.5309649148735	1e-06			
+edit/cube-corner-rounds-deleted	1000.0	600.0	1e-06			
+edit/cylinder-both-rims-rounds-deleted	1130.9733552923256	603.1857894892403	1e-06			
+edit/cylinder-rim-bevel-deleted	1130.9733552923256	603.1857894892403	1e-06			
+edit/cylinder-rim-round-deleted	1130.9733552923256	603.1857894892403	1e-06			
+edit/domed-post-cap-turned-rounds-deleted	356.04716740684324	263.89378290154264	1e-06			
+edit/domed-post-round-deleted	356.04716740684324	263.89378290154264	1e-06			
+edit/double-frustum-ridge-round-deleted	368.6135380212024	263.1934830689617	1e-06			
+edit/double-frustum-turned-rounds-deleted	368.6135380212024	263.1934830689617	1e-06			
+edit/frustum-flat-deleted	1319.4689145077132	713.1846844817552	1e-06			
+edit/frustum-rim-bevel-deleted	395.84067435231395	331.0416671496403	1e-06			
+edit/frustum-rim-round-deleted	395.84067435231395	331.0416671496403	1e-06			
+edit/frustum-ring-groove-deleted	1319.4689145077132	713.1846844817552	1e-06			
+edit/half-torus-both-rims-rounds-deleted	236.8705056261446	387.6669529984547	1e-06			
+edit/half-torus-outer-rim-round-deleted	236.8705056261446	387.6669529984547	1e-06			
+edit/hemisphere-rim-round-deleted	261.79938779914943	235.61944901923448	1e-06			
+edit/hole-both-rim-rounds-deleted	1874.3362938564082	1100.5309649148735	1e-06			
+edit/hole-deleted	2000.0	1000.0	1e-06			
+edit/hole-rim-round-deleted	1874.3362938564082	1100.5309649148735	1e-06			
+edit/hole-widened	8368.4956797928	3563.982297150257	1e-06			
+edit/holes-widened-until-merged	7862.467521335166	3576.3510454792586	1e-06			
+edit/hub-keyway-deleted	5277.875658030853	2287.0794518133694	1e-06			
+edit/l-block-inside-round-deleted	1200.0	860.0	1e-06			
+edit/l-block-riser-moved	18000.0	4600.0	1e-06			
+edit/l-block-step-deleted	2400.0	1160.0	1e-06			
+edit/open-slot-deleted	2000.0	1000.0	1e-06			
+edit/rounded-block-top-moved-up	19122.743338823082	4584.632726156541	1e-06			
+edit/rounded-box-top-rim-chain-deleted	1858.194671058465	935.3451151369263	1e-06			
+edit/rounded-frustum-rounds-deleted	395.84067435231395	331.0416671496403	1e-06			
+edit/rounded-frustum-top-round-deleted	352.10191529835726	263.7960439253556	1e-06			
+edit/shaft-flat-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/shaft-open-keyway-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/shaft-ring-groove-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/shaft-round-groove-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/shaft-two-flats-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/shaft-v-groove-deleted	1570.7963267948965	785.3981633974482	1e-06			
+edit/side-notch-deleted	2000.0	1000.0	1e-06			
+edit/tube-bore-ring-groove-deleted	5277.875658030853	2287.0794518133694	1e-06			
+edit/turned-post-cone-turned-rounds-deleted	634.6017160251382	389.55748904513433	1e-06			
+edit/turned-post-round-deleted	634.6017160251382	389.55748904513433	1e-06			
+feature/hole-through-the-upper-arm	11458.407105255379	5386.2654824574365	1e-06			
+feature/pad-down-to-cylinder	12751.845965694885	3268.381948049816	1e-06			
+feature/post-up-to-dome	7559.30988769618	7352.665293339964	1e-06			
+feature/rib-revolved-to-a-stop	5085.453107998477	2445.4459830140295	1e-06			
+fill/coons-patch-of-four-lines	750.0	528.0789275273404	1e-06			
+fill/coons-patch-of-four-parabolas	1000.0	614.1210047563	1e-06			area
+fillet/ball-and-post	4467.1367089692585	1395.719075264613	1e-06			
+fillet/boss-s-curve	6718.978234245993	3911.7283818781953	1e-06			
+fillet/box-all-edges	975.5870138909414	547.3628179866693	1e-06			
+fillet/box-one-edge	991.4159265358979	589.6991118430775	1e-06			
+fillet/conic-edge	1985.0	985.696757204207	1e-06			
+fillet/cylinder-rim	778.957433419712	457.31024053179993	1e-06			
+fillet/cylinder-rim-to-dome	654.4984694978735	392.6990816987241	1e-06			
+fillet/elliptic-boss-root	5977.207966448124	3224.2781654097657	1e-06			
+fillet/elliptic-cylinder-rim	1466.5488314543154	739.8186677715735	1e-06			
+fillet/elliptic-hole-rim	2167.266667040222	1591.13391686591	1e-06			
+fillet/elliptic-section-cylinder-rim	766.0759734642396	448.13774725142827	1e-06			
+fillet/hole-waist	734.7586624846977	925.8594996794824	1e-06			
+fillet/knife-edge	24.964002910601035	108.14792142416658	1e-06			
+fillet/l-block-end-mixed-corner	2024.683159826111	1176.562210449103	1e-06			
+fillet/l-block-inside-consumed	615.1548999352503	492.98672286269283	1e-06			
+fillet/nearly-flat-ridge	240.7947137228925	236.26625383031265	1e-06			
+fillet/notched-cube-inside-corner	7053.422580176728	2365.8915851175016	1e-06			
+fillet/nurbs-cylinder-rim	778.957433419712	457.31024053179993	1e-06			
+fillet/octahedron-all-edges	1270.7657089174302	619.2950465096911	1e-06			
+fillet/parabolic-cylinder-rim	766.129728455431	446.19935825865923	1e-06			
+fillet/rectangular-pyramid-all-edges	848.6909721602239	527.6607266664573	1e-06			
+fillet/round-swallowing-a-tiny-face	498.9269908169872	397.42477796076935	1e-06			
+fillet/rounded-block-top-rim	1149.043632182972	733.0931753639765	1e-06			
+fillet/slab-half-round	222.83185307179588	227.39822368615503	1e-06			
+fillet/sliver-strip	391.41764326475004	501.97533421296373	1e-06			
+fillet/spline-boss-rim	1280.7390363174948	746.136082812943	1e-06			
+fillet/square-boss-root-mixed-corners	8535.669714402615	3639.7579738406407	1e-06			
+fillet/tee-of-two-cylinders	4786.206212384999	1906.16972839	1e-06			volume,area
+fillet/variable-radius-concave-edge	1289.299412919444	889.6185084327392	1e-06			
+fillet/variable-radius-edge	994.9926238126071	592.4995517137655	1e-06			
+fillet/variable-radius-obtuse-edge	931.5448315358009	543.4750692845354	1e-06			
+fillet/variable-radius-semicircular-rim	228.31860381364436	221.09030860032684	1e-06			
+fillet/variable-radius-to-a-point	997.1386421786326	594.8778376869467	1e-06			
+geometry/ellipsoid	301.59289474462014	231.24821501597344	1e-06			
+geometry/ellipsoid-half	150.79644737231007	191.02233119414177	1e-06			
+geometry/elliptic-cylinder	471.23889803846896	349.51776824167507	1e-06			
+geometry/elliptic-hole	2619.61065788307	1527.4254217639116	1e-06			
+geometry/high-degree-bezier-dome	2795.3125	1358.7504625329134	1e-06			area
+geometry/horn-torus	2467.4011002723396	986.9604401089358	1e-06			
+geometry/hyperboloid	804.247719318987	564.4508882371365	1e-06			
+geometry/hyperboloid-of-two-sheets	201.06192982974676	322.7472450737855	1e-06			
+geometry/hyperboloid-ruled	523.5987755982989	426.26652204800996	1e-06			
+geometry/lemon	57.299667477372516	76.53638161221481	1e-06			
+geometry/nurbs-cone	261.79938779914943	254.160184615763	1e-06			
+geometry/nurbs-sphere	523.5987755982989	314.1592653589793	1e-06			
+geometry/oblate-spheroid	452.3893421169302	312.18777732042184	1e-06			
+geometry/paraboloid	804.247719318987	542.208393846961	1e-06			
+geometry/periodic-bspline-prism	3333.3333333333335	1315.9567627227589	1e-06			
+geometry/periodic-bspline-ring	1884.9555921538758	1223.8829974910582	1e-06			
+geometry/saddle-drum	2010.6192982974676	948.8014785737964	1e-06			
+geometry/saddle-drum-bored	1727.8759594743863	1079.7764991189633	1e-06			
+geometry/spindle-torus	1537.7403276407763	668.7126456775763	1e-06			
+geometry/torus-nearly-horn	2457.541365475651	984.986519228718	1e-06			
+integration/benchy	15550.999869574227	9432.403647291821	2e-05	1.3799708802954305,-0.0005574275340702653,13.523699983833676	benchy.step.gz	volume,area
+integration/utah-teapot	25.9956738117	52.2260167859	1e-06			volume,area
+loft/slab-pinched-on-four-guides	2436.0685714285714	2124.0	1e-06			
+loft/square-spire-on-four-guides	9423.771428571428	2397.6	1e-06			
+loft/square-to-octagon	33760.0	6188.254698053646	1e-06			
+loft/square-to-round	35068.58347057703	6241.372840065616	1e-06			area
+loft/twisted-tapering-square	17333.333333333332	4643.764402962483	1e-06			
+loft/twisted-thin-blade	960.0	7351.884474938799	1e-06			
+nurbs/bezier-dome	3150.0	1309.322926203161	1e-06			area
+nurbs/bspline-dome	3081.0055555555555	1285.368404802979	1e-06			area
+nurbs/drilled-dome	2872.944892550934	1431.7956857724896	1e-06			area
+nurbs/drum-in-a-nurbs-sleeve	1237.7875055143786	697.4335690969341	1e-06			
+nurbs/flat-bspline-slabs-united	700.0	610.0	1e-06			
+nurbs/groin-vault	7632.0	2256.0	1e-06			
+nurbs/lens-of-two-nurbs-balls	108.90854532444617	125.66370614359172	1e-06			
+nurbs/sliced-dome	2854.4122952001485	1276.254114612174	1e-06			volume,area
+nurbs/vault-tangent-plane	8175.394177208706	2404.9354050618863	1e-06			
+offset/ball-tipped-cone-shrunk-past-its-tip	95.52984460032289	129.7839975661082	1e-06			
+offset/ball-tipped-cone-shrunk-twice-its-tip	44.22223482313369	77.66444154901866	1e-06			
+offset/box-grown	935.5870138909414	539.3628179866691	1e-06			
+offset/box-shrunk	192.0	208.0	1e-06			
+offset/cone-grown	150.72175801789774	154.83585886827183	1e-06			
+offset/cylinder-cut-at-thirty-degrees-grown	598.5408359533369	386.36550281138585	1e-06			
+offset/cylinder-grown	1341.5898001820483	645.3331657355175	1e-06			
+offset/drilled-plate-grown	2781.0247397391663	1449.3945946152583	1e-06			
+offset/drilled-plate-grown-by-its-hole	6300.904006357122	2070.4846720026976	1e-06			
+offset/drilled-plate-grown-past-its-hole	8548.44724650172	2430.166661073631	1e-06			
+offset/dumbbell-split	295.4404727084366	366.09541295104316	1e-06			
+offset/elliptic-cylinder-grown	896.4590990695517	505.1114240252767	1e-06			
+offset/elliptic-cylinder-shrunk	197.9078687523085	203.42747563782547	1e-06			
+offset/filleted-ball-on-plate-grown-past-its-fillet	1966.210681520697	944.1458715528181	1e-06			
+offset/filleted-ball-on-plate-grown-twice-its-fillet	3024.9181050229154	1177.4577656564027	1e-06			
+offset/filleted-blind-bore-grown-past-its-fillet	7025.949461832133	2050.2644666286456	1e-06			
+offset/filleted-cone-boss-grown-by-its-fillet	1190.9764842829493	756.8759896399085	1e-06			
+offset/filleted-cone-boss-grown-past-its-fillet	2055.758088451423	976.6548977277106	1e-06			
+offset/filleted-cone-boss-grown-twice-its-fillet	3152.221637799712	1220.2398799995372	1e-06			
+offset/filleted-post-grown-past-its-fillet	4390.709282196017	1514.4700248998008	1e-06			
+offset/flanged-drum-shrunk	624.3662286501782	496.6023797475794	1e-06			
+offset/frustum-top-rounded-shrunk-past-its-round	32.72736262314977	65.58196621781498	1e-06			
+offset/grooved-drum-grown	4519.350146936107	1545.4237620122985	1e-06			
+offset/l-block-grown	2197.27432383419	1138.4513020910304	1e-06			
+offset/l-block-grown-sharp	2240.0	1228.0	1e-06			
+offset/l-block-shrunk	505.2876110196153	537.8539816339745	1e-06			
+offset/napkin-ring-grown	737.0776973335801	535.8663887950087	1e-06			
+offset/nurbs-ball-grown	1436.755040241732	615.7521601035994	1e-06			
+offset/rounded-frustum-shrunk-past-its-rounds	32.72736262314977	65.58196621781498	1e-06			
+offset/rounded-frustum-shrunk-to-a-stub	9.197227964105187	30.632967520756587	1e-06			
+offset/rounded-hemisphere-shrunk-past-its-round	35.604716740684324	75.39822368615503	1e-06			
+offset/rounded-puck-shrunk-by-its-rounds	301.59289474462014	251.32741228718345	1e-06			
+offset/rounded-puck-shrunk-past-its-rounds	113.09733552923257	131.94689145077132	1e-06			
+offset/slant-cut-cylinder-grown	607.910559670425	397.76739235835237	1e-06			
+offset/slant-cut-cylinder-grown-by-a-half	427.7005051445992	324.1200232961469	1e-06			
+offset/slant-cut-cylinder-grown-by-four	2605.410727716872	971.5984981823566	1e-06			
+offset/slant-cut-cylinder-grown-by-one-and-a-half	826.5150950541482	477.6979467277374	1e-06			
+offset/slant-cut-cylinder-grown-by-two	1086.655703949359	563.9116864043021	1e-06			
+offset/slant-cut-cylinder-grown-past-its-ellipse-curvature	1391.4739790096469	656.4086113880463	1e-06			
+offset/tetrahedron-grown	249.53323018738044	234.54759243458807	1e-06			
+offset/torus-grown-past-its-hole	1984.2874392993506	816.3344428255867	1e-06			
+offset/torus-shrunk	444.13219804902116	592.1762640653615	1e-06			
+offset/turned-post-shrunk-past-its-round	211.07575641306423	187.31746197029142	1e-06			
+offset/turned-post-shrunk-twice-past-its-round	130.55062804917586	136.1356816555577	1e-06			
+parts/flange	22135.66183719368	9324.246995854506	1e-06			
+parts/pin-lug	29989.380701702525	8900.530964914875	1e-06			
+parts/pocketed-tray	21371.150263212312	14967.43350880821	1e-06			
+parts/shelf-bracket	40137.3451754256	12393.13274122872	1e-06			
+parts/star-handle	19179.040932717548	6148.760045500778	1e-06			
+parts/turned-shaft	120915.32332987145	17470.591304910977	1e-06			
+parts/v-belt-pulley	41490.56537700988	10484.569630424683	1e-06			
+primitives/box	6000.0	2200.0	1e-06			
+primitives/cone-frustum	245.04422698000386	238.62729630595925	1e-06			
+primitives/cylinder	785.3981633974482	471.23889803846896	1e-06			
+primitives/extruded-l	1200.0	860.0	1e-06			
+primitives/revolved-sector	201.06192982974676	233.06192982974676	1e-06			
+primitives/revolved-washer	804.247719318987	804.247719318987	1e-06			
+primitives/sphere	523.5987755982989	314.1592653589793	1e-06			
+primitives/torus	789.5683520871487	789.5683520871487	1e-06			
+scale/balls-united-a-million-from-the-origin	765.9502088752257	459.5701253251354	1e-06			
+scale/balls-united-tens-of-metres-across	765950208875225.6	45957012532.51354	1e-06			
+scale/cylinders-crossed-a-million-from-the-origin	144.0	144.0	1e-06			
+scale/micron-balls-united	7.659502088752258e-07	0.00045957012532513543	1e-06			
+scale/micron-cylinders-crossed	1.44e-07	0.000144	1e-06			
+shell/ball-tipped-cone-hollowed-past-its-tip	356.14396672658427	493.62807104273764	1e-06			
+shell/ball-tipped-cone-shelled-open-past-its-tip	282.4743583430466	436.41329352551963	1e-06			
+shell/bored-frustum-sealed-below-its-opening	206.6469834361286	435.63418129778466	1e-06			
+shell/box-five-faces-open	80.0	196.0	1e-06			
+shell/box-hairline-cavity	479.918796	384.2008	1e-06			
+shell/box-hollowed	288.0	584.0	1e-06			
+shell/box-open-top	240.0	516.0	1e-06			
+shell/box-open-top-and-bottom	192.0	448.0	1e-06			
+shell/box-open-top-and-front	200.0	446.0	1e-06			
+shell/box-open-top-outward	345.2182849062401	731.672557568463	1e-06			
+shell/box-open-top-outward-sharp	360.0	764.0	1e-06			
+shell/box-paper-thin	0.29594000399998777	591.9160079999999	1e-06			
+shell/box-walls-meeting	480.0	376.0	1e-06			
+shell/capsule-open-at-its-dome	389.55748904513433	838.8052385084748	1e-06			
+shell/capsule-open-base	410.5014400690663	851.3716091228339	1e-06			
+shell/cone-open-base	151.9527280017563	348.8476842423666	1e-06			
+shell/cylinder-open-top	333.0088212805181	697.4335690969341	1e-06			
+shell/cylinder-side-open	157.07963267948966	376.99111843077515	1e-06			
+shell/drilled-block-open-at-its-bore	1351.4513322353837	2748.6017763138448	1e-06			
+shell/drilled-block-open-top	1253.646003293849	2606.1415625092363	1e-06			
+shell/dumbbell-neck-filled	804.8392909373451	1173.702646718128	1e-06			
+shell/frustum-bottom-rounded-shelled-open-past-its-round	308.8134135853315	335.5274500834852	1e-06			
+shell/frustum-open-at-both-ends-closing-below-its-top	238.6383232097934	297.1750300755095	1e-06			
+shell/frustum-sealed-below-its-opening	263.592190006798	285.7592677705276	1e-06			
+shell/frustum-too-thick-to-hollow	263.89378290154264	282.7433388230814	1e-06			
+shell/half-torus-open-ends	103.63084621143825	425.5189591333173	1e-06			
+shell/hemisphere-open	127.75810124598492	285.88493147667117	1e-06			
+shell/hemisphere-shelled-outward-open-at-its-dome	77.49261878854823	185.3539665617978	1e-06			
+shell/hemisphere-shelled-outward-open-at-its-dome-by-a-half	39.139008475972844	172.0021977840412	1e-06			
+shell/hemisphere-shelled-outward-open-at-its-dome-by-two	148.7020522699169	207.34511513692638	1e-06			
+shell/hole-skin-merging-wall	1241.873577515697	2534.8987556529105	1e-06			
+shell/l-block-open-at-its-step-outward-sharp	1868.0	3814.0	1e-06			
+shell/l-block-open-at-its-step-sharp	1448.0	2970.0	1e-06			
+shell/l-block-open-top	610.4977871437821	1290.9955742875643	1e-06			
+shell/l-block-open-top-sharp	612.0	1294.0	1e-06			
+shell/puck-bottom-rounded-shelled-open-past-its-round	903.1013080004374	700.9921806194939	1e-06			
+shell/round-consumed	1981.6637061435918	1506.79644737231	1e-06			
+shell/round-shrunk-to-an-edge	1485.6637061435918	1614.79644737231	1e-06			
+shell/rounded-frustum-hollowed-past-its-rounds	316.73927263788545	325.36680328498096	1e-06			
+shell/rounded-hemisphere-hollowed-past-its-round	244.19273316515043	251.71881975986975	1e-06			
+shell/rounded-puck-hollowed-past-its-rounds	957.9725995316304	666.8516802989762	1e-06			
+shell/rounded-tray	829.3893722612838	1723.3451151369263	1e-06			
+shell/sphere-hollowed	255.51620249196984	515.221195188726	1e-06			
+shell/sphere-open-at-a-cap	212.58110289290934	455.53093477052	1e-06			
+shell/sphere-opening-sealed	251.7201113688822	514.4357970253286	1e-06			
+shell/sphere-pinhole-opening	240.8526093418292	512.0739476683598	1e-06			
+shell/tall-frustum-sealed-below-its-opening	439.822971502571	483.80526865282815	1e-06			
+shell/torus-hollowed	207.2616924228765	829.046769691506	1e-06			
+singular/ball-cut-aslant-through-a-pole	493.19954082823097	307.4216143033212	1e-06			
+singular/ball-halved-through-its-poles	261.79938779914943	235.61944901923448	1e-06			
+singular/balls-meeting-through-a-pole	938.2890058721515	502.6548245743669	1e-06			
+singular/cone-cut-aslant-through-its-apex	210.61731702378458	224.8993683028736	1e-06			
+singular/cone-halved-through-its-apex	130.89969389957471	177.0800923078815	1e-06			
+singular/cylinder-hoof	48.11252243246881	113.48240573520914	1e-06			
+singular/napkin-ring-poles-near-its-rims	268.082573106329	402.1238596594935	1e-06			
+singular/napkin-ring-poles-on-its-rims	268.082573106329	402.1238596594935	1e-06			
+singular/saddle-drum-cut-level-through-its-saddle	1882.6192982974676	862.7900814038285	1e-06			
+singular/sectors-sharing-an-apex	146.51640605521118	179.05709358777133	1e-06			
+spline/peanut-prism	2472.152777777778	1319.2165440112476	1e-06			area
+spline/pipe-on-planar-cubic	65345.12719466769	9047.786842338604	1e-06			
+spline/pipe-on-twisted-cubic	8042.47719318987	2412.743157956961	1e-06			
+spline/rational-cap	3534.2917352885174	1178.0972450961724	1e-06			
+spline/rational-spheroid	1507.9644737231006	663.1722477458867	1e-06			
+spline/revolved-cubic-dome	2464.7140764263468	983.9468191043231	1e-06			
+spline/square-on-planar-cubic	16000.0	4000.0	1e-06			
+sweep/circle-along-arc	197.39208802178717	222.52482925050552	1e-06			
+sweep/duct-elbow	6031.857894892429	6287.857894892418	1e-06			
+sweep/helical-pipe	594.048305033062	1194.3797953733035	1e-06			
+sweep/helical-pipe-round-ends	598.2370952378484	1200.662980680483	1e-06			
+sweep/hollow-reducer	5119.999999999596	5433.279594536134	1e-06			
+sweep/mitered-elbow	8000.0	3400.0	1e-06			
+sweep/mitered-picture-frame	9864.0	6544.0	1e-06			
+sweep/mitered-pipe-on-cube-edges	1130.9733552923256	1156.1060965210438	1e-06			
+sweep/narrowing-bend	4900.88453960008	5119.172836922541	1e-06			
+sweep/round-cornered-pipe	1688.7343668207964	1179.79635693925	1e-06			
+sweep/twisted-duct	12373.333333333334	3515.670710036986	1e-06			area
+swept/ball-along-spline-groove	10173.828705378295	4026.6392331153256	1e-06			volume,area
+swept/ball-end-mill-screwed-across-ring-sector	109.195626256	242.2865388095	1e-06			volume,area
+swept/ball-on-a-leaning-stem-swung-partway	71.03324855515	164.1729535245	1e-06			volume,area
+swept/ball-screwed-round-a-tight-helix	253.449373663	220.3147392925	1e-06			volume,area
+swept/ball-swung-across-its-own-center-line	59.3331943709	75.5328704821	1e-06			volume,area
+swept/ball-swung-groove	4284.972013405971	2012.829877572684	1e-06			
+swept/ball-thread-groove	1343.0088854765736	880.5540322252776	1e-06			volume,area
+swept/ball-turned-while-slid	61.32537597321975	126.8395421512259	1e-06			
+swept/bar-end-turned-into-a-floor	53.56455344653	131.121294585	1e-06			volume,area
+swept/bar-plunged-aslant-into-plate	764.8696076308298	681.245048696171	1e-06			
+swept/bar-swung-partway-into-ring-sector	76.49537612892978	168.18615524888082	1e-06			
+swept/bar-turned-facing-the-axis	37.74535410823478	84.88108660518738	1e-06			
+swept/box-screwed-inside-a-rod	1522.316218895	961.1374881545	1e-06			volume,area
+swept/box-slid-aslant	812.0	542.6189318971692	1e-06			
+swept/bull-nose-along-line-arc-line	24653.516723445	7159.255410440657	1e-06			
+swept/bull-nose-carried-along-a-spline	10507.5864133	3968.62573204	1e-06			volume,area
+swept/bull-nose-pushed-in-at-a-lean	1986.59022325	1075.28822555	1e-06			volume,area
+swept/bull-nose-swung-partway-into-ring-sector	71.99190095776234	175.62853108881794	1e-06			
+swept/coin-turned-about-a-line-through-its-rim	46.5470010749	71.4550571539	1e-06			volume,area
+swept/cone-point-screwed-through-rod	1513.245602523	878.8830388467	1e-06			volume,area
+swept/cone-spun-about-a-line-through-it	288.495056967	267.008823656	1e-06			volume,area
+swept/core-drill-pushed-aslant-through-plate	1541.958420344505	1207.0623694832425	1e-06			
+swept/creased-bar-turned-through-ring-sector	38.02835463795	84.178253743	1e-06			volume,area
+swept/cube-spun-on-its-diagonal-inside-a-block	201.48960508612626	248.29761691689097	1e-06			
+swept/domed-mill-swung-partway-into-ring-sector	63.21295221311727	159.70096803807783	1e-06			
+swept/drafted-slot-screwed-through-rod	1401.31396323	896.7608937903	1e-06			volume,area
+swept/drill-pushed-through-plate	749.7345175425633	665.1327412287184	1e-06			
+swept/drill-swung-partway-into-ring-sector	65.87413339909504	156.99586044887178	1e-06			
+swept/drum-end-screwed-through-rod	1339.548902297	904.7974927203	1e-06			volume,area
+swept/drum-leaning-across-a-turn	798.14204226	806.412078241	1e-06			volume,area
+swept/drum-leaning-to-a-screw	50.2500186946	143.6145448977	1e-06			volume,area
+swept/drum-plunged-aslant-into-plate	665.4129339765	680.6777202185	1e-06			volume,area
+swept/drum-pushed-through-plate	672.0	672.0	1e-06			
+swept/drum-swung-partway-into-ring-sector	71.73303225696695	177.36281798666926	1e-06			
+swept/ellipsoid-pushed-aslant-through-plate	3522.2654176407505	2307.9842959944003	1e-06			
+swept/end-mill-slid-across-block	1760.0	1096.0	1e-06			
+swept/end-mill-turned-about-a-line-through-its-end	1906.7513385990562	1249.3562859134042	1e-06			
+swept/fine-thread-with-sharp-crests	1276.7029992078067	916.1203964876111	1e-06			
+swept/flat-ring-swung-partway-into-ring-sector	70.5860824791	181.759218941	1e-06			volume,area
+swept/frustum-screwed-across-ring-sector	65.20000349	160.46377052	1e-06			volume,area
+swept/half-drum-swung-partway-into-ring-sector	73.30382858376184	173.07963267948966	1e-06			
+swept/key-carried-along-a-spline	10652.8799891	3996.725031465	1e-06			volume,area
+swept/pin-swung-through-ring-sector	53.84340742402507	198.4923077874897	1e-06			
+swept/plus-cut-wheel	17485.5244499	8193.42160418	1e-06			volume,area
+swept/rack-cut-tooth-space	9042.502788955	3872.68353226	1e-06			volume,area
+swept/ring-lying-flat-turned-whole	761.0994599066701	919.0131303240997	1e-06			
+swept/ring-pushed-in-at-a-lean	1880.891253785	1186.342576165	1e-06			volume,area
+swept/ring-pushed-in-past-its-fold	1907.002117765	1164.56866667	1e-06			volume,area
+swept/ring-slid-flat-past-its-hole	1631.2657285967537	1061.826218357434	1e-06			
+swept/ring-slid-flat-short-of-its-hole	1031.876234895	748.65781772	1e-06			volume,area
+swept/rod-spun-about-a-line-through-it	41.68570617465	111.350261639	1e-06			volume,area
+swept/rounded-block-slid-aslant	694.6544527304435	474.11451085738196	1e-06			
+swept/short-bar-screwed-through-rod	1326.8635603592684	882.290972524117	1e-06			
+swept/spheroid-wheel-screwed-through-rod	1559.464104565	794.460009403	1e-06			volume,area
+swept/spline-bar-screwed-through-rod	1335.319592427	810.568231802	1e-06			volume,area
+swept/square-bar-on-its-edge-swung	137.09733552923257	181.8880169477256	1e-06			
+swept/square-bar-screwed-partway-up-rod	1431.585742257	806.9351761057	1e-06			volume,area
+swept/square-bar-screwed-through-rod	1300.5502131828669	821.1671555638915	1e-06			
+swept/square-on-a-planet-carrier	155.3366775343	282.1927120073	1e-06			volume,area
+swept/square-thread-at-a-growing-lead	1324.478271075	808.437626175	1e-06			volume,area
+swept/square-thread-with-a-run-out	1364.02421385	822.6335769893	1e-06			volume,area
+swept/tetrahedron-screwed	153.4631140397	324.9050838577	1e-06			volume,area
+swept/tilted-box-pushed-aslant-through-plate	3546.3703703703704	2309.917225658577	1e-06			
+swept/torus-screwed-through-rod	1460.630002527	791.5632225563	1e-06			volume,area
+swept/torus-slid-through-rod	1493.7545729515407	794.3608989284018	1e-06			
+swept/torus-turned-across-block	57.5718996751	115.83662531	1e-06			volume,area
+swept/tumbling-torus-half-turn	12.2377154547	79.6439922584	1e-06			volume,area
+swept/two-beads-slid-through-rod	1486.4498667518676	787.2349038041657	1e-06			volume,area
+swept/v-bit-engraving-stopped	5931.622419590427	2230.05797488066	1e-06			
+swept/v-wheel-screwed-through-rod	1554.38096569	812.521505271	1e-06			volume,area
+swept/v-wheel-slid-across-block	1953.81197846483	1041.569219381653	1e-06			
+swept/v-wheel-turned-once-round-rod	1536.481051645	805.6742355625	1e-06			volume,area
+tangent/ball-in-a-paraboloid-cup	654.4984694978735	455.32947609453726	1e-06			
+tangent/ball-in-band	580.1474433629152	370.7079331235956	1e-06			
+tangent/bore-a-micron-from-the-wall	282.7433388230814	622.0353454107791	1e-06			
+tangent/coaxial-overlap	1256.6370614359173	659.7344572538566	1e-06			
+tangent/cone-hollowed-to-a-thousandth-wall	0.1047092831441478	351.2300024154515	1e-06			
+tangent/cone-tip-on-face	4276.343798232436	1781.6136238803595	1e-06			
+tangent/cube-turned-a-hair	1000.0087264939527	600.0052358963717	1e-06			
+tangent/cylinder-bored-to-a-ten-thousandth-wall	0.031415612376632575	628.3185306551268	1e-06			
+tangent/cylinder-bored-to-a-thirty-thousandth-wall	0.009424749686435497	628.3185307123038	1e-06			
+tangent/cylinder-bored-to-a-thousandth-wall	0.31412784943244343	628.3185244347734	1e-06			
+tangent/cylinder-inscribed-through-a-cube	1785.3981633974483	914.1592653589793	1e-06			
+tangent/grazing-cylinders	0.0015700108780411634	0.6281614113696172	1e-06			volume,area
+tangent/hairline-slot	999.99995	699.99999	1e-06			
+tangent/half-balls-overlapping	392.69908169872417	314.1592653589793	1e-06			
+tangent/half-tori-overlapping	1332.3965941470633	1105.034289195738	1e-06			
+tangent/ice-cream-cone	15079.644737231007	3015.928947446201	1e-06			
+tangent/inscribed-ball-common	523.5987755982989	314.1592653589793	1e-06			
+tangent/inscribed-ball-union	1000.0	600.0	1e-06			
+tangent/knife-edge-dish	523.5987755982989	549.7787143782137	1e-06			
+tangent/midsphere-common	965.0688582149972	547.4667180500616	1e-06			
+tangent/paraboloid-tip-a-ten-thousandth-high	1.2566370614359172e-07	0.0050265796614084104	1e-06			
+tangent/paraboloid-tip-on-face	4706.858347057703	1824.4951605529168	1e-06			
+tangent/pole-cap-a-ten-thousandth-high	1.5707858548193846e-07	0.00628315389125305	1e-06			
+tangent/small-box-widened-a-hundredth-cut	6.78375e-11	1.818045e-05	1e-06			
+tangent/small-cone-widened-a-hundredth-cut	1.77598159698248e-11	7.985964596888611e-06	1e-06			
+tangent/small-cube-raised-a-hundredth-common	3.34125e-09	1.341e-05	1e-06			
+tangent/small-cube-raised-a-hundredth-cut	3.375e-11	4.59e-06	1e-06			
+tangent/small-cube-raised-a-hundredth-united	3.40875e-09	1.359e-05	1e-06			
+tangent/small-cube-turned-about-its-edge-common	9.792723507257842e-10	5.917089402903136e-06	1e-06			
+tangent/small-cylinder-raised-a-hundredth-common	2.624211613451724e-09	1.0532189371159782e-05	1e-06			
+tangent/small-cylinder-raised-a-hundredth-cut	2.650718801466388e-11	3.6049775699942876e-06	1e-06			
+tangent/small-cylinder-raised-a-hundredth-united	2.677225989481052e-09	1.0673561040571322e-05	1e-06			
+tangent/small-cylinder-slid-a-fiftieth-common	2.6169693639748257e-09	1.051287520584305e-05	1e-06			
+tangent/small-cylinder-slid-a-fiftieth-cut	3.37494374915622e-11	7.113582720565784e-06	1e-06			
+tangent/small-cylinder-slid-a-fiftieth-united	2.68446823895795e-09	1.0692875205888053e-05	1e-06			
+tangent/small-cylinder-widened-a-hundredth-cut	5.32794479094744e-11	1.427889203973914e-05	1e-06			
+tangent/tangent-tee-common	239.74642882659614	214.8559410549457	1e-06			
+tangent/tangent-tee-union	2964.678077834993	1506.736833112261	1e-06			
+tangent/thin-lens	7.853981372175095e-12	3.1415926535897935e-05	1e-06			
+tangent/torus-in-drum	2098.609984319263	1442.4813997670688	1e-06			
+tangent/torus-through-a-square-slab	2388.7516674059125	1777.2602648670495	1e-06			
+tangent/villarceau-half-torus	444.13219804902116	408.4382429120092	1e-06			
+tangent/viviani-common	1205.5062135043065	628.3185307179587	1e-06			
+tangent/viviani-cut	2983.2839912820846	1428.3185307179585	1e-06			
+tangent/viviani-union	4868.23958343596	1539.3804002589986	1e-06			
+tangent/wedge-a-millionth-steep	0.000125	100.000075000025	1e-06			
+thicken/angle-bracket-inward	152.0	358.0	1e-06			
+thicken/angle-bracket-rounded	166.2831853071796	390.1371669411541	1e-06			
+thicken/angle-bracket-sharp	168.0	394.0	1e-06			
+thicken/bent-flange	191.41592653589794	446.68583470577033	1e-06			
+thicken/bent-flange-past-its-bend	497.1327412287184	501.41592653589794	1e-06			
+thicken/cone-frustum	153.93804002589985	369.45129606215966	1e-06			
+thicken/cup-past-its-bend	903.1013080004373	700.992180619494	1e-06			
+thicken/half-pipe-inward	251.32741228718345	341.59289474462014	1e-06			
+thicken/half-pipe-outward	172.78759594743863	400.132711084365	1e-06			
+thicken/hemisphere-both-sides	318.3480555637657	389.55748904513433	1e-06			
+thicken/hemisphere-to-its-center	261.79938779914943	235.61944901923448	1e-06			
+thicken/narrow-cup-thickened-twice-its-bend	741.9904297867179	480.19104198756844	1e-06			
+thicken/open-box-inward	424.0	888.0	1e-06			
+thicken/open-box-outward-rounded	564.926248174189	1175.0884841043612	1e-06			
+thicken/open-box-outward-sharp	584.0	1216.0	1e-06			
+thicken/pan-thickened-three-times-its-bend	755.6179017379486	605.4099216908402	1e-06			
+thicken/parabolic-trough	83.96950434173104	204.7329095518083	1e-06			
+thicken/plate-with-holes	686.9026644707675	922.3008881569225	1e-06			
+thicken/rectangle	160.0	232.0	1e-06			
+thicken/sphere-skin	381.17990863556156	766.5486074759095	1e-06			
+thicken/spherical-cap	609.8878538168984	723.8229473870883	1e-06			
+thicken/torus-inner-half	216.5011181417393	504.2116697648473	1e-06			
+thicken/tube	345.57519189487726	760.26542216873	1e-06			

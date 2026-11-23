@@ -274,6 +274,19 @@ pub(super) fn first_placed<T>(sk: &Sketch, si: usize,
 }
 
 pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Csg {
+    resolve_with(sk, si, unit, origin, false)
+}
+
+/// **A box about solid `si`'s additive material** at `unit`, less `origin`: `resolve_at`'s, with a
+/// body a file gives (#993 stage 2) stood in for by the box of its edges (`Given::extent`, read
+/// once) and not meshed — what `mesh_unit` picks a faceting by, on the page's thread on every
+/// edit, where meshing a read file of thousands of faces held the page for half a minute.
+pub(super) fn extent_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Box3 {
+    resolve_with(sk, si, unit, origin, true).bbox()
+}
+
+/// `resolve_at`; `boxed`, a given body is its edges' box (`extent_at`).
+fn resolve_with(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3], boxed: bool) -> Csg {
     let mut prims = Vec::new();
     let mut names = BTreeMap::new();
     let mut pending = vec![(si as u32, false)];
@@ -282,7 +295,7 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
         if names.contains_key(&i) { continue; }
         if sk.solids.get(i as usize).is_none() { continue; }
         if ready {
-            let term = build(sk, i, unit, origin, &mut prims, &names);
+            let term = build(sk, i, unit, origin, &mut prims, &names, boxed);
             names.insert(i, term);
             active.remove(&i);
         } else if active.insert(i) {
@@ -464,6 +477,7 @@ fn build(
     origin: [f64; 3],
     prims: &mut Vec<Prim>,
     names: &BTreeMap<u32, Term>,
+    boxed: bool,
 ) -> Term {
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
@@ -486,7 +500,17 @@ fn build(
                             }).collect(),n:pose.vector(f.n),face:f.face,smooth:f.smooth,
                         }).collect();
                         let path = paths.get(&p.of).map(String::as_str).unwrap_or(&p.of);
-                        let copy = finish(facets,p.faces.clone(),&placed_name(&name,path));
+                        let mut copy = finish(facets,p.faces.clone(),&placed_name(&name,path));
+                        // an exact B-rep's faces are whole paths, its solid's name first: the
+                        // copy's are the placement's route in its stead (a given body's, #993)
+                        if p.exact {
+                            let of = format!("{}.",p.of);
+                            copy.faces = p.faces.iter().map(|f| match f.strip_prefix(&of) {
+                                Some(rest) => format!("{}.{rest}",copy.of),
+                                None => f.clone(),
+                            }).collect();
+                            copy.exact = true;
+                        }
                         let next = prims.len(); prims.push(copy); next
                     });
                 }
@@ -511,6 +535,30 @@ fn build(
         let Ok(family) = super::family::built(sk, si as usize, unit) else { return Term::Empty };
         prims.push(family.primitive(origin, &name));
         return Term::Prim(prims.len()-1);
+    }
+    // a body a file gives (#993 stage 2): its B-rep's own mesh, as its exact evaluation meshes it
+    // (`evaluated::brep_facets`), each face its whole path — the solid's name and the face's
+    if let SolidDef::Given(g) = &sol.def {
+        let b = g.brep();
+        let face = |k: usize| {
+            super::exact::joined(&crate::brep::recipe::name_under(&name, &b.faces[k].name))
+        };
+        let mm = super::cad::millimetres(sk);
+        if boxed {
+            // its box, read once (`Given::extent`), all of it a stand-in's face 0
+            let (lo, hi) = g.extent();
+            if !lo[0].is_finite() { return Term::Empty }
+            let at = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| p[k] / mm - origin[k]) };
+            let faces = (0..b.faces.len().min(1)).map(face).collect();
+            prims.push(super::primitive::cuboid(at(lo), at(hi), faces, &name));
+            return Term::Prim(prims.len() - 1);
+        }
+        let faces: Vec<String> = (0..b.faces.len()).map(face).collect();
+        let index: Vec<usize> = (0..faces.len()).collect();
+        let Ok(m) = super::evaluated::brep_facets(b, mm, unit, &index, origin) else { return Term::Empty };
+        if m.facets.is_empty() { return Term::Empty }
+        prims.push(Prim { facets: m.facets, bbox: m.bbox, faces, of: name, exact: true });
+        return Term::Prim(prims.len() - 1);
     }
     // a developable panel's band (#645): faceted from its rulings
     if let Some(band) = super::sheet::band(sk, si as usize, unit) {
@@ -572,7 +620,7 @@ fn build(
             }
             SolidDef::Body { .. } | SolidDef::Placed { .. }
                 | SolidDef::Swept { .. } | SolidDef::Region { .. }
-                | SolidDef::Family { .. } => unreachable!(),
+                | SolidDef::Family { .. } | SolidDef::Given(_) => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

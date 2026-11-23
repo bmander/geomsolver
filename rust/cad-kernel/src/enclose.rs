@@ -35,7 +35,7 @@
 //!   stretch, grown by the chords between them — measured, not proved, and said so (`Patch::proved`
 //!   false), so a reading through it is profiled as measured.
 use crate::geom::{Blend,Carry,Curve,Frame,SheetCut,Surface,Traced,V};
-use crate::geom::{include,Box3,EMPTY};
+use crate::geom::{include,widen,Box3,EMPTY};
 use crate::nurbs::{blossom,span,BSpline,Net,MAX_DEGREE};
 use crate::util::interval::{Iv,Jet,Num};
 
@@ -122,11 +122,14 @@ fn deboor<const K: usize>(p: usize,knots: &[f64],s: usize,coeffs: &[[Iv;K]],t: I
 /// The coefficients of a spline's derivative reaching span `s`: `p (c_{i+1} − c_i) / (t_{i+p+1} −
 /// t_{i+1})` for `i` in `s − p .. s` (the span is not empty, so neither is any gap).
 fn differences<const K: usize>(p: usize,knots: &[f64],s: usize,c: &[[Iv;K]]) -> [[Iv;K];MAX_DEGREE] {
-    std::array::from_fn(|j| if j >= p { [Iv::ANY;K] } else {
-        let i = s-p+j;
-        let gap = Iv::point(knots[i+p+1])-Iv::point(knots[i+1]);
-        std::array::from_fn(|k| (c[j+1][k]-c[j][k])*Iv::point(p as f64)/gap)
-    })
+    std::array::from_fn(|j| if j >= p { [Iv::ANY;K] } else { difference(p,knots,s-p+j,c[j],c[j+1]) })
+}
+
+/// The `i`th coefficient of a spline's derivative, `p (c₁ − c₀) / (t_{i+p+1} − t_{i+1})`, `c₀` and
+/// `c₁` its `i`th and next coefficients.
+fn difference<const K: usize>(p: usize,knots: &[f64],i: usize,c0: [Iv;K],c1: [Iv;K]) -> [Iv;K] {
+    let gap = Iv::point(knots[i+p+1])-Iv::point(knots[i+1]);
+    std::array::from_fn(|k| (c1[k]-c0[k])*Iv::point(p as f64)/gap)
 }
 
 /// **A spline's value and derivative over `[a, b]`, enclosed** (the module's): `coeff(i)` its
@@ -148,8 +151,12 @@ fn spline<const K: usize>(p: usize,knots: &[f64],count: usize,coeff: &dyn Fn(usi
     let (mut value,mut slope): (Option<[Iv;K]>,Option<[Iv;K]>) = (None,None);
     if reach.clone().count() > WIDE {
         value = Some(hull_k(&coeffs));
-        // (the differences of neighbouring coefficients, each once)
-        if rate { for s in s0..=s1 { let dc = differences(p,knots,s,&coeffs[s-s0..=s-s0+p]); slope = hull(slope,hull_k(&dc[..p])) } }
+        // (the differences of neighbouring coefficients, each once: the spans `s0 ..= s1` reach
+        // the differences `s0 − p .. s1`, every one `p` spans' — the hull of `differences` span by
+        // span, each read once rather than `p` times)
+        if rate && p > 0 {
+            for (j,w) in coeffs.windows(2).enumerate() { slope = hull(slope,difference(p,knots,s0-p+j,w[0],w[1])) }
+        }
     } else {
         for s in reach {
             let c = &coeffs[s-s0..=s-s0+p];
@@ -169,30 +176,53 @@ fn spline<const K: usize>(p: usize,knots: &[f64],count: usize,coeff: &dyn Fn(usi
     (v,d)
 }
 
-/// A homogeneous point `[w x, w y, w z, w]` and its derivative carried to the point and its
-/// derivative: `P = A / W`, `P' = (A' − P W') / W`.
-fn quotient(a: [Iv;4],d: [Iv;4]) -> (I3,I3) {
+/// A homogeneous point `[w x, w y, w z, w]` read from `about` (`lift`) and its derivative carried
+/// to the point and its derivative: `P = A / W`, `P' = (A' − P W') / W`, the point carried back
+/// from `about`.
+fn quotient(a: [Iv;4],d: [Iv;4],about: V) -> (I3,I3) {
     let w = a[3];
     let p: I3 = std::array::from_fn(|k| a[k]/w);
-    (p,std::array::from_fn(|k| (d[k]-p[k]*d[3])/w))
+    (add3(p,c3(about)),std::array::from_fn(|k| (d[k]-p[k]*d[3])/w))
 }
 
-/// A pole and its weight, homogeneous, enclosed.
-fn lift(q: V,w: f64) -> [Iv;4] { let w = Iv::point(w); [Iv::point(q[0])*w,Iv::point(q[1])*w,Iv::point(q[2])*w,w] }
+/// A pole and its weight, homogeneous, enclosed — the pole **read from `about`**, a point among
+/// the spline's own poles, which the quotient is carried back from (#1002). `A' − P W'` cancels
+/// only as far as its terms are enclosed: a pole read from the world's origin makes each as wide as
+/// the spline stands far from it, so a rational sheet ten times its size off was enclosed in rates
+/// ten times too wide, no box of a ray's reading against it proved, and a ball of such a net could
+/// not be cut by a plane there. Read from a point among the poles, the terms are as wide as the
+/// poles' own spread, wherever they stand.
+fn lift(q: I3,about: V,w: f64) -> [Iv;4] {
+    let (d,w) = (sub3(q,c3(about)),Iv::point(w));
+    [d[0]*w,d[1]*w,d[2]*w,w]
+}
 
 impl Enclosed<1> for BSpline {
-    fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
+    fn enclose(&self,t: [[f64;2];1]) -> Patch<1> { self.enclosed_with(t,None) }
+}
+
+impl BSpline {
+    /// `enclose`, its whole spans' Bézier forms read from `forms` where given (`span_forms`).
+    fn enclosed_with(&self,[t]: [[f64;2];1],forms: Option<&SpanForms>) -> Patch<1> {
         let [lo,hi] = self.domain();
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
-        if self.weights.is_none() && self.degree < BEZIER && a >= lo && b <= hi {
-            if let Some(p) = self.restricted([a,b]) { return p }
+        // (a stretch past the domain read as the curve is there, clamped: its point the end's, its
+        // derivative nought — the stretch within, and nought with its derivative. A blend's edge read
+        // over its whole `u` asks `[0, 1]` grown outward by a rounding, past the domain by an ulp,
+        // which de Boor's hull in intervals read over every span, looser and slower)
+        if self.weights.is_none() && self.degree < BEZIER && b >= lo && a <= hi {
+            if let Some(mut p) = self.restricted([a.max(lo),b.min(hi)],forms) {
+                if a < lo || b > hi { p.d[0] = p.d[0].map(|x| x.hull(Iv::point(0.))) }
+                return p
+            }
         }
         let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
-        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[a,b],true);
-        let (at,d) = quotient(a,d);
         // (a curve keeps within its poles' hull: its weights are positive)
         let poles = self.poles_over(t);
         let hull: I3 = std::array::from_fn(|k| Iv::of_all(poles.iter().map(|q| q[k])));
+        let about = hull.map(Iv::mid);
+        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(c3(self.poles[i]),about,w(i)),[a,b],true);
+        let (at,d) = quotient(a,d,about);
         Patch {at:meet3(at,hull),d:[d],proved:true}
     }
 }
@@ -221,14 +251,46 @@ impl Enclosed<2> for Net {
         if self.weights.is_none() && !past.0 && !past.1 && self.du < BEZIER && self.dv < BEZIER {
             if let Some(p) = self.restricted(u,v) { return p }
         }
-        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v,true)).collect();
+        let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
+        let about = hull.map(Iv::mid);
+        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(c3(self.poles[i][j]),about,w(i,j)),v,true)).collect();
         let (a,au) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].0,u,true);
         let (av,_) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].1,u,false);
-        let (s,su) = quotient(a,au);
-        let (_,sv) = quotient(a,av);
-        let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
+        let (s,su) = quotient(a,au,about);
+        let (_,sv) = quotient(a,av,about);
         Patch {at:meet3(s,hull),d:[su,sv],proved:true}
     }
+}
+
+/// **A span's Bézier form over a stretch of it** (`BSpline::span_form`): the boxes of its point's
+/// control points and its rate's, its poles' largest coordinate `m`, its difference poles' `md`,
+/// and the least knot gap a difference is divided by.
+#[derive(Clone,Copy,Debug)]
+struct Whole { at: Box3,d: Box3,m: f64,md: f64,gap: f64 }
+
+/// **A curve's spans' Bézier forms, each over its whole span** (`BSpline::restricted`): indexed by
+/// the span's knot less the degree, `None` for a span with a difference's knot gap empty.
+struct SpanForms { spans: Vec<Option<Whole>> }
+
+/// The fewest spans a curve has for its whole spans' forms to be kept (`span_forms`): fewer are
+/// read as cheaply.
+const FORMED_SPANS: usize = 4*WIDE;
+
+thread_local! {
+    /// The forms each thread asked for last (`nurbs::Kept`).
+    static HELD_FORMS: crate::nurbs::Held<SpanForms> = const { std::cell::RefCell::new(([const { None };crate::nurbs::HELD],0)) };
+}
+
+/// Curves' spans' whole forms (`nurbs::Kept`).
+static FORMS: crate::nurbs::Kept<SpanForms> = crate::nurbs::Kept::new();
+
+/// **`b`'s spans' whole Bézier forms, blossomed once for the curve and kept** (`nurbs::Kept`): a
+/// stretch across many spans — a sheet's section, read at every box of a ray's or an edge's search
+/// — reads each span it covers whole off them, and blossoms only the two it ends in. The same forms
+/// `restricted` blossoms (`BSpline::span_form`), so the same enclosure.
+fn span_forms(b: &std::sync::Arc<BSpline>) -> std::sync::Arc<SpanForms> {
+    FORMS.get(&HELD_FORMS,b,|b| SpanForms {spans:(b.degree..b.poles.len())
+        .map(|k| if b.knots[k] < b.knots[k+1] { b.span_form(k,[b.knots[k],b.knots[k+1]]) } else { None }).collect()})
 }
 
 /// One more than the highest degree enclosed by restricted Bézier forms (`Net::restricted`,
@@ -272,8 +334,10 @@ impl BSpline {
     /// Bézier forms restricted to the stretch**: over each knot span the stretch reaches, the
     /// blossoms at its ends (`blossom`) — the piece over the stretch lies in their hull — and its
     /// rate's, a spline of a degree less on the poles' differences; each hull widened by its
-    /// rounding (`rounding`). `None` where a difference's knot gap is empty.
-    fn restricted(&self,[a,b]: [f64;2]) -> Option<Patch<1>> {
+    /// rounding (`rounding`). `None` where a difference's knot gap is empty. A span the stretch
+    /// covers whole read from `forms` where given: the same Bézier points, blossomed once for the
+    /// curve (`span_forms`).
+    fn restricted(&self,[a,b]: [f64;2],forms: Option<&SpanForms>) -> Option<Patch<1>> {
         let (p,n) = (self.degree,self.poles.len());
         let (k0,k1) = (span(p,&self.knots,n,a),span(p,&self.knots,n,b));
         let (mut at,mut d) = (EMPTY,EMPTY);
@@ -282,21 +346,41 @@ impl BSpline {
             if !(self.knots[k] < self.knots[k+1]) { continue }
             let t = [a.max(self.knots[k]),b.min(self.knots[k+1])];
             if !(t[0] <= t[1]) { continue }
-            let poles = &self.poles[k-p..=k];
-            m = poles.iter().flatten().fold(m,|x,y| x.max(y.abs()));
-            for j in 0..points(t,p) { include(&mut at,blossom(&self.knots,poles,k,p,t,j)) }
-            if p == 0 { include(&mut d,[0.;3]); continue }
-            let mut q = [[0.;3];BEZIER];
-            for j in 0..p {
-                let gap = self.knots[k+j+1]-self.knots[k-p+j+1];
-                if !(gap > 0.) { return None }
-                q[j] = std::array::from_fn(|c| p as f64*(poles[j+1][c]-poles[j][c])/gap);
-                md = md.max(q[j].iter().fold(0f64,|x,y| x.max(y.abs())));
-                ed = ed.max(4.*p as f64*f64::EPSILON*m/gap);
-            }
-            for j in 0..points(t,p-1) { include(&mut d,blossom(&self.knots[1..],&q[..p],k-1,p-1,t,j)) }
+            let whole = t == [self.knots[k],self.knots[k+1]];
+            let w = match forms.filter(|_| whole) { Some(forms) => forms.spans[k-p]?,None => self.span_form(k,t)? };
+            // (each difference's rounding `4 p ε m / gap`, `m` read so far, greatest at the least
+            // gap)
+            m = m.max(w.m);
+            widen(&mut at,w.at);
+            widen(&mut d,w.d);
+            if p == 0 { continue }
+            md = md.max(w.md);
+            ed = ed.max(4.*p as f64*f64::EPSILON*m/w.gap);
         }
         Some(Patch {at:grown(at,rounding(p,m)),d:[grown(d,rounding(p,md)+ed)],proved:true})
+    }
+    /// **Span `k`'s Bézier form restricted to `t`** (`restricted`, `span_forms`): the boxes of its
+    /// point's control points over `t` (blossoms of its poles at `t`'s ends) and its rate's, a
+    /// spline of a degree less on the poles' differences; its poles' largest coordinate, its
+    /// difference poles', and the least knot gap a difference is divided by. `None` where one is
+    /// empty.
+    fn span_form(&self,k: usize,t: [f64;2]) -> Option<Whole> {
+        let p = self.degree;
+        let poles = &self.poles[k-p..=k];
+        let m = poles.iter().flatten().fold(0f64,|x,y| x.max(y.abs()));
+        let (mut at,mut d) = (EMPTY,EMPTY);
+        for j in 0..points(t,p) { include(&mut at,blossom(&self.knots,poles,k,p,t,j)) }
+        if p == 0 { include(&mut d,[0.;3]); return Some(Whole {at,d,m,md:0.,gap:f64::INFINITY}) }
+        let (mut q,mut md,mut gap) = ([[0.;3];BEZIER],0f64,f64::INFINITY);
+        for j in 0..p {
+            let g = self.knots[k+j+1]-self.knots[k-p+j+1];
+            if !(g > 0.) { return None }
+            q[j] = std::array::from_fn(|c| p as f64*(poles[j+1][c]-poles[j][c])/g);
+            md = md.max(q[j].iter().fold(0f64,|x,y| x.max(y.abs())));
+            gap = gap.min(g);
+        }
+        for j in 0..points(t,p-1) { include(&mut d,blossom(&self.knots[1..],&q[..p],k-1,p-1,t,j)) }
+        Some(Whole {at,d,m,md,gap})
     }
 }
 
@@ -398,7 +482,18 @@ impl Enclosed<1> for Curve {
             Curve::Line {p,d} => Patch {at:add3(c3(*p),scale3(c3(*d),tv)),d:[c3(*d)],proved:true},
             Curve::Circle(f,r) => conic(f,*r,*r),
             Curve::Ellipse(f,a,b) => conic(f,*a,*b),
-            Curve::BSpline(b) => b.enclose([t]),
+            Curve::BSpline(b) => {
+                // (a long curve's whole spans' forms kept for it, where the stretch is wide: wider
+                // than `WIDE` of its spans on average — counted by its knots instead, a narrow
+                // stretch over dense knots of a curve read once had its every span blossomed for
+                // nothing, and the coin turned about its rim judged a sixth slower)
+                let n = b.poles.len()-b.degree;
+                let wide = n >= FORMED_SPANS && b.weights.is_none() && b.degree < BEZIER && {
+                    let [lo,hi] = b.domain();
+                    (t[1]-t[0]).abs() > WIDE as f64*(hi-lo)/n as f64
+                };
+                b.enclosed_with([t],wide.then(|| span_forms(b)).as_deref())
+            }
             Curve::Traced(c) => c.enclose([t]),
             Curve::Iso(b,u) => { let p = b.enclose([[*u,*u],t]); Patch {at:p.at,d:[p.d[1]],proved:p.proved} }
             Curve::SheetCut(c) => c.enclose([t]),
@@ -620,7 +715,13 @@ impl Enclosed<2> for Blend {
         };
         let (Some((a,da)),Some((b,db))) = (edge(&self.a,self.ta),edge(&self.b,self.tb)) else { return Patch::ANY };
         let one = Iv::point(1.);
-        let p = add3(scale3(a.at,one-vv),scale3(b.at,vv));
+        // the point between the sections' **read from a point between them** (#1002): `(1 − v) A +
+        // v B` over a stretch of `v` is as wide as `A` and `B` stand far from where they are read
+        // from, so read from the world's origin a patch far from it was enclosed in a box as wide
+        // as that distance times the stretch — a canal ten thousand times its size off, cut 700
+        // times slower. From a point between them it is as wide as the sections stand apart
+        let about = c3(hull3(a.at,b.at).map(Iv::mid));
+        let p = add3(about,add3(scale3(sub3(a.at,about),one-vv),scale3(sub3(b.at,about),vv)));
         let pu = add3(scale3(a.d[0],da*(one-vv)),scale3(b.d[0],db*vv));
         let pv = sub3(b.at,a.at);
         let proved = a.proved && b.proved;
@@ -688,11 +789,14 @@ fn run_enclosed(run: &crate::family::Run,n: &[Iv],dn: &[Iv],u: Iv) -> Patch<2> {
             let (t0,t1,dt0,dt1) = (n[k-2],n[k-1],dn[k-2],dn[k-1]);
             let tt = t0+u*(t1-t0);
             let Some(over) = tt.bounds() else { return Patch::ANY };
-            let lifted = |src: &[Iv],i: usize| -> [Iv;4] { let wi = Iv::point(w(i)); [src[3*i]*wi,src[3*i+1]*wi,src[3*i+2]*wi,wi] };
-            let (a,d) = spline(*degree,knots,count,&|i| lifted(n,i),over,true);
-            let (x,xt) = quotient(a,d);
+            // the poles read from a point among them — the middle pole's — as any rational spline's
+            // (`lift`, #1002), and their rates, which stand nowhere, from nought
+            let lifted = |src: &[Iv],about: V,i: usize| lift(v3(src,3*i),about,w(i));
+            let about = v3(n,3*(count/2)).map(Iv::mid);
+            let (a,d) = spline(*degree,knots,count,&|i| lifted(n,about,i),over,true);
+            let (x,xt) = quotient(a,d,about);
             // the poles' rates read by the same basis (the weights stand still)
-            let (ra,_) = spline(*degree,knots,count,&|i| lifted(dn,i),over,false);
+            let (ra,_) = spline(*degree,knots,count,&|i| lifted(dn,[0.;3],i),over,false);
             let moved: I3 = std::array::from_fn(|c| ra[c]/ra[3]);
             let dt = dt0+u*(dt1-dt0);
             Patch {at:x,d:[scale3(xt,t1-t0),add3(moved,scale3(xt,dt))],proved:true}

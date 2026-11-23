@@ -51,6 +51,8 @@ Each term below has one meaning throughout.
 - **Standard library** (`std`): definitions written in Solvent, available to every document.
 - **B-rep** (boundary representation): a solid stored as faces, edges and vertices with exact
   geometry. **Lowering** is building a B-rep from a set's definition.
+- **Given body**: a solid a file supplies rather than a document defines, such as a purchased part
+  read from STEP. It is a set like any other solid.
 - **Field**: a quantity defined at every point of a body, such as displacement or temperature.
 - **Diagnosis**: an explanation, in terms of a document's statements, of why the document has no
   solution or why a question about it has no answer.
@@ -212,6 +214,11 @@ familiar forms from them, as it builds a sphere and an offset from `distance`.
 - **There is no operation timeline** (principle 3).
 - **There are no features.** A round, a chamfer or a loft is a library definition of a set, not an
   operation recorded in a history (#183, #243).
+- **A given body is a set, and an edit is a statement over it** (#993). A purchased part, a
+  casting or a legacy model is given, not designed: the document names the file it comes in and
+  states the change. The edited body is a set defined from the given one, which stays nameable as
+  given. Nothing is reverse engineered into dimensions no designer stated (principle 3), and no
+  history is recovered from the file, because a given part has none.
 - **Construction geometry is first class.** An entity drawn only to state a constraint is solved
   like any other. Geometry declared inside a claim adds no constraint (#460).
 - **2D is a special case of 3D** (#523, #558). A 2D statement is the 3D statement made in a plane,

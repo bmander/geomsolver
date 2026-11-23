@@ -293,6 +293,7 @@ fn expand(
     cx.res.normals = expansion.normals.clone();
     cx.res.charts = expansion.charts.clone();
     cx.res.joints = expansion.joints.clone();
+    cx.res.misplaced = expansion.misplaced.clone();
     expansion
 }
 
@@ -931,9 +932,9 @@ fn solids_and_surfaces(
 ) -> Result<(), Again> {
     // what each `some`'s relation put the set's point in, a term of it ([0.212])
     super::regions::settle_bound(&cx.sk, &mut cx.probes, &mut cx.diags);
-    let Elab { sk, res, map, diags, probes, .. } = cx;
+    let Elab { doc, sk, res, map, diags, probes, .. } = cx;
     let (body, skip) = (&flat.body, &flat.skip);
-    solids(sk, res, map, body, skip, probes, diags);
+    solids(doc, sk, res, map, body, skip, probes, diags);
     super::solids::carry_legs(sk);
     // faces of two solids a `when` asked whether they meet (#961), said where the bodies are known
     super::solids::across(sk, res, &flat.expansion.across, diags);

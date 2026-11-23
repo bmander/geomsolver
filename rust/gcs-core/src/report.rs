@@ -957,6 +957,26 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         if e.kind != crate::model::EntKind::Solid || !names.iter().any(|n| asked(n)) {
             continue;
         }
+        // a body a file gives, untouched (#993 stage 2): its volume and its area are its B-rep's,
+        // exact — what its evaluation reads them from too — and are read there; it is evaluated,
+        // meshed at the report's fineness (CADGenBench 201's 435 faces some eight million facets,
+        // half a minute), only where its box is asked, the one measure its facets give (it has no
+        // face a path names)
+        let boxed = |n: &String| ["x", "y", "z"].iter().any(|a| asked(&format!("{n}.bounds.{a}0"))
+                                                       || asked(&format!("{n}.bounds.{a}1")));
+        if sk.given_untouched(e.i()).is_some() && !names.iter().any(boxed) {
+            let Ok(x) = sk.exact_solid(e.i()) else { continue };
+            let b = &x.brep;
+            let volume = if b.faces.is_empty() { 0.0 } else { crate::brep::props::volume(b) / x.mm.powi(3) };
+            let face = |f: usize| crate::brep::props::area(b, &b.faces[f]);
+            let area = crate::par::indices(b.faces.len(), face).into_iter().sum::<f64>()
+                / (x.mm * x.mm);
+            for n in names {
+                out.insert(format!("{n}.volume"), volume);
+                out.insert(format!("{n}.area"), area);
+            }
+            continue;
+        }
         let Ok(solid) = sk.evaluated_solid(e.i(), crate::solid::ApproximationPolicy::Report) else { continue };
         let pieces = solid.boundary();
         let b = solid.world_bounds();
@@ -977,8 +997,12 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
                     *faces.entry(tail).or_default() += p.area();
                 }
             }
+            // a given body's face is no path a reader can write (#993 stage 2): its area is in
+            // the body's
             for (tail, a) in faces {
-                out.insert(format!("{n}.{tail}.area"), a);
+                if crate::vocab::given_face(&format!("{n}.{tail}")).is_none() {
+                    out.insert(format!("{n}.{tail}.area"), a);
+                }
             }
         }
     }
@@ -2012,6 +2036,9 @@ fn point_text(x: [f64; 3]) -> String {
 /// touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they come no nearer.
 fn nearest_text(n: &crate::clear::Nearest) -> String {
     let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
+    // a given body's face said as one of its faces, which is all a reader can write of it
+    let said = |f: &str| crate::vocab::face_said(f);
+    let n = crate::clear::Nearest { a: said(&n.a), b: said(&n.b), ..n.clone() };
     if n.deepest || n.at_a == n.at_b {
         let word = if n.deepest { "deepest" } else { "nearest" };
         format!("{word} at {at_a}, between {} and {}", n.a, n.b)

@@ -699,6 +699,12 @@ impl SweptRegion {
         }
     }
 
+    /// The roll candidate `c` is held at, where it is an edge of the section held at an end pose
+    /// (#880 T1f); none where it is a curve of the roll — a contact or a corner's path.
+    pub fn held(&self,c: usize) -> Option<f64> {
+        match self.candidates.get(c)? { Kind::Fixed {at,..} => Some(*at),_ => None }
+    }
+
     /// Loop `l` as points, `per` a piece, in order round it.
     pub fn polyline(&self,l: usize,per: usize) -> Vec<P> {
         let n = self.loops[l].pieces.len();

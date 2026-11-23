@@ -195,68 +195,72 @@ impl BSpline {
     pub fn nearest(&self,p: V) -> f64 {
         if self.degree < 4 { self.nearest_in::<4>(p) } else { self.nearest_in::<W>(p) }
     }
-    /// **The foot of `p` on `b`, its spans found through their index** where it has many
-    /// (`SpanIndex`): the same foot `nearest` finds — every span read whose box is no farther than
-    /// the nearest sample, which alone decide it — without boxing every span at every point.
+    /// **The foot of `p` on `b`, its spans read off their index** (`SpanIndex`): the same foot
+    /// `nearest` finds, each span's samples evaluated once for the curve, not again at every point;
+    /// where it has many spans, found through their tree rather than boxing every span at every
+    /// point.
     pub fn nearest_indexed(b: &std::sync::Arc<BSpline>,p: V) -> f64 {
-        if b.degree >= 4 || b.weights.is_some() || b.poles.len() < INDEXED_SPANS { return b.nearest(p) }
+        if b.degree >= 4 || b.weights.is_some() { return b.nearest(p) }
         let index = span_index(b);
-        let gap = |x: crate::util::bvh::Bounds<3>| {
-            let d: V = std::array::from_fn(|k| (x.lo[k]-p[k]).max(p[k]-x.hi[k]).max(0.));
-            crate::util::space::norm(d)*(1.-1e-12)
+        let gap = |x: crate::util::bvh::Bounds<3>| gap_to(x,p)*(1.-1e-12);
+        let read = |i: usize,best: &mut (f64,f64)| b.read_samples(index.spans[i],&index.samples[i],p,best);
+        let Some(tree) = &index.tree else {
+            return b.walked(p,index.boxes.iter().enumerate().map(|(i,&x)| (gap(x),i)).collect(),&read)
         };
-        let best = std::cell::Cell::new((f64::INFINITY,b.domain()[0]));
-        index.tree.query_nearest(gap,|| best.get().0,|s| {
-            let mut found = best.get();
-            b.read_span::<4>(index.spans[s],p,&mut found);
-            best.set(found);
-        });
-        b.settled(p,best.get().1)
+        let found = std::cell::Cell::new((f64::INFINITY,b.domain()[0]));
+        tree.query_nearest(gap,|| found.get().0,|i| { let mut x = found.get(); read(i,&mut x); found.set(x) });
+        b.settled(p,found.get().1)
     }
     /// **How far `p` is from the nearest of `b`'s spans' boxes**, where its spans are indexed
     /// (`nearest_indexed`): no point of the curve is nearer — a bound far tighter than its whole
     /// box for a long curve, which a point beside its middle is within.
     pub fn gap_indexed(b: &std::sync::Arc<BSpline>,p: V) -> Option<f64> {
-        if b.degree >= 4 || b.weights.is_some() || b.poles.len() < INDEXED_SPANS { return None }
+        if b.degree >= 4 || b.weights.is_some() { return None }
         let index = span_index(b);
-        let gap = |x: crate::util::bvh::Bounds<3>| {
-            let d: V = std::array::from_fn(|k| (x.lo[k]-p[k]).max(p[k]-x.hi[k]).max(0.));
-            crate::util::space::norm(d)
-        };
+        let tree = index.tree.as_ref()?;
         let best = std::cell::Cell::new(f64::INFINITY);
-        index.tree.query_nearest(gap,|| best.get(),|s| best.set(best.get().min(gap(index.boxes[s]))));
+        tree.query_nearest(|x| gap_to(x,p),|| best.get(),|s| best.set(best.get().min(gap_to(index.boxes[s],p))));
         Some(best.get())
     }
-    /// Span `s`'s seventeen samples read against `best`, the nearer kept (the earlier on a tie).
-    fn read_span<const M: usize>(&self,s: usize,p: V,best: &mut (f64,f64)) {
-        let (w0,w1) = (self.knots[s],self.knots[s+1]);
+    /// Span `s`'s `SAMPLES` samples, evenly across it: its Bézier form's points, by de Casteljau's
+    /// steps.
+    fn samples<const M: usize>(&self,s: usize) -> [V;SAMPLES] {
         let bezier = self.bezier::<M>(s);
-        for j in 0..=16 {
-            let f = j as f64/16.;
+        std::array::from_fn(|j| casteljau::<M>(&bezier[..=self.degree],j as f64/(SAMPLES-1) as f64))
+    }
+    /// Span `s`'s samples `at` read against `best`, the nearer kept (the earlier on a tie).
+    fn read_samples(&self,s: usize,at: &[V;SAMPLES],p: V,best: &mut (f64,f64)) {
+        let (w0,w1) = (self.knots[s],self.knots[s+1]);
+        for (j,&x) in at.iter().enumerate() {
+            let f = j as f64/(SAMPLES-1) as f64;
             let t = w0+(w1-w0)*f;
-            let d = crate::util::space::distance(casteljau::<M>(&bezier[..=self.degree],f),p);
+            let d = crate::util::space::distance(x,p);
             if d < best.0 || (d == best.0 && t < best.1) { *best = (d,t); }
         }
     }
     /// `nearest`, a span's Bézier poles in a table of `M` (more than the degree).
     fn nearest_in<const M: usize>(&self,p: V) -> f64 {
-        let (deg,n) = (self.degree,self.poles.len());
-        let [a,_] = self.domain();
-        let mut spans: Vec<(f64,usize)> = (deg..n).filter(|&s| self.knots[s] < self.knots[s+1]).map(|s| {
-            let poles = &self.poles[s-deg..=s];
-            let gap: [f64;3] = std::array::from_fn(|i| {
-                let (lo,hi) = poles.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),q| (l.min(q[i]),h.max(q[i])));
-                (lo-p[i]).max(p[i]-hi).max(0.)
-            });
-            (crate::util::space::norm(gap)*(1.-1e-12),s)
-        }).collect();
+        let spans = (self.degree..self.poles.len()).filter(|&s| self.knots[s] < self.knots[s+1])
+            .map(|s| (gap_to(self.span_box(s),p)*(1.-1e-12),s)).collect();
+        self.walked(p,spans,&|s,best| self.read_samples(s,&self.samples::<M>(s),p,best))
+    }
+    /// **`nearest`'s walk**: `spans`, each with the least distance from `p` its box allows, read by
+    /// `read` nearest box first (the earlier on a tie) and none past the nearest sample found,
+    /// which alone decide it; that sample refined.
+    fn walked(&self,p: V,mut spans: Vec<(f64,usize)>,read: &dyn Fn(usize,&mut (f64,f64))) -> f64 {
         spans.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-        let mut best = (f64::INFINITY,a);
+        let mut best = (f64::INFINITY,self.domain()[0]);
         for (bound,s) in spans {
             if bound > best.0 { break }
-            self.read_span::<M>(s,p,&mut best);
+            read(s,&mut best);
         }
         self.settled(p,best.1)
+    }
+    /// Span `s`'s poles' box: the span lies within it.
+    fn span_box(&self,s: usize) -> crate::util::bvh::Bounds<3> {
+        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        for q in &self.poles[s-self.degree..=s] { for k in 0..3 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
+        crate::util::bvh::Bounds {lo,hi}
     }
     /// The foot refined from the nearest sample `t`, a closed spline's read from both ends.
     fn settled(&self,p: V,t: f64) -> f64 {
@@ -836,7 +840,7 @@ impl Net {
         }))
     }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
-    /// the same parameters, only the net that reaches there.
+    /// the same parameters, only the net that reaches there (`BSpline::segment` is a curve's).
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
         let [[a0,a1],[b0,b1]] = self.domain();
         let (u0,u1,v0,v1) = (u0.max(a0),u1.min(a1),v0.max(b0),v1.min(b1));
@@ -1018,35 +1022,80 @@ pub fn net_parameters(points: &[V],rows: usize,columns: usize,kind: Parametrizat
     Some((tu,tv))
 }
 
-/// The fewest poles a curve has for its spans to be indexed (`BSpline::nearest_indexed`).
+/// The fewest poles a curve has for its spans to be found through a tree (`SpanIndex::tree`):
+/// fewer are walked nearest box first, as `nearest` walks them.
 const INDEXED_SPANS: usize = 32;
 
-/// How many curves' indexes are kept at once (`span_index`): past it the store is emptied.
-const INDEXED_CURVES: usize = 1024;
+/// How many samples `nearest` reads of each span: its ends and fifteen between.
+const SAMPLES: usize = 17;
 
-/// **A curve's spans, each boxed by its poles, in a bounding-volume hierarchy**: each item a span's
-/// first knot's index.
-struct SpanIndex { spans: Vec<usize>,boxes: Vec<crate::util::bvh::Bounds<3>>,tree: crate::util::bvh::Bvh<3> }
+/// How far `p` is from the box `x` (nought within it).
+fn gap_to(x: crate::util::bvh::Bounds<3>,p: V) -> f64 {
+    crate::util::space::norm(std::array::from_fn(|k| (x.lo[k]-p[k]).max(p[k]-x.hi[k]).max(0.)))
+}
 
-/// The index of `b`'s spans, built once for the curve and kept, keyed by the curve it was built for
-/// (held, so no other curve takes its place).
+/// **A curve's spans, each boxed by its poles**: each item a span's first knot's index, each span's
+/// samples (`BSpline::samples`), read once for the curve, and where it has `INDEXED_SPANS` poles or
+/// more, the boxes in a bounding-volume hierarchy.
+struct SpanIndex { spans: Vec<usize>,boxes: Vec<crate::util::bvh::Bounds<3>>,samples: Vec<[V;SAMPLES]>,tree: Option<crate::util::bvh::Bvh<3>> }
+
+thread_local! {
+    /// The indexes each thread asked for last (`Kept`).
+    static HELD_INDEXES: Held<SpanIndex> = const { std::cell::RefCell::new(([const { None };HELD],0)) };
+}
+
+/// The indexes of curves' spans (`Kept`).
+static INDEXES: Kept<SpanIndex> = Kept::new();
+
+/// The index of `b`'s spans, built once for the curve and kept (`Kept`).
 fn span_index(b: &std::sync::Arc<BSpline>) -> std::sync::Arc<SpanIndex> {
-    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<BSpline>,std::sync::Arc<SpanIndex>)>;
-    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
-    let key = std::sync::Arc::as_ptr(b) as usize;
-    if let Some((_,i)) = STORE.lock().unwrap().get(&key) { return i.clone() }
-    let deg = b.degree;
-    let spans: Vec<usize> = (deg..b.poles.len()).filter(|&s| b.knots[s] < b.knots[s+1]).collect();
-    let boxes: Vec<crate::util::bvh::Bounds<3>> = spans.iter().map(|&s| {
-        let poles = &b.poles[s-deg..=s];
-        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-        for q in poles { for k in 0..3 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
-        crate::util::bvh::Bounds { lo,hi }
-    }).collect();
-    let tree = crate::util::bvh::Bvh::new(boxes.iter().copied());
-    let index = std::sync::Arc::new(SpanIndex { tree,boxes,spans });
-    let mut store = STORE.lock().unwrap();
-    if store.len() >= INDEXED_CURVES { store.clear() }
-    store.insert(key,(b.clone(),index.clone()));
-    index
+    INDEXES.get(&HELD_INDEXES,b,|b| {
+        let spans: Vec<usize> = (b.degree..b.poles.len()).filter(|&s| b.knots[s] < b.knots[s+1]).collect();
+        let boxes: Vec<crate::util::bvh::Bounds<3>> = spans.iter().map(|&s| b.span_box(s)).collect();
+        let samples = spans.iter().map(|&s| b.samples::<4>(s)).collect();
+        let tree = (b.poles.len() >= INDEXED_SPANS).then(|| crate::util::bvh::Bvh::new(boxes.iter().copied()));
+        SpanIndex {tree,boxes,samples,spans}
+    })
+}
+
+/// How many curves a thread holds what it was last asked for of (`Held`).
+pub(crate) const HELD: usize = 16;
+
+/// What a thread holds of what it was last asked for of curves (`Kept`): each with its curve.
+pub(crate) type Held<T> = std::cell::RefCell<([Option<(std::sync::Arc<BSpline>,std::sync::Arc<T>)>;HELD],usize)>;
+
+/// **What is read once for a curve and kept for it** (a span index, `span_index`; its spans' whole
+/// Bézier forms, `enclose`): keyed by the curve, held so its address is no other's, in a store
+/// every thread shares — emptied past `KEPT` curves — and the last few each thread asked for held
+/// on the thread too, read without taking the store's lock, which every thread asks at every
+/// reading.
+pub(crate) struct Kept<T> { store: std::sync::RwLock<std::collections::BTreeMap<usize,(std::sync::Arc<BSpline>,std::sync::Arc<T>)>> }
+
+/// How many curves' readings a store keeps at once (`Kept`): past it the store is emptied.
+const KEPT: usize = 1024;
+
+impl<T> Kept<T> {
+    pub(crate) const fn new() -> Self { Kept {store:std::sync::RwLock::new(std::collections::BTreeMap::new())} }
+    /// What is kept for `b`, `make` of it where nothing is: from what this thread holds (`held`),
+    /// or from the store, or made and put in both.
+    pub(crate) fn get(&self,held: &'static std::thread::LocalKey<Held<T>>,b: &std::sync::Arc<BSpline>,make: impl FnOnce(&BSpline) -> T)
+        -> std::sync::Arc<T> {
+        let found = held.with(|c| c.borrow().0.iter().flatten().find(|(c,_)| std::sync::Arc::ptr_eq(c,b)).map(|e| e.1.clone()));
+        if let Some(x) = found { return x }
+        let key = std::sync::Arc::as_ptr(b) as usize;
+        let stored = self.store.read().unwrap().get(&key).map(|e| e.1.clone());
+        let x = stored.unwrap_or_else(|| {
+            let x = std::sync::Arc::new(make(b));
+            let mut store = self.store.write().unwrap();
+            if store.len() >= KEPT { store.clear() }
+            store.insert(key,(b.clone(),x.clone()));
+            x
+        });
+        held.with(|c| {
+            let (slots,next) = &mut *c.borrow_mut();
+            slots[*next] = Some((b.clone(),x.clone()));
+            *next = (*next+1)%HELD;
+        });
+        x
+    }
 }

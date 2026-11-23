@@ -2,234 +2,34 @@
 //! kernel's reader (docs/native-speed-plan.md, phase 6). The solid is a valid closed solid already
 //! (the construction checked it); what is left to know is that the file says it. So the file is
 //! parsed here, a run of entities on each core: every entity must parse and every `#` reference
-//! resolve; the solid's topology is walked from the shape representation down (solids, shells,
+//! resolve; the solid's topology is walked from the shape representation down (solids — one a
+//! lump, a lump with voids a `BREP_WITH_VOIDS` whose voids are closed shells turned — shells,
 //! faces, loops, oriented edges, edges, vertices), every edge used exactly twice by the closed
-//! shell's faces, each count the solid's (`solvent_cad_brep_summary`) and no entity of those kinds
-//! left out of the walk; the units are millimetres and radians; and each face, in the closed
-//! shell's order, is on a surface of the solid's face's kind — with an elementary surface's
-//! placement, radii and angle, and a B-spline's degrees, knots, multiplicities, poles and weights,
-//! within `NEAR` of the solid's. It is not a check that a reader would rebuild the same solid (that
+//! shells' faces, each count the solid's (`solvent_cad_brep_summary`) and no entity of those kinds
+//! left out of the walk; the units are millimetres and radians; and each face, in the shells'
+//! order, of the solid's face's sense (a void's shell's turned back) and on a surface of its kind
+//! — with an elementary surface's placement, radii and angle, a B-spline's degrees, knots,
+//! multiplicities, poles and weights, a swept surface's axis or direction and its curve's numbers,
+//! and an offset's distance and basis, within `NEAR` of the solid's. It is not a check that a reader would rebuild the same solid (that
 //! is `--verify-step full`, the kernel's own read-back); it is a check that the file carries this
 //! solid's topology and surfaces, entity for entity, as the writer was given them.
 use std::collections::{BTreeMap,BTreeSet};
+use super::step_file::{Entity,File,Value};
 
 /// How near a written number must be to the solid's: the writer prints thirteen or fourteen
 /// significant digits, so a relative billionth (and a billionth of a millimetre about zero).
 const NEAR: f64 = 1e-9;
 
-/// A parameter of an entity, borrowing the text it was read from.
-#[derive(Debug,Clone,PartialEq)]
-enum Value<'a> { Unset,Derived,Int(i64),Real(f64),Str(&'a str),Enum(&'a str),Ref(u32),List(Vec<Value<'a>>),Typed(&'a str,Vec<Value<'a>>) }
-
-impl<'a> Value<'a> {
-    fn list(&self) -> Option<&[Value<'a>]> { if let Value::List(l) = self { Some(l) } else { None } }
-    fn reference(&self) -> Option<u32> { if let Value::Ref(r) = self { Some(*r) } else { None } }
-    fn number(&self) -> Option<f64> { match self { Value::Real(x) => Some(*x),Value::Int(i) => Some(*i as f64),_ => None } }
-    fn int(&self) -> Option<i64> { if let Value::Int(i) = self { Some(*i) } else { None } }
-    fn word(&self) -> Option<&'a str> { if let Value::Enum(e) = self { Some(e) } else { None } }
-    fn text(&self) -> Option<&'a str> { if let Value::Str(s) = self { Some(s) } else { None } }
-    fn logical(&self) -> Option<bool> { match self.word()? { "T" => Some(true),"F" => Some(false),_ => None } }
-    /// Every reference in it, depth first.
-    fn references(&self,out: &mut impl FnMut(u32)) {
-        match self { Value::Ref(r) => out(*r),Value::List(l) | Value::Typed(_,l) => for v in l { v.references(out) },_ => {} }
-    }
-}
-
-/// An entity: its instance number and its record, one `(name, parameters)` part for a simple
-/// entity and several for a complex one.
-#[derive(Debug)]
-struct Entity<'a> { id: u32,parts: Vec<(&'a str,Vec<Value<'a>>)> }
-
-impl<'a> Entity<'a> {
-    fn simple(&self) -> Option<(&'a str,&[Value<'a>])> { (self.parts.len() == 1).then(|| (self.parts[0].0,&self.parts[0].1[..])) }
-    fn part(&self,name: &str) -> Option<&[Value<'a>]> { self.parts.iter().find(|(n,_)| *n == name).map(|(_,v)| &v[..]) }
-    fn is(&self,name: &str) -> bool { self.parts.iter().any(|(n,_)| *n == name) }
-}
-
-/// A byte reader over one run of the data section.
-struct Lexer<'a> { text: &'a str,at: usize }
-
-impl<'a> Lexer<'a> {
-    fn bytes(&self) -> &'a [u8] { self.text.as_bytes() }
-    fn fail<T>(&self,what: &str) -> Result<T,String> {
-        let end = (self.at+40).min(self.text.len());
-        let mut from = self.at.min(end);
-        while !self.text.is_char_boundary(from) { from -= 1; }
-        let mut to = end;
-        while !self.text.is_char_boundary(to) { to -= 1; }
-        Err(format!("{what} at `{}`",&self.text[from..to]))
-    }
-    fn skip(&mut self) -> Result<(),String> {
-        let b = self.bytes();
-        loop {
-            while self.at < b.len() && b[self.at].is_ascii_whitespace() { self.at += 1; }
-            if b[self.at..].starts_with(b"/*") {
-                match self.text[self.at+2..].find("*/") { Some(k) => self.at += k+4,None => return self.fail("an unclosed comment") }
-            } else { return Ok(()) }
-        }
-    }
-    fn peek(&mut self) -> Result<Option<u8>,String> { self.skip()?; Ok(self.bytes().get(self.at).copied()) }
-    fn expect(&mut self,c: u8) -> Result<(),String> {
-        if self.peek()? == Some(c) { self.at += 1; Ok(()) } else { self.fail(&format!("`{}` expected",c as char)) }
-    }
-    fn keyword(&mut self) -> Result<&'a str,String> {
-        self.skip()?;
-        let b = self.bytes();
-        let start = self.at;
-        if !(self.at < b.len() && (b[self.at].is_ascii_uppercase() || b[self.at] == b'_')) { return self.fail("a keyword expected") }
-        while self.at < b.len() && (b[self.at].is_ascii_uppercase() || b[self.at].is_ascii_digit() || b[self.at] == b'_' || b[self.at] == b'-') { self.at += 1; }
-        Ok(&self.text[start..self.at])
-    }
-    fn integer(&mut self) -> Result<u32,String> {
-        let b = self.bytes();
-        let start = self.at;
-        while self.at < b.len() && b[self.at].is_ascii_digit() { self.at += 1; }
-        self.text[start..self.at].parse().or_else(|_| { self.at = start; self.fail("an instance number expected") })
-    }
-    /// `( value, … )`, the parenthesis already met.
-    fn values(&mut self) -> Result<Vec<Value<'a>>,String> {
-        let mut out = Vec::new();
-        if self.peek()? == Some(b')') { self.at += 1; return Ok(out) }
-        loop {
-            out.push(self.value()?);
-            match self.peek()? {
-                Some(b',') => self.at += 1,
-                Some(b')') => { self.at += 1; return Ok(out) }
-                _ => return self.fail("`,` or `)` expected"),
-            }
-        }
-    }
-    fn value(&mut self) -> Result<Value<'a>,String> {
-        let b = self.bytes();
-        match self.peek()? {
-            Some(b'$') => { self.at += 1; Ok(Value::Unset) }
-            Some(b'*') => { self.at += 1; Ok(Value::Derived) }
-            Some(b'#') => { self.at += 1; Ok(Value::Ref(self.integer()?)) }
-            Some(b'(') => { self.at += 1; Ok(Value::List(self.values()?)) }
-            Some(b'\'') => {
-                let start = self.at+1;
-                let mut k = start;
-                loop {
-                    match b.get(k) {
-                        None => return self.fail("an unclosed string"),
-                        Some(b'\'') if b.get(k+1) == Some(&b'\'') => k += 2,
-                        Some(b'\'') => break,
-                        _ => k += 1,
-                    }
-                }
-                self.at = k+1;
-                Ok(Value::Str(&self.text[start..k]))
-            }
-            Some(b'"') => {
-                let start = self.at+1;
-                let Some(k) = self.text[start..].find('"') else { return self.fail("an unclosed binary") };
-                self.at = start+k+1;
-                Ok(Value::Str(&self.text[start..start+k]))
-            }
-            Some(b'.') => {
-                let start = self.at+1;
-                let mut k = start;
-                while k < b.len() && (b[k].is_ascii_uppercase() || b[k].is_ascii_digit() || b[k] == b'_') { k += 1; }
-                if k == start || b.get(k) != Some(&b'.') { return self.fail("an enumeration expected") }
-                self.at = k+1;
-                Ok(Value::Enum(&self.text[start..k]))
-            }
-            Some(c) if c.is_ascii_digit() || c == b'-' || c == b'+' => {
-                let start = self.at;
-                let mut k = start+1;
-                let mut real = false;
-                while k < b.len() {
-                    match b[k] {
-                        b'0'..=b'9' => {}
-                        b'.' | b'E' | b'e' => real = true,
-                        b'+' | b'-' if matches!(b[k-1],b'E' | b'e') => {}
-                        _ => break,
-                    }
-                    k += 1;
-                }
-                let text = &self.text[start..k];
-                self.at = k;
-                if real { text.parse().map(Value::Real).or_else(|_| self.fail("a real expected")) }
-                else { text.parse().map(Value::Int).or_else(|_| self.fail("an integer expected")) }
-            }
-            Some(c) if c.is_ascii_uppercase() || c == b'_' => {
-                let name = self.keyword()?;
-                self.expect(b'(')?;
-                Ok(Value::Typed(name,self.values()?))
-            }
-            _ => self.fail("a parameter expected"),
-        }
-    }
-    /// `#n = RECORD ;` or `#n = ( PART(…) PART(…) … ) ;`, or None at the end of the run.
-    fn entity(&mut self) -> Result<Option<Entity<'a>>,String> {
-        match self.peek()? { None => return Ok(None),Some(b'#') => self.at += 1,_ => return self.fail("an entity expected") }
-        let id = self.integer()?;
-        self.expect(b'=')?;
-        let mut parts = Vec::new();
-        if self.peek()? == Some(b'(') {
-            self.at += 1;
-            while self.peek()? != Some(b')') {
-                let name = self.keyword()?;
-                self.expect(b'(')?;
-                parts.push((name,self.values()?));
-            }
-            self.at += 1;
-            if parts.is_empty() { return self.fail("an empty complex entity") }
-        } else {
-            let name = self.keyword()?;
-            self.expect(b'(')?;
-            parts.push((name,self.values()?));
-        }
-        self.expect(b';')?;
-        Ok(Some(Entity {id,parts}))
-    }
-}
-
-/// The data section's entities, a run of them parsed on each core, in the file's order.
-fn entities(text: &str) -> Result<Vec<Entity<'_>>,String> {
-    if !text.starts_with("ISO-10303-21;") { return Err("the file does not start `ISO-10303-21;`".into()) }
-    let Some(data) = text.find("\nDATA;") else { return Err("the file has no DATA section".into()) };
-    let from = data+"\nDATA;".len();
-    let Some(end) = text[from..].find("\nENDSEC;") else { return Err("the DATA section has no ENDSEC".into()) };
-    let (section,to) = (&text[from..from+end],from+end);
-    if !text[to+"\nENDSEC;".len()..].trim_start().starts_with("END-ISO-10303-21;") {
-        return Err("the file does not end `END-ISO-10303-21;`".into());
-    }
-    // runs split where an entity starts a line after one that ended
-    let runs = (crate::util::par::threads()*4).max(1);
-    let mut cuts = vec![0];
-    for r in 1..runs {
-        let mut at = section.len()*r/runs;
-        while !section.is_char_boundary(at) { at += 1; }
-        if at <= *cuts.last().unwrap() { continue }
-        match section[at..].find(";\n#") { Some(k) => { let cut = at+k+2; if cut > *cuts.last().unwrap() { cuts.push(cut) } } None => break }
-    }
-    cuts.push(section.len());
-    cuts.dedup();
-    let parsed = crate::util::par::indices(cuts.len()-1,|r| -> Result<Vec<Entity>,String> {
-        let mut lexer = Lexer {text:&section[cuts[r]..cuts[r+1]],at:0};
-        let mut out: Vec<Entity> = Vec::new();
-        loop {
-            match lexer.entity() {
-                Ok(Some(e)) => out.push(e),
-                Ok(None) => return Ok(out),
-                Err(e) => return Err(match out.last() { Some(last) => format!("the entity after #{} does not parse: {e}",last.id),
-                    None => format!("an entity does not parse: {e}") }),
-            }
-        }
-    });
-    let mut all = Vec::new();
-    for run in parsed { all.extend(run?); }
-    Ok(all)
-}
 
 /// The solid a STEP file must describe (`solvent_cad_brep_summary`'s numbers read).
 #[derive(Debug,Clone,PartialEq)]
 pub struct Solid { pub solids: usize,pub shells: usize,pub edges: usize,pub vertices: usize,pub faces: Vec<Face> }
 
 /// A face of it: its surface's kind (`GeomAbs_SurfaceType`'s number), whether the solid reverses
-/// it, whether its surface's placement is left-handed (the writer writes it right-handed, the
-/// face's sense turned), and the surface's numbers (`solvent_cad_brep_summary`).
+/// it, whether the surface the file writes runs against the solid's (`indirect`: a placement
+/// left-handed, which the writer writes right-handed, or a lemon, written as its degenerate torus,
+/// `step::turned` — the face's sense turned either way), and the surface's numbers
+/// (`solvent_cad_brep_summary`; a torus's major radius signed, a lemon's negative).
 #[derive(Debug,Clone,PartialEq)]
 pub struct Face { pub kind: u8,pub reversed: bool,pub indirect: bool,pub numbers: Vec<f64> }
 
@@ -242,34 +42,57 @@ const TORUS: u8 = 4;
 const BSPLINE: u8 = 6;
 const REVOLUTION: u8 = 7;
 const EXTRUSION: u8 = 8;
+const OFFSET: u8 = 9;
 
 impl Solid {
     /// The solid a STEP file of the core's own B-rep must describe (`crate::step`): its
-    /// counts, and each face's surface as that writer writes it.
-    pub fn of(b: &crate::topo::Brep) -> Solid {
+    /// counts (a solid a lump, a shell its outer one and each void's: `step::lumps`), and each
+    /// face, in the order the writer writes them, its surface as that writer writes it.
+    pub fn of(b: &crate::topo::Brep) -> Solid { Solid::of_lumps(b,&crate::step::written_lumps(b)) }
+    /// `of`, `b` written as `lumps` (`step::written_lumps`, or what `step::write_stating` wrote:
+    /// the same, read once).
+    pub fn of_lumps(b: &crate::topo::Brep,lumps: &[crate::step::Lump]) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
-        let faces = b.faces.iter().enumerate().map(|(fi,f)| {
+        // (in the order the writer writes them: each lump's outer shell's faces, then its voids')
+        let faces = lumps.iter().flat_map(crate::step::Lump::faces).map(|fi| (fi,&b.faces[fi])).map(|(fi,f)| {
             // a sheet, a loft's face, a family's wall and an affine image are written as nets (one
             // the writer could not fit was refused there, and has no numbers here)
             if let Some(net) = crate::step::face_net(b,fi) {
                 let numbers = net.map(|n| crate::step::net_numbers(&n.net)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
+            // a swept surface: its axis or direction, and its curve's numbers (`swept`)
+            match &f.surface {
+                Surface::Revolution(g,c) => {
+                    let numbers = g.o.iter().chain(&g.z).copied().chain(curve_numbers(c)).collect();
+                    return Face {kind:REVOLUTION,reversed:f.reversed,indirect:false,numbers}
+                }
+                Surface::Extrusion(g,c) => {
+                    let numbers = g.z.iter().copied().chain([1.]).chain(curve_numbers(c)).collect();
+                    return Face {kind:EXTRUSION,reversed:f.reversed,indirect:false,numbers}
+                }
+                // a sheet's offset (read from a file): its distance, and its basis net's numbers
+                Surface::Offset(_,n,d) => {
+                    let numbers = [*d].into_iter().chain(crate::step::net_numbers(n)).collect();
+                    return Face {kind:OFFSET,reversed:f.reversed,indirect:false,numbers}
+                }
+                _ => {}
+            }
             let (frame,scalars) = crate::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..)
-                | Surface::Offset(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..) => BSPLINE,
+                Surface::Offset(..) => OFFSET };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
-            Face {kind,reversed:f.reversed,indirect:false,numbers}
+            Face {kind,reversed:f.reversed,indirect:crate::step::turned(&f.surface),numbers}
         }).collect();
         // a pole's degenerate edge is not written, nor a vertex only it ends at
         let written: Vec<&crate::topo::Edge> = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Curve(_))).collect();
         let mut used = vec![false;b.vertices.len()];
         for e in &written { for v in e.v { used[v as usize] = true; } }
-        Solid {solids:1,shells:1,edges:written.len(),vertices:used.iter().filter(|&&u| u).count(),faces}
+        Solid {solids:lumps.len(),shells:lumps.iter().map(|l| 1+l.voids.len()).sum(),edges:written.len(),vertices:used.iter().filter(|&&u| u).count(),faces}
     }
     /// Read the kernel's summary.
     pub fn read(summary: &[f64]) -> Result<Solid,String> {
@@ -290,66 +113,55 @@ impl Solid {
     }
 }
 
+/// The numbers of the curve a swept surface sweeps as `crate::step`'s writer writes it (#993
+/// stage 2), first a code: `0` a line, its point, its unit direction and its vector's length; `1` a
+/// circle, its placement (origin, axis, reference direction) and radius; `2` an ellipse, the same
+/// and its two semi-axes; `3` a B-spline, its degree, its poles' and distinct knots' counts,
+/// whether rational, its poles, its knots' multiplicities and values, and its weights; `4` a curve
+/// the writer fits a B-spline to (a turned contact's meridian, a slid contour), whose numbers are
+/// the fit's and not compared; `5` any other, which the writer refuses.
+fn curve_numbers(c: &crate::geom::Curve) -> Vec<f64> {
+    use crate::geom::Curve;
+    let frame = |f: &crate::geom::Frame| f.o.iter().chain(&f.z).chain(&f.x).copied().collect::<Vec<f64>>();
+    if c.exact_span().is_some() { return vec![4.] }
+    match c {
+        Curve::Line {p,d} => {
+            let l = crate::util::space::norm(*d);
+            [0.].into_iter().chain(*p).chain(d.map(|x| x/l)).chain([l]).collect()
+        }
+        Curve::Circle(f,r) => [1.].into_iter().chain(frame(f)).chain([*r]).collect(),
+        Curve::Ellipse(f,a,b) => [2.].into_iter().chain(frame(f)).chain([*a,*b]).collect(),
+        Curve::BSpline(b) => {
+            let k = crate::nurbs::distinct(&b.knots);
+            let mut out = vec![3.,b.degree as f64,b.poles.len() as f64,k.len() as f64,if b.weights.is_some() { 1. } else { 0. }];
+            out.extend(b.poles.iter().flatten());
+            out.extend(k.iter().map(|k| k.1 as f64));
+            out.extend(k.iter().map(|k| k.0));
+            if let Some(w) = &b.weights { out.extend(w); }
+            out
+        }
+        _ => vec![5.],
+    }
+}
+
 /// What the verification found: the file's entity count and its solid's counts.
 #[derive(Debug)]
 pub struct Verified { pub entities: usize,pub faces: usize,pub edges: usize,pub vertices: usize,pub splines: usize }
 
 fn near(a: f64,b: f64) -> bool { (a-b).abs() <= NEAR*(1.+a.abs().max(b.abs())) }
 
-/// A file's entities, every instance number defined once and every reference resolved, its units
-/// the millimetre and the radian.
-struct File<'a> { entities: Vec<Entity<'a>>,index: Vec<u32> }
-
-impl<'a> File<'a> {
-    fn read(text: &'a str,lap: &dyn Fn(&str)) -> Result<File<'a>,String> {
-        let entities = entities(text)?;
-        lap("parsed");
-        // every instance number once, and every reference to one
-        let most = entities.iter().map(|e| e.id).max().unwrap_or(0) as usize;
-        if most > 4*entities.len()+16 { return Err(format!("instance numbers up to #{most} for {} entities",entities.len())) }
-        let mut index = vec![u32::MAX;most+1];
-        for (k,e) in entities.iter().enumerate() {
-            if index[e.id as usize] != u32::MAX { return Err(format!("#{} is defined twice",e.id)) }
-            index[e.id as usize] = k as u32;
-        }
-        let dangling = crate::util::par::indices(entities.len().div_ceil(4096),|chunk| {
-            let mut bad = None;
-            for e in &entities[chunk*4096..((chunk+1)*4096).min(entities.len())] {
-                for (_,values) in &e.parts { for v in values { v.references(&mut |r| {
-                    if bad.is_none() && index.get(r as usize).is_none_or(|&k| k == u32::MAX) { bad = Some((e.id,r)); }
-                }) } }
-            }
-            bad
-        });
-        if let Some((from,to)) = dangling.into_iter().flatten().next() { return Err(format!("#{from} refers to #{to}, which the file does not define")) }
-        lap("resolved");
-        // the units
-        let unit = |kind: &str,prefix: Option<&str>,name: &str| entities.iter().any(|e| e.is(kind) && e.part("SI_UNIT").is_some_and(|v| v.len() == 2
-            && v[0].word() == prefix && v[1].word() == Some(name)));
-        if !unit("LENGTH_UNIT",Some("MILLI"),"METRE") { return Err("the file's length unit is not the millimetre".into()) }
-        if !unit("PLANE_ANGLE_UNIT",None,"RADIAN") { return Err("the file's plane angle unit is not the radian".into()) }
-        Ok(File {entities,index})
-    }
-    fn get(&self,r: u32) -> &Entity<'a> { &self.entities[self.index[r as usize] as usize] }
-    /// The simple entity `r` refers to, of one of `kinds`: its kind and parameters.
-    fn of(&self,r: Option<u32>,kinds: &[&str],what: &str) -> Result<(&'a str,&[Value<'a>]),String> {
-        let r = r.ok_or_else(|| format!("{what}: a reference expected"))?;
-        let e = self.get(r);
-        match e.simple() { Some((name,values)) if kinds.contains(&name) => Ok((name,values)),
-            _ => Err(format!("{what}: #{r} is {}, not {}",e.parts.iter().map(|p| p.0).collect::<Vec<_>>().join("+"),kinds.join(" or "))) }
-    }
-    fn count(&self,name: &str) -> usize { self.entities.iter().filter(|e| e.is(name)).count() }
-    /// The simple entities of `kind`, in the file's order.
-    fn all(&self,kind: &str) -> Vec<&Entity<'a>> { self.entities.iter().filter(|e| e.simple().is_some_and(|(n,_)| n == kind)).collect() }
-    /// The entities of `kind` by what their parameter `at` refers to.
-    fn referring(&self,kind: &str,at: usize) -> BTreeMap<u32,Vec<u32>> {
-        let mut by: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
-        for e in self.all(kind) {
-            if let Some(r) = e.simple().and_then(|(_,v)| v.get(at)).and_then(Value::reference) { by.entry(r).or_default().push(e.id); }
-        }
-        by
-    }
+/// A file's entities (`step_file::File`), its units the millimetre and the radian: what the
+/// kernel's own writer writes.
+fn read<'a>(text: &'a str,lap: &dyn Fn(&str)) -> Result<File<'a>,String> {
+    let file = File::parse(text,lap)?;
+    let entities = &file.entities;
+    let unit = |kind: &str,prefix: Option<&str>,name: &str| entities.iter().any(|e| e.is(kind) && e.part("SI_UNIT").is_some_and(|v| v.len() == 2
+        && v[0].word() == prefix && v[1].word() == Some(name)));
+    if !unit("LENGTH_UNIT",Some("MILLI"),"METRE") { return Err("the file's length unit is not the millimetre".into()) }
+    if !unit("PLANE_ANGLE_UNIT",None,"RADIAN") { return Err("the file's plane angle unit is not the radian".into()) }
+    Ok(file)
 }
+
 
 /// The one entity `by` lists for `r`, else why not.
 fn one(by: &BTreeMap<u32,Vec<u32>>,r: u32,what: &str) -> Result<u32,String> {
@@ -369,14 +181,14 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     let debug = std::env::var_os("SOLVENT_STEP_DEBUG").is_some();
     let clock = crate::util::clock::Instant::now();
     let lap = |what: &str| if debug { eprintln!("step check: {what} {:?}",clock.elapsed()) };
-    let file = File::read(text,&lap)?;
+    let file = read(text,&lap)?;
     // the topology, from the shape representation down
-    let breps = file.all("MANIFOLD_SOLID_BREP");
+    let breps = solids(&file);
     let represented: BTreeSet<u32> = file.entities.iter().filter(|e| e.is("ADVANCED_BREP_SHAPE_REPRESENTATION"))
         .flat_map(|e| e.part("ADVANCED_BREP_SHAPE_REPRESENTATION").and_then(|v| v.get(1)).and_then(Value::list).unwrap_or(&[])
             .iter().filter_map(Value::reference).collect::<Vec<_>>()).collect();
     let shells_in_file = file.count("CLOSED_SHELL")+file.count("OPEN_SHELL");
-    if breps.len() != solid.solids || shells_in_file != solid.shells || file.count("MANIFOLD_SOLID_BREP") != breps.len() {
+    if breps.len() != solid.solids || shells_in_file != solid.shells || solids_counted(&file) != breps.len() {
         return Err(format!("the file has {} solids and {shells_in_file} shells, the solid {} and {}",breps.len(),solid.solids,solid.shells));
     }
     for b in &breps {
@@ -387,19 +199,53 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     Ok(Verified {entities:file.entities.len(),faces:walked.faces,edges:walked.edges.len(),vertices:walked.vertices.len(),splines:walked.splines})
 }
 
-/// Walk the solids `breps` from their closed shells down against `solid`: each face, in the
+/// The kinds of entity a solid is written as: a lump, and a lump with voids.
+const SOLIDS: [&str;2] = ["MANIFOLD_SOLID_BREP","BREP_WITH_VOIDS"];
+
+/// Whether `e` is a solid: a simple entity of a kind in `SOLIDS`.
+fn is_solid(e: &Entity) -> bool { e.simple().is_some_and(|(n,_)| SOLIDS.contains(&n)) }
+
+/// A file's solids (`is_solid`), in its order.
+fn solids<'a,'b>(file: &'b File<'a>) -> Vec<&'b Entity<'a>> {
+    file.entities.iter().filter(|e| is_solid(e)).collect()
+}
+
+/// How many of a file's entities are of a kind in `SOLIDS` (`File::count`, which counts a complex
+/// entity of either too): as many as its `solids`, in a file the writer made.
+fn solids_counted(file: &File) -> usize { SOLIDS.iter().map(|n| file.count(n)).sum() }
+
+/// Walk the solids `breps` from their closed shells down against `solid`: each solid's outer
+/// closed shell, and a `BREP_WITH_VOIDS`'s voids, each an `ORIENTED_CLOSED_SHELL` of a closed
+/// shell turned (`.F.`: written facing out of its void, as a solid of it would); each face, in the
 /// shells' order, bounded by loops of oriented edges or a pole's vertex, of the solid face's sense
-/// and on its surface; every edge used twice; as many edges and vertices as the solid. `whole`
-/// where they are the file's only solids, so the file has no face, edge or vertex the walk leaves
-/// out.
+/// (a void's turned back) and on its surface; every edge used twice; as many edges and vertices as
+/// the solid. `whole` where they are the file's only solids, so the file has no face, edge or
+/// vertex the walk leaves out.
 fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&str)) -> Result<Walked,String> {
     let count = |name: &str| if whole { Some(file.count(name)) } else { None };
-    let mut faces: Vec<u32> = Vec::new();
+    // each face, and whether the shell it is listed in is turned (a void's)
+    let mut faces: Vec<(u32,bool)> = Vec::new();
+    let mut listed = |shell: Option<u32>,turned: bool,what: &str| -> Result<(),String> {
+        let (_,shell) = file.of(shell,&["CLOSED_SHELL"],what)?;
+        for f in shell.get(1).and_then(Value::list).ok_or("a closed shell without faces")? {
+            faces.push((f.reference().ok_or("a shell's face is not a reference")?,turned));
+        }
+        Ok(())
+    };
     for b in breps {
-        let (_,shell) = file.of(b.simple().unwrap().1.get(1).and_then(Value::reference),&["CLOSED_SHELL"],&format!("the solid #{}",b.id))?;
-        faces.extend(shell.get(1).and_then(Value::list).ok_or("a closed shell without faces")?.iter().map(|f| f.reference().ok_or("a shell's face is not a reference"))
-            .collect::<Result<Vec<_>,_>>()?);
+        let (kind,v) = b.simple().ok_or_else(|| format!("the solid #{} is a complex entity",b.id))?;
+        let what = format!("the solid #{}",b.id);
+        listed(v.get(1).and_then(Value::reference),false,&what)?;
+        if kind != "BREP_WITH_VOIDS" { continue }
+        let voids = v.get(2).and_then(Value::list).filter(|l| !l.is_empty()).ok_or_else(|| format!("{what}: a solid with voids lists none"))?;
+        for void in voids {
+            let (_,o) = file.of(void.reference(),&["ORIENTED_CLOSED_SHELL"],&what)?;
+            if o.get(3).and_then(Value::logical) != Some(false) { return Err(format!("{what}: a void's oriented shell not turned (.F.)")) }
+            listed(o.get(2).and_then(Value::reference),true,&what)?;
+        }
     }
+    let turned: Vec<bool> = faces.iter().map(|f| f.1).collect();
+    let faces: Vec<u32> = faces.into_iter().map(|f| f.0).collect();
     if faces.len() != solid.faces.len() || count("ADVANCED_FACE").is_some_and(|n| n != faces.len()) {
         return Err(format!("the file's shells list {} faces of its {} faces, the solid has {}",faces.len(),file.count("ADVANCED_FACE"),solid.faces.len()));
     }
@@ -446,8 +292,9 @@ fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&st
             }
         }
         let same_sense = face.get(3).and_then(Value::logical).ok_or_else(|| format!("{what}: no sense"))?;
-        if same_sense != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}, the solid's face \
-            {}{}",if expected.reversed { "reversed" } else { "forward" },if expected.indirect { " on a left-handed placement" } else { "" })) }
+        if (same_sense != turned[k]) != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}{}, the solid's face \
+            {}{}",if turned[k] { " in a void's shell turned" } else { "" },if expected.reversed { "reversed" } else { "forward" },
+            if expected.indirect { " on a surface written against it" } else { "" })) }
         let surface = face.get(2).and_then(Value::reference).ok_or_else(|| format!("{what}: no surface"))?;
         if surface_matches(&|r| file.get(r),surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
     }
@@ -495,7 +342,7 @@ impl Structure {
 /// item a part's solid's, listed once by a presentation representation in that part's context.
 /// What was counted is summed over the parts.
 pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
-    let file = File::read(text,&|_| {})?;
+    let file = read(text,&|_| {})?;
     let products = file.all("PRODUCT");
     if products.len() != s.products.len() {
         return Err(format!("the file has {} products, the assembly {}",products.len(),s.products.len()))
@@ -518,7 +365,7 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
             .iter().filter_map(Value::reference).collect();
         (defined[k],reps[k],contexts[k]) = (definition,rep,values.get(2).and_then(Value::reference));
         let Some(solid) = solid else { continue };
-        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
+        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| is_solid(e)).collect();
         if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
         walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
         solids += breps.len();
@@ -529,7 +376,8 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
     let (faces,splines,edge_uses,vertex_uses) = (sum(&|w| w.faces),sum(&|w| w.splines),sum(&|w| w.edges.len()),sum(&|w| w.vertices.len()));
     let edges: BTreeSet<u32> = walked.iter().flat_map(|w| w.edges.iter().copied()).collect();
     let vertices: BTreeSet<u32> = walked.iter().flat_map(|w| w.vertices.iter().copied()).collect();
-    if solids != file.count("MANIFOLD_SOLID_BREP") { return Err(format!("the file has {} solids, its parts {solids}",file.count("MANIFOLD_SOLID_BREP"))) }
+    let in_file = solids_counted(&file);
+    if solids != in_file { return Err(format!("the file has {in_file} solids, its parts {solids}")) }
     if faces != file.count("ADVANCED_FACE") { return Err(format!("the file has {} faces, its parts {faces}",file.count("ADVANCED_FACE"))) }
     if edge_uses != edges.len() || edges.len() != file.count("EDGE_CURVE") {
         return Err(format!("the file has {} edges, its parts {edge_uses} ({} apart)",file.count("EDGE_CURVE"),edges.len()))
@@ -681,7 +529,7 @@ fn styled(file: &File) -> Result<BTreeMap<u32,Vec<(u32,[f64;3])>>,String> {
 /// the file's order (the last product first). A part whose solids are styled by nothing is left
 /// out; one whose solids are styled apart, or one twice, is refused.
 pub fn colours(text: &str) -> Result<Vec<(String,[f64;3])>,String> {
-    let file = File::read(text,&|_| {})?;
+    let file = read(text,&|_| {})?;
     let (styled,defs) = (styled(&file)?,Definitions::of(&file));
     let mut out = Vec::new();
     for p in file.all("PRODUCT") {
@@ -692,7 +540,7 @@ pub fn colours(text: &str) -> Result<Vec<(String,[f64;3])>,String> {
         let Some(("ADVANCED_BREP_SHAPE_REPRESENTATION",values)) = file.get(rep).simple() else { continue };
         let mut colour: Option<[f64;3]> = None;
         for r in values.get(1).and_then(Value::list).unwrap_or(&[]).iter().filter_map(Value::reference) {
-            if !file.get(r).is("MANIFOLD_SOLID_BREP") { continue }
+            if !SOLIDS.iter().any(|n| file.get(r).is(n)) { continue }
             match styled.get(&r).map_or(&[][..],|v| &v[..]) {
                 [] => {}
                 [(_,c)] if colour.is_none_or(|k| k == *c) => colour = Some(*c),
@@ -717,22 +565,82 @@ fn placement(file: &File,r: u32,what: &str) -> Result<[f64;9],String> {
     Ok(out)
 }
 
+/// The three numbers of the `kind` (a `CARTESIAN_POINT` or a `DIRECTION`) `r` refers to.
+fn triple<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>,kind: &str) -> Result<[f64;3],String> {
+    let r = r.ok_or_else(|| format!("a {kind} reference expected"))?;
+    match get(r).simple() {
+        Some((name,v)) if name == kind => {
+            let x = v.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no coordinates"))?;
+            let x = x.iter().map(|x| x.number().ok_or_else(|| format!("{kind}: a number expected")))
+                .collect::<Result<Vec<f64>,String>>()?;
+            x.try_into().map_err(|_| format!("#{r}: not three coordinates"))
+        }
+        _ => Err(format!("#{r} is not a {kind}")),
+    }
+}
+
+/// The numbers of the axis placement `at` of the entity `owner`: its origin, axis and reference
+/// direction.
+fn placed<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,owner: u32,at: Option<&Value>) -> Result<Vec<f64>,String> {
+    let at = at.and_then(Value::reference).ok_or_else(|| format!("#{owner}: no placement"))?;
+    let Some(("AXIS2_PLACEMENT_3D",p)) = get(at).simple() else {
+        return Err(format!("#{owner}'s placement #{at} is not an AXIS2_PLACEMENT_3D"))
+    };
+    let mut out = Vec::with_capacity(9);
+    for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] {
+        out.extend(triple(get,p.get(k).and_then(Value::reference),kind)?);
+    }
+    Ok(out)
+}
+
+/// The numbers of the curve `r` a swept surface sweeps, as `curve_numbers` lays a solid's out: a
+/// line, a circle, an ellipse or a B-spline (simple, or the complex entity with its weights).
+fn swept_curve<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>) -> Result<Vec<f64>,String> {
+    let r = r.ok_or("a swept surface's curve: a reference expected")?;
+    let number = |v: Option<&Value>,what: &str| v.and_then(Value::number).ok_or_else(|| format!("#{r}: {what} expected"));
+    let numbers = |v: Option<&Value>,what: &str| -> Result<Vec<f64>,String> {
+        v.and_then(Value::list).ok_or_else(|| format!("#{r}: {what} expected"))?.iter().map(|x| x.number().ok_or_else(|| format!("#{r}: {what}: a number expected"))).collect()
+    };
+    // a B-spline's degree, poles, multiplicities and knots, and weights
+    let spline = |curve: &[Value],knots: &[Value],weights: Option<&[Value]>| -> Result<Vec<f64>,String> {
+        let degree = curve.first().and_then(Value::int).ok_or_else(|| format!("#{r}: a degree expected"))?;
+        let poles = curve.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no poles"))?;
+        let (mults,values) = (numbers(knots.first(),"multiplicities")?,numbers(knots.get(1),"knots")?);
+        let mut out = vec![3.,degree as f64,poles.len() as f64,values.len() as f64,if weights.is_some() { 1. } else { 0. }];
+        for p in poles { out.extend(triple(get,p.reference(),"CARTESIAN_POINT")?); }
+        out.extend(mults);
+        out.extend(values);
+        if let Some(w) = weights { out.extend(numbers(w.first(),"weights")?); }
+        Ok(out)
+    };
+    let e = get(r);
+    match e.simple() {
+        Some(("LINE",v)) => {
+            let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no vector"))?;
+            let Some(("VECTOR",w)) = get(at).simple() else { return Err(format!("#{r}'s #{at} is not a VECTOR")) };
+            let mut out = vec![0.];
+            out.extend(triple(get,v.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
+            out.extend(triple(get,w.get(1).and_then(Value::reference),"DIRECTION")?);
+            out.push(number(w.get(2),"a vector's length")?);
+            Ok(out)
+        }
+        Some(("CIRCLE",v)) => Ok([1.].into_iter().chain(placed(get,r,v.get(1))?).chain([number(v.get(2),"a radius")?]).collect()),
+        Some(("ELLIPSE",v)) => Ok([2.].into_iter().chain(placed(get,r,v.get(1))?).chain([number(v.get(2),"a semi-axis")?,number(v.get(3),"a semi-axis")?]).collect()),
+        Some(("B_SPLINE_CURVE_WITH_KNOTS",v)) if v.len() == 9 => spline(&v[1..6],&v[6..8],None),
+        None => match (e.part("B_SPLINE_CURVE"),e.part("B_SPLINE_CURVE_WITH_KNOTS")) {
+            (Some(c),Some(k)) if c.len() == 5 && k.len() == 3 => spline(c,&k[..2],e.part("RATIONAL_B_SPLINE_CURVE")),
+            _ => Err(format!("#{r} is a complex entity that is not a B-spline curve")),
+        },
+        _ => Err(format!("#{r}, a swept surface's curve, is {}, not a line, a conic or a B-spline",e.kinds())),
+    }
+}
+
 /// Whether the surface `r` is the solid's face's `expected`: an error where it is not, and
 /// `Ok(true)` for a B-spline.
 fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Face) -> Result<bool,String> {
     let e = get(r);
     let reals = |values: &[Value],what: &str| -> Result<Vec<f64>,String> {
         values.iter().map(|v| v.number().ok_or_else(|| format!("{what}: a number expected"))).collect()
-    };
-    let triple = |r: Option<u32>,kind: &str| -> Result<[f64;3],String> {
-        let r = r.ok_or_else(|| format!("a {kind} reference expected"))?;
-        match get(r).simple() {
-            Some((name,v)) if name == kind => {
-                let x = reals(v.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no coordinates"))?,kind)?;
-                x.try_into().map_err(|_| format!("#{r}: not three coordinates"))
-            }
-            _ => Err(format!("#{r} is not a {kind}")),
-        }
     };
     let compare = |what: &str,written: &[f64],solid: &[f64]| -> Result<(),String> {
         if written.len() != solid.len() { return Err(format!("{what}: {} numbers written, the solid has {}",written.len(),solid.len())) }
@@ -745,14 +653,8 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
     let elementary = |name: &str,kind: u8,scalars: usize| -> Result<bool,String> {
         let Some((n,v)) = e.simple().filter(|(n,_)| *n == name) else { unreachable!() };
         if expected.kind != kind { return Err(format!("#{r} is a {n}, the solid's surface kind {}",expected.kind)) }
-        let (_,place) = match get(v.get(1).and_then(Value::reference).ok_or("no placement")?).simple() {
-            Some(p @ ("AXIS2_PLACEMENT_3D",_)) => p,
-            _ => return Err(format!("#{r}'s placement is not an AXIS2_PLACEMENT_3D")),
-        };
-        let mut written = Vec::new();
-        written.extend(triple(place.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
-        written.extend(triple(place.get(2).and_then(Value::reference),"DIRECTION")?);
-        written.extend(triple(place.get(3).and_then(Value::reference),"DIRECTION")?);
+        // (its placement `v[1]`: its origin, axis and reference direction)
+        let mut written = placed(get,r,v.get(1))?;
         if v.len() != 2+scalars { return Err(format!("#{r}: {} parameters",v.len())) }
         written.extend(reals(&v[2..],n)?);
         compare(n,&written,&expected.numbers)?;
@@ -764,15 +666,54 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
         Some("CONICAL_SURFACE") => return elementary("CONICAL_SURFACE",CONE,2),
         Some("SPHERICAL_SURFACE") => return elementary("SPHERICAL_SURFACE",SPHERE,1),
         Some("TOROIDAL_SURFACE") => return elementary("TOROIDAL_SURFACE",TORUS,2),
+        // a spindle torus's part, its major radius under its minor: its apple (`select_outer`) the
+        // torus of that major radius, its lemon the solid's of the major radius negated
+        Some("DEGENERATE_TOROIDAL_SURFACE") => {
+            let Some((_,v)) = e.simple() else { unreachable!() };
+            if expected.kind != TORUS { return Err(format!("#{r} is a DEGENERATE_TOROIDAL_SURFACE, the solid's surface kind {}",expected.kind)) }
+            let outer = v.get(4).and_then(Value::logical).ok_or_else(|| format!("#{r}: no choice of its outer part"))?;
+            let [big,minor] = [2,3].map(|k| v.get(k).and_then(Value::number));
+            let (Some(big),Some(minor)) = (big,minor) else { return Err(format!("#{r}: its radii expected")) };
+            if !(big < minor) { return Err(format!("#{r}: a degenerate torus whose major radius {big} is not under its minor {minor}")) }
+            let mut written = placed(get,r,v.get(1))?;
+            written.extend([if outer { big } else { -big },minor]);
+            compare("DEGENERATE_TOROIDAL_SURFACE",&written,&expected.numbers)?;
+            return Ok(false)
+        }
         _ => {}
     }
     // a B-spline: simple, or complex with its rational weights
     let (surface,knots,weights) = match e.simple() {
         Some(("B_SPLINE_SURFACE_WITH_KNOTS",v)) if v.len() == 13 => (&v[1..8],&v[8..12],None),
-        Some(_) => {
-            let name = e.parts[0].0;
-            let kind = match name { "SURFACE_OF_REVOLUTION" => REVOLUTION,"SURFACE_OF_LINEAR_EXTRUSION" => EXTRUSION,"OFFSET_SURFACE" => 9,"BEZIER_SURFACE" => 5,_ => 10 };
+        Some((name,v)) => {
+            let kind = match name { "SURFACE_OF_REVOLUTION" => REVOLUTION,"SURFACE_OF_LINEAR_EXTRUSION" => EXTRUSION,"OFFSET_SURFACE" => OFFSET,"BEZIER_SURFACE" => 5,_ => 10 };
             if kind != expected.kind { return Err(format!("#{r} is a {name}, the solid's surface kind {}",expected.kind)) }
+            // a swept surface: its axis (a revolution's point and direction) or its vector (an
+            // extrusion's direction and length), and its curve, against the solid's (`Solid::of`);
+            // a summary that gives none (OCCT's) is held to the kind alone
+            if (kind == REVOLUTION || kind == EXTRUSION) && !expected.numbers.is_empty() {
+                let (axis,parts) = if kind == REVOLUTION { ("AXIS1_PLACEMENT",["CARTESIAN_POINT","DIRECTION"]) } else { ("VECTOR",["DIRECTION",""]) };
+                let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no {axis}"))?;
+                let Some((_,a)) = get(at).simple().filter(|(n,_)| *n == axis) else { return Err(format!("#{r}'s #{at} is not an {axis}")) };
+                let mut written: Vec<f64> = triple(get,a.get(1).and_then(Value::reference),parts[0])?.to_vec();
+                if kind == REVOLUTION { written.extend(triple(get,a.get(2).and_then(Value::reference),parts[1])?); }
+                else { written.push(a.get(2).and_then(Value::number).ok_or_else(|| format!("#{at}: a vector's length expected"))?); }
+                let head = written.len();
+                compare(name,&written,expected.numbers.get(..head).unwrap_or(&expected.numbers))?;
+                let curve = swept_curve(get,v.get(1).and_then(Value::reference))?;
+                let solid = &expected.numbers[head..];
+                // (a curve the writer fits: a B-spline, its numbers the fit's)
+                if solid.first() == Some(&4.) {
+                    if curve.first() != Some(&3.) { return Err(format!("#{r}: its curve is not a B-spline, the solid's a curve the writer fits")) }
+                } else { compare(&format!("{name}'s curve"),&curve,solid)?; }
+            }
+            // an offset: its distance, and its basis the solid's net
+            if kind == OFFSET && !expected.numbers.is_empty() {
+                compare(name,&[v.get(2).and_then(Value::number).ok_or_else(|| format!("#{r}: an offset's distance expected"))?],&expected.numbers[..1])?;
+                let basis = v.get(1).and_then(Value::reference).ok_or_else(|| format!("#{r}: no basis"))?;
+                let net = Face {kind:BSPLINE,reversed:false,indirect:false,numbers:expected.numbers[1..].to_vec()};
+                surface_matches(get,basis,&net).map_err(|e| format!("#{r}'s basis: {e}"))?;
+            }
             return Ok(false);
         }
         None => match (e.part("B_SPLINE_SURFACE"),e.part("B_SPLINE_SURFACE_WITH_KNOTS")) {
@@ -795,7 +736,7 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
     let mut poles = Vec::with_capacity(3*rows.len()*columns);
     for row in rows {
         let row = row.list().filter(|c| c.len() == columns).ok_or_else(|| format!("#{r}: the control points are not a grid"))?;
-        for p in row { poles.extend(triple(p.reference(),"CARTESIAN_POINT")?); }
+        for p in row { poles.extend(triple(get,p.reference(),"CARTESIAN_POINT")?); }
     }
     if let Some(w) = weights {
         let w = w.first().and_then(Value::list).ok_or_else(|| format!("#{r}: no weights"))?;

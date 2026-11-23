@@ -392,3 +392,33 @@ order:
   (slow tier, as `helical_groove.sv`'s): the build, its STL against the field and the stepped build.
 - `solid_sweeps_examples::the_ball_end_mill_screwed_at_other_leads_mills_its_groove`, about 9 s
   (slow tier): the two further builds.
+
+## STEP files other writers wrote (#993)
+
+The kernel's STEP reader is held to a corpus outside the repository, `$STEP_CORPUS`: the 32
+CADGenBench inputs, the STEP every kernel brep-bench runs here writes for its settled cases, a
+sample of both written again by OCCT under other writers' habits (no pcurves, AP203, AP242,
+inches), NIST's public test parts as commercial systems exported them, and mutants — each one
+edit of a corpus file.  `scripts/step-corpus/` makes all of it from nothing (its README gives
+the commands); no corpus file is committed.  What is committed is the reference:
+`rust/gcs-core/tests/step_corpus/reference.tsv` and `tests/step_mutants/mutants.tsv`, a row a
+file, known by the SHA-256 of its DATA section.
+
+The gate is tools, `#[ignore = "a tool: …"]` because the ordinary suite neither has the corpus
+nor needs it:
+
+```sh
+STEP_CORPUS=/path/to/corpus cargo test --manifest-path rust/Cargo.toml -p gcs-core -- \
+    step_corpus:: step_mutants:: --ignored --nocapture
+```
+
+- `step_corpus::nothing_is_read_wrong`, `nothing_panics` and
+  `step_mutants::no_mutant_is_read_wrong` hold at every commit that touches the reader.
+- `step_corpus::the_corpus_reads` is the stage's finish line; its table is the progress report.
+
+The whole corpus (about 3,200 files) reads in seven to ten minutes on four cores; the mutants in
+under a minute.  `STEP_CORPUS_ONLY=cadgenbench/2` narrows to a path prefix, `STEP_CORPUS_THREADS`
+sets how many are read at once.  A file whose bytes are not the table's is reported stale:
+regenerate the table with `table.py`.  What runs on every push needs no corpus: the table's own
+two checks, `step_file::`, `step_read::`, `step_kinds::`, `step_sound::`, and
+`step_mutants::kernel_written_mutants` and `syntax_never_panics`.

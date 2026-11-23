@@ -46,6 +46,7 @@ pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;
 pub use claimed::{judge_measured, length, measure_of, MeasuredJudged};
+pub(crate) use solids::never_extended;
 
 /// The line a front end says `solid_diagnostics` under when the solve did not settle (#571).  A
 /// failed solve stops anywhere, and a profile straddling its axis there blames a statement

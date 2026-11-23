@@ -389,17 +389,22 @@ placement carries inside the blank; CLI test readers zero the offset.
   what it cuts — two bodies at different heights, a copy through its own — the retired labels naming the set), and `tests/extrude.rs`'s
   `a_family_saying_a_prism_is_resized_by_its_set` the gestures'.
 - **A body kept within half-spaces is the body in common with them** (#953, [0.221],
-  `solid::defined::trimmed`, called from `program/solids/build.rs` once the solid is made).  A
+  `solid::defined::trimmed`, called from `program/solids.rs` once every solid is built).  A
   region whose terms keep it within one solid named whole or more (`p in hull`), outside any
   others named whole, and within terms that read no face — `p in water`, `water :=
   std.sets.HalfSpace(keel, std.z, d: T)` — is the body over those solids, kept in common with a
   region of the other terms pushed as a solid **of the same name** (as `Sketch::as_body` pushes a
   sweep's own stock), so its faces are named from it with no step of their own: the hull's
-  `immersed.hull.side`, the waterplane's `immersed.water`.  That region is pushed past the body,
-  so every solid declared after it stands one further on than the names were counted to: as each
-  solid is built its name takes it and the later ones follow (`solids::build_solids`), so a
-  second body kept within the water is read as itself, not as the first's region
-  (`tests/hydrostatics.rs`, `two_bodies_kept_within_the_water_are_two`).  Through 0.220 such a region was read
+  `immersed.hull.side`, the waterplane's `immersed.water`.  That region is pushed past **every**
+  solid the document declares, once all are built, never between two: every solid declared after
+  the body then stands where phase 1 counted it, so a second body kept within the water is read as
+  itself, not as the first's region (`tests/hydrostatics.rs`,
+  `two_bodies_kept_within_the_water_are_two`), and a later region's terms — read before any solid
+  was built — name the solid they were read of: a cap of a ball declared after a body kept above a
+  plane is that ball's cap, not the plane's half-space within a box (#993's review, D1,
+  `tests/region_solids.rs`, `a_body_kept_within_a_half_space_moves_no_later_solid`; through
+  0.229 the region was pushed between them, the resolver's names shifted past it and the terms
+  already read were not).  Through 0.220 such a region was read
   by the field alone and no exact construction made of it, so nothing could measure it.  A region
   of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read
   with none (`region::general`, never folded about an axis, where it would be refused for having
@@ -1242,3 +1247,70 @@ placement carries inside the blank; CLI test readers zero the offset.
 recipe refuses it once (`cad.rs`: its exact ruled walls are not yet written to STEP), and the field
 refuses it (`field/document.rs`). Its refusals are the panel's, in the core's words, said at the
 solid once (`solid::refusal`); the messages carry no solid name, which `refusal`'s callers add.
+
+**A body a file gives is its B-rep, untouched** (#993 stage 2). `SolidDef::Given(Arc<Given>)`
+holds a B-rep `brep::step_read` read — millimetres and radians about the world's origin, whatever
+the document's unit — and a digest of the file's text; it is made of nothing in the drawing, has
+no face of the drawing and no frame (`frame_origin` is the world's), and is held sound where it was
+read (`validate_at` checks nothing more). `Given::new` names face `k` `#given` and `k`
+(`Given::face_name`, `GIVEN_FACE`, read back by `vocab::given_face`): one segment, distinct, no statement's use and no name a written
+path reaches; the file's own `ADVANCED_FACE` names are dropped, since equal names would make two
+faces one in `from_brep` and drop the edges between them, and face `k` stays face `k`. The recipe
+hands it through as `recipe::Node::Given` — the same faces in the same order, each on its own
+surface, its tolerances as measured, moved only where a recipe is written about another origin —
+so `own_exact`, a body's build and `brep::export::exact` take one path, and `solid(bracket)`, a body
+whose stock it is and nothing else, builds to it untouched too; the export's `check`,
+`self_touching`, `pinches` and `step_check` hold it as they hold a built solid, and what they hold
+it to the reader held it to already — a loop's turn by `Brep::turned` at its measured tolerances
+(brep.md) — and they read a lune of two edges as a face's two sides, never a touch: a body the
+reader found sound and nothing was done to is not refused for what it is. CADGenBench 246, 248
+and 250, each holding a lune between tangent rounds, were refused as touching themselves, after
+34 s to 443 s spent reading the body's faces as its rounds read them, which a body a file gives
+untouched has none of and is no longer asked (`export::given_read`). **What the document writes
+of it reads back**: `brep::export::step` reads its file by the kernel's own reader after
+`step_check`, and refuses it in the reader's words where the reader refuses it, so no file is
+given back that the document's next `use` of it would refuse (so #3DBenchy's export was refused,
+`step_check` passing a file the reader would not read: the reader's defect, a row judged collapsed
+at the wrong tolerance — brep.md, "The foot of an edge is where its face is" — and with it mended
+the export reads back the same solid, `given_solids::a_body_read_on_its_sheets_rows_exports_and_reads_back`). Its `Debug`, and
+`recipe::Given`'s, is its digest and its size, never its faces; its memo key (`solid/reads.rs`) is
+tag 16, the digest in two 32-bit halves and the document's millimetres per unit — every other
+solid's numbers are the document's own, but the file's are millimetres in any unit while a
+display's vertices are the document's, so the same file read in millimetres and in inches is two
+builds, never one mesh drawn in both (`given_bodies::a_given_bodys_key_reads_the_documents_unit`).
+**It is never an object** (`model::objects`), however it is read — a body's stock, a set's
+membership, a claim's, a tool — so the report, the workspace (`overview::shown_objects`), the cut
+list (`stock::cut_list`), the outline and an assembly's export, which all read `objects`, list
+what the document makes of it and never it beside them
+(`given_bodies::a_given_body_is_never_an_object`). Everything that reads a solid through its B-rep reads it
+(display mesh, measures, claims, sections, glTF); its facet term, what `mesh_unit` and a refused
+build read, is its B-rep's mesh (`evaluated::brep_facets`, shared with `from_brep`), never an empty
+term. Its material field is `BuiltField` where every face's surface has an exact foot, else refused
+naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
+reaches them; stage 3 chooses them by predicate), and **no reader is shown their keys**: `--where
+part` lists no per-face row of a given body's faces (`report::positions_where`; their area is
+in the body's), and its volume and area are its B-rep's, read there (`Sketch::given_untouched`):
+it is evaluated — meshed at the report's fineness, CADGenBench 201's 435 faces some eight million
+facets and half a minute — only where its box is asked, and a containment claim's witness says one as `` a face of `bracket` ``
+(`vocab::face_said`, `between drill.hole and a face of `bracket``) — every namer says one so,
+`vocab::face_quoted` where a path is quoted: a round's refusal (`BodyFaces::said`,
+`given_bodies::a_round_says_a_given_bodys_faces_as_its_faces`) and the export's warning; the
+claim's JSON keeps the face's key, for a host to pick it by
+(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`); the export's warning of faces
+thinner than its tolerance says each as `` a face of `bracket` `` too, once however many it stands
+beside, and where the body is the file's untouched it gives no advice to move a cut's end, for the
+document made no cut: "The file `bracket` gives it so, and the document states nothing of it: it is
+written as it is given" (`brep::export::said_slivers`;
+`given_solids::a_sliver_a_files_body_holds_is_said_as_the_files`).
+**A body whose stock is another solid, nothing on,
+through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, by `SolidDef::bare_stock`, the two
+evaluations standing alike), so a containment between them, either way, holds exactly — its
+interval nothing — where the facets of a curved face alone would leave it within the faceting's
+uncertainty; a body anything is taken from is judged by its boundary as before, never the wrong way
+(`given_bodies::a_body_and_its_untouched_stock_hold_each_other`). The OCCT route refuses `Node::Given`, naming
+`--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate (and `given_bodies::the_corpus_through_a_document`, a tool over `$STEP_CORPUS`: each file
+through the three-line document, built, exported, checked, read again as a given body, built and
+exported again, and the same solid): `tests/given_solids.rs` —
+`its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
+file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,
+`a_given_body_is_meshed_edged_and_cut`, `a_model_in_inches_reads_the_millimetre_b_rep`.

@@ -568,6 +568,7 @@ dialog input[type=search] {
   color: var(--muted); }
 .project-file.drawing-file::before { content: '▤'; }
 .project-file.text-file::before { content: '¶'; }
+.project-file.given-file::before { content: '◆'; }
 .project-file[aria-current] { background: var(--accent-soft); color: var(--accent); }
 /* The model outline (#435): the panel's second pane, styled as a project's tree is — one row
    per instance, copy, entity or object, an eye to hide it, its name to select it, and a way to its

@@ -39,6 +39,46 @@ pub(crate) fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -
     sum*h/2.
 }
 
+/// The Kronrod nodes of `GAUSS` (its 21-point extension, exact for a polynomial of degree 31):
+/// the eleven it adds, with their weights, and the weights it gives `GAUSS`'s ten (in its order).
+const KRONROD: [(f64,f64);11] = [
+    (-0.9956571630258081,0.011694638867371874),(-0.9301574913557082,0.054755896574351996),
+    (-0.7808177265864169,0.09312545458369760),(-0.5627571346686047,0.12349197626206585),
+    (-0.2943928627014602,0.14277593857706008),(0.,0.1494455540029169),
+    (0.2943928627014602,0.14277593857706008),(0.5627571346686047,0.12349197626206585),
+    (0.7808177265864169,0.09312545458369760),(0.9301574913557082,0.054755896574351996),
+    (0.9956571630258081,0.011694638867371874),
+];
+const KRONROD_GAUSS: [f64;10] = [
+    0.032558162307964727,0.07503967481091995,0.10938715880229764,0.13470921731147333,
+    0.14773910490133849,0.14773910490133849,0.13470921731147333,0.10938715880229764,
+    0.07503967481091995,0.032558162307964727,
+];
+
+/// **One stretch of a use between its breaks, checked**: the ten-point rule (`gauss` on one
+/// piece), kept where its 21-point Kronrod extension, which reuses its nodes, agrees with it to a
+/// part in 1e-13 of `∫|f|` or within `floor`; else the extension, where its own error as QUADPACK
+/// estimates it is within that; otherwise the stretch `settled`. Ten nodes read most
+/// stretches of a spline to their last bits, and those read as they always were, to the bit; but a
+/// stretch is not one polynomial of a degree ten read — `G` along a curve, an area's `|S_u × S_v|`,
+/// a rational sheet — and unchecked, a file's edge one knot of whose curve stood a hair past its
+/// start had its whole half turn about a rational net read by ten, a face's area 3.8e-5 off
+/// (brep-bench's frustum screwed across a ring sector, its drum leaning across a turn 1.7e-6).
+fn checked(a: f64,b: f64,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+    let (mid,h) = ((a+b)/2.,(b-a)/2.);
+    let mut at = Vec::with_capacity(GAUSS.len());
+    let ten = gauss(a,b,1,&mut |t| { let y = f(t); at.push(y); y });
+    let (mut k,mut size) = (0.,0.);
+    for (&y,&w) in at.iter().zip(&KRONROD_GAUSS) { k += w*y; size += w*y.abs(); }
+    for &(x,w) in &KRONROD { let y = f(mid+x*h); k += w*y; size += w*y.abs(); }
+    let (k,size) = (k*h,size*h.abs());
+    let within = (1e-13*size).max(floor);
+    let off = (k-ten).abs();
+    // (the extension's own error by QUADPACK's estimate, `(200 |K − G|)^1.5` of the size: within
+    // the budget, it is read)
+    if off <= within { ten } else if size > 0. && size*(200.*off/size).dpowf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
+}
+
 /// The two-point Gauss rule over `[a, b]`: exact for a cubic.
 fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
     let (m,h) = ((a+b)/2.,(b-a)/2.);
@@ -95,7 +135,7 @@ fn by_columns(b: &Brep,f: &Face,what: What,lo: Uv,hi: Uv) -> Option<f64> {
     }
     cuts.sort_by(f64::total_cmp);
     cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-9*(hi[0]-lo[0]));
-    let total: f64 = cuts.windows(2).map(|w| settled(w[0],w[1],4,&mut column)).sum();
+    let total: f64 = cuts.windows(2).map(|w| settled(w[0],w[1],4,0.,&mut column)).sum();
     // the face's side, as Green's theorem takes it: the way its loops run round the parameters
     // (a weighed area's sign is its caller's, read off its area the same way: `face_moments`)
     Some(match what {
@@ -120,6 +160,9 @@ impl What<'_> {
     fn area(self) -> bool { matches!(self,What::Area) }
     /// Whether it is the flux of `X` or the area, which have closed forms and tables.
     fn plain(self) -> bool { matches!(self,What::Flux | What::Area) }
+    /// Whether it reads the area factor `|S_u × S_v|`, which kinks where the normal turns over (the
+    /// area, weighed or not); a flux reads `S_u × S_v` itself, smooth there.
+    fn absolute(self) -> bool { matches!(self,What::Area | What::Weighed(_)) }
 }
 
 thread_local! {
@@ -139,6 +182,11 @@ fn read() { READS.with(|r| r.set(r.get()+1)) }
 fn integrand(s: &Surface,uv: Uv,what: What) -> f64 {
     read();
     let (x,su,sv) = s.d1(uv);
+    integrand_of(x,su,sv,what)
+}
+
+/// `integrand` of the point and the derivatives read.
+fn integrand_of(x: V,su: V,sv: V,what: What) -> f64 {
     match what {
         What::Flux => dot(x,cross(su,sv)),
         What::Area => norm(cross(su,sv)),
@@ -150,7 +198,7 @@ fn integrand(s: &Surface,uv: Uv,what: What) -> f64 {
 /// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
 /// Otherwise refine each piece locally: a circle passing close to a ball's pole can sweep half
 /// a turn of `u` in a tiny part of its span, which six doublings of the whole edge still miss.
-fn settled(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+fn settled(a: f64,b: f64,pieces: usize,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     let coarse = gauss(a,b,pieces,f);
     let mut size = 0.;
     let fine = gauss(a,b,2*pieces,&mut |t| { let y = f(t); size += y.abs(); y });
@@ -158,7 +206,7 @@ fn settled(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     // The mean magnitude of the integrand, including where its signed readings cancel. This
     // sets one error budget for the edge, not a relative budget for each vanishing contribution
     // beside a pole: the latter refines rounding noise ever more finely near the singularity.
-    let within = 1e-13*(size*(b-a).abs()/(2*pieces*GAUSS.len()) as f64).max(1e-300);
+    let within = (1e-13*size*(b-a).abs()/(2*pieces*GAUSS.len()) as f64).max(floor).max(1e-300);
     let h = (b-a)/pieces as f64;
     let mut cells: Vec<_> = (0..pieces).map(|i| {
         let (x,y) = (a+i as f64*h,a+(i+1) as f64*h);
@@ -214,52 +262,6 @@ fn settled_by(pieces: usize,most: usize,read: &mut dyn FnMut(usize) -> Option<(f
         last = next;
     }
     Some(last)
-}
-
-/// How many steps each stretch of a use is read in for its crossings of a net's knot lines.
-const CROSSING_STEPS: usize = 8;
-
-/// **Where a use's curve in a net's parameters crosses the net's knot lines** (#880 T1f), over the
-/// edge's range `[t0, t1]` cut at its own `breaks`: `G` read along the use is smooth only between
-/// such crossings — at one a derivative of the net past its continuity there jumps — so the rule is
-/// cut there as at the use's own breaks.  A graded net (the tube road's, its knots crowded toward a
-/// pinch) puts hundreds of knot lines across one stretch of a trim's pcurve, and a rule read over
-/// them whole missed the crossed member's volume by 4e-5 of itself.  Each stretch is read at
-/// `CROSSING_STEPS` steps, a step's knots between its two ends' parameters each settled by
-/// bisection to the rounding (a use doubling back across a knot line within a step, tangent to it
-/// there, is read as not crossing it: the kink is of the order of the step's turn).  A step ending
-/// on a knot exactly crosses it there: read between its ends alone, a knot at a step's end was in
-/// neither step, and a rational torus whose knots fell on the steps' eighths was read 2.9e-8 off.
-fn crossings(s: &Surface,[t0,t1]: [f64;2],breaks: &[f64],at: &mut dyn FnMut(f64) -> Uv) -> Vec<f64> {
-    let mut cuts = vec![t0];
-    cuts.extend(breaks.iter().copied().filter(|&t| t > t0.min(t1) && t < t0.max(t1)));
-    cuts.push(t1);
-    let mut out = Vec::new();
-    for w in cuts.windows(2) {
-        let mut prev = (w[0],at(w[0]));
-        for j in 1..=CROSSING_STEPS {
-            let t = w[0]+(w[1]-w[0])*j as f64/CROSSING_STEPS as f64;
-            let next = (t,at(t));
-            for k in 0..2 {
-                // (the step's end taken in, by an ulp past it: a knot the step lands on exactly is
-                // crossed in it, not missed between two steps that each leave it out)
-                let (a,z) = (prev.1[k],next.1[k]);
-                if a == z { continue }
-                for knot in s.breaks(k,[a,if z > a { z.next_up() } else { z.next_down() }]) {
-                    let below = prev.1[k] < knot;
-                    let (mut lo,mut hi) = (prev.0,next.0);
-                    loop {
-                        let mid = 0.5*(lo+hi);
-                        if !(mid != lo && mid != hi) { break }
-                        if (at(mid)[k] < knot) == below { lo = mid } else { hi = mid }
-                    }
-                    out.push(0.5*(lo+hi));
-                }
-            }
-            prev = next;
-        }
-    }
-    out
 }
 
 /// Pieces for an angle-like span, a sixteenth of a turn each.
@@ -330,13 +332,19 @@ impl<'a> Prefix<'a> {
         Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,base,cols}
     }
     fn g(&self,u: f64,v: f64) -> f64 { read(); let (x,su,sv) = self.net.d1(u,v); dot(x,cross(su,sv)) }
-    /// The net's rows read at `v` (`Row`).
-    fn rows(&self,v: f64) -> Vec<Row> {
+    /// The net's rows read at `v` (`Row`) by the patch of the `v` span starting at `from` — at that
+    /// span's far end too, which a B-spline read there takes from the next span: across a knot of
+    /// multiplicity `dv` (a net joined in value only, creased) `S_v` jumps, and a column's end node
+    /// read so tabled `G` from the wrong side, a family's bar 2.8e-5 off its flux.
+    fn rows(&self,v: f64,from: f64) -> Vec<Row> {
         let n = self.net;
         let ([v0,v1],nv) = (n.domain()[1],n.poles[0].len());
-        super::nurbs::with_basis(n.dv,&n.vknots,nv,v.clamp(v0,v1),1,|sv,bv| n.poles.iter().map(|row| {
+        // the span's own knots and poles alone: every `v` is read in its one span
+        let s = super::nurbs::span(n.dv,&n.vknots,nv,from);
+        let knots = &n.vknots[s-n.dv..=s+n.dv+1];
+        super::nurbs::with_basis(n.dv,knots,n.dv+1,v.clamp(v0,v1),1,|sv,bv| n.poles.iter().map(|row| {
             let (mut x,mut d) = ([0.;3],[0.;3]);
-            for j in 0..=n.dv { let q = row[sv-n.dv+j]; for c in 0..3 { x[c] += bv[0][j]*q[c]; d[c] += bv[1][j]*q[c]; } }
+            for j in 0..=n.dv { let q = row[s+sv-2*n.dv+j]; for c in 0..3 { x[c] += bv[0][j]*q[c]; d[c] += bv[1][j]*q[c]; } }
             (x,d)
         }).collect())
     }
@@ -364,7 +372,7 @@ impl<'a> Prefix<'a> {
         let (v0,v1) = (self.vs[j],self.vs[j+1]);
         let at = |x: f64| (v0+v1)/2.+x*(v1-v0)/2.;
         let (base,n) = (self.base,self.us.len());
-        let mut col = self.cols[j].take().unwrap_or_else(|| Column {rows:self.nodes.iter().map(|&x| self.rows(at(x))).collect(),
+        let mut col = self.cols[j].take().unwrap_or_else(|| Column {rows:self.nodes.iter().map(|&x| self.rows(at(x),v0)).collect(),
             g:vec![vec![0.;n];self.nodes.len()],lo:base,hi:base});
         // filled out to knot `i`, a span at a time
         while col.hi < i {
@@ -394,9 +402,78 @@ impl<'a> Prefix<'a> {
     }
 }
 
+/// **A polynomial net read along one parameter, the other held** (`along` 0: `u` runs, `v` held at
+/// `fixed`): at the held value each row of poles across it makes one pole of the iso curve and of
+/// the sheet's rate across it, so each point read along it is a curve's, `du + 1` poles a span,
+/// where the sheet's is `(du + 1)(dv + 1)` and both bases. `G` along a face's parameter integrates
+/// its spans from the face's middle at every node of every use: on brep-bench's bull-nose carried
+/// along a spline (a 91 × 143 quintic) the area read some twenty million points of the sheet. The
+/// rows are read as the spans asked reach them, into a table the caller hands on from one held value
+/// to the next (cleared, not allocated again).
+struct Iso<'a> {
+    net: &'a Net,
+    along: usize,
+    /// The held parameter's span and its basis there (values and rates).
+    span: usize,
+    basis: [Vec<f64>;2],
+    /// Each row across: the iso curve's pole and the rate's across it, once read.
+    rows: Vec<Option<Row>>,
+}
+
+impl<'a> Iso<'a> {
+    fn new(net: &'a Net,along: usize,fixed: f64,mut rows: Vec<Option<Row>>) -> Iso<'a> {
+        let [du,dv] = net.domain();
+        let (nu,nv) = (net.poles.len(),net.poles[0].len());
+        let (d,knots,count,[a,b]) = if along == 0 { (net.dv,&net.vknots,nv,dv) } else { (net.du,&net.uknots,nu,du) };
+        let (span,basis) = super::nurbs::with_basis(d,knots,count,fixed.clamp(a,b),1,|s,bs| (s,[bs[0][..=d].to_vec(),bs[1][..=d].to_vec()]));
+        rows.clear();
+        rows.resize(if along == 0 { nu } else { nv },None);
+        Iso {net,along,span,basis,rows}
+    }
+    fn row(&mut self,i: usize) -> Row {
+        if let Some(r) = self.rows[i] { return r }
+        let n = self.net;
+        let (d,s) = (if self.along == 0 { n.dv } else { n.du },self.span);
+        let (mut x,mut r) = ([0.;3],[0.;3]);
+        for j in 0..=d {
+            let q = if self.along == 0 { n.poles[i][s-d+j] } else { n.poles[s-d+j][i] };
+            for c in 0..3 { x[c] += self.basis[0][j]*q[c]; r[c] += self.basis[1][j]*q[c]; }
+        }
+        self.rows[i] = Some((x,r));
+        (x,r)
+    }
+    /// The sheet's point and `S_u`, `S_v` at `w` along it.
+    fn d1(&mut self,w: f64) -> (V,V,V) {
+        let n = self.net;
+        let [du,dv] = n.domain();
+        let (d,knots,[a,b]) = if self.along == 0 { (n.du,&n.uknots,du) } else { (n.dv,&n.vknots,dv) };
+        let count = self.rows.len();
+        let (s,b0,b1) = super::nurbs::with_basis(d,knots,count,w.clamp(a,b),1,|s,bs| {
+            let mut v0 = [0.;super::nurbs::MAX_DEGREE+1];
+            let mut v1 = [0.;super::nurbs::MAX_DEGREE+1];
+            v0[..=d].copy_from_slice(&bs[0][..=d]);
+            v1[..=d].copy_from_slice(&bs[1][..=d]);
+            (s,v0,v1)
+        });
+        let (mut x,mut dw,mut across) = ([0.;3],[0.;3],[0.;3]);
+        for k in 0..=d {
+            let (q,r) = self.row(s-d+k);
+            for c in 0..3 { x[c] += b0[k]*q[c]; dw[c] += b1[k]*q[c]; across[c] += b0[k]*r[c]; }
+        }
+        if self.along == 0 { (x,dw,across) } else { (x,across,dw) }
+    }
+}
+
 /// How far a span of a traced curve's points may turn, chord against chord: each of its chords within
 /// this angle (its cosine) of its first, so within twice it of the span's own chord.
 const SPAN_COS: f64 = 0.9659258262890683;
+
+/// Whether `integrated` reads `crossings` of use `c` on surface `s`: its use's parameters at
+/// sixteenths of its span are then read, where its face's box reads eighths.
+fn sixteenths(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface) -> bool {
+    matches!(s,Surface::BSpline(..) | Surface::Offset(..) | Surface::Torus(..) | Surface::Cone(..)) && !matches!(c.pcurve,Pcurve::Line {..})
+        && !matches!(e.curve,EdgeCurve::Degenerate) && !matches!((&e.curve,&c.pcurve),(EdgeCurve::Curve(Curve::Traced(_)),Pcurve::Inverse {..}))
+}
 
 /// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
 /// parameters on the face and their rate. Green's integral does not depend on how its curve is
@@ -584,9 +661,11 @@ impl<'a> Closed<'a> {
                 let (sv,cv) = v.dsin_cos();
                 let q = big+r*cv;
                 if area {
-                    if along == 0 { r*q.abs()*int_1 } else {
-                        if big < r { return None }
-                        r*(big*int_1+r*trig().2)
+                    if along == 0 { r*q.abs()*int_1 } else if big >= r { r*(big*int_1+r*trig().2) } else {
+                        if !(big > -r) { return None }
+                        // a spindle torus's `|R + r cos v|` changes its sign at `cos v = −R/r`: its
+                        // integral the odd, piecewise `h` on a half turn and whole turns of it
+                        r*(spindle(big,r,x)-spindle(big,r,base))
                     }
                 } else if along == 0 {
                     let (_,_,int_c,int_s) = trig();
@@ -609,8 +688,134 @@ impl<'a> Closed<'a> {
     }
 }
 
-/// The volume the boundary encloses (negative if it is turned inside out).
-pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
+/// **Where a use's curve in a face's parameters crosses a line its integrand kinks along**: a
+/// spline sheet's knot lines (a cubic's third derivative jumps there, a fillet's net of one
+/// continuity its second), and the lines where an area's `|S_u × S_v|` passes nought and turns —
+/// a spindle torus's `R + r cos v = 0`, a cone's apex. A rule across a kink converges as a rule
+/// across a kink does: the adaptive one refining it to its last bits (most of a commercial file's
+/// measuring), a fixed one some 1e-5 off (a spindle torus's seam read across `v`). Each crossing
+/// bisected between the use's points at sixteenths of its span, to a billionth of it. A pcurve
+/// that is a line is settled whole, through the kinks (crossing each once, at a fraction the
+/// rule's points need not meet), and cut only where it crosses a net's crease — a knot line of
+/// multiplicity the degree, the net joined in value only — where `g`, and so `G`, *jump* by
+/// `X · (S_u × ΔS_v)`, which no rule settles: in closed form, its parameter affine in the edge's.
+/// `uvs` are the use's parameters at its sixteenths (`sixteenths`), read by the caller once for
+/// this and for the face's box.
+fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex],uvs: &[Uv],
+    absolute: bool) -> Vec<f64> {
+    // the values of parameter `k` in `[a, b]` the integrand kinks at
+    let kinks = |k: usize,a: f64,b: f64| -> Vec<f64> {
+        match *s {
+            Surface::BSpline(..) | Surface::Offset(..) => s.breaks(k,[a,b]),
+            Surface::Torus(_,big,r) if k == 1 && big.abs() < r => {
+                let s0 = (-big/r).dacos();
+                let tau = std::f64::consts::TAU;
+                let first = ((a+s0)/tau).floor() as i64;
+                let last = ((b+s0)/tau).ceil() as i64;
+                (first..=last).flat_map(|n| [n as f64*tau-s0,n as f64*tau+s0]).filter(|&x| x > a && x < b).collect()
+            }
+            Surface::Cone(_,r,half) if k == 1 && half.dsin() != 0. => {
+                let apex = -r/half.dsin();
+                if apex > a && apex < b { vec![apex] } else { vec![] }
+            }
+            _ => vec![],
+        }
+    };
+    if !matches!(s,Surface::BSpline(..) | Surface::Offset(..) | Surface::Torus(..) | Surface::Cone(..)) { return vec![] }
+    if let Pcurve::Line {a,b} = c.pcurve {
+        // a line where it crosses a net's crease, in closed form (its parameter affine in the
+        // edge's): a knot of multiplicity its degree or more, the net joined in value only there,
+        // across which `G` jumps
+        let Surface::BSpline(_,n) = s else { return vec![] };
+        let [t0,t1] = e.t;
+        let mut out = Vec::new();
+        for (k,(knots,d)) in [(&n.uknots,n.du),(&n.vknots,n.dv)].into_iter().enumerate() {
+            if !(a[k] != b[k]) { continue }
+            let (lo,hi) = (a[k].min(b[k]),a[k].max(b[k]));
+            let mut i = 0;
+            while i < knots.len() {
+                let j = knots[i..].iter().take_while(|&&x| x == knots[i]).count();
+                let x = knots[i];
+                if j >= d && x > lo && x < hi { out.push(t0+(x-a[k])/(b[k]-a[k])*(t1-t0)) }
+                i += j;
+            }
+        }
+        return out
+    }
+    let n = 16;
+    let at = |t: f64| c.pcurve.at(t,e,s,vertices);
+    let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
+    if uvs.len() != ts.len() { return vec![] }
+    let mut out = Vec::new();
+    // (and on a net, where its normal turns over between two points of the use — its area factor
+    // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
+    // are no knots — for an integrand that reads the area factor alone (`absolute`): a flux reads
+    // `S_u × S_v`, smooth there, and cut where a swept sheet folds along a use, its normal turning
+    // at noise, the cuts fell on noise — the ring along a spline cut from a block read 6e-4 over
+    // the peer kernel's volume, `swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`)
+    if let (Surface::BSpline(..),true) = (s,absolute) {
+        let normal = |uv: Uv| { let (_,su,sv) = s.d1(uv); cross(su,sv) };
+        let ns: Vec<V> = uvs.iter().map(|&q| normal(q)).collect();
+        for j in 0..n {
+            if !(dot(ns[j],ns[j+1]) < 0.) { continue }
+            let (mut lo,mut hi) = (ts[j],ts[j+1]);
+            for _ in 0..60 {
+                let m = 0.5*(lo+hi);
+                if dot(normal(at(m)),ns[j]) >= 0. { lo = m } else { hi = m }
+                if hi-lo <= 1e-12*(e.t[1]-e.t[0]).abs() { break }
+            }
+            out.push(0.5*(lo+hi));
+        }
+    }
+    for j in 0..n {
+        for k in 0..2 {
+            let (a,b) = (uvs[j][k],uvs[j+1][k]);
+            // (the sixteenth's far end taken in, by an ulp past it: a kink a sixteenth lands on
+            // exactly is crossed in it, not missed between two that each leave it out — a rational
+            // torus whose knots fell on the sixteenths read 2.9e-8 off its area)
+            if a == b { continue }
+            let z = if b > a { b.next_up() } else { b.next_down() };
+            for x in kinks(k,a.min(z),a.max(z)) {
+                // bisected on the side of the line each end lies
+                let (mut lo,mut hi) = (ts[j],ts[j+1]);
+                let below = a < x;
+                for _ in 0..60 {
+                    let m = 0.5*(lo+hi);
+                    if (at(m)[k] < x) == below { lo = m } else { hi = m }
+                    if hi-lo <= 1e-9*(e.t[1]-e.t[0]).abs() { break }
+                }
+                out.push(0.5*(lo+hi));
+            }
+        }
+    }
+    out
+}
+
+/// `∫_0^x |a + r cos σ| dσ` (`|a| < r`): on `[0, π]` the integral of `a + r cos` up to its root
+/// `s₀ = acos(−a/r)` and back down past it, odd about 0, and `P` a whole turn.
+fn spindle(a: f64,r: f64,x: f64) -> f64 {
+    let s0 = (-a/r).dacos();
+    let up = |x: f64| a*x+r*x.dsin();
+    let h = |x: f64| if x <= s0 { up(x) } else { 2.*up(s0)-up(x) };
+    let turns = (x/std::f64::consts::TAU).round();
+    let y = x-turns*std::f64::consts::TAU;
+    turns*2.*h(std::f64::consts::PI)+if y < 0. { -h(-y) } else { h(y) }
+}
+
+/// The volume the boundary encloses (negative if it is turned inside out). A boundary standing
+/// farther from the origin than ten times its size is measured moved to it (by the middle of its
+/// vertices): `X · n` there is the volume's flux plus the far point's, which cancels round the
+/// boundary, and its rounding is the far point's (a millimetre solid a kilometre out read 5e-5
+/// of itself off, #993).
+pub fn volume(b: &Brep) -> f64 {
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]); } }
+    let c: V = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    if b.vertices.is_empty() || !(norm(c) > 10.*size) { return fluxes(b).iter().sum::<f64>()/3. }
+    let moved = b.moved(&crate::geom::Rigid {r:crate::geom::Rigid::identity().r,t:c.map(|x| -x)});
+    fluxes(&moved).iter().sum::<f64>()/3.
+}
 
 /// Each face's flux `∬ X·n dA` out of the solid, side by side.
 pub fn fluxes(b: &Brep) -> Vec<f64> {
@@ -667,8 +872,9 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
         &|x| { let t = t(x); t[0]*t[1] },&|x| { let t = t(x); t[0]*t[2] },&|x| { let t = t(x); t[1]*t[2] },
     ];
     let read = |k: usize| integrated(b,f,What::Weighed(weights[k])).iter().flatten().map(|t| t.0+t.1).sum::<f64>();
-    let sense = read(0).signum();
-    std::array::from_fn(|k| if want[k] { sense*read(k) } else { 0. })
+    let area = read(0);
+    let sense = area.signum();
+    std::array::from_fn(|k| if !want[k] { 0. } else if k == 0 { sense*area } else { sense*read(k) })
 }
 
 /// **Green's theorem read cell by cell on a net** (#880): `G` taken not from one `u` for the whole
@@ -772,52 +978,73 @@ impl<'a> Cells<'a> {
 /// `terms` of a face on a net (`Surface::BSpline` or `Offset`) read cell by cell (`Cells`): each use's
 /// stretches and the closings between uses, each read from its knot, and the columns where the knot
 /// changes, each added to the term of the stretch it leaves.
-fn by_cells(b: &Brep,f: &Face,what: What,net: &Net,mid: f64) -> Vec<Vec<(f64,f64)>> {
+fn by_cells(b: &Brep,f: &Face,what: What,net: &Net,mid: f64,uvs: &[Vec<Vec<Uv>>]) -> Vec<Vec<(f64,f64)>> {
     let s = &f.surface;
     let mut cells = Cells::new(s,net,what,mid);
     // the way the loops run round the parameters: counter-clockwise, the face on their left
     let sense = f.loops.iter().map(|l| b.loop_area(f,l)).sum::<f64>() >= 0.;
+    // where a segment of the parameters from `p` to `q` crosses a knot line, as fractions of it
+    let knotted = |p: Uv,q: Uv| -> Vec<f64> {
+        let mut xs = vec![0.];
+        for j in 0..2 { if p[j] != q[j] { xs.extend(s.breaks(j,[p[j],q[j]]).into_iter().map(|x| (x-p[j])/(q[j]-p[j]))) } }
+        xs.push(1.);
+        xs.sort_by(f64::total_cmp);
+        xs.dedup();
+        xs
+    };
     let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
-    for l in &f.loops {
+    for (l,uvs) in f.loops.iter().zip(uvs) {
         let mut row: Vec<(f64,f64)> = Vec::new();
         // the loop's stretches in its order: each one's knot, its last `v`, and its term (use `k`'s
         // own, or the closing after it)
         let mut stretches: Vec<(usize,f64,usize,bool)> = Vec::new();
-        let ends: Vec<(Uv,Uv)> = l.iter().map(|c| {
+        // each use's ends, and where its curve arrives a hair in from them (`integrated`'s)
+        let ends: Vec<[Uv;4]> = l.iter().map(|c| {
             let e = &b.edges[c.edge as usize];
             let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
-            if c.reversed { (z,a) } else { (a,z) }
+            let inside = |t: f64,end: Uv,h: f64| {
+                if !matches!(c.pcurve,Pcurve::Inverse {..}) { return end }
+                let (q,d) = c.pcurve.at_and_derivative(t+h,e,s,&b.vertices);
+                let step = (d[0]*h).dhypot(d[1]*h);
+                let gap = (q[0]-end[0]).dhypot(q[1]-end[1]);
+                if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
+            };
+            let h = 1e-9*(e.t[1]-e.t[0]);
+            let (ai,zi) = (inside(e.t[0],a,h),inside(e.t[1],z,-h));
+            if c.reversed { [z,zi,ai,a] } else { [a,ai,zi,z] }
         }).collect();
-        for (k,c) in l.iter().enumerate() {
+        for (k,(c,uvs)) in l.iter().zip(uvs).enumerate() {
             let e = &b.edges[c.edge as usize];
-            // a pole's edge inverted onto the face has no parameters to read: nothing in `dv`
-            if matches!(e.curve,EdgeCurve::Degenerate) && matches!(c.pcurve,Pcurve::Inverse {..}) { row.push((0.,0.)); continue }
+            // a pole's degenerate edge counts by its line in the face's parameters (`integrated`'s)
+            if matches!(e.curve,EdgeCurve::Degenerate) && !matches!(c.pcurve,Pcurve::Line {..}) { row.push((0.,0.)); continue }
             let at = |t: f64| c.pcurve.at(t,e,s,&b.vertices);
             // a traced curve inverted onto the face: read across planes (#798), whole, from the
             // knot it starts by
             if let (EdgeCurve::Curve(Curve::Traced(tr)),&Pcurve::Inverse {a,b:z}) = (&e.curve,&c.pcurve) {
-                let i = cells.knot(ends[k].0[0]);
+                let i = cells.knot(ends[k][1][0]);
                 let line = along_trace(tr,e,[a,z],s,&b.vertices,&mut |[u,v],d| if d[1] == 0. { 0. } else { cells.g(i,u,v)*d[1] });
                 row.push((if c.reversed { -line } else { line },0.));
-                stretches.push((i,ends[k].1[1],k,false));
+                stretches.push((i,ends[k][2][1],k,false));
                 continue
             }
             let span = e.t[1]-e.t[0];
             let mut last: Option<(f64,Uv,Uv)> = None;
             // where the edge's curve or its curve in the face's parameters may jump in a derivative,
-            // and where the latter crosses one of the net's knot lines
+            // and where the latter crosses one of the net's knot lines (`crossings`; a line's at
+            // every knot line, in closed form, so each stretch lies in one cell)
             let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
             if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
-            breaks.sort_by(f64::total_cmp);
-            breaks.dedup();
-            breaks.extend(crossings(s,e.t,&breaks,&mut |t| at(t)));
+            if let Pcurve::Line {a,b:z} = c.pcurve {
+                let xs = knotted(a,z);
+                breaks.extend(xs[1..xs.len()-1].iter().map(|x| e.t[0]+x*span));
+            } else { breaks.extend(crossings(c,e,s,&b.vertices,uvs,what.absolute())) }
             breaks.sort_by(f64::total_cmp);
             breaks.dedup();
             let mut cuts = vec![e.t[0]];
-            cuts.extend(breaks);
+            cuts.extend(breaks.into_iter().filter(|&t| t > e.t[0].min(e.t[1]) && t < e.t[0].max(e.t[1])));
             cuts.push(e.t[1]);
-            let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
-            // (a use with no break, smooth in one cell, settled as `integrated` settles one)
+            // (a use with no break, smooth in one cell, settled as `integrated` settles one; else
+            // ten nodes a stretch, checked, as there)
             let whole = cuts.len() == 2;
             let periodic = matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());
             let mut own: Vec<(usize,f64,f64)> = Vec::new();
@@ -832,36 +1059,35 @@ fn by_cells(b: &Brep,f: &Face,what: What,net: &Net,mid: f64) -> Vec<Vec<(f64,f64
                     last = Some((t,uv,d));
                     if d[1] == 0. { 0. } else { cells.g(i,uv[0],uv[1])*d[1] }
                 };
-                line += if whole { settled(w[0],w[1],pieces(span,periodic),&mut integrand) } else { gauss(w[0],w[1],each,&mut integrand) };
+                line += if whole { settled(w[0],w[1],pieces(span,periodic),0.,&mut integrand) } else { checked(w[0],w[1],0.,&mut integrand) };
                 own.push((i,at(w[0])[1],at(w[1])[1]));
             }
             if c.reversed { own.reverse() }
+            let first = stretches.len();
             stretches.extend(own.into_iter().map(|(i,v0,v1)| (i,if c.reversed { v0 } else { v1 },k,false)));
+            // (the use handing over where its curve arrives, a hair in from a leap's end, where the
+            // closing after it starts)
+            if let Some(end) = stretches[first..].last_mut() { end.1 = ends[k][2][1] }
             row.push((if c.reversed { -line } else { line },0.));
         }
         // the loop closed in the face's parameters, each use's end joined straight to the next's
-        // start (Green's theorem needs a closed curve), cut where the join crosses a knot line
+        // start (Green's theorem needs a closed curve) through where their curves arrive, cut where
+        // the joins cross a knot line
         let mut order: Vec<(usize,f64,usize,bool)> = Vec::new();
         let mut taken = 0;
         for k in 0..ends.len() {
             // (the use's own stretches first)
             while taken < stretches.len() && stretches[taken].2 == k { order.push(stretches[taken]); taken += 1 }
-            let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
-            if p == q { continue }
-            let mut xs = vec![0.];
-            for j in 0..2 {
-                let mut ks = s.breaks(j,[p[j],q[j]]).into_iter().map(|x| (x-p[j])/(q[j]-p[j])).collect::<Vec<_>>();
-                xs.append(&mut ks);
-            }
-            xs.push(1.);
-            xs.sort_by(f64::total_cmp);
-            xs.dedup();
-            let dv = q[1]-p[1];
-            let point = |x: f64| [p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1])];
-            for w in xs.windows(2) {
-                let i = cells.knot(point(0.5*(w[0]+w[1]))[0]);
-                if dv != 0. { row[k].1 += gauss(w[0],w[1],1,&mut |x| { let [u,v] = point(x); cells.g(i,u,v)*dv }) }
-                order.push((i,point(w[1])[1],k,true));
+            let next = &ends[(k+1)%ends.len()];
+            for [p,q] in [[ends[k][2],ends[k][3]],[ends[k][3],next[0]],[next[0],next[1]]] {
+                if p == q { continue }
+                let dv = q[1]-p[1];
+                let point = |x: f64| [p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1])];
+                for w in knotted(p,q).windows(2) {
+                    let i = cells.knot(point(0.5*(w[0]+w[1]))[0]);
+                    if dv != 0. { row[k].1 += gauss(w[0],w[1],1,&mut |x| { let [u,v] = point(x); cells.g(i,u,v)*dv }) }
+                    order.push((i,point(w[1])[1],k,true));
+                }
             }
         }
         // the columns where one stretch hands over to the next read from another knot
@@ -892,24 +1118,54 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
         let sheet = matches!(s,Surface::Blend(..));
         let mut folds = false;
-        for c in f.loops.iter().flatten() {
+        // (the least ratio of each derivative's length to the other's on the boundary: a sheet's
+        // row or column all but collapsed there, a pole in all but name)
+        let mut thin = [f64::INFINITY;2];
+        // (each use's parameters at sixteenths of its span where `crossings` reads them, the
+        // box their even ones, at eighths otherwise: the same parameters)
+        let uvs: Vec<Vec<Vec<Uv>>> = f.loops.iter().map(|l| l.iter().map(|c| {
             let e = &b.edges[c.edge as usize];
-            for j in 0..=8 {
-                let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
+            let n = if sixteenths(c,e,s) { 16 } else { 8 };
+            (0..=n).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64,e,s,&b.vertices)).collect()
+        }).collect()).collect();
+        for at in uvs.iter().flatten() {
+            for &q in at.iter().step_by(if at.len() == 17 { 2 } else { 1 }) {
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
                 folds |= sheet && s.area_factor(q) < ON_FOLD;
+                if matches!(s,Surface::BSpline(..)) {
+                    let (_,su,sv) = s.d1(q);
+                    let (lu,lv) = (norm(su),norm(sv));
+                    if lu > 0. && lv > 0. { thin[0] = thin[0].min(lu/lv); thin[1] = thin[1].min(lv/lu); }
+                }
             }
         }
         // (a swept sheet's face across its fold read by columns instead)
         if folds { if let Some(v) = by_columns(b,f,what,lo,hi) { return vec![vec![(v,0.)]] } }
-        // a net's face read cell by cell, but a polynomial one's flux, which its table reads exactly
-        if let Surface::BSpline(_,n) | Surface::Offset(_,n,_) = s {
-            if !(matches!(s,Surface::BSpline(..)) && !n.is_rational() && matches!(what,What::Flux)) { return by_cells(b,f,what,n,(lo[0]+hi[0])/2.) }
-        }
         // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`); a rational net's `g`
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
-        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
+        // a pole a loop passes through, where the uses arriving and leaving set out along different
+        // values of the parameter the surface collapses there (`Brep::close_poles` lays a
+        // degenerate edge between them): `g` integrated along that parameter, so that `G` there
+        // is nought and the value a use arrives along — which a file's edge standing off its face
+        // leaves to within that gap, and a curve passing near the pole sweeps through in a hair of
+        // its span — weighs nothing
+        // — a sheet's row or column all but collapsed where the boundary reaches it too (one of
+        // its derivatives a thousandth of the other's there: a fillet's net run into a corner),
+        // where the parameter along it is read off its edges' feet as ill as at a pole
+        let collapsed = f.loops.iter().flatten().find_map(|c| match (&b.edges[c.edge as usize].curve,&c.pcurve) {
+            (EdgeCurve::Degenerate,&Pcurve::Line {a,b}) => (0..2).max_by(|&i,&j| (a[i]-b[i]).abs().total_cmp(&(a[j]-b[j]).abs())),
+            _ => None,
+        }).or_else(|| (0..2).filter(|&k| thin[k] < 1e-3).min_by(|&i,&j| thin[i].total_cmp(&thin[j])));
+        // a net's face read cell by cell (`by_cells`) — but a polynomial one's flux, which its table
+        // reads exactly, and a face reaching a collapsed row, read along the parameter collapsed
+        if let (Surface::BSpline(_,n) | Surface::Offset(_,n,_),None) = (s,collapsed) {
+            if !(matches!(s,Surface::BSpline(..)) && !n.is_rational() && matches!(what,What::Flux)) { return by_cells(b,f,what,n,(lo[0]+hi[0])/2.,&uvs) }
+        }
+        let mut prefix = match s {
+            Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) && collapsed != Some(1) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),
+            _ => None,
+        };
         // a sheet carried between two straight edges (a polyhedral tool's edge swept, `Blend`): its
         // point affine in `u` at every `v` — the carry is rigid, its rate affine in the point — so
         // the flux's `g` is a quadratic in `u`, which two Gauss nodes integrate exactly, read along
@@ -917,34 +1173,65 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // the general rule read forty nodes a stretch, every face of a sweep's arrangement)
         let ruled = matches!(what,What::Flux) && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
-        let along = if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
+        let near_pole = collapsed.is_some() || !(super::topo::poleless(s) || matches!(s,Surface::BSpline(..) | Surface::Blend(..)));
+        // (on a sheet, the parameter whose knots across the face are fewer: `G` is read a stretch
+        // between them at a time, each node's work the stretches it crosses)
+        let fewer = match s {
+            Surface::BSpline(..) if lo.iter().chain(&hi).all(|x| x.is_finite()) =>
+                Some(if s.breaks(1,[lo[1],hi[1]]).len() < s.breaks(0,[lo[0],hi[0]]).len() { 1 } else { 0 }),
+            _ => None,
+        };
+        let along = match collapsed { Some(k) if !ruled => k,_ => if ruled || prefix.is_some() { 0 } else if let Some(k) = fewer { k }
+            else if !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 } };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
-        let (periodic,tabled) = ([pu,pv][along].is_some(),prefix.is_some());
+        let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() || !what.plain() { None } else { Closed::new(s,what.area(),along,base) };
         // ∫ from the base, a stretch at a time between the surface's breaks along it
+        let mut rows: Vec<Option<Row>> = Vec::new();
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
             if let Some(g) = closed.as_ref().and_then(|c| c.at([u,v])) { return g }
             let x = [u,v][along];
-            let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
+            // (a polynomial net read along its iso curve there, `Iso`)
+            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along],std::mem::take(&mut rows))),_ => None };
+            let mut at_x = |w: f64| match iso.as_mut() {
+                Some(c) => { let (x,su,sv) = c.d1(w); integrand_of(x,su,sv,what) }
+                None => if along == 0 { g(w,v) } else { g(u,w) },
+            };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
-            let mut at = vec![base];
-            if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
-            at.push(x);
-            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            let read = if cuts.is_empty() { if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } } else {
+                let mut at = vec![base];
+                if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
+                at.push(x);
+                at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            };
+            if let Some(c) = iso { rows = c.rows; }
+            read
         };
         // ∬ g du dv = ∮ G dv with G along u, or -∮ G du with G along v
         let (other,sign) = if along == 0 { (1,1.) } else { (0,-1.) };
-        for l in &f.loops {
+        // the face's own scale, `G` at its box's corners across its span: an edge whose integral
+        // is all but nought (one along the base, or a chart's edge where `G` vanishes) is settled to
+        // a part in 1e-13 of the face's, not of its own, which its rounding would never reach
+        // — and to a part in 1e4 of the strip its own tolerance leaves undetermined, the face's
+        // scale times the tolerance over the face's size: a file's edge standing off its face has
+        // feet that kink where they meet a sheet's edge, which a rule refines to the cap without
+        // reading the face more truly than its edge stands
+        let (scale,size) = if lo.iter().chain(&hi).all(|x| x.is_finite()) {
+            let corners = [[lo[0],lo[1]],[lo[0],hi[1]],[hi[0],lo[1]],[hi[0],hi[1]]];
+            let at: Vec<V> = corners.iter().map(|&q| s.point(q)).collect();
+            let size = (0..4).flat_map(|i| (0..4).map(move |j| (i,j))).map(|(i,j)| crate::util::space::distance(at[i],at[j])).fold(0.,f64::max);
+            (corners.iter().map(|&[u,v]| big_g(u,v).abs()).fold(0.,f64::max)*(hi[other]-lo[other]),size)
+        } else { (0.,0.) };
+        let floor = |tol: f64| scale*if size > 0. { (1e-4*tol/size).max(1e-13) } else { 1e-13 };
+        for (l,uvs) in f.loops.iter().zip(&uvs) {
             let mut row: Vec<(f64,f64)> = Vec::new();
-            for c in l {
+            for (c,uvs) in l.iter().zip(uvs) {
                 let e = &b.edges[c.edge as usize];
-                // a pole's degenerate edge runs along u alone: nothing in dv, but its du counts —
-                // but on a net's table a row of poles in one point runs where its parameters say
-                // (along `v` at the domain's last `u`, its `G` the whole of the face's columns there)
-                let skipped = if tabled { matches!(c.pcurve,Pcurve::Inverse {..}) } else { other == 1 || !matches!(c.pcurve,Pcurve::Line {..}) };
-                if matches!(e.curve,EdgeCurve::Degenerate) && skipped {
+                // a pole's degenerate edge counts by its line in the face's parameters: along `u` (a
+                // sphere's, a cone's) nothing in dv but its du, along `v` (a spline's collapsed row,
+                // #993) its dv, `G` there the face's width up to it
+                if matches!(e.curve,EdgeCurve::Degenerate) && !matches!(c.pcurve,Pcurve::Line {..}) {
                     row.push((0.,0.)); continue
                 }
                 // `G dv` at a point of the edge on the face, given its parameters and their rate
@@ -971,37 +1258,58 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
+                breaks.extend(crossings(c,e,s,&b.vertices,uvs,what.absolute()));
                 breaks.sort_by(f64::total_cmp);
                 breaks.dedup();
-                // and where its curve in a net's parameters crosses one of the net's knot lines
-                if let (Surface::BSpline(..) | Surface::Offset(..),Pcurve::Curve(_)) = (s,&c.pcurve) {
-                    breaks.extend(crossings(s,e.t,&breaks,&mut |t| c.pcurve.at(t,e,s,&b.vertices)));
-                    breaks.sort_by(f64::total_cmp);
-                    breaks.dedup();
-                }
                 let line = if !breaks.is_empty() {
                     // smooth between its knots or points: integrated a stretch at a time
                     let mut cuts = vec![e.t[0]];
                     cuts.extend(breaks);
                     cuts.push(e.t[1]);
-                    let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
-                    cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum()
-                } else { settled(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
+                    // (ten nodes a stretch, checked: most stretches of a spline ten read to their
+                    // last bits, and a file's curve of a hundred knots was read at twice the nodes
+                    // it needed; a stretch ten do not read is settled)
+                    // (settled a stretch at a time on a surface with a pole, where a curve passing near
+                    // it sweeps half a turn of the collapsed parameter in a hair of a stretch)
+                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],1,floor(e.tol),&mut integrand)).sum() }
+                    else { cuts.windows(2).map(|w| checked(w[0],w[1],floor(e.tol),&mut integrand)).sum() }
+                } else { settled(e.t[0],e.t[1],pieces(span,periodic),floor(e.tol),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
             }
             // the loop closed in the face's parameters, each use's end joined straight to the next's
             // start: the kernel's measured gaps between them are small in space, but `G` across a
             // spline face's chart can be large, and Green's theorem needs a closed curve
-            let ends: Vec<(Uv,Uv)> = l.iter().map(|c| {
+            // — and each use's own ends closed to where its curve arrives: an inverse curve's end
+            // is read where the walk put it, on the branch of a pole the next use leaves along,
+            // its curve a hair in from it on the branch it arrives along (its feet swinging round
+            // the pole it passes within its tolerance of); the rule above reads the curve inside,
+            // so the chord between the two is the face's boundary there (`sound`'s `Drawn::leap`
+            // reads the region it closes)
+            let ends: Vec<[Uv;4]> = l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
                 let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
-                if c.reversed { (z,a) } else { (a,z) }
+                let inside = |t: f64,end: Uv,h: f64| {
+                    if !matches!(c.pcurve,Pcurve::Inverse {..}) { return end }
+                    let (q,d) = c.pcurve.at_and_derivative(t+h,e,s,&b.vertices);
+                    // (the curve a hair in where it stands farther from the end than its rate
+                    // carries it there: a leap; else the end itself, so a smooth end adds nothing,
+                    // not even rounding)
+                    let step = (d[0]*h).dhypot(d[1]*h);
+                    let gap = (q[0]-end[0]).dhypot(q[1]-end[1]);
+                    if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
+                };
+                let h = 1e-9*(e.t[1]-e.t[0]);
+                let (ai,zi) = (inside(e.t[0],a,h),inside(e.t[1],z,-h));
+                if c.reversed { [z,zi,ai,a] } else { [a,ai,zi,z] }
             }).collect();
             for k in 0..ends.len() {
-                let (p,q) = (ends[k].1,ends[(k+1)%ends.len()].0);
-                let dv = q[other]-p[other];
-                if dv == 0. { continue }
-                row[k].1 = gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv);
+                let next = &ends[(k+1)%ends.len()];
+                let path = [ends[k][2],ends[k][3],next[0],next[1]];
+                row[k].1 = path.windows(2).map(|w| {
+                    let (p,q) = (w[0],w[1]);
+                    let dv = q[other]-p[other];
+                    if dv == 0. { 0. } else { gauss(0.,1.,1,&mut |x| sign*big_g(p[0]+x*(q[0]-p[0]),p[1]+x*(q[1]-p[1]))*dv) }
+                }).sum();
             }
             out.push(row);
         }
