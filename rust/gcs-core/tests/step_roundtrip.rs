@@ -347,8 +347,21 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         if (x.kind,x.reversed) != (y.kind,y.reversed) {
             return Err(format!("face {k} (#{}) read of kind {} reversed {}, written {} reversed {}",face_ids[k],x.kind,x.reversed,y.kind,y.reversed))
         }
-        if (x.numbers.len() != y.numbers.len()
-            || x.numbers.iter().zip(&y.numbers).any(|(p,q)| (p-q).abs() > 1e-12*q.abs().max(1.)))
+        // a swept surface whose curve the writer fits (a slid contour, a turned contact's
+        // meridian: `step_check`'s curve numbers `4`) is held as `step_check::verify` holds it: its
+        // axis or vector the solid's, its curve read a B-spline, the fit's numbers no solid's
+        let (xs,ys) = match (y.kind,y.numbers.len()) {
+            (7,7) | (8,5) if y.numbers.last() == Some(&4.) => {
+                let head = y.numbers.len()-1;
+                if x.numbers.get(head) != Some(&3.) {
+                    return Err(format!("face {k} (#{})'s swept curve read as no B-spline, written as the fit of one",face_ids[k]))
+                }
+                (&x.numbers[..head],&y.numbers[..head])
+            }
+            _ => (&x.numbers[..],&y.numbers[..]),
+        };
+        if (xs.len() != ys.len()
+            || xs.iter().zip(ys).any(|(p,q)| (p-q).abs() > 1e-12*q.abs().max(1.)))
             && !matches!(face_net(b,k),Some(Ok(w)) if turned(&r.faces[k].surface,&w.surface)) {
             let worst = x.numbers.iter().zip(&y.numbers).map(|(p,q)| (p-q).abs()/q.abs().max(1.)).fold(0.,f64::max);
             return Err(format!("face {k} (#{})'s surface read with other numbers ({} of them, {} written; worst {worst:.2e})",
