@@ -30,6 +30,7 @@ import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { turnAt, turnHandle } from '../core/workspace.js';
+import { EXTENSIONS } from '../app/project-explorer.js';
 import { core, initCore } from '../core/wasm.js';
 
 await initCore();
@@ -2721,7 +2722,8 @@ test('a module the host hands over resolves a use before the library', async () 
     return p === 'demo/parts.sv' ? mod : null;
   });
   assert.deepEqual(got, ['demo.parts']);
-  assert.deepEqual(asked, ['std.sv', 'demo/parts.sv']);
+  // each of a name's paths in turn, the CLI's order, until one answers
+  assert.deepEqual(asked, ['std.sv', 'std.step', 'std.stp', 'demo/parts.sv']);
   const linked = Document.read(doc);
   assert.ok(!linked.diagnostics.some((d) => d.code === 'E070'), 'the handed-over module links');
   linked.dispose();
@@ -2729,6 +2731,63 @@ test('a module the host hands over resolves a use before the library', async () 
   const again = Document.read(doc);
   assert.ok(again.diagnostics.some((d) => d.code === 'E070'), 'forgotten on request');
   again.dispose();
+});
+
+test('a use is looked for as .sv, .step then .stp in each directory, nearest first', () => {
+  // the core's answer (`modules::search_paths`), as paths in the project
+  assert.deepEqual(modules.searchPaths('bracket', 'parts/arm/model.sv'), [
+    'parts/arm/bracket.sv', 'parts/arm/bracket.step', 'parts/arm/bracket.stp',
+    'parts/bracket.sv', 'parts/bracket.step', 'parts/bracket.stp',
+    'bracket.sv', 'bracket.step', 'bracket.stp']);
+  assert.deepEqual(modules.searchPaths('vendor.bracket', 'model.sv'),
+    ['vendor/bracket.sv', 'vendor/bracket.step', 'vendor/bracket.stp']);
+  // the app's file kinds hold the core's: a module's sources, then its exchange files
+  assert.deepEqual(modules.searchPaths('b', 'm.sv'),
+    ['sv', ...EXTENSIONS.given].map((e) => `b.${e}`));
+  assert.equal(modules.pathOf('vendor.bracket', 'ISO-10303-21;\n'), 'vendor/bracket.step');
+  // a project's files: the first path it has wins — the Solvent document in one directory, and
+  // a nearer exchange file over a farther document
+  const step = 'ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n';
+  const take = (files: Record<string, string>) => {
+    modules.provideProject('parts/model.sv', { 'parts/model.sv': 'use bracket\n', ...files });
+    try { return modules.source('bracket'); } finally { modules.forget(); }
+  };
+  assert.equal(take({ 'parts/bracket.stp': step, 'parts/bracket.sv': 'use std\n' }), 'use std\n');
+  assert.equal(take({ 'parts/bracket.stp': step, 'parts/bracket.step': step + ' ' }), step + ' ');
+  assert.equal(take({ 'bracket.sv': 'use std\n', 'parts/bracket.stp': step }), step);
+  assert.equal(take({ 'bracket.sv': 'use std\n' }), 'use std\n');
+});
+
+test('an exchange file is handed over as it came and never asked for its uses', async () => {
+  // a line `use demo.never` would be listed, were the file read as Solvent: it is not read so
+  const step = ' ISO-10303-21;\nuse demo.never\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\n'
+    + 'END-ISO-10303-21;\n';
+  assert.deepEqual(modules.uses(step.slice(step.indexOf('use'))), ['demo.never']);
+  assert.ok(modules.isStep(step) && modules.isStep('\uFEFF' + step) && !modules.isStep('use b\n'));
+  assert.ok(modules.isStep('ISO-10303-21;' + ' '.repeat(1 << 20)), 'its head alone is read');
+  assert.deepEqual(modules.uses(step), []);
+  const asked: string[] = [];
+  const got = await modules.link('use vendor.bracket\n', async (p) => {
+    asked.push(p);
+    return p === 'vendor/bracket.step' ? step : null;
+  });
+  try {
+    assert.deepEqual(got, ['vendor.bracket']);
+    assert.deepEqual(asked, ['vendor/bracket.sv', 'vendor/bracket.step']);
+    assert.equal(modules.source('vendor.bracket'), step);
+    // what a worker is given is the file's text, unchanged, under its `use` name
+    const files = modules.related('use vendor.bracket\n');
+    assert.deepEqual(files.map((f) => [f.name, f.path, f.provided]),
+      [['vendor.bracket', 'vendor/bracket.step', true]]);
+    const list = modules.handed('use vendor.bracket\n');
+    assert.deepEqual(list.map(([name, , path, text]) => [name, path, text]),
+      [['vendor.bracket', 'vendor/bracket.step', step]]);
+    assert.match(list[0][1], /^[0-9a-f]{16}$/);
+    modules.install(list);
+    assert.equal(modules.source('vendor.bracket'), step);
+  } finally {
+    modules.forget();
+  }
 });
 
 test('related files include transitive libraries and host overrides without duplicates or cycles', () => {
@@ -2745,7 +2804,7 @@ test('related files include transitive libraries and host overrides without dupl
     // what the host handed over is marked, and the library's own is not
     assert.deepEqual(files.map((f) => f.provided), [true, true, false, false, false, false]);
     // installing a list replaces what was handed over with it
-    modules.install([['demo.a', a]]);
+    modules.install([['demo.a', modules.digest('demo.a')!, '', a]]);
     assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));
     assert.equal(files[0].text, a);
     assert.equal(files[1].text, b);
@@ -2819,4 +2878,85 @@ test('a sketch on a face is written by name through the edit API, and a plane al
   assert.ok(on.ok, JSON.stringify(on.diagnostics));
   assert.equal(on.facePlane(b0.index, 'b0.far'), 'v0');
   assert.ok(d.sketchOnFace(b0.index, 'b0.nothing').refused);
+});
+
+test('a module\'s text crosses to a worker once, and is named by its digest after', () => {
+  const step = 'ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n';
+  modules.provideProject('doc.sv', { 'doc.sv': 'use bracket\nuse demo.a\n', 'bracket.step': step,
+                                     'demo/a.sv': 'use std\n' });
+  try {
+    const list = modules.handed('use bracket\nuse demo.a\n');
+    assert.deepEqual(list.map(([name, , path, text]) => [name, path, text]),
+      [['bracket', 'bracket.step', step], ['demo.a', 'demo/a.sv', 'use std\n']]);
+    // the core's digest, the same however often it is asked, and another text's another
+    assert.equal(list[0][1], modules.digest('bracket'));
+    assert.deepEqual(modules.handed('use bracket\nuse demo.a\n'), list);
+    assert.notEqual(list[0][1], list[1][1]);
+    // the page's account of one worker: each text sent once, a list sent again names them
+    const outbox = new modules.ModuleOutbox();
+    const first = outbox.send(list);
+    const second = outbox.send(list);
+    assert.deepEqual(first, list);
+    assert.deepEqual(second, list.map(([name, d, path]) => [name, d, path]));
+    // a worker made afresh is sent every text again
+    assert.deepEqual(new modules.ModuleOutbox().send(list), list);
+    assert.equal(modules.modulesKey(first), modules.modulesKey(second));
+    // a worker puts the texts back as each message arrives, and installs a list once
+    const got = [modules.received(first), modules.received(second)];
+    assert.deepEqual(got[1], list);
+    modules.forget();
+    modules.install(got[1]);
+    assert.equal(modules.source('bracket'), step);
+    // a text it was not sent, and does not hold, is said rather than read as no module
+    assert.throws(() => modules.received([['other', '0123456789abcdef', '']]),
+      /`other` was named without its text/);
+  } finally {
+    modules.forget();
+  }
+});
+
+test('a file found as NAME.step that is no exchange file is refused at the use, once', () => {
+  const doc = 'unit mm\nuse bracket\npart := solid(bracket)\n';
+  const refused = () => {
+    const d = Document.read(doc);
+    try {
+      const said = d.diagnostics.map((x) => `${x.code} ${x.message}`);
+      assert.equal(said.length, 1, said.join('\n'));
+      assert.match(said[0], /^E072 `bracket`: .*the file does not start `ISO-10303-21;`/);
+    } finally {
+      d.dispose();
+    }
+  };
+  for (const text of ['', 'component Rung(a: point) {\n}\nhello world\n']) {
+    modules.provideProject('doc.sv', { 'doc.sv': doc, 'bracket.step': text });
+    try {
+      refused();
+      // handed to a worker, it goes with the path it was found at, and is read the same there
+      const list = modules.handed(doc);
+      assert.deepEqual(list.map(([name, , path, t]) => [name, path, t]), [['bracket', 'bracket.step', text]]);
+      modules.forget();
+      modules.install(modules.received(new modules.ModuleOutbox().send(list)));
+      refused();
+    } finally {
+      modules.forget();
+    }
+  }
+});
+
+test('a document named like the file it reads reads the file, never itself', async () => {
+  const { readFileSync } = await import('node:fs');
+  const step = readFileSync(new URL('../../../rust/gcs-core/tests/step_file/drilled_ap214.step',
+                                    import.meta.url), 'utf8');
+  const doc = 'unit mm\nuse foo\npart := solid(foo)\n';
+  assert.deepEqual(modules.searchPaths('foo', 'parts/foo.sv').slice(0, 3),
+    ['parts/foo.step', 'parts/foo.stp', 'foo.sv']);
+  modules.provideProject('parts/foo.sv', { 'parts/foo.sv': doc, 'parts/foo.step': step });
+  const d = Document.read(doc);
+  try {
+    assert.ok(d.ok, d.diagnostics.map((x) => x.message).join('\n'));
+    assert.equal(modules.source('foo'), step);
+  } finally {
+    d.dispose();
+    modules.forget();
+  }
 });

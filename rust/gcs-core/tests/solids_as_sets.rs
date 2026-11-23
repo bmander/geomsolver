@@ -460,3 +460,27 @@ fn a_draft_is_read_off_its_tree() {
     assert_eq!(d.value.to_bits(), 3f64.to_radians().to_bits());
     alike(&e, "word", "hand");
 }
+
+/// **One membership of a whole solid is that solid's body** (#993's review, R3): `{ p | p in
+/// plate }` is the points of `plate` and nothing more, so `solid` of it is the body whose stock is
+/// `plate` — what `solid(plate)` is: one definition, one set of face names, one volume, one STEP
+/// and one STL to the byte.  A face of it named by a path (`p in plate.near`) is another set, and
+/// stays the region it was.
+#[test]
+fn one_membership_of_a_solid_is_its_body() {
+    let e = solved(&format!("{RECT}plate := solid(std.solids.Prism(sec, from: -30mm, to: 0))\n\
+        whole := solid(plate)\nset := solid({{ p | p in plate }})\n\
+        cut_whole := solid(plate)\ncut_set := solid({{ p | p in plate }})\n\
+        x := solid(std.solids.Prism(hole_f, from: -40mm, to: 10mm))\n\
+        x cut cut_whole\nx cut cut_set\n"));
+    assert!(matches!(def(&e, "set"), SolidDef::Body { on, through, bound, .. }
+                     if on.is_empty() && through.is_empty() && bound.is_empty()), "{:?}", def(&e, "set"));
+    alike(&e, "whole", "set");
+    // and a body made of it, a bore cut from each spelling: one set of face names, one volume,
+    // one STEP and one STL
+    assert_eq!(faces(&e, "cut_whole"), faces(&e, "cut_set"));
+    assert_eq!(volume(&e, "cut_whole").to_bits(), volume(&e, "cut_set").to_bits());
+    let ((sa, la), (sb, lb)) = (exported(&e, "cut_whole"), exported(&e, "cut_set"));
+    assert!(sa == sb && la.get(80..) == lb.get(80..), "the bored spellings' exports alike");
+    assert!((volume(&e, "cut_set") - (72_000.0 - PI * 25.0 * 30.0)).abs() < 1e-6 * 72_000.0);
+}

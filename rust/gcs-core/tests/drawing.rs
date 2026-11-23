@@ -132,15 +132,15 @@ fn host_loading_is_relative_cached_and_cycle_checked() {
         sheet s { view v(m.body) at (50,50) }", "drawing.svd", None, &mut |path, from| {
             reads.push((path.to_string(), from.to_string()));
             match path {
-                "part.sv" => Some((path.into(), MODEL.into())),
-                "ink.svd" => Some((path.into(), "style .visible { color: #123456 }".into())),
+                "part.sv" => Some(Ok((path.into(), MODEL.into()))),
+                "ink.svd" => Some(Ok((path.into(), "style .visible { color: #123456 }".into()))),
                 _ => None,
             }
         }).unwrap();
     assert!(svg.contains("#123456"));
     assert!(reads.contains(&("part.sv".into(), "drawing.svd".into())));
     let err = drawing::compile("use \"loop.svd\"", "root.svd", None,
-        &mut |_, _| Some(("loop.svd".into(), "use \"loop.svd\"".into()))).unwrap_err();
+        &mut |_, _| Some(Ok(("loop.svd".into(), "use \"loop.svd\"".into())))).unwrap_err();
     assert!(err.message.contains("cycle"));
 }
 
@@ -163,7 +163,7 @@ bar := line(p[0], p[2])
         measure distance(m.bar.p1, m.p[2]) in v offset 8mm
     }";
     let render = |text: &str| drawing::compile(drawing, "drawing.svd", None,
-        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), text.into()))).unwrap();
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), text.into())).map(Ok)).unwrap();
     let a = render(model);
     assert!(a.contains(">20</text>"), "{a}");
     assert_eq!(a, render(&("unused := 7\n".to_string() + model)));
@@ -173,7 +173,7 @@ bar := line(p[0], p[2])
 fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
     let model = format!("{MODEL}in std.front {{\nb := point\nfix((0, 10)) b\n}}\n");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
-        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.clone())));
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.clone())).map(Ok));
     let err = compile("model m from \"part.sv\" sheet s {
         view v(m.body) from top at (30,40)
         measure distance(m.o,m.b) in v
@@ -265,7 +265,7 @@ in std.top {
 ";
     let compile = |sheet: &str| drawing::compile(&format!("model m from \"part.sv\" sheet s {{ {sheet} }}"),
         "drawing.svd", None,
-        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())));
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())).map(Ok));
     // every drawn line's two ends, in paper pixels
     let lines = |svg: &str| svg.lines().filter(|l| l.starts_with("<line")).map(|l| {
         ["x1", "y1", "x2", "y2"].map(|k| l.split(&format!(" {k}=\"")).nth(1).unwrap()
@@ -289,7 +289,7 @@ in std.top {
 fn a_model_is_shown_at_the_instant_its_drawing_states() {
     let model = include_str!("../../examples/mechanisms/four_bar.sv");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
-        &mut |path, _| (path == "four_bar.sv").then(|| ("four_bar.sv".into(), model.into())));
+        &mut |path, _| (path == "four_bar.sv").then(|| ("four_bar.sv".into(), model.into())).map(Ok));
     let svg = compile("model home from \"four_bar.sv\"
         model quarter from \"four_bar.sv\" at t = 90deg
         sheet s {
@@ -331,7 +331,7 @@ fn a_sketch_draws_a_frame_lying_in_its_plane() {
                  bend := arc(c, s, e)\n  radius(2) bend\n  fix((6, 0)) s\n}\n";
     let sheet = "model m from \"part.sv\"\nsheet s {\n  sketch a(m) at (100mm, 100mm)\n}\n";
     let svg = drawing::compile(sheet, "drawing.svd", None,
-        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into()))).unwrap();
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())).map(Ok)).unwrap();
     // 10mm up the page from (100mm, 100mm), in CSS pixels (96 an inch)
     assert!(svg.contains("<line x1=\"377.953\" y1=\"377.953\" x2=\"377.953\" y2=\"340.157\""),
             "{svg}");
@@ -349,7 +349,7 @@ fn a_parts_extent_is_read_off_its_round_outline() {
     let text = std::fs::read_to_string(format!("{root}disc.svd")).unwrap();
     let svg = drawing::compile(&text, "disc.svd", None, &mut |path, from| {
         let p = drawing::relative_path(path, from);
-        std::fs::read_to_string(format!("{root}{p}")).ok().map(|t| (p, t))
+        std::fs::read_to_string(format!("{root}{p}")).ok().map(|t| Ok((p, t)))
     }).unwrap();
     assert_eq!(svg.matches(">36</text>").count(), 3, "{svg}");
     assert!(!svg.contains(">35.9999</text>"), "{svg}");
@@ -383,7 +383,7 @@ fn a_drawing_gives_its_models_values() {
         let set: Vec<(String, String)> =
             set.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect();
         drawing::compile_with(text, "drawing.svd", None, &set,
-            &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())))
+            &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())).map(Ok))
     };
     let sheet = "sheet s {\n  sketch a(m) at (0mm, 0mm)\n  measure distance(m.a, m.b) in a\n  \
                  sketch b(n) at (0mm, 100mm)\n  measure distance(n.a, n.b) in b\n}\n";
@@ -437,7 +437,7 @@ front := solid(std.solids.Prism(face(cap), from: -4mm, to: 0mm))
 fn pair(sheet: &str) -> Result<String, drawing::Error> {
     drawing::compile(&format!("model m from \"pair.sv\"\nstyle .hidden {{ dash: 4 3 }}\n\
         sheet s {{\n{sheet}\n}}\n"), "drawing.svd", None,
-        &mut |path, _| (path == "pair.sv").then(|| ("pair.sv".into(), PAIR.into())))
+        &mut |path, _| (path == "pair.sv").then(|| ("pair.sv".into(), PAIR.into())).map(Ok))
 }
 
 /// Every polyline's points in paper pixels, with its path and whether it is dashed.
@@ -544,7 +544,7 @@ fn a_sketchs_dimensions_are_narrowed_to_a_scope() {
                  one := Bar(frame, y: 0mm)\ntwo := Bar(frame, y: 20mm)\n";
     let compile = |dims: &str| drawing::compile(&format!("model m from \"bars.sv\"\nsheet s {{\n  \
         sketch v(m) at (50mm, 50mm)\n  {dims}\n}}\n"), "drawing.svd", None,
-        &mut |path, _| (path == "bars.sv").then(|| ("bars.sv".into(), model.into())));
+        &mut |path, _| (path == "bars.sv").then(|| ("bars.sv".into(), model.into())).map(Ok));
     let count = |svg: &str| svg.matches(">13</text>").count();
     assert_eq!(count(&compile("dimensions in v").unwrap()), 2);
     assert_eq!(count(&compile("dimensions m.one in v").unwrap()), 1);

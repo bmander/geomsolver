@@ -241,7 +241,7 @@ fn a_solid_in_a_valued_frame_stands_where_its_value_puts_it() {
         sheet s {{
           view top(m.shown) from top at (60mm, 60mm)
         }}"), "drawing.svd", None,
-        &mut |path, _| (path == "swung.sv").then(|| ("swung.sv".into(), SWUNG.into())));
+        &mut |path, _| (path == "swung.sv").then(|| ("swung.sv".into(), SWUNG.into())).map(Ok));
     let (at_home, swung) = (compile("").unwrap(), compile(" at t = 45deg").unwrap());
     assert_ne!(at_home, swung, "the arm is drawn where it stands at 45deg");
     assert_eq!(at_home, compile(" at t = 0deg").unwrap(), "and at home at 0deg");

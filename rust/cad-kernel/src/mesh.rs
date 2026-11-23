@@ -458,7 +458,7 @@ fn off_at(p: V,a: V,b: V,c: V) -> f64 {
 /// corner — each one's edge and the parameter at its middle. Two chords between the same two
 /// corners are such a pair: they bound nothing (a circle's segment thinner than its arc's chord
 /// sags, the arc one chord, the very chord its line is).
-fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f64)> {
+fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)],weld: f64) -> Vec<(usize,f64)> {
     let f = &b.faces[fi];
     // every chord: its ends in the face's parameters and their points' ids, its edge and
     // parameters, its loop and place
@@ -467,8 +467,7 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f
     // each end where the triangulation puts its corner: a point's id read at one place (within the
     // weld) is one corner, at the place first read — so two edges' chords between the same two
     // corners are the one chord they are there, not two a rounding apart (and so, by a box test,
-    // apart)
-    let weld = 1e-9*(1.+b.size());
+    // apart); `weld` is `mesh_with`'s, the boundary's size read once for every face
     let gap = |a: Uv,c: Uv| (a[0]-c[0]).dhypot(a[1]-c[1]);
     let mut corners: std::collections::BTreeMap<u32,Vec<Uv>> = std::collections::BTreeMap::new();
     let mut corner = |id: u32,uv: Uv| -> Uv {
@@ -480,16 +479,29 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f
     let mut sizes = Vec::new();
     for (li,l) in f.loops.iter().enumerate() {
         let first = chords.len();
-        for c in l {
+        // where each use starts in the face's parameters: the corner a use arriving there ends at,
+        // as the face's mesh lays it (its last sample left for the next use's first), so that two
+        // uses whose ends at a vertex stand apart — a file's vertex gathering points its tolerance
+        // apart, CADGenBench 248's crescent between two arcs, each one chord, 3e-3 mm apart at
+        // one end — are read as the polygon the mesh is given: there, two chords between the same
+        // two corners
+        let starts: Vec<Uv> = l.iter().map(|c| {
+            let (e,ts) = (&b.edges[c.edge as usize],&samples[c.edge as usize].0);
+            c.pcurve.at(if c.reversed { ts[ts.len()-1] } else { ts[0] },e,&f.surface,&b.vertices)
+        }).collect();
+        for (j,c) in l.iter().enumerate() {
             let e = c.edge as usize;
             if matches!(b.edges[e].curve,EdgeCurve::Degenerate) { continue }
             let (ts,ids) = &samples[e];
             let at = |t: f64| c.pcurve.at(t,&b.edges[e],&f.surface,&b.vertices);
             let mut pairs: Vec<usize> = (1..ts.len()).collect();
             if c.reversed { pairs.reverse(); }
+            // (the sample the use ends at: its last, or its first walked against)
+            let end = if c.reversed { 0 } else { ts.len()-1 };
+            let read = |k: usize| if k == end { starts[(j+1)%l.len()] } else { at(ts[k]) };
             for k in pairs {
                 let place = chords.len()-first;
-                let uv = [corner(ids[k-1],at(ts[k-1])),corner(ids[k],at(ts[k]))];
+                let uv = [corner(ids[k-1],read(k-1)),corner(ids[k],read(k))];
                 chords.push(Chord {uv,id:[ids[k-1],ids[k]],e,t:[ts[k-1],ts[k]],l:li,place});
             }
         }
@@ -580,6 +592,11 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
     let far_vertex = |v: usize| turned.and_then(|t| t.vertex[v]);
     for v in 0..b.vertices.len() { if let Some(w) = far_vertex(v) { alias[vid[v] as usize] = Some(vid[w as usize]); } }
     let far_edge = |e: usize| turned.and_then(|t| t.edge[e]);
+    // the least a parameter's scale is taken to be, where a surface's derivative vanishes, and
+    // the nearest two points of a face are apart: of the boundary's size, read once — it bounds
+    // every face's surface over its loops, and read per face it cost a large file more than its
+    // whole mesh (#993 stage 2)
+    let least = 1e-9*(1.+b.size());
     // every edge's samples, once: parameters and point ids (a far edge's after the rest)
     let mut samples: Vec<(Vec<f64>,Vec<u32>)> = vec![(Vec::new(),Vec::new());b.edges.len()];
     for e in (0..b.edges.len()).filter(|&e| far_edge(e).is_none()) {
@@ -622,7 +639,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
     // patterned sector's faces are left as they are)
     if turned.is_none() {
         for _ in 0..16 {
-            let found: Vec<(usize,f64)> = crate::util::par::indices(b.faces.len(),|fi| if kept(fi) { crossings(b,fi,&samples) } else { Vec::new() })
+            let found: Vec<(usize,f64)> = crate::util::par::indices(b.faces.len(),|fi| if kept(fi) { crossings(b,fi,&samples,least) } else { Vec::new() })
                 .into_iter().flatten().collect();
             if found.is_empty() { break }
             for (e,t) in found {
@@ -634,8 +651,6 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             }
         }
     }
-    // the least a parameter's scale is taken to be, where a surface's derivative vanishes
-    let least = 1e-9*(1.+b.size());
     // points of a face nearer than this are one
     let weld = least;
     // each face side by side: its new points, its triangles (a new point's id marked `NEW`, its

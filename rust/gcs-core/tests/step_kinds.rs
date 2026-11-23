@@ -3,6 +3,7 @@
 //! own set of points exactly, in a form the kernel has — or refused naming the entity, never read
 //! wrong. Every file here is written by hand, a solid whose volume and area are closed forms of
 //! its numbers (or a one-dimensional integral of them, summed to the last bits), and read to them.
+use crate::common::step::{logical, real, reals, Ents};
 use gcs_core::brep::props::{area, volume};
 use gcs_core::brep::step_read::{read, Refusal, Why};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
@@ -13,11 +14,6 @@ fn close(what: &str, a: f64, b: f64, rel: f64) {
     assert!((a - b).abs() <= rel * b.abs(), "{what}: {a} read, {b} the closed form ({:e})", (a - b) / b.abs());
 }
 
-/// A real as a STEP file writes it.
-fn real(x: f64) -> String { format!("{x:.17E}") }
-
-fn reals(x: &[f64]) -> String { x.iter().map(|&x| real(x)).collect::<Vec<_>>().join(",") }
-
 fn add(a: V, b: V) -> V { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
 fn sub(a: V, b: V) -> V { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 fn scale(a: V, s: f64) -> V { [a[0] * s, a[1] * s, a[2] * s] }
@@ -27,57 +23,6 @@ fn norm(a: V) -> f64 { dot(a, a).sqrt() }
 fn unit(a: V) -> V { scale(a, 1. / norm(a)) }
 /// `p` turned by `u` about the `z` axis.
 fn turn(p: V, u: f64) -> V { [p[0] * u.cos() - p[1] * u.sin(), p[0] * u.sin() + p[1] * u.cos(), p[2]] }
-
-/// A file's entities, numbered from 100 as they are added; the solid `#51`, its shell `#50`.
-struct Ents { next: u32, text: String }
-
-impl Ents {
-    fn new() -> Ents { Ents { next: 100, text: String::new() } }
-    fn add(&mut self, s: impl AsRef<str>) -> u32 {
-        let n = self.next;
-        self.next += 1;
-        self.text += &format!("#{n} = {};\n", s.as_ref());
-        n
-    }
-    fn point(&mut self, p: V) -> u32 { self.add(format!("CARTESIAN_POINT('',({}))", reals(&p))) }
-    fn flat_point(&mut self, p: [f64; 2]) -> u32 { self.add(format!("CARTESIAN_POINT('',({}))", reals(&p))) }
-    fn dir(&mut self, d: V) -> u32 { self.add(format!("DIRECTION('',({}))", reals(&d))) }
-    fn place(&mut self, o: V, z: V, x: V) -> u32 {
-        let (o, z, x) = (self.point(o), self.dir(z), self.dir(x));
-        self.add(format!("AXIS2_PLACEMENT_3D('',#{o},#{z},#{x})"))
-    }
-    fn vertex(&mut self, p: V) -> u32 { let p = self.point(p); self.add(format!("VERTEX_POINT('',#{p})")) }
-    fn line(&mut self, p: V, d: V, m: f64) -> u32 {
-        let (p, d) = (self.point(p), self.dir(d));
-        let v = self.add(format!("VECTOR('',#{d},{})", real(m)));
-        self.add(format!("LINE('',#{p},#{v})"))
-    }
-    fn plane(&mut self, o: V, z: V, x: V) -> u32 { let a = self.place(o, z, x); self.add(format!("PLANE('',#{a})")) }
-    fn circle(&mut self, o: V, z: V, x: V, r: f64) -> u32 { let a = self.place(o, z, x); self.add(format!("CIRCLE('',#{a},{})", real(r))) }
-    fn edge(&mut self, a: u32, b: u32, curve: u32, sense: bool) -> u32 { self.add(format!("EDGE_CURVE('',#{a},#{b},#{curve},{})", logical(sense))) }
-    /// A face of a loop of `(edge, along)`, its bound `turned` or not.
-    fn face(&mut self, uses: &[(u32, bool)], turned: bool, surface: u32, sense: bool) -> u32 {
-        let uses: Vec<String> = uses.iter().map(|&(e, along)| format!("#{}", self.add(format!("ORIENTED_EDGE('',*,*,#{e},{})", logical(along))))).collect();
-        let l = self.add(format!("EDGE_LOOP('',({}))", uses.join(",")));
-        let b = self.add(format!("FACE_BOUND('',#{l},{})", logical(!turned)));
-        self.add(format!("ADVANCED_FACE('',(#{b}),#{surface},{})", logical(sense)))
-    }
-    /// The file of the solid bounded by `faces`.
-    fn file(self, faces: &[u32]) -> String {
-        let faces: Vec<String> = faces.iter().map(|f| format!("#{f}")).collect();
-        format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\n\
-            FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n\
-            #1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n\
-            #2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n\
-            #3 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-07),#1,'distance_accuracy_value','');\n\
-            #4 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('','') );\n\
-            #10 = CARTESIAN_POINT('',(0.,0.,0.));\n#11 = DIRECTION('',(0.,0.,1.));\n#12 = DIRECTION('',(1.,0.,0.));\n\
-            #13 = AXIS2_PLACEMENT_3D('',#10,#11,#12);\n{}#50 = CLOSED_SHELL('',({}));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n\
-            #52 = ADVANCED_BREP_SHAPE_REPRESENTATION('',(#13,#51),#4);\nENDSEC;\nEND-ISO-10303-21;\n", self.text, faces.join(","))
-    }
-}
-
-fn logical(b: bool) -> &'static str { if b { ".T." } else { ".F." } }
 
 /// The solid a file reads to: its volume and area.
 fn measures(text: &str) -> Result<(f64, f64), Refusal> {

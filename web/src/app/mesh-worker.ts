@@ -14,7 +14,7 @@
  * is read — its arrays' buffers handed over rather than copied — and a newer job ending it
  * between levels. */
 import { ClaimJudge, solidClaims } from '../core/claims.js';
-import { install } from '../core/modules.js';
+import { install, receive } from '../core/modules.js';
 import { Document, type ScenarioLevels } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import { BuildWork, type BuildAsk, type BuildReply } from './build-work.js';
@@ -44,6 +44,12 @@ const builds = new BuildWork((reply, transfer) => scope.postMessage(reply, trans
 
 scope.onmessage = (ev) => {
   const job = ev.data;
+  // the modules' texts the page left out, as it counts this worker holding them: taken as each
+  // message arrives, in the page's order, whatever then becomes of the job
+  if (job.kind === 'build' && !receive(job.drawing, (refused) =>
+    scope.postMessage({ id: job.id, key: job.job.key, refused }))) return;
+  if ((job.kind === 'claims' || job.kind === 'scenario')
+      && !receive(job, (error) => scope.postMessage({ id: job.id, error }))) return;
   if (job.kind === 'build' || job.kind === 'drop') {
     // a core that will not start refuses the build aloud rather than leaving the page waiting
     ready.then(() => builds.receive(job), (e) => {

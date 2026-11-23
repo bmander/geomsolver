@@ -73,6 +73,10 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   for (const name of ['hypoid_drive/drive.sv', 'hypoid_drive/README.md', 'spiral_bevel/hypoid.sv']) {
     assert.ok(drive.files[name], name);
   }
+  // a part bought in: the document and the exchange file its `use` reads the body from
+  const given = await remote.drawing('given');
+  assert.equal(given.source, 'given/bought_block.sv');
+  assert.match(given.files['given/drilled_block.step'], /^ISO-10303-21;/);
   const vtwin = await remote.drawing('vtwin');
   assert.equal(vtwin.directory, 'vtwin');
   assert.ok(vtwin.files['vtwin/components/frame.sv']);
