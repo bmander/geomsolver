@@ -16,7 +16,7 @@
  * changed is drawn as its last build was, stale (#672). */
 import { objectJobs, refuseObject, supplyObject, supplyObjects, type ObjectJob } from '../core/objects.js';
 import type { Sketch } from '../core/model.js';
-import { handed } from '../core/modules.js';
+import { handed, sending } from '../core/modules.js';
 import type { Document } from '../core/program.js';
 import type { BuildAsk, BuildReply, Drawing } from './build-work.js';
 import type { SurfaceStore } from './surface-store.js';
@@ -73,6 +73,8 @@ export interface BuildRow {
 interface Slot {
   w: PoolWorker;
   busy: { id: number; key: string } | null;
+  /** The digests of the modules' texts it was last sent (`modules.sending`). */
+  sent: Set<string>;
 }
 
 /** Once the frame now being drawn has been painted: two animation frames, since the first runs
@@ -235,13 +237,15 @@ export class ObjectBuilds {
       slot.busy = { id, key };
       const r = this.rowsBy.get(key);
       if (r) Object.assign(r, { state: 'building', doing: 'starting', done: 0, total: 1, since: performance.now() });
-      slot.w.postMessage({ kind: 'build', id, drawing: this.drawing, job });
+      // a module's text crosses to a worker once: after, it is named by its digest
+      const drawing = { ...this.drawing, modules: sending(slot.sent, this.drawing.modules) };
+      slot.w.postMessage({ kind: 'build', id, drawing, job });
     }
     this.told();
   }
 
   private make(): Slot {
-    const slot: Slot = { w: this.spawn!(), busy: null };
+    const slot: Slot = { w: this.spawn!(), busy: null, sent: new Set() };
     this.spawned += 1;
     slot.w.onmessage = (ev) => this.receive(slot, ev.data);
     // a worker that dies says nothing of itself: the build it had is refused, and the worker goes

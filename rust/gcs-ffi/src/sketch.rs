@@ -91,12 +91,15 @@ pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 
 }
 
 /// A drawing's loader over a request's bundle (`files`, by path): a path read relative to the file
-/// that names it, its identity that path, its text the bundle's.
-pub(crate) fn bundled(request: &Json) -> impl FnMut(&str, &str) -> Option<(String, String)> + '_ {
+/// that names it, its identity that path, its text the bundle's, read as `modules::decode` reads
+/// a file where it was found (the bundle's texts are UTF-8 already).
+pub(crate) fn bundled(request: &Json) -> impl FnMut(&str, &str) -> gcs_core::drawing::Loaded + '_ {
     move |path, from| {
         let name = gcs_core::drawing::relative_path(path, from);
-        request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
-            .map(|v| (name, v.as_str().to_string()))
+        let text = request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))?;
+        let text = gcs_core::modules::decode(&name, text.as_str().as_bytes().to_vec())
+            .map_err(|e| format!("{name}: {e}"));
+        Some(text.map(|text| (name, text)))
     }
 }
 

@@ -2,14 +2,20 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// What a drawing's loader answers for a path: `None` where no file is there; else the file's
+/// canonical identity and its text, or — a file that is there and does not read — why, which is
+/// said and never stood in for by a farther file or the library (the rule `solventc` keeps for a
+/// model's modules).
+pub type Loaded = Option<Result<(String, String), String>>;
+
 /// Compile a drawing and its model sources. `load(path, from)` resolves a path relative to
-/// the source that imports it and returns its canonical identity and text. Canonical identities
-/// make import cycles detectable and repeated model imports share one solved snapshot.
+/// the source that imports it and returns its canonical identity and text (`Loaded`). Canonical
+/// identities make import cycles detectable and repeated model imports share one solved snapshot.
 pub fn compile(
     text: &str,
     source: &str,
     sheet: Option<&str>,
-    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+    load: &mut dyn FnMut(&str, &str) -> Loaded,
 ) -> Result<String, Error> {
     compile_with(text, source, sheet, &[], load).map(|c| c.svg)
 }
@@ -33,7 +39,7 @@ pub fn compile_with(
     source: &str,
     sheet: Option<&str>,
     set: &[(String, String)],
-    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+    load: &mut dyn FnMut(&str, &str) -> Loaded,
 ) -> Result<Compiled, Error> {
     let mut doc = parse(text)?;
     let mut active = BTreeSet::new();
@@ -44,7 +50,7 @@ pub fn compile_with(
     let mut rebounds = Vec::new();
     let mut taken = vec![false; set.len()];
     for m in &doc.models {
-        let (path, text) = load(&m.path, source).ok_or_else(|| Error {
+        let (path, text) = loaded(load(&m.path, source), || Error {
             span: m.span, message: format!("cannot load model `{}` from `{source}`", m.path),
         })?;
         // the values it is given: its own `with`, then each of the run's it binds and its `with`
@@ -86,11 +92,18 @@ pub fn compile_with(
             let fail = |message: String| Error { span: m.span, message: format!("model `{path}`: {message}") };
             let (mut p, errs) = crate::syntax::parse(&text);
             if let Some(e) = errs.first() { return Err(fail(e.message.clone())) }
+            // the first candidate that is there is the module: one that does not read resolves
+            // nothing, and why is said in place of the `use` it leaves unresolved
+            let mut unread = None;
             let errs = crate::modules::link(&mut p, &mut |name| {
-                crate::modules::search_paths(name, &path).iter()
-                    .find_map(|candidate| load(candidate, &path).map(|(_, t)| t))
-                    .or_else(|| crate::library::resolve(name))
+                match crate::modules::search_paths(name, &path).iter()
+                    .find_map(|candidate| load(candidate, &path)) {
+                    Some(Ok((_, t))) => Some(t),
+                    Some(Err(why)) => { unread.get_or_insert(format!("module `{name}`: {why}")); None }
+                    None => crate::library::resolve(name),
+                }
             });
+            if let Some(why) = unread { return Err(fail(why)) }
             if let Some(e) = errs.iter().find(|e| e.severity() == crate::program::Severity::Error) {
                 return Err(fail(e.message.clone()));
             }
@@ -129,7 +142,7 @@ pub fn compile_with(
 }
 
 fn styles(doc: &mut Document, source: &str,
-    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+    load: &mut dyn FnMut(&str, &str) -> Loaded,
     active: &mut BTreeSet<String>, count: &mut usize) -> Result<(), Error>
 {
     if active.len() >= 32 || *count >= 1024 {
@@ -139,7 +152,7 @@ fn styles(doc: &mut Document, source: &str,
     active.insert(source.into());
     let mut imported = Vec::new();
     for path in &doc.imports {
-        let (identity, text) = load(path, source).ok_or_else(|| Error {
+        let (identity, text) = loaded(load(path, source), || Error {
             span: Span::default(), message: format!("cannot load style import `{path}` from `{source}`"),
         })?;
         if active.contains(&identity) {
@@ -171,15 +184,25 @@ pub fn colours(
     source: &str,
     model_path: &str,
     model: Model<'_>,
-    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+    load: &mut dyn FnMut(&str, &str) -> Loaded,
 ) -> Result<BTreeMap<usize, [u8; 3]>, Error> {
     let mut doc = parse(text)?;
     let mut active = BTreeSet::new();
     let mut count = 0;
     styles(&mut doc, source, load, &mut active, &mut count)?;
     let aliases: Vec<&str> = doc.models.iter()
-        .filter(|m| load(&m.path, source).is_some_and(|(identity, _)| identity == model_path))
+        .filter(|m| load(&m.path, source).is_some_and(|l| l.is_ok_and(|(identity, _)| identity == model_path)))
         .map(|m| m.name.as_str()).collect();
     if aliases.is_empty() { return Ok(BTreeMap::new()) }
     fills(&doc, &aliases, model)
+}
+
+/// A file a drawing names, loaded: `cannot` where it is not there, and where it is there and does
+/// not read, `cannot` with why after it.
+fn loaded(l: Loaded, cannot: impl Fn() -> Error) -> Result<(String, String), Error> {
+    match l {
+        Some(Ok(file)) => Ok(file),
+        Some(Err(why)) => Err(Error { message: format!("{}: {why}", cannot().message), ..cannot() }),
+        None => Err(cannot()),
+    }
 }
