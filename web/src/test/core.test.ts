@@ -30,6 +30,7 @@ import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { turnAt, turnHandle } from '../core/workspace.js';
+import { EXTENSIONS } from '../app/project-explorer.js';
 import { core, initCore } from '../core/wasm.js';
 
 await initCore();
@@ -2740,6 +2741,9 @@ test('a use is looked for as .sv, .step then .stp in each directory, nearest fir
     'bracket.sv', 'bracket.step', 'bracket.stp']);
   assert.deepEqual(modules.searchPaths('vendor.bracket', 'model.sv'),
     ['vendor/bracket.sv', 'vendor/bracket.step', 'vendor/bracket.stp']);
+  // the app's file kinds hold the core's: a module's sources, then its exchange files
+  assert.deepEqual(modules.searchPaths('b', 'm.sv'),
+    ['sv', ...EXTENSIONS.given].map((e) => `b.${e}`));
   assert.equal(modules.pathOf('vendor.bracket', 'ISO-10303-21;\n'), 'vendor/bracket.step');
   // a project's files: the first path it has wins — the Solvent document in one directory, and
   // a nearer exchange file over a farther document
