@@ -1260,7 +1260,18 @@ hands it through as `recipe::Node::Given` — the same faces in the same order, 
 surface, its tolerances as measured, moved only where a recipe is written about another origin —
 so `own_exact`, a body's build and `brep::export::exact` take one path, and `solid(bracket)`, a body
 whose stock it is and nothing else, builds to it untouched too; the export's `check`,
-`self_touching`, `pinches` and `step_check` hold it as they hold a built solid. Its `Debug`, and
+`self_touching`, `pinches` and `step_check` hold it as they hold a built solid, and what they hold
+it to the reader held it to already — a loop's turn by `Brep::turned` at its measured tolerances
+(brep.md) — and they read a lune of two edges as a face's two sides, never a touch: a body the
+reader found sound and nothing was done to is not refused for what it is. CADGenBench 246, 248
+and 250, each holding a lune between tangent rounds, were refused as touching themselves, after
+34 s to 443 s spent reading the body's faces as its rounds read them, which a body a file gives
+untouched has none of and is no longer asked (`export::given_read`). **What the document writes
+of it reads back**: `brep::export::step` reads its file by the kernel's own reader after
+`step_check`, and refuses it in the reader's words where the reader refuses it, so no file is
+given back that the document's next `use` of it would refuse (#3DBenchy's face #27487, its
+export's pcurve leaping across a spline sheet's fold, written and passed by `step_check`, refused
+at its second reading). Its `Debug`, and
 `recipe::Given`'s, is its digest and its size, never its faces; its memo key (`solid/reads.rs`) is
 tag 16, the digest in two 32-bit halves and the document's millimetres per unit — every other
 solid's numbers are the document's own, but the file's are millimetres in any unit while a
@@ -1277,11 +1288,15 @@ term. Its material field is `BuiltField` where every face's surface has an exact
 naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
 reaches them; stage 3 chooses them by predicate), and **no reader is shown their keys**: `--where
 part` lists no per-face row of a given body's faces (`report::positions_where`; their area is
-in the body's), and a containment claim's witness says one as `` a face of `bracket` ``
+in the body's), and its volume and area are its B-rep's, read there (`report::given_untouched`):
+it is evaluated — meshed at the report's fineness, CADGenBench 201's 435 faces some eight million
+facets and half a minute — only where its box is asked, and a containment claim's witness says one as `` a face of `bracket` ``
 (`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
 keeps the face's key, for a host to pick it by
 (`given_bodies::a_given_bodys_faces_are_said_as_its_faces`). The OCCT route refuses `Node::Given`, naming
-`--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate: `tests/given_solids.rs` —
+`--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate (and `given_bodies::the_corpus_through_a_document`, a tool over `$STEP_CORPUS`: each file
+through the three-line document, built, exported, checked, read again as a given body, built and
+exported again, and the same solid): `tests/given_solids.rs` —
 `its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
 file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,
 `a_given_body_is_meshed_edged_and_cut`, `a_model_in_inches_reads_the_millimetre_b_rep`.

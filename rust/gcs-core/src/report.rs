@@ -957,6 +957,24 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         if e.kind != crate::model::EntKind::Solid || !names.iter().any(|n| asked(n)) {
             continue;
         }
+        // a body a file gives, untouched (#993 stage 2): its volume and its area are its B-rep's,
+        // exact — what its evaluation reads them from too — and are read there; it is evaluated,
+        // meshed at the report's fineness (CADGenBench 201's 435 faces some eight million facets,
+        // half a minute), only where its box is asked, the one measure its facets give (it has no
+        // face a path names)
+        let boxed = |n: &String| ["x", "y", "z"].iter().any(|a| asked(&format!("{n}.bounds.{a}0"))
+                                                       || asked(&format!("{n}.bounds.{a}1")));
+        if given_untouched(sk, e.i()) && !names.iter().any(boxed) {
+            let Ok(x) = sk.exact_solid(e.i()) else { continue };
+            let b = &x.brep;
+            let volume = if b.faces.is_empty() { 0.0 } else { crate::brep::props::volume(b) / x.mm.powi(3) };
+            let area = b.faces.iter().map(|f| crate::brep::props::area(b, f)).sum::<f64>() / (x.mm * x.mm);
+            for n in names {
+                out.insert(format!("{n}.volume"), volume);
+                out.insert(format!("{n}.area"), area);
+            }
+            continue;
+        }
         let Ok(solid) = sk.evaluated_solid(e.i(), crate::solid::ApproximationPolicy::Report) else { continue };
         let pieces = solid.boundary();
         let b = solid.world_bounds();
@@ -987,6 +1005,15 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         }
     }
     published(out)
+}
+
+/// Whether solid `i` is a body a file gives, untouched: the given body itself, or a body whose
+/// stock it is with nothing on, through or bound by it (`solid(bracket)`).
+fn given_untouched(sk: &Sketch, i: usize) -> bool {
+    use crate::model::SolidDef;
+    let given = |k: usize| matches!(sk.solids[k].def, SolidDef::Given(_));
+    given(i) || matches!(&sk.solids[i].def, SolidDef::Body { stock, on, through, bound }
+        if given(*stock as usize) && on.is_empty() && through.is_empty() && bound.is_empty())
 }
 
 /// **A solid asked about that is not built, said** (#994): for each solid `asked` takes one of the
