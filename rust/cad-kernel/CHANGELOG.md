@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The crossed tumbling tori built by the tube road** (#880 T1f): the reverse member (15 faces,
+  13.7898471917 against cadrs's 13.7898472784) and the forward (14 faces, 16.6109998153 against
+  16.6109997999; read 16.6116290673 before its flux was cut at its net's knot lines, below). `zero_set`'s search answers a cell beside a traced
+  piece only on the side of it its sign says (a piece's ends excepted): a closed cuspidal edge
+  folded within the feature of another in space, beside a near-pinch, was never sought.
+  `tube::round` takes one side per inner edge, so an exit across a fold is not solved on the
+  pinch's rim where the march began. `tube::beside_edges` reads a point held by its neighbours as
+  below nought. The faces' runs: a crossing shallow to a cut read on its two sides is one where the
+  cut between stands in the depth's tolerance band, and a run in that band of one kept before it is
+  dropped. Each sheet's net over a window is fitted once.
 - **A face's flux read cut where its pcurves cross its net's knot lines** (#880 T1f,
   `props::integrated`): `G` read along a use is smooth only between its crossings of the net's knot
   lines, where a derivative past the net's continuity jumps; each use on a B-spline or offset net is

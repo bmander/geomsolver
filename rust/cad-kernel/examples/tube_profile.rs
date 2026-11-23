@@ -26,17 +26,17 @@ use std::time::Instant;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // (`MOVED=ulp` or a length: the observer's origin moved by one ulp, or by that much, each way)
-    let moved = |o: [f64;3]| match std::env::var("MOVED").ok().as_deref() {
-        None => o,Some("ulp") => o.map(f64::next_up),Some(d) => { let d: f64 = d.parse().unwrap(); o.map(|x| x+d) }
-    };
     let ((tool,path),half,tube_r) = match args.first().map(String::as_str) {
         Some("full-turn") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.,0.16),
         Some("tumble") => (bench::tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.5),
         Some("eighty") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),80.,0.16),
         Some("thin") => (bench::tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.015),
-        Some("crossed-forward") => (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.,moved),100.,0.22),
-        Some("crossed-reverse") => (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.,moved),100.,0.22),
+        // (`NUDGE=ulp` or a length: the observer's origin moved by one ulp, or by that, in each coordinate)
+        Some(m @ ("crossed-forward"|"crossed-reverse")) => {
+            let nudge = std::env::var("NUDGE").ok();
+            let moved = move |o: [f64;3]| o.map(|x| match nudge.as_deref() { Some("ulp") => x.next_up(),Some(d) => x+d.parse::<f64>().unwrap(),None => x });
+            (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,if m == "crossed-forward" { 1. } else { -1. },moved),100.,0.22)
+        }
         _ => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.,0.16),
     };
     let nth = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(128usize);
