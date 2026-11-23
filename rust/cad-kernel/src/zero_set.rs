@@ -650,8 +650,12 @@ impl<'a,F: Field> Tracer<'a,F> {
             // a boundary seed, or the start, within the step ahead: arrived (a tangential end is
             // reached so, never solved for)
             let mut best: Option<(f64,usize)> = None;
+            let folded = self.field.folded();
             for (k,s) in self.seeds.iter().enumerate() {
                 let d = distance(xp,self.point(s.uv));
+                // (where the chart passes through itself, a seed within the step in space at
+                // another place of the parameters is another preimage's)
+                if folded && self.length(p,[s.uv[0]-p[0],s.uv[1]-p[1]]) > h+self.q.feature { continue }
                 if d > 0. && d <= h && best.is_none_or(|b| d < b.0) { best = Some((d,k)) }
             }
             let mut arrived: Option<(Uv,End,Option<usize>)> = None;
