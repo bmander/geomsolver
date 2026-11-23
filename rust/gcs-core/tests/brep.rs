@@ -2698,6 +2698,142 @@ fn a_hemispheres_rim_chamfered_to_its_radius_is_a_spherical_sector() {
     assert_eq!(sector.faces.len(),2);
 }
 
+/// The ellipse of semi-axes `a` and `b` swept from its plane through `f` along `f.z` to `h`, its
+/// side named `side`: the floor's one edge the ellipse itself (`ProfileEdge::Exact`), so its side
+/// is closed round it.
+fn elliptic_cylinder(f: Frame,a: f64,b: f64,h: f64) -> gcs_core::brep::topo::Brep {
+    use gcs_core::brep::geom::Curve;
+    let floor = Profile {origin:f.o,normal:f.z,loops:vec![vec![ProfileEdge::Exact(Curve::Ellipse(f,a,b))]],
+        names:vec![vec!["side".into()]]};
+    prism(&floor,0.,h).unwrap()
+}
+
+/// The perimeter of the ellipse of semi-axes `a` and `b`, `∫ √(a² sin² t + b² cos² t) dt`: the
+/// trapezoid rule over a whole period, exact to rounding for a smooth periodic integrand.
+fn ellipse_perimeter(a: f64,b: f64) -> f64 {
+    let n = 4096;
+    (0..n).map(|k| { let t = TAU*k as f64/n as f64; (a*t.sin()).hypot(b*t.cos()) }).sum::<f64>()*TAU/n as f64
+}
+
+/// **An elliptic cylinder's rim chamfered** (brep-bench's chamfer/elliptic-cylinder-rim): the
+/// ellipse of semi-axes 10 and 6 swept 8 up, its top rim chamfered `d` on both faces. The leg on
+/// the top is where it meets the side offset `d` in — a swept ellipse's offset, read as the sheet
+/// of its rational spline carried along the sweep (`Surface::parallel`), its foot by its signed
+/// distance — the ellipse's inner parallel curve; the leg down the side where it meets the top's
+/// plane moved down `d`. Along a closed curve a section's area counts at the rate its points'
+/// parallel curve runs, `L − 2πs` at `s` in from the side, so the solid is `πab·h − (d²L/2 −
+/// πd³/3)` and its area `2πab + hL − 2dL + πd² + √2·d(L − πd)`, `L` the perimeter: within the
+/// flat's fit at the case's 2, at 3.5 (the parallel curve a hair inside the ellipse's least radius
+/// of curvature, 3.6: the side's foot read by the ellipse's nearest point, where Newton from the
+/// point's own angle settled on another), and placed aslant far off the origin. Swept 100 up, the
+/// top's leg stands past the sheet's straight span, read on the line it runs on.
+#[test]
+fn an_elliptic_cylinders_rim_chamfered_is_its_closed_form() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::fillet::flat_along;
+    let (a,b) = (10.,6.);
+    let l = ellipse_perimeter(a,b);
+    // the case's perimeter, 40 E(0.64)
+    crate::common::close(l,51.053997726796254);
+    let near = |x: f64,want: f64,bar: f64| assert!((x-want).abs() <= bar*want,"{x} against {want} ({:e})",(x-want)/want);
+    for (f,h,d,bar) in [(Frame::WORLD,8.,2.,1e-11),(Frame::WORLD,8.,3.5,1e-11),(Frame::WORLD,100.,2.,1e-10),
+                        (Frame::new([500.,-300.,250.],[1.,2.,3.],[0.,3.,-2.]),8.,2.,1e-10)] {
+        let cylinder = elliptic_cylinder(f,a,b,h);
+        let tol = gcs_core::brep::geom::tolerance(cylinder.size());
+        let piece = flat_along(&cylinder,f.at([0.,b,h]),[d,d],None,tol).unwrap();
+        piece.check(1e-8).unwrap();
+        let cut = combined(&cylinder,&piece,Op::Cut,0.).unwrap();
+        cut.check(1e-8).unwrap();
+        assert_eq!(face_kinds(&cut),["bspline","extrusion","plane","plane"]);
+        near(volume(&cut),PI*a*b*h-(d*d*l/2.-PI*d*d*d/3.),bar);
+        near(total_area(&cut),2.*PI*a*b+h*l-2.*d*l+PI*d*d+2f64.sqrt()*d*(l-PI*d),bar);
+    }
+    // the case's own numbers
+    let cylinder = elliptic_cylinder(Frame::WORLD,a,b,8.);
+    let piece = flat_along(&cylinder,[0.,b,8.],[2.,2.],None,gcs_core::brep::geom::tolerance(cylinder.size())).unwrap();
+    let cut = combined(&cylinder,&piece,Op::Cut,0.).unwrap();
+    crate::common::close(volume(&cut),1414.234058679081);
+    crate::common::close(total_area(&cut),720.4044601968868);
+}
+
+/// **An elliptic hole's rim chamfered** (brep-bench's chamfer/elliptic-hole-rim): a plate 30 by
+/// 20 by 4 drilled through on the ellipse of semi-axes 6 and 3, the rim on its top chamfered 1 on
+/// both faces — a countersink of slope 45°, its leg on the top the ellipse's outer parallel curve,
+/// where the top meets the hole's wall offset 1 out. Round a hole each section's area counts at the
+/// rate its parallel curve runs, `L + 2πs`: `2400 − 72π − (d²L/2 + πd³/3)` and `1600 − 36π + 4L −
+/// 2dL − πd² + √2·d(L + πd)`, `d = 1`.
+#[test]
+fn an_elliptic_holes_rim_chamfered_is_a_countersink() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::fillet::flat_along;
+    let (a,b,d) = (6.,3.,1.);
+    let below = Frame {o:[0.,0.,-1.],..Frame::WORLD};
+    let drilled = combined(&block([-15.,-10.,0.],[15.,10.,4.]),&elliptic_cylinder(below,a,b,6.),Op::Cut,0.).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(drilled.size());
+    let piece = flat_along(&drilled,[0.,b,4.],[d,d],None,tol).unwrap();
+    let sunk = combined(&drilled,&piece,Op::Cut,0.).unwrap();
+    sunk.check(1e-8).unwrap();
+    let l = ellipse_perimeter(a,b);
+    crate::common::close(volume(&sunk),2400.-72.*PI-(d*d*l/2.+PI*d*d*d/3.));
+    crate::common::close(total_area(&sunk),1600.-36.*PI+4.*l-2.*d*l-PI*d*d+2f64.sqrt()*d*(l+PI*d));
+    crate::common::close(volume(&sunk),2158.2254590595167);
+}
+
+/// **A ball rolled round an elliptic rim** (brep-bench's fillet/elliptic-cylinder-rim): the
+/// ellipse of semi-axes 10 and 6 swept 8 up, its top rim rounded to 2 — the ball's centre where
+/// the top's plane moved down 2 meets the side's offset 2 in (the swept ellipse's, as a sheet's),
+/// the loop whole round the side, which is closed round the ellipse. Each section's area counts at
+/// the rate its parallel curve runs: `480π − [(1 − π/4)r²L − 2π(5/6 − π/4)r³]` and `120π + 8L +
+/// (π/2 − 2)rL + (3 − π)πr²`.
+#[test]
+fn a_ball_rolled_round_an_elliptic_rim_is_its_closed_form() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::fillet::roll;
+    let (r,l) = (2.,ellipse_perimeter(10.,6.));
+    let cylinder = elliptic_cylinder(Frame::WORLD,10.,6.,8.);
+    let round = roll(&cylinder,[0.,6.,8.],r,gcs_core::brep::geom::tolerance(cylinder.size())).unwrap();
+    assert!(!round.concave);
+    // (the Boolean with the canal tangent to both faces read to the bench's floor, 1e-5 mm)
+    let rounded = combined(&cylinder,&round.piece,Op::Cut,1e-5).unwrap();
+    rounded.check(1e-5).unwrap();
+    let q = PI/4.;
+    crate::common::close(volume(&rounded),480.*PI-((1.-q)*r*r*l-2.*PI*(5./6.-q)*r*r*r));
+    crate::common::close(total_area(&rounded),120.*PI+8.*l+(PI/2.-2.)*r*l+(3.-PI)*PI*r*r);
+}
+
+/// **An ellipse's foot is its nearest point** (`Curve::inverse`), inside it near its evolute too,
+/// where Newton from the point's own angle settled on another of the distance's stationary points;
+/// and a swept ellipse's offset (`Surface::parallel`, the sheet of its spline carried along the
+/// sweep) stands its distance off at every height, its foot at the point's own height however far
+/// up the sweep, past the sheet's straight span.
+#[test]
+fn an_ellipses_foot_is_its_nearest_point() {
+    use gcs_core::brep::geom::{Curve,Offset,Surface};
+    use gcs_core::rng::Rng;
+    let f = Frame::new([1.,-2.,3.],[0.3,0.2,1.],[1.,0.,0.]);
+    let (a,b) = (10.,6.);
+    let ellipse = Curve::Ellipse(f,a,b);
+    let mut rng = Rng::new(7);
+    for k in 0..400 {
+        // half the points inside, near the evolute's cusps on the major axis
+        let q = if k%2 == 0 { f.at([rng.uniform(4.,9.9)*if k%4 == 0 { 1. } else { -1. },rng.uniform(-1.,1.),0.]) }
+            else { f.at([rng.uniform(-14.,14.),rng.uniform(-10.,10.),rng.uniform(-1.,1.)]) };
+        let got = gcs_core::space::distance(ellipse.point(ellipse.inverse(q)),q);
+        let best = (0..20000).map(|i| ellipse.point(TAU*i as f64/20000.)).map(|p| gcs_core::space::distance(p,q))
+            .fold(f64::INFINITY,f64::min);
+        assert!(got <= best+1e-9,"{q:?}: its foot {got} off, a sample {best}");
+    }
+    let side = Surface::Extrusion(Frame::WORLD,std::sync::Arc::new(Curve::Ellipse(Frame::WORLD,a,b)));
+    let Some(Offset::Surface(inner)) = side.parallel(-2.,1e-9) else { panic!("a swept ellipse has an offset") };
+    for z in [0.,8.,100.,3000.,-500.] {
+        // 3 below the side's top: 1 inside the offset 2 in
+        let q = [0.,3.,z];
+        assert!((inner.implicit(q)+1.).abs() <= 1e-12,"{z}: {}",inner.implicit(q));
+        let foot = inner.point(inner.inverse(q));
+        assert!(gcs_core::space::distance(foot,[0.,4.,z]) <= 1e-9*(1.+z.abs()),"{z}: its foot {foot:?}");
+    }
+}
+
 /// The area of every face of `b`.
 pub(crate) fn total_area(b: &gcs_core::brep::topo::Brep) -> f64 { b.faces.iter().map(|f| gcs_core::brep::props::area(b,f)).sum() }
 

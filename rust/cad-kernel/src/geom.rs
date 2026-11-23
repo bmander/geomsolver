@@ -643,12 +643,12 @@ impl Blend {
         (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
     /// **The patch's own size**: the diagonal of the box its two sections fill, before they are
-    /// carried — what its foot is near by and its sections are one by (`NEAR`, `tolerance`),
-    /// wherever it stands. The sections' and not the whole sweep's: a wire's coil comes back within
-    /// its pitch of itself however long it runs, and a tube is as thin as its section. A section's
-    /// box is its own where that is a closed form or its poles' (a line, a conic, a spline); any
-    /// other's (a traced one's box is a projection a chord, and this is asked at every foot) the
-    /// box of its ends and its middle, no larger.
+    /// carried — what its sections are one by (`tolerance`), and its foot near by no more than
+    /// (`reach`), wherever it stands. The sections' and not the whole sweep's: a wire's coil comes
+    /// back within its pitch of itself however long it runs, and a tube is as thin as its section.
+    /// A section's box is its own where that is a closed form or its poles' (a line, a conic, a
+    /// spline); any other's (a traced one's box is a projection a chord, and this is asked at every
+    /// foot) the box of its ends and its middle, no larger.
     fn size(&self) -> f64 {
         let section = |c: &Curve,t: [f64;2]| match c {
             Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => c.bounds(t),
@@ -657,6 +657,22 @@ impl Blend {
         let mut sections = section(&self.a,self.ta);
         widen(&mut sections,section(&self.b,self.tb));
         diagonal(sections)
+    }
+    /// **The length the patch's foot is near by** (`NEAR`, `ON_PATCH`): its own size, and no more
+    /// than a screw's rise a turn where one carries it. A section screwed round comes back within
+    /// its pitch of itself however long the section is, and about the axis it twists within the
+    /// rise a radian; read by the section alone, a long one screwed a fine lead kept a foot settled
+    /// near a point a turn's part away from it (#1004: the screw's domain, its edges 116 long
+    /// screwed thirty turns at a lead of 1, kept a stationary foot 0.099 off a point of its own
+    /// rim, a tenth of the lead, and a thread with sharp crests that built was refused).
+    fn reach(&self) -> f64 {
+        let size = self.size();
+        match self.carry {
+            // (the axis a unit: `Carry::turn`'s)
+            Carry::Screw {angle,advance,..} if angle != 0. && advance != 0. =>
+                size.min((advance*std::f64::consts::TAU/angle).abs()),
+            _ => size,
+        }
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
@@ -693,7 +709,7 @@ impl Blend {
         // point of its own rim)
         if let Some(uv) = self.carried_uv(p) { return uv }
         let warm = crate::util::warm::get(crate::util::warm::Kind::Blend,key).map(|f| self.newton(p,f))
-            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= NEAR*self.size());
+            .filter(|&uv| crate::util::space::distance(self.d1(uv).0,p) <= NEAR*self.reach());
         let uv = warm.or_else(|| self.from_level(p)).unwrap_or_else(|| self.searched(p));
         crate::util::warm::put(crate::util::warm::Kind::Blend,key,uv);
         uv
@@ -800,7 +816,10 @@ impl Blend {
         let start = [if self.closed { start[0] } else { start[0].clamp(0.,1.) },start[1]];
         let uv = self.newton(p,start);
         let far = |uv: Uv| crate::util::space::distance(self.d1(uv).0,p);
-        (far(uv) <= far(start)*(1.+1e-12)+1e-300).then_some(uv)
+        // (no farther but by the rounding of the point's coordinates: from a start on `p` itself,
+        // Newton's foot is as near, and may read a few units in their last place farther — #1004,
+        // a point of the domain's rim refused so, and searched onto the next turn 0.63 off)
+        (far(uv) <= far(start)*(1.+1e-12)+4.*f64::EPSILON*(1.+norm(p))).then_some(uv)
     }
     /// **The line this patch screws, where it is one** (`build::screwed`'s sheet: a line and its
     /// own image carried by a screw, so `S(u, v) = carry_v(p₀ + u Δ)`): the one reading every closed
@@ -1013,7 +1032,8 @@ fn foot_model(e: V,[xu,xv,xuu,xuv,xvv]: [V;5]) -> ([f64;3],[f64;2]) {
 /// foot `net_newton` finds, past it the foot on the end spans carried on, so the distance to the
 /// sheet runs on past its edge as smoothly as the sheet does, where the tangent extension `side`
 /// reads turns its curvature off at the edge. `None` where it does not settle, or settles farther
-/// past the domain than the domain is wide.
+/// past the domain than the domain is wide — save along a way the sheet is one straight span
+/// (`straight`), whose continuation is the line it lies on, exactly, however far it runs.
 fn continued_foot(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
     let [[u0,u1],[v0,v1]] = n.domain();
     let size = (u1-u0).abs().max((v1-v0).abs());
@@ -1031,8 +1051,18 @@ fn continued_foot(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
         uv = [uv[0]-step[0],uv[1]-step[1]];
         if step[0].abs().max(step[1].abs()) <= 1e-15*(1.+size) { break }
     }
-    let past = (u0-uv[0]).max(uv[0]-u1).max(v0-uv[1]).max(uv[1]-v1);
+    let past = |k: usize,[lo,hi]: [f64;2]| if straight(n,k) { 0. } else { (lo-uv[k]).max(uv[k]-hi) };
+    let past = past(0,[u0,u1]).max(past(1,[v0,v1]));
     (uv[0].is_finite() && uv[1].is_finite() && past <= size).then_some(uv)
+}
+
+/// Whether the net is one straight span along its `k`th parameter (0 `u`, 1 `v`): of degree 1, two
+/// poles that way, each pair weighed alike — a curve swept along a line — so that its continuation
+/// that way is the line through each pair, at the speed it has within.
+fn straight(n: &super::nurbs::Net,k: usize) -> bool {
+    let (d,count) = if k == 0 { (n.du,n.poles.len()) } else { (n.dv,n.poles[0].len()) };
+    let alike = |w: &Vec<Vec<f64>>| if k == 0 { w[0] == w[1] } else { w.iter().all(|r| r[0] == r[1]) };
+    d == 1 && count == 2 && n.weights.as_ref().is_none_or(alike)
 }
 
 /// A point's foot on a sheet's continuation (`continued_foot`) where it stands `d` off it (an
@@ -1638,7 +1668,7 @@ impl Surface {
             // a swept section's patch likewise
             Surface::Blend(_,b) => {
                 let uv = b.newton(p,hint);
-                if crate::util::space::distance(b.d1(uv).0,p) <= ON_PATCH*kept_size(b,Blend::size) { uv } else { b.inverse(p) }
+                if crate::util::space::distance(b.d1(uv).0,p) <= ON_PATCH*kept_size(b,Blend::reach) { uv } else { b.inverse(p) }
             }
             // a curve swept or turned likewise — a spline, a turned contact's meridian, a slid
             // torus's contour — its foot refined from the hint's (#780 C3: read afresh, a meridian's
@@ -1796,18 +1826,49 @@ impl Surface {
         match self { Surface::BSpline(_,n) => offset_foot(n,p,0.),Surface::Offset(_,n,d) => offset_foot(n,p,*d),s => s.inverse(p) }
     }
     /// Whether `parallel` reads the surface's offsets: in closed form, or by its signed distance.
-    pub fn has_parallel(&self) -> bool { matches!(self,Surface::BSpline(..) | Surface::Offset(..)) || self.has_offset() }
+    pub fn has_parallel(&self) -> bool {
+        matches!(self,Surface::BSpline(..) | Surface::Offset(..)) || self.has_offset() || self.swept_spline().is_some()
+    }
     /// **What stands `d` off the surface, exactly, whatever its kind**: `offset`, in closed form,
     /// else a sheet's offset read by its signed distance (`Surface::Offset`), its points and
-    /// partials from the sheet's own and its second partials (an offset's offset by the sum).
-    /// `None` where `offset` has none, and for a kind whose second partials are not read (a swept
-    /// curve's, a blend's, a family's wall, an image).
+    /// partials from the sheet's own and its second partials (an offset's offset by the sum) — a
+    /// spline or an ellipse swept along a line read as the sheet it is (`swept_net`). `None` where
+    /// `offset` has none, and for a kind whose second partials are not read (any other curve
+    /// swept, a curve turned, a blend, a family's wall, an image).
     pub fn parallel(&self,d: f64,tol: f64) -> Option<Offset> {
         match self {
             Surface::BSpline(f,n) => Some(Offset::Surface(Surface::Offset(*f,n.clone(),d))),
             Surface::Offset(f,n,e) => Some(Offset::Surface(Surface::Offset(*f,n.clone(),e+d))),
+            Surface::Extrusion(f,_) => self.swept_net().map(|n| Offset::Surface(Surface::Offset(*f,Arc::new(n),d))),
             s => s.offset(d,tol),
         }
+    }
+    /// The curve a spline or an ellipse swept along a line (`Extrusion`) is swept from, as a spline:
+    /// an ellipse its rational one, the unit circle's whole turn stretched and placed (its parameter
+    /// meeting the angle at its knots only). `None` for any other kind.
+    fn swept_spline(&self) -> Option<super::nurbs::BSpline> {
+        let Surface::Extrusion(_,c) = self else { return None };
+        match **c {
+            Curve::BSpline(ref b) => Some((**b).clone()),
+            Curve::Ellipse(g,a,b) => {
+                let unit = super::nurbs::arc(&Frame::WORLD,1.,[0.,TAU]);
+                Some(super::nurbs::BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit})
+            }
+            _ => None,
+        }
+    }
+    /// **A spline or an ellipse swept along a line as the sheet it is, exactly**: its spline's poles
+    /// (`swept_spline`) carried each way along the sweep, one straight span in `v` as long each way
+    /// as the curve is wide, `v` the sweep's own. A foot past that span is read on the line it lies
+    /// on (`continued_foot`), so the sheet is the whole swept surface, however long. `None` for any
+    /// other kind.
+    fn swept_net(&self) -> Option<super::nurbs::Net> {
+        let (Surface::Extrusion(f,_),Some(b)) = (self,self.swept_spline()) else { return None };
+        let reach = diagonal(hull(b.poles.iter().copied())).max(f64::MIN_POSITIVE);
+        let net = super::nurbs::Net {du:b.degree,dv:1,uknots:b.knots.clone(),vknots:vec![-reach,-reach,reach,reach],
+            poles:b.poles.iter().map(|&p| vec![add(p,scale(f.z,-reach)),add(p,scale(f.z,reach))]).collect(),
+            weights:b.weights.as_ref().map(|w| w.iter().map(|&w| vec![w,w]).collect())};
+        net.check().ok().map(|_| net)
     }
     /// `offset` where only a surface will do (a leg's meeting, a ball's spine against a wall),
     /// refused saying why: `what` is wider than `face` holds past where the offset closes, and as
@@ -2466,8 +2527,12 @@ impl Curve {
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
+                // the nearest point's angle (Eberly's bisection, `affine::ellipse_foot`): Newton from
+                // the point's own angle settles, inside the ellipse near its evolute, on another
+                // of the distance's stationary points; then Newton from there to the last bit
                 let [x,y,_] = f.local(p);
-                let mut t = (y/b).datan2(x/a);
+                let [fx,fy] = super::affine::ellipse_foot([a,b],[x,y]);
+                let mut t = (fy/b).datan2(fx/a);
                 for _ in 0..8 {
                     let (s,c) = t.dsin_cos();
                     // d/dt ½|C − p|² = (C − p)·C'

@@ -78,12 +78,14 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     let (face_a,face_b) = (&b.faces[fa],&b.faces[fb]);
     let names = || format!("`{}` with `{}`",face_a.name,face_b.name);
     // a ball's centre stands off each face along its normal: a sheet's offset is read by its signed
-    // distance (`Surface::parallel`), and a surface with no offset read (a swept spline, a blend, a
-    // family's wall, an image) is not rounded yet
+    // distance (`Surface::parallel`), a spline or an ellipse swept along a line as the sheet it is,
+    // and a surface with no offset read (any other curve swept, a blend, a family's wall, an image)
+    // is not rounded yet
     for f in [face_a,face_b] {
         if !f.surface.has_parallel() {
             return Err(format!("`{}` ({}) has no offset read yet, so no ball rolls on it: planes, cylinders, cones, \
-                spheres, tori and B-spline sheets are rounded",f.name,f.surface.kind()));
+                spheres, tori, B-spline sheets and a spline or an ellipse swept along a line are rounded",f.name,
+                f.surface.kind()));
         }
     }
     // each side: every face on its surface, the same way out (a face split at its seam is one
@@ -1889,12 +1891,14 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
 enum Leg { Along(super::geom::Traced),At(V) }
 
 impl Leg {
-    /// The leg on `on`: where it meets `off` offset by `d`, the crossing nearest the edge's middle
-    /// `p` within `reach` of the boundary's `bounds`; refused (as `what`) where no point stands that
-    /// far off `off`, or where what its offset closes onto misses `on` or lies in it.
+    /// The leg on `on`: where it meets `off` offset by `d` (`Surface::parallel`: in closed form, or a
+    /// sheet's offset, a swept spline's or ellipse's among them, read by its signed distance), the
+    /// crossing nearest the edge's middle `p` within `reach` of the boundary's `bounds`; refused (as
+    /// `what`) where no point stands that far off `off`, or where what its offset closes onto misses
+    /// `on` or lies in it.
     #[allow(clippy::too_many_arguments)]
     fn of(on: &Surface,off: &Surface,d: f64,bounds: (V,V),p: V,reach: f64,tol: f64,what: &str) -> Result<Leg,String> {
-        match off.offset(d,tol) {
+        match off.parallel(d,tol) {
             Some(Offset::Surface(s)) => Ok(Leg::Along(super::geom::Traced {a:on.clone(),b:s,pts:Vec::new(),closed:false})),
             Some(Offset::Curve(c)) => match nearest_crossing(&c,on,tol,bounds,reach,p)? {
                 None => Err(format!("{what} shrinks the {} to what the {} closes onto, which lies in it: no one point \
@@ -2580,10 +2584,10 @@ fn seamed(out: &mut Brep,loops: Vec<Loop>,s: &Surface,reversed: bool) -> Result<
 }
 
 /// The iso line of `s` at first parameter `u` from `p` to `q` (both on it): a generator of a
-/// cylinder or a cone, a meridian circle of a sphere or a torus.
+/// cylinder, a cone or a swept curve, a meridian circle of a sphere or a torus.
 fn iso(s: &Surface,u: f64,p: V,q: V) -> Result<Curve,String> {
     match *s {
-        Surface::Cylinder(..) | Surface::Cone(..) => Ok(Curve::Line {p,d:unit(sub(q,p))}),
+        Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => Ok(Curve::Line {p,d:unit(sub(q,p))}),
         Surface::Sphere(f,r) | Surface::Torus(f,_,r) => {
             let (su,cu) = u.dsin_cos();
             let radial = f.dir([cu,su,0.]);

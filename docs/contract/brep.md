@@ -570,7 +570,12 @@ point (a layered wall's within `HALF_READ` of it), and searches the patch otherw
 refined from a hint (`Surface::inverse_near`) is on its patch within a millionth of that size, and
 two of a blend's sections are one within the tolerance of theirs (`geom::tolerance`). The size is the patch's: a
 wall's the box its pieces' boxes fill (`Sheet::size`), a blend's the box of its two sections (not
-of its sweep: a coil comes back within its pitch of itself however long it runs), a sheet's its
+of its sweep: a coil comes back within its pitch of itself however long it runs) — and its foot
+near by no more than the rise a turn of a screw carrying it (`Blend::reach`, #1004: a section
+longer than its lead comes back within the lead of itself, and twists within it about the axis;
+the screw's domain in brep-bench's fine thread with sharp crests, its edges 116 long screwed
+thirty turns at a lead of 1, kept a stationary foot a tenth of the lead off a point of its own
+rim, and the thread was refused) — a sheet's its
 poles' box, a swept or turned curve's its own (the last two read once and kept by address,
 `geom`'s `kept_size`). Read as a part of `1 + |p|`, the point's distance from the origin, the
 reach was a millimetre for a wall a metre out and six for a blade 6.3 m aft — wider than its
@@ -615,7 +620,14 @@ on it and a millionth off, asked in no order, where it stands and a thousand siz
 own foot within the tolerance and a sheet's `1e-12 |p|`) and
 `a_surface_is_enclosed_as_closely_far_from_the_origin_as_at_it` (`enclosures`' surfaces of every
 kind over the same boxes, moved 30 000 out: every sample held, no enclosure wider but by the
-coordinates' rounding).
+coordinates' rounding). #1004's, `tests/swept_closed.rs`:
+`a_point_of_a_long_section_screwed_a_fine_lead_is_its_own_foot` (a line 116 long screwed thirty
+turns at a lead of 1, twenty thousand of its points asked in no order, a third on each rim, each
+its own foot within the tolerance — and a point of its first rim, whose level start
+(`Blend::from_level`) is on it, kept that foot though Newton's method reads it a unit in the last
+place farther, not searched onto the next turn), `a_thread_with_sharp_crests_is_cut` (the bench's
+thread a unit long, a twentieth of its volume within ten tolerances) and, slow tier,
+`the_benchs_thread_with_sharp_crests_is_cut` (the bench's case itself, 20 s).
 
 **A B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
 (`geom::net_newton`): its other parameter settled alone, the foot was returned on the rim a long
@@ -738,9 +750,18 @@ no domain to hold it), where the sheet's own signed distance runs on along the t
 there the curvature is switched off at the edge, and a ball's centre rolling on past a face's
 edge on it turned its curvature from 25 to 9 at once, which no cubic net fits (the canal missed
 its bar by 1.7e-4). `Surface::parallel` is `offset`, in closed form, else a sheet's offset (an
-offset's offset by the sum), and none for the kinds whose second partials are not read (a swept
-curve's, a blend's, a family's wall, an image).
-`sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate.
+offset's offset by the sum), and none for the kinds whose second partials are not read (any other
+curve swept, a curve turned, a blend, a family's wall, an image).
+**A spline or an ellipse swept along a line is the sheet it is** (`Surface::swept_net`): its
+spline's poles (an ellipse's rational one) carried each way along the sweep, one straight span in
+`v`, exact — so its offset is a sheet's, read by its signed distance as above, and a ball rolls on
+it and a chamfer's leg is read from it. The span is as long each way as the curve is wide, and a
+foot past it is read on the line it runs on: **a net that is one straight span along a parameter
+carries on exactly along it** (degree 1, two poles, each pair weighed alike), so
+`continued_foot` holds a foot to the domain's width past it along every other way only.
+`sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate, and
+`brep::an_ellipses_foot_is_its_nearest_point` the swept ellipse's (its offset 2 in stands its
+distance off with its foot at the point's own height, 3000 up the sweep and 500 below).
 **A ball rolls on a sheet** (`fillet::roll`, brep-bench's fillet/bezier-dome-one-edge): its centre
 runs on the faces' offsets read so, traced only round the run — the run's box grown by `r + 2r /
 sin(θ/2)`, as far as a ball rolling on past an end needs, its section's corner within `r /
