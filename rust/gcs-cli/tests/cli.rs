@@ -2328,6 +2328,66 @@ fn a_module_file_is_read_lossily_if_an_exchange_file_and_said_if_it_does_not_rea
     assert!(!result.status.success() && out.contains("no module `dims`"), "{out}");
     assert!(!out.contains("w = 30 mm"), "{out}");
     assert!(err.contains("parts/dims.sv: ") && err.to_lowercase().contains("utf-8"), "{err}");
+
+    // and a drawing's loader keeps the rule: the model's module is said where it does not read,
+    // once, and the ancestor's copy does not stand in for it
+    let sheet = dir.join("parts/doc.svd");
+    std::fs::write(&doc, "unit mm\nuse dims\nw := dims.width\nin std.top {\n  a := point\n  \
+                          fix((0, 0)) a\n  b := point\n  fix((w, 0)) b\n  l := line(a, b)\n}\n")
+        .unwrap();
+    std::fs::write(&sheet, "model m from \"doc.sv\"\nsheet s { sketch top(m) at (40mm, 110mm) }\n")
+        .unwrap();
+    let svg = dir.join("parts/doc.svg");
+    let result = run(&[sheet.to_str().unwrap(), "--output", svg.to_str().unwrap()]);
+    let (out, err) = (String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+    assert!(!result.status.success() && !svg.exists(), "{out}{err}");
+    assert!(err.contains("module `dims`: ") && err.contains("parts/dims.sv: ")
+            && err.to_lowercase().contains("utf-8"), "{err}");
+    assert_eq!(err.matches("dims.sv: ").count(), 1, "said once: {err}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A document is never its own module** (#993 stage 2): `foo.sv` saying `use foo` beside
+/// `foo.step` reads the body the file gives, rather than finding itself first; a `use` only the
+/// document itself would answer is a module there is none of (E070).
+#[test]
+fn a_document_named_like_the_file_it_reads_reads_the_file() {
+    let dir = std::env::temp_dir().join(format!("solventc-own-name-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/step_file/drilled_ap214.step"), dir.join("foo.step")).unwrap();
+    let doc = dir.join("foo.sv");
+    std::fs::write(&doc, "unit mm\nuse foo\npart := solid(foo)\n").unwrap();
+    let result = run(&[doc.to_str().unwrap(), "--where", "part.bounds"]);
+    let out = String::from_utf8_lossy(&result.stdout);
+    assert!(result.status.success() && out.contains("part.bounds.x1 = 40"), "{out}");
+    let me = dir.join("self.sv");
+    std::fs::write(&me, "unit mm\nuse self\n").unwrap();
+    let out = run(&[me.to_str().unwrap()]);
+    let out = String::from_utf8_lossy(&out.stderr);
+    assert!(out.contains("E070") && out.contains("no module `self`"), "{out}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A file found as `NAME.step` that is no exchange file** — empty, or text that does not start
+/// `ISO-10303-21;` — is refused at the `use` in the kernel's words (E072), once: never linked as
+/// an empty Solvent module, never parsed as Solvent.
+#[test]
+fn a_step_file_that_is_no_exchange_file_is_refused_at_the_use() {
+    let dir = std::env::temp_dir().join(format!("solventc-no-step-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("doc.sv");
+    std::fs::write(&doc, "unit mm\nuse bracket\npart := solid(bracket)\n").unwrap();
+    for (ext, text) in [("step", ""), ("stp", "component Rung(a: point) {\n}\nhello world\n")] {
+        let file = dir.join(format!("bracket.{ext}"));
+        std::fs::write(&file, text).unwrap();
+        let out = run(&[doc.to_str().unwrap()]);
+        let out = String::from_utf8_lossy(&out.stderr);
+        assert!(out.contains("doc.sv:2:1: error[E072]: `bracket`: ")
+                && out.contains("the file does not start `ISO-10303-21;`"), "{out}");
+        assert!(!out.contains("E100") && !out.contains("E101"), "said once: {out}");
+        std::fs::remove_file(file).unwrap();
+    }
     std::fs::remove_dir_all(dir).unwrap();
 }
 

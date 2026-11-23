@@ -2774,8 +2774,10 @@ test('an exchange file is handed over as it came and never asked for its uses', 
     const files = modules.related('use vendor.bracket\n');
     assert.deepEqual(files.map((f) => [f.name, f.path, f.provided]),
       [['vendor.bracket', 'vendor/bracket.step', true]]);
-    assert.deepEqual(modules.handed('use vendor.bracket\n'), [['vendor.bracket', step]]);
-    modules.install(modules.handed('use vendor.bracket\n'));
+    const list = modules.handed('use vendor.bracket\n');
+    assert.deepEqual(list.map(([name, , text]) => [name, text]), [['vendor.bracket', step]]);
+    assert.match(list[0][1], /^[0-9a-f]{16}$/);
+    modules.install(list);
     assert.equal(modules.source('vendor.bracket'), step);
   } finally {
     modules.forget();
@@ -2796,7 +2798,7 @@ test('related files include transitive libraries and host overrides without dupl
     // what the host handed over is marked, and the library's own is not
     assert.deepEqual(files.map((f) => f.provided), [true, true, false, false, false, false]);
     // installing a list replaces what was handed over with it
-    modules.install([['demo.a', a]]);
+    modules.install([['demo.a', modules.digest('demo.a')!, a]]);
     assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));
     assert.equal(files[0].text, a);
     assert.equal(files[1].text, b);
@@ -2870,4 +2872,69 @@ test('a sketch on a face is written by name through the edit API, and a plane al
   assert.ok(on.ok, JSON.stringify(on.diagnostics));
   assert.equal(on.facePlane(b0.index, 'b0.far'), 'v0');
   assert.ok(d.sketchOnFace(b0.index, 'b0.nothing').refused);
+});
+
+test('a module\'s text crosses to a worker once, and is named by its digest after', () => {
+  const step = 'ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n';
+  modules.provideProject('doc.sv', { 'doc.sv': 'use bracket\nuse demo.a\n', 'bracket.step': step,
+                                     'demo/a.sv': 'use std\n' });
+  try {
+    const list = modules.handed('use bracket\nuse demo.a\n');
+    assert.deepEqual(list.map(([name, , text]) => [name, text]), [['bracket', step], ['demo.a', 'use std\n']]);
+    // the core's digest, the same however often it is asked, and another text's another
+    assert.equal(list[0][1], modules.digest('bracket'));
+    assert.deepEqual(modules.handed('use bracket\nuse demo.a\n'), list);
+    assert.notEqual(list[0][1], list[1][1]);
+    // the page's account of one worker: each text sent once, a list sent again names them
+    const sent = new Set<string>();
+    const first = modules.sending(sent, list);
+    const second = modules.sending(sent, list);
+    assert.deepEqual(first, list);
+    assert.deepEqual(second, list.map(([name, d]) => [name, d]));
+    assert.equal(modules.modulesKey(first), modules.modulesKey(second));
+    // a worker puts the texts back as each message arrives, and installs a list once
+    const got = [modules.received(first), modules.received(second)];
+    assert.deepEqual(got[1], list);
+    modules.forget();
+    modules.install(got[1]);
+    assert.equal(modules.source('bracket'), step);
+    // a text it was not sent, and does not hold, is said rather than read as no module
+    assert.throws(() => modules.received([['other', '0123456789abcdef']]), /`other` was named without its text/);
+  } finally {
+    modules.forget();
+  }
+});
+
+test('a file found as NAME.step that is no exchange file is refused at the use, once', () => {
+  const doc = 'unit mm\nuse bracket\npart := solid(bracket)\n';
+  for (const text of ['', 'component Rung(a: point) {\n}\nhello world\n']) {
+    modules.provideProject('doc.sv', { 'doc.sv': doc, 'bracket.step': text });
+    const d = Document.read(doc);
+    try {
+      const said = d.diagnostics.map((x) => `${x.code} ${x.message}`);
+      assert.equal(said.length, 1, said.join('\n'));
+      assert.match(said[0], /^E072 `bracket`: .*the file does not start `ISO-10303-21;`/);
+    } finally {
+      d.dispose();
+      modules.forget();
+    }
+  }
+});
+
+test('a document named like the file it reads reads the file, never itself', async () => {
+  const { readFileSync } = await import('node:fs');
+  const step = readFileSync(new URL('../../../rust/gcs-core/tests/step_file/drilled_ap214.step',
+                                    import.meta.url), 'utf8');
+  const doc = 'unit mm\nuse foo\npart := solid(foo)\n';
+  assert.deepEqual(modules.searchPaths('foo', 'parts/foo.sv').slice(0, 3),
+    ['parts/foo.step', 'parts/foo.stp', 'foo.sv']);
+  modules.provideProject('parts/foo.sv', { 'parts/foo.sv': doc, 'parts/foo.step': step });
+  const d = Document.read(doc);
+  try {
+    assert.ok(d.ok, d.diagnostics.map((x) => x.message).join('\n'));
+    assert.equal(modules.source('foo'), step);
+  } finally {
+    d.dispose();
+    modules.forget();
+  }
 });

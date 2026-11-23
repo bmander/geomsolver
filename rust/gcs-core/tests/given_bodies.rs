@@ -697,3 +697,202 @@ fn the_solid_a_given_body_sweeps_is_swept() {
     assert!(v > drilled_volume() && boxed((lo, hi), [-30.0, 0.0, 0.0], [40.0, 50.0, 20.0], 1e-2),
             "{v} {lo:?} {hi:?}");
 }
+
+/// **A given body's build key reads the document's unit** (#993 stage 2, the review's R1): the
+/// file's numbers are millimetres whatever the document says, and a display is in the
+/// document's unit, so the same file read in millimetres and in inches is two builds — never the
+/// millimetre mesh drawn in the inch drawing.  The same document twice is one.
+#[test]
+fn a_given_bodys_key_reads_the_documents_unit() {
+    let key = |unit: &str| {
+        let e = solved(&format!("unit {unit}\nuse bracket\npart := solid(bracket)\n"));
+        (gcs_core::solid::field_key(&e.sketch, solid(&e, "part")),
+         gcs_core::solid::field_key(&e.sketch, solid(&e, "bracket")))
+    };
+    let (mm, inch) = (key("mm"), key("in"));
+    assert_eq!(mm, key("mm"));
+    assert_ne!(mm.0, inch.0);
+    assert_ne!(mm.1, inch.1);
+}
+
+/// **A given body is never an object, however it is read** (#993 stage 2, the review's R2): read
+/// through a set, by a claim, as a body's stock or as a tool, the objects are what the document
+/// makes of it — never the given body beside them in the report, the workspace, the cut list or an
+/// assembly's export, which all read `model::objects`.
+#[test]
+fn a_given_body_is_never_an_object() {
+    let names = |e: &Elaborated, of: Vec<usize>| -> Vec<String> {
+        of.into_iter().map(|i| e.sketch.solids[i].name.clone()).collect()
+    };
+    let cases: [(&str, &[&str]); 5] = [
+        ("unit mm\nuse bracket\nuse std\nb := solid({ p | p in bracket })\n", &["b"]),
+        ("unit mm\nuse bracket\nuse std\nb := solid({ p | p in bracket; p distance(>= 10mm, \
+          along: n) std.top })\n", &["b"]),
+        (&format!("{DRILL}claim every q in drill: q in bracket\n"), &["drill"]),
+        (&format!("{DRILL}part := solid(bracket)\ndrill cut part\n"), &["part"]),
+        (&format!("{DRILL}pin := solid(drill)\nbracket cut pin\n"), &["pin"]),
+    ];
+    for (src, want) in cases {
+        let e = solved(src);
+        assert!(e.sketch.solids.iter().any(|s| s.name == "bracket"), "{src}");
+        assert_eq!(names(&e, gcs_core::model::objects(&e.sketch)), want.to_vec(), "{src}");
+        assert_eq!(names(&e, gcs_core::overview::shown_objects(&e.sketch)), want.to_vec(), "{src}");
+        let cut = gcs_core::stock::cut_list(&e.sketch).unwrap();
+        let listed: Vec<String> = cut.iter().flat_map(|c| c.objects.clone()).collect();
+        assert_eq!(listed, want.to_vec(), "{src}");
+    }
+}
+
+/// **Two spellings of one set, by identity** (#993's review, R3): `solid({ p | p in bracket })`
+/// is the body whose stock is the given body, as `solid(bracket)` is — the same face names and
+/// the same STEP to the byte, and that STEP read back is the file's solid, every face on its own
+/// surface (`step_roundtrip::same`).
+#[test]
+fn two_spellings_of_a_given_body_are_one_solid() {
+    use crate::step_roundtrip::{measured, same, stages, Found};
+    use gcs_core::brep::{export, step::Fit, sweep::Say};
+    let e = solved("unit mm\nuse bracket\nwhole := solid(bracket)\nset := solid({ p | p in bracket })\n");
+    assert!(matches!(e.sketch.solids[solid(&e, "set")].def,
+                     gcs_core::model::SolidDef::Body { ref on, ref through, ref bound, .. }
+                     if on.is_empty() && through.is_empty() && bound.is_empty()));
+    // the built B-rep's names, which the report reads (no written path reaches a given face)
+    let names = |n: &str| -> Vec<String> {
+        let x = e.sketch.exact_solid(solid(&e, n)).unwrap_or_else(|m| panic!("`{n}`: {m}"));
+        x.brep.faces.iter().map(|f| f.name.clone()).collect()
+    };
+    assert_eq!(names("whole"), names("set"));
+    assert_eq!(names("set").len(), 7);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let step = |n: &str| {
+        let x = export::exact(&e.sketch, solid(&e, n), None, None, &say)
+            .unwrap_or_else(|m| panic!("{m:?}"));
+        export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"))
+    };
+    let text = step("set");
+    assert!(text == step("whole"), "the two spellings' STEP alike");
+    let original = stages(DRILLED).unwrap_or_else(|(by, r, _)| panic!("{by:?}: {r}"));
+    let back = stages(&text).unwrap_or_else(|(by, r, _)| panic!("read back, {by:?}: {r}"));
+    let b = &original[0].brep;
+    let tol = original[0].context.uncertainty.unwrap_or(1e-7);
+    same(b, &measured(b), &text, &back[0], Fit::Exact, tol, &mut Found::default())
+        .unwrap_or_else(|d| panic!("not the same solid: {d}"));
+}
+
+/// **A refused file's name still resolves, and only what it leaves unmade is quiet** (#993's
+/// review, R4): what is made of the refused body — a body over it, a set of its points, a body
+/// over that, a claim over it, a reading of it at an instant — is not made and says nothing, by
+/// what the statements' names resolve to; a fault of the statement's own, or a name a scope
+/// cannot see, is said as it is with a readable file.
+#[test]
+fn a_refused_file_leaves_unmade_only_what_is_made_of_it() {
+    let codes = |diags: &[Diag]| -> Vec<(Code, String)> {
+        diags.iter().map(|d| (d.code, d.message.clone())).collect()
+    };
+    let src = |file: &str, rest: &str| format!("unit mm\nuse {file}\nuse std\nuse std.solids (cut)\n\
+                                                part := solid({file})\n{rest}");
+    // an unrelated fault in a statement that reads the body made of it
+    let rest = "x := part.volume + nosuch\n";
+    let (_, readable) = read(&src("bracket", rest));
+    let (_, refused) = read(&src("assembly", rest));
+    let nosuch = (Code::E101, "`x`: no such entity: `nosuch`".to_string());
+    assert_eq!(codes(&readable), vec![nosuch.clone()], "{readable:?}");
+    assert_eq!(refused.len(), 2, "{refused:?}");
+    assert_eq!(refused[0].code, Code::E072);
+    assert_eq!(codes(&refused[1..]), vec![nosuch]);
+    // a definition's body cannot see the document's `part`, whatever its file
+    let rest = "component C() {\n  q := point in std.top\n  z := point in part\n}\nc := C()\n";
+    for file in ["bracket", "assembly"] {
+        let at = src(file, rest).find("z := point in part").unwrap() as u32 + 14;
+        let (_, diags) = read(&src(file, rest));
+        assert!(diags.iter().any(|d| d.code == Code::E101 && d.span.lo == at
+                                 && d.message == "no such entity: `part`"), "{file}: {diags:?}");
+    }
+    // and everything made of the refused body, however it is read, says nothing more
+    let rest = "set := solid({ p | p in assembly })\nother := solid(part)\nmore := solid(set)\n\
+                drill := solid(other)\nassembly cut other\nclaim every q in part: q in assembly\n\
+                cap := solid({ p | p in assembly; p distance(>= 10mm, along: n) std.top })\n\
+                moved := assembly at(under: std.z) 90deg\n";
+    let (e, diags) = read(&src("assembly", rest));
+    assert_eq!(codes(&diags).len(), 1, "{diags:?}");
+    assert_eq!(diags[0].code, Code::E072);
+    assert!(e.sketch.solids.is_empty(), "{:?}", e.sketch.solids);
+}
+
+/// **A given body read at an instant** (#993's review, R6): `bracket at(under: std.z) 90deg` is
+/// the body placed by the turn, as `part at(under: std.z) 90deg` is — a solid, never a frame.
+#[test]
+fn a_given_body_is_read_at_an_instant() {
+    let e = solved("unit mm\nuse bracket\nuse std\nmoved := bracket at(under: std.z) 90deg\n\
+                    part := solid(bracket)\nturned := part at(under: std.z) 90deg\n");
+    for name in ["moved", "turned"] {
+        assert!(close(volume(&e, name), drilled_volume()), "{name}: {}", volume(&e, name));
+        let x = e.sketch.exact_solid(solid(&e, name)).unwrap();
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        for v in &x.brep.vertices {
+            for k in 0..3 {
+                lo[k] = lo[k].min(v.p[k]);
+                hi[k] = hi[k].max(v.p[k]);
+            }
+        }
+        // the block from (0, 0, 0) to (40, 30, 20) turned a quarter about the world's z
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6);
+        assert!(near(lo, [-30.0, 0.0, 0.0]) && near(hi, [0.0, 40.0, 20.0]), "{name}: {lo:?} {hi:?}");
+    }
+    assert_eq!(gcs_core::model::objects(&e.sketch).len(), 3);
+}
+
+/// **One cause, one diagnostic, the fix in the author's words** (#993's review, R8): a given body
+/// read in a `ring` is refused as one (E106), not also as a name outside the ring (E021); a body
+/// word extending it through a definition's formal is refused as extended (E080), not also as
+/// read in a definition's body; and the fix an E080 names is the author's own statement, its word
+/// as written (`drill bore part`).
+#[test]
+fn a_given_body_refused_is_said_once_in_the_authors_words() {
+    let (_, diags) = read("unit mm\nuse bracket\nuse std\nring 3 about std.origin {\n  \
+                           part := solid(bracket)\n}\n");
+    assert_eq!(diags.iter().map(|d| d.code).collect::<Vec<_>>(), vec![Code::E106], "{diags:?}");
+    let src = format!("{DRILL}component Adds(B: solid, T: solid) {{\n  T cut B\n}}\n\
+                       a := Adds(bracket, drill)\n");
+    let (_, diags) = read(&src);
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].code, Code::E080, "{diags:?}");
+    assert!(diags[0].message.ends_with("`part := solid(bracket)`, and give `part` where it is \
+                                        given"), "{}", diags[0].message);
+    let src = format!("{DRILL}x bore B := B and {{ p | p not in x }}\ndrill bore bracket\n");
+    let (_, diags) = read(&src);
+    let at = src.find("drill bore bracket").unwrap() as u32;
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!((diags[0].code, diags[0].span.lo), (Code::E080, at), "{diags:?}");
+    assert!(diags[0].message.ends_with("`part := solid(bracket)`, then `drill bore part`"),
+            "{}", diags[0].message);
+}
+
+/// **No name a reader cannot write reaches them** (#993's review, R9): a given body's faces are
+/// named by no path until a face is chosen by what it is (stage 3), so the report lists none of
+/// them by its key — the body's area holds theirs — and a claim's witness says "a face of
+/// `bracket`".
+#[test]
+fn a_given_bodys_faces_are_said_as_its_faces() {
+    let e = solved(&format!("{DRILL}part := solid(bracket)\nclaim every q in drill: q in bracket\n"));
+    let rows = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n == "part"
+                                                 || n == "bracket");
+    assert!(rows.iter().any(|(n, _)| n == "part.area"), "{rows:?}");
+    assert!(rows.iter().all(|(n, _)| !n.contains("#given")), "{rows:?}");
+    let v = gcs_core::diagnose::judge_solids(&e.sketch);
+    let text = gcs_core::report::solid_claim_text(&v[0]);
+    assert!(text.contains("a face of `bracket`") && !text.contains("#given"), "{text}");
+    assert_eq!(gcs_core::model::Given::face_said("part.bracket.#given0"),
+               "a face of `part.bracket`");
+    assert_eq!(gcs_core::model::Given::face_said("drill.hole"), "drill.hole");
+}
+
+/// **Statements no text holds are numbered apart** (#993's review, R10): a given body's
+/// declaration past every module's statements, a distance's foot's at the very top, so neither is
+/// ever another's, nor a statement of the document or a module.
+#[test]
+fn statements_no_text_holds_are_numbered_apart() {
+    use gcs_core::modules::{FOOT_STMTS, GIVEN_STMTS, MODULE_STMTS};
+    assert!(MODULE_STMTS < GIVEN_STMTS);
+    // a given module's index is far below the room between the two ranges
+    assert!(GIVEN_STMTS.checked_add(1 << 20).is_some_and(|top| top < FOOT_STMTS - 2));
+}

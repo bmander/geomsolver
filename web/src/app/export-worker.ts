@@ -6,7 +6,7 @@
  * milliseconds, so it runs here, off the thread that draws and beside the mesh worker, whose
  * refinement an export must not stop. Like that worker it holds its own copy of the core: it
  * elaborates the page's text and writes the page's parameter values over the result. */
-import { install } from '../core/modules.js';
+import { install, received, type Handed } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import * as solids from '../core/mesh.js';
@@ -15,8 +15,9 @@ import * as solids from '../core/mesh.js';
 export interface ExportJob {
   id: number;
   text: string;
-  /** The modules the page handed over and the text reaches, as `[use name, text]`. */
-  modules: [string, string][];
+  /** The modules the page handed over and the text reaches, as `[use name, digest, text]`, a text
+   *  the worker was sent before left out (`modules.sending`). */
+  modules: Handed[];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
   solid: number;
@@ -37,6 +38,8 @@ const ready = initCore();
 
 scope.onmessage = (ev) => {
   const job = ev.data;
+  try { job.modules = received(job.modules); }
+  catch (e) { scope.postMessage({ id: job.id, error: String(e) }); return; }
   ready.then(() => {
     install(job.modules);
     const doc = Document.read(job.text);

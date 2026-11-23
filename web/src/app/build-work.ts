@@ -11,16 +11,17 @@
  * one), is the same elaboration with the page's values written over it — only a structural edit,
  * or other modules, is read again.  Either way its own core must name the job as the page's did
  * (the same solid, name and key), or the build would be another object's. */
-import { install } from '../core/modules.js';
+import { install, modulesKey, type Handed } from '../core/modules.js';
 import { ExactBuilder, objectJobs, type ExactProgress, type ObjectJob } from '../core/objects.js';
 import { Document } from '../core/program.js';
 
 /** The drawing a job is of, as the page holds it. */
 export interface Drawing {
   text: string;
-  /** The modules the page handed over and the text reaches, as `[use name, text]`: the library's
-   *  own the worker's core has already. */
-  modules: [string, string][];
+  /** The modules the page handed over and the text reaches, as `[use name, digest, text]`: the
+   *  library's own the worker's core has already, and a text the worker was sent before left out
+   *  (`modules.sending`, put back as the message arrives, `modules.received`). */
+  modules: Handed[];
   /** The page's parameter values, so the worker's drawing is the page's and not a fresh solve. */
   x: Float64Array;
 }
@@ -63,7 +64,7 @@ export class BuildWork {
   /** The drawing a job is of, as this worker's core reads it: the one held where the text is
    *  its, or a numeric edit of it, else read again (`fresh`); the page's values written over it. */
   private document(drawing: Drawing): { doc: Document; fresh: boolean } {
-    const modules = JSON.stringify(drawing.modules);
+    const modules = modulesKey(drawing.modules);
     const h = this.held;
     if (h && h.modules === modules && h.doc.live) {
       const same = h.doc.text === drawing.text;
@@ -115,7 +116,7 @@ export class BuildWork {
       let { doc, fresh } = this.document(ask.drawing);
       // a document kept across a numeric edit that names the job otherwise is read afresh, once:
       // what `retext` took is the text, and a number only the elaboration writes (a depth) is not
-      if (!fresh && this.unpaired(job)) doc = this.read(ask.drawing, JSON.stringify(ask.drawing.modules));
+      if (!fresh && this.unpaired(job)) doc = this.read(ask.drawing, modulesKey(ask.drawing.modules));
       const why = this.unpaired(job);
       if (why) throw new Error(why);
       builder = ExactBuilder.create(doc.sketch, job.solid);

@@ -1639,17 +1639,21 @@ fn part_colours(sk: &Sketch, e: &Elaborated, s: &Source, opts: &Opts)
 }
 
 /// A file a drawing reads (a `model`, a `use`), `path` relative to the file `from` that names it:
-/// its canonical path, which an import cycle and a model's identity are told by, and its text.
-fn load_beside(path: &str, from: &str) -> Option<(String, String)> {
+/// its canonical path, which an import cycle and a model's identity are told by, and its text —
+/// or, for one that is there and does not read, why, which the drawing's compiler says.
+fn load_beside(path: &str, from: &str) -> gcs_core::drawing::Loaded {
     let p = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new(".")).join(path);
-    let text = read_file(&p)?;
-    Some((canonical(&p)?, text))
+    let text = match read(&p)? {
+        Ok(text) => text,
+        Err(why) => return Some(Err(why)),
+    };
+    Some(Ok((canonical(&p)?, text)))
 }
 
 /// The module `name` a document at `source` `use`s: the first of `modules::search_paths` that is
 /// a file — `NAME.sv`, `NAME.step`, `NAME.stp` beside the document, then in each of its
-/// ancestors — else the module library compiled in.  The core opens no file; this is where one is
-/// opened for it.
+/// ancestors, never the document itself — else the module library compiled in.  The core opens
+/// no file; this is where one is opened for it.
 fn beside(name: &str, source: &str) -> Option<String> {
     let dir = std::path::Path::new(source).parent().map(|d| d.to_path_buf()).unwrap_or_default();
     match gcs_core::modules::search_paths(name, source).iter()
@@ -1662,19 +1666,29 @@ fn beside(name: &str, source: &str) -> Option<String> {
 }
 
 /// A file a document reads (a module, a drawing's model or style), as `modules::decode` reads
-/// its bytes: UTF-8, or an exchange file whose few other bytes are in its strings.  `None` for
-/// one that is not there; one that is there and does not read is said on stderr, in the system's
-/// words, as a document that does not read is.
+/// its bytes where it found them: UTF-8, or an exchange file whose few other bytes are in its
+/// strings.  `None` for one that is not there; one that is there and does not read is said on
+/// stderr, in the system's words, as a document that does not read is.
 fn read_file(p: &std::path::Path) -> Option<String> {
-    let read = std::fs::read(p).and_then(|bytes| gcs_core::modules::decode(bytes)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)));
-    match read {
+    match read(p)? {
         Ok(text) => Some(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
-            eprintln!("solventc: {}: {e}", p.display());
+        Err(why) => {
+            eprintln!("solventc: {why}");
             None
         }
+    }
+}
+
+/// `read_file`, saying nothing: why a file that is there does not read, beside its path.
+fn read(p: &std::path::Path) -> Option<Result<String, String>> {
+    let read = std::fs::read(p).and_then(|bytes| {
+        gcs_core::modules::decode(&p.to_string_lossy(), bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    });
+    match read {
+        Ok(text) => Some(Ok(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => Some(Err(format!("{}: {e}", p.display()))),
     }
 }
 

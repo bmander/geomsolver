@@ -397,7 +397,7 @@ fn the_drawing_compiles_from_the_exact_drill() {
         let name = p.file_stem()?.to_str()?.to_string();
         let text = std::fs::read_to_string(&p).ok()?;
         let text = fixtures::drill::configure(&name,text,&[("flutes","1"),("fluted_length","6mm"),("point","0")]);
-        Some((p.to_string_lossy().into_owned(),text))
+        Some(Ok((p.to_string_lossy().into_owned(),text)))
     }).unwrap();
     assert!(svg.contains("<svg"));
     // the overall length, 30 mm of shank and 6 of flutes, and the diameter
