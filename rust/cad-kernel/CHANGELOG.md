@@ -8,14 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- **A blend screwed round reads its foot near by its lead** (#1004): #1002 (0.22.0) read a blend's foot
-  near by its sections' size, and a section longer than the lead it is screwed at comes back
-  within the lead of itself. The screw's domain in a thread with sharp crests, its edges 116 long
-  screwed thirty turns at a lead of 1, kept a stationary foot a tenth of the lead off a point of
-  its own rim, and the thread, built before #1002, was refused. A blend's foot is near by its
-  sections' size and no more than the rise a turn of a screw carrying it. And a level line's
-  screwed sheet keeps Newton's foot from its closed-form start where it reads farther only by the
-  rounding of the point's coordinates: a point of its first rim was searched onto the next turn.
+- **A blend screwed round reads its foot near by its lead** (#1004): #1002 (0.22.0) read a
+  blend's foot near by its sections' size, and a section longer than the lead it is screwed at
+  comes back within the lead of itself. The screw's domain in a thread with sharp crests, its
+  edges 116 long screwed thirty turns at a lead of 1, kept a stationary foot a tenth of the lead
+  off a point of its own rim, and the thread, built before #1002, was refused. A blend's foot is
+  near by its sections' size and no more than the rise a turn of a screw carrying it. And a level
+  line's screwed sheet keeps Newton's foot from its closed-form start where it reads farther only
+  by the rounding of the point's coordinates: a point of its first rim was searched onto the next
+  turn.
 
 ## [0.22.0] - 2026-11-23
 
