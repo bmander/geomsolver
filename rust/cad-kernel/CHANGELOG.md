@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.22.1] - 2026-11-23
+
 - **A blend screwed round reads its foot near by its lead** (#1004): #1002 (0.22.0) read a
   blend's foot near by its sections' size, and a section longer than the lead it is screwed at
   comes back within the lead of itself. The screw's domain in a thread with sharp crests, its
