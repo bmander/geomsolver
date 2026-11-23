@@ -1293,7 +1293,9 @@ it is evaluated — meshed at the report's fineness, CADGenBench 201's 435 faces
 facets and half a minute — only where its box is asked, and a containment claim's witness says one as `` a face of `bracket` ``
 (`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
 keeps the face's key, for a host to pick it by
-(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`).
+(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`); the export's warning of faces
+thinner than its tolerance still names them by key — `` the first, `input.#given231`, 7.835 µm
+across, beside `input.#given229` `` on CADGenBench 246 — and is open.
 **A body whose stock is another solid, nothing on,
 through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, the two
 evaluations standing alike), so a containment between them, either way, holds exactly — its
