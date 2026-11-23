@@ -2696,6 +2696,23 @@ at the call's tolerance, volume 12.2377154879 against the old road's 12.23771542
 itself), its mesh's volume within its bar, and 19 119 of 20 000 seeded points read clear of the
 boundary each a member of the solid exactly where the depth is below nought, in some 40 s, nearly
 all of it the sheet `−`'s trace (`swept_tube::the_half_turn_builds_by_the_tube_road`, slow tier).
+**Each edge's bar:** a traced run, a rim and a cut are fitted to a tenth of the tolerance on both
+their charts (their curve within it of each chart's point through its pcurve); a join's partner
+pcurve is held to the tolerance itself. That is sound because the join is what the two charts agree
+to only to the tolerance: inside a swallowtail point's disc every far cover is within the tolerance
+(the disc's own definition), so the double curve's two leaves stand within it of one another and
+no reading places the curve closer; the corner's join is checked within the tolerance of the end
+pose at every chord's point and middle. The sewing measures each edge's gap as its tolerance, and
+`check` allows it. On the half turn the normal-form join reads 2.29e-6 (of 3.2e-6), the corner's
+straight join 7.0e-9, the windows' cuts 1.06e-7 (the nets' fit), every other edge under 6.1e-8;
+`Brep::misfits` lists nothing at the call's tolerance nor at the size's (`geom::tolerance`, 7.9e-9
+over its diagonal): each edge's own measured tolerance is what `check` holds it to.
+**The two end poses meeting is not yet looked for** (the full turn's, `depth::ends_met`'s two short
+arcs on the old road): it is the depth's zero set on an end pose where the cover is the other end
+pose, as every other seam — `seams` on `Chart::End(k)` reads it already, `depth::cover` marching the
+whole roll to its far end — so the same tracer serves; what is not yet built is reading those runs
+(class: the other end, partner by `Tube::on_end` on the other pose) and their ends where they meet
+a contact circle, which is a rim crossing on an end pose's own rim rather than a sheet's.
 The old road stays what `closed::ring` calls. **The next cases, as checks:** the crossed reverse
 member with its roll's end at 5° (no pinch; the old road misclassifies a cell and refuses `Wrong`)
 builds in 0.4 s — 8 faces, `check`, volume 1.5608532821, no volume known apart, held to its mesh and
