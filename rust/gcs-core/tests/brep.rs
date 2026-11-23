@@ -3453,3 +3453,72 @@ fn a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere() {
         crate::common::close(volume(&both),4.*PI*r.powi(3)/3.+slab-shared([lo[0],hi[0]],[lo[1],hi[1]]));
     }
 }
+
+/// **A face's measures cut where its uses cross its net's knot lines** (#880 T1f,
+/// `props::crossings`), with no sweep: the plane `z = 1` read through a net linear in each way,
+/// `S(u, v) = (x(u), v, 1)`, its `u` knots three hundred crowded toward the middle (as the tube
+/// road's graded nets crowd toward a pinch) and `x` bent at every one of them, and the face over the
+/// triangle `v ≤ u` — its diagonal's pcurve one long line across every knot line, its edge's curve
+/// the chord (the measures are read in the face's parameters, through its pcurves). `G`, gathered
+/// along `u`, is then linear between knots and bent at each, so a rule read over the diagonal
+/// whole misses (uncut, both read 1.2e-10 off, settled in 25 s); cut at each crossing, its area
+/// and its flux are the closed form's, `x(1) − ∫₀¹ x(u) du`, the trapezoids of `x` summed exactly
+/// (4e-16 off, in a second).
+#[test]
+fn a_faces_measures_are_cut_at_its_nets_knot_lines() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::nurbs::{BSpline,Net};
+    use gcs_core::brep::topo::{Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
+    use std::sync::Arc;
+    let n = 150;
+    let mut ks: Vec<f64> = (0..=2*n).map(|k| { let s = (k as f64-n as f64)/n as f64; 0.5+0.5*s*s.abs().powi(2) }).collect();
+    ks[0] = 0.;
+    ks[2*n] = 1.;
+    // (a zigzag of a third of the knots' spacing on a parabola: `x` rising, its rate jumping by
+    // the rate itself at every knot)
+    let x: Vec<f64> = ks.iter().enumerate().map(|(k,&u)| {
+        let gap = if k == 0 { ks[1]-ks[0] } else if k == 2*n { ks[k]-ks[k-1] } else { (ks[k+1]-ks[k]).min(ks[k]-ks[k-1]) };
+        u+0.5*u*u+if k % 2 == 0 { gap/3. } else { -gap/3. }
+    }).collect();
+    let mut uknots = vec![0.];
+    uknots.extend(ks.iter().copied());
+    uknots.push(1.);
+    let net = Net {du:1,dv:1,uknots,vknots:vec![0.,0.,1.,1.],poles:x.iter().map(|&xi| vec![[xi,0.,1.],[xi,1.,1.]]).collect(),weights:None};
+    net.check().unwrap();
+    let surface = gcs_core::brep::geom::Surface::BSpline(gcs_core::brep::geom::Frame::WORLD,Arc::new(net));
+    let line = |p: [f64;3],q: [f64;3]| BSpline {degree:1,knots:vec![0.,0.,1.,1.],poles:vec![p,q],weights:None};
+    let mut b = Brep {vertices:Vec::new(),edges:Vec::new(),faces:Vec::new()};
+    let (o,r,t) = (b.vertex([x[0],0.,1.]),b.vertex([x[2*n],0.,1.]),b.vertex([x[2*n],1.,1.]));
+    // (each edge with its curve, its ends and its pcurve, `[0, 1]` both)
+    let mut uses = Vec::new();
+    for (v,(p,q),(pp,qq),reversed) in [([o,r],([x[0],0.,1.],[x[2*n],0.,1.]),([0.,0.,0.],[1.,0.,0.]),false),
+        ([r,t],([x[2*n],0.,1.],[x[2*n],1.,1.]),([1.,0.,0.],[1.,1.,0.]),false),
+        ([o,t],([x[0],0.,1.],[x[2*n],1.,1.]),([0.,0.,0.],[1.,1.,0.]),true)] {
+        b.edges.push(Edge {curve:EdgeCurve::Curve(Curve::BSpline(Arc::new(line(p,q)))),t:[0.,1.],v,tol:0.});
+        uses.push(Coedge {edge:(b.edges.len()-1) as u32,reversed,pcurve:Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(line(pp,qq)))))});
+    }
+    b.faces.push(Face {surface,reversed:false,loops:vec![uses],name:"triangle".into()});
+    let integral: f64 = (0..2*n).map(|k| 0.5*(x[k]+x[k+1])*(ks[k+1]-ks[k])).sum();
+    let want = x[2*n]-integral;
+    let measured = |b: &Brep| (gcs_core::brep::props::area(b,&b.faces[0]),
+        gcs_core::brep::props::terms(b,0).iter().flatten().map(|t| t.0+t.1).sum::<f64>());
+    let (area,flux) = measured(&b);
+    assert!((area/want-1.).abs() <= 1e-12,"the area {area}, the closed form's {want}: {:e} apart",area-want);
+    assert!((flux/want-1.).abs() <= 1e-12,"the flux {flux}, the closed form's {want}: {:e} apart",flux-want);
+    // the hypotenuse straight in space instead, the plane's meeting with the upright plane through
+    // it, traced, and inverted onto the net (`Pcurve::Inverse`): its preimage crosses every knot
+    // line too, and the face is the triangle, half of `x(1) − x(0)`. A traced use is read by its
+    // distance along its chord in space (`along_trace`), where `G dv` follows the surface rather
+    // than its parameters, so it takes no cut: uncut, 0 and 4e-16 off
+    let (p,q) = (b.vertices[o as usize].p,b.vertices[t as usize].p);
+    let d = [(q[0]-p[0])/(q[0]-p[0]).hypot(q[1]-p[1]),(q[1]-p[1])/(q[0]-p[0]).hypot(q[1]-p[1]),0.];
+    let upright = gcs_core::brep::geom::Surface::Plane(gcs_core::brep::geom::Frame {o:p,x:d,y:[0.,0.,1.],z:[d[1],-d[0],0.]});
+    let pts: Vec<[f64;3]> = (0..=64).map(|k| { let f = k as f64/64.; [p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f,1.] }).collect();
+    let traced = gcs_core::brep::geom::Traced {a:b.faces[0].surface.clone(),b:upright,pts,closed:false};
+    b.edges[2] = Edge {curve:EdgeCurve::Curve(Curve::Traced(Arc::new(traced))),t:[0.,64.],v:[o,t],tol:0.};
+    b.faces[0].loops[0][2].pcurve = Pcurve::Inverse {a:[0.,0.],b:[1.,1.]};
+    let want = 0.5*(x[2*n]-x[0]);
+    let (area,flux) = measured(&b);
+    assert!((area/want-1.).abs() <= 1e-12,"along the trace, the area {area}, the closed form's {want}: {:e} apart",area-want);
+    assert!((flux/want-1.).abs() <= 1e-12,"along the trace, the flux {flux}, the closed form's {want}: {:e} apart",flux-want);
+}
