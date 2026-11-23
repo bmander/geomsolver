@@ -1262,7 +1262,9 @@ tag 16 and the digest in two 32-bit halves. Everything that reads a solid throug
 build read, is its B-rep's mesh (`evaluated::brep_facets`, shared with `from_brep`), never an empty
 term. Its material field is `BuiltField` where every face's surface has an exact foot, else refused
 naming the surface (`field/document.rs`). Its faces are listed by no `face_paths` (no written path
-reaches them; stage 3 chooses them by predicate). The OCCT route refuses `Node::Given`, naming
+reaches them; stage 3 chooses them by predicate); what reads the built B-rep's names shows them as
+they are, `--where part` as `part.bracket.#given0.area` and a containment claim's witness as
+`between bracket.#given0 and bracket.#given2`. The OCCT route refuses `Node::Given`, naming
 `--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate: `tests/given_solids.rs` —
 `its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
 file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,

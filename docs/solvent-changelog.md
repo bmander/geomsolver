@@ -4,6 +4,28 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.230] A given body: a `use` of a STEP file names the body it gives** (#993). A text a `use`
+resolves to that is an ISO 10303-21 exchange file (its first token `ISO-10303-21;`) is a *given
+module* (§14.4): never parsed, it contributes one name, the solid the file gives, by the module's
+whole path. `use bracket` then `part := solid(bracket)` is the body `bracket.step` gives, each face
+on its own surface, and exports as that solid. The name is read wherever a solid's is —
+`solid(bracket)`, `p in bracket` in a set's body, a body word's tool, a claim — at the root of a
+file that `use`s it; what nothing reads makes nothing, and one module gives one body. It is never
+extended: `drill cut bracket` (and `union`, `common`, and `bracket and { … }`) is E080 naming the
+body to make, `part := solid(bracket)`, then `drill cut part`. It stands where the file puts it, in
+the document's own space, its lengths carried to the document's `unit`; a read in a definition's
+body, a `ring`, or under `in` of a frame not the world's is E106 (placing it is later work). A file
+that gives no one solid is E072 at the `use`, once — the kernel's words with the module's name in
+front (`` `shell`: #15: the file holds a shell-based surface model (SHELL_BASED_SURFACE_MODEL) and
+no solid ``), or `` `twice`: the file gives 2 solids, and a given body is one solid `` — and
+whatever a statement reading the name would say besides is left unsaid. `use bracket (x)` is E101
+(`` `bracket` defines no `x` ``); a top-level `bracket` of the file's own beside `use bracket` is
+E071. Hosts look for `NAME.sv`, then `NAME.step`, then `NAME.stp`, in each directory nearest
+first, then the library. Through 0.229 `use bracket` beside `bracket.step` was E070 (`` no module
+`bracket` ``) and `solid(bracket)` E101 (`` no such entity: `bracket` ``); no document named a file
+it did not write. The experiment, the spellings tried and why this one was taken:
+[given-bodies.md](given-bodies.md).
+
 **[0.229] Where a round ends, what a face and a round's ball are, and a round over a whole body
 walked by its edges** (#994). The CADGenBench fixtures re-run on v0.1.28 found rounds whose exact
 construction left out what their words say, a regression where two faces lie on one plane, and

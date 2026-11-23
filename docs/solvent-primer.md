@@ -1074,6 +1074,7 @@ use engine.dims          // engine/dims.sv beside the document or an ancestor, e
 use std                  // the datums (1.12) and std.Turned
 use std.sets             // std.sets.Sphere, std.sets.Cylinder, std.sets.Cone, … (1.13)
 use hardware             // fasteners and fittings, in mm
+use bracket              // bracket.step beside the document: the body it gives (1.14)
 use std.place (horizontal, vertical)   // and import those two words bare
 ```
 
@@ -1123,13 +1124,18 @@ the old spelling is refused naming the new.
 A module is a Solvent document read for its components, relation words and top-level values and
 groups; its own drawing is not drawn, and neither is a parameter that runs (`param spin: Angle over
 (…)`, 1.6): it is the drawing's, so a part file that declares one to scrub its own joint is used as
-it stands, and nothing outside it names the parameter. **Nothing is imported bare unless the `use` names it**: a
+it stands, and nothing outside it names the parameter. **A module may be a STEP file instead**
+(0.230): where `bracket.step` (or `.stp`) is found for `use bracket`, the module is the one body
+the file gives, named `bracket` (*A given body*, 1.14). Hosts look for `NAME.sv`, then
+`NAME.step`, then `NAME.stp` in each directory, the document's own first, then its ancestors, then
+the library. **Nothing is imported bare unless the `use` names it**: a
 module's names are written by full path — `engine.parts.Rod(…)`, `engine.dims.D` — or bare where
 listed in brackets. Imports are per file, not transitive, with no prelude; a relation word is only
 ever bare, so a file using one imports it, and `std.front` needs the file's own `use std`.
 Errors: a missing module E070; an import the module lacks E101; a name imported twice, from two
 modules, over the file's own, or over a built-in word E071; two components or words of one name in
-a file E071. A module's own error is reported at the `use` that brought it in. `engine.sv` is the
+a file E071; a STEP file that gives no one solid E072, at the `use`. A module's own error is
+reported at the `use` that brought it in. `engine.sv` is the
 worked case: a dimension module, a parts module and one module per part.
 
 **Relation words.** A file defines a word at its top level: operands, parameters in parentheses,
@@ -2397,6 +2403,106 @@ so a round written by hand is built too). Its numbers may be the drawing's: leav
 the set's surface is (`heel := std.sets.Sphere(apex)`, `M distance(w / 2) { q | q not in heel }`), and
 the solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
+
+#### A given body
+
+A part you did not draw — bought, cast, or modelled elsewhere — comes as a STEP file, and the
+document names it (0.230):
+
+```
+unit mm
+use bracket                 // bracket.step (or bracket.stp) beside the document or an ancestor
+part := solid(bracket)      // the points of the body the file gives
+```
+
+A `use` whose file is a STEP file (its text starts `ISO-10303-21;`, whatever the file is called)
+is a **given module**: never read as Solvent, it gives one name, the solid in the file, named by
+the module's whole path (`use vendor.bracket` gives `vendor.bracket`, from
+`vendor/bracket.step`). That name is a solid, and a set, wherever a solid's name is read, at the
+document's root:
+
+| written | what it is |
+|---|---|
+| `part := solid(bracket)` | the body whose stock is the given body: the one object, exported as the file's solid |
+| `solid({ p \| p in bracket; p distance(>= 10mm, along: n) std.top })` | the points of it a set's other terms keep (its upper half, 10869) |
+| `drill cut part` | a hole drilled in the body made of it (below) |
+| `bracket cut pin` | the given body as a body word's tool: `pin` less the bracket |
+| `claim every q in pin: q in part` | a containment claim over it |
+
+- **Never extend the given body; name the body you make of it.** `drill cut bracket` is E080 —
+  "`bracket` is the body a file gives, and it is never extended: name the body this makes of it,
+  `part := solid(bracket)`, then `drill cut part`" — and so are `union`, `common` and `bracket and
+  { p | p not in drill }`.
+- **What is not read is not there.** `use bracket` alone makes no solid (`--step` says "this
+  document has no solid to write"); `part := solid(bracket)` makes one object, `part`, in the
+  report, the cut list and an assembly's export.
+- **It stands where the file puts it**: the file's origin and axes are the world's, and an `in
+  std.top { … }` around the statement moves nothing. Read it in a component's body, a `ring`, or
+  an `in f { … }` of a frame of your own and it is E106 — "placing a given body is not built yet
+  (#993 stage 5), so read it at the document's root". Draw what you add in the world's planes, at
+  the file's coordinates.
+- **Units are the file's, carried to the document's.** A `unit in` document reading a millimetre
+  file gets the same body in inches (`part.volume = 1.32654`, for 21738.05 mm³); a file written in
+  inches, metres or feet reads to its size.
+- **A file that is not one solid is said once, at the `use`**, E072 in the reader's words:
+  `` `shell`: #15: the file holds a shell-based surface model (SHELL_BASED_SURFACE_MODEL) and no
+  solid ``, `` `pair`: #376: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies
+  are not read yet ``, `` `twice`: the file gives 2 solids, and a given body is one solid ``.
+  Nothing that reads the name says more.
+- **Its faces have no names you can write.** The report lists them as `part.bracket.#given0` and
+  so on, in the file's order; nothing in a document reaches one, so a face of a given body cannot
+  yet be rounded, deleted or moved (#993 stages 3 and 4). `use bracket (x)` is E101, and a
+  top-level `bracket` of your own beside `use bracket` E071.
+- **Do not name the document after the file.** In one directory `NAME.sv` is found before
+  `NAME.step`, so `bracket.sv` beside `bracket.step` reads itself for `use bracket` and says
+  `` no such entity: `bracket` ``.
+
+`bracket.step` here is a 40 × 30 × 20 block drilled through along z by a hole of radius 6 about
+(20, 15); a second hole of radius 3 is drilled at (8, 8):
+
+```
+unit mm
+use std
+use std.solids (cut)
+use bracket
+
+part := solid(bracket)
+
+in std.top {
+  o := point
+  fix((8, 8)) o
+  hole := circle(center: o)
+  radius(3) hole
+}
+drill := solid(std.solids.Through(face(hole)))
+drill cut part
+```
+
+```
+$ solventc drilled.sv --where part
+drilled.sv: solved
+  1 params, 1 equations, structural rank 1; DOF 0
+  part.area = 6048.23
+  part.bounds.x0 = 0
+  part.bounds.x1 = 40
+  part.bounds.y0 = 0
+  part.bounds.y1 = 30
+  part.bounds.z0 = 0
+  part.bounds.z1 = 20
+  part.bracket.#given0.area = 600
+  part.bracket.#given1.area = 800
+  part.bracket.#given2.area = 1058.64
+  part.bracket.#given3.area = 800
+  part.bracket.#given4.area = 1058.64
+  part.bracket.#given5.area = 600
+  part.bracket.#given6.area = 753.974
+  part.drill.hole.area = 376.974
+  part.volume = 21172.6
+```
+
+`24000 − 720π − 180π = 21172.57`. `--step` writes it by the core's kernel, the default; with
+nothing cut, `part := solid(bracket)` alone exports the file's solid, the same faces on the same
+surfaces.
 
 #### Developable panels
 
@@ -4074,6 +4180,8 @@ land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 
    outside)` and its pattern `std.panels.Development(panel, s, d: t / 2) in plane`, placed by two
    relations.
 10. Build solids from the solved profiles, then write their presentation in a `.svd`.
+    A part you are given as a STEP file is `use NAME` and `part := solid(NAME)`: draw only what
+    you change, and state it of `part`, never of the given body (1.14, *A given body*).
 
 The worked corpus is `rust/examples/`, each file headed with its purpose. Read `rect_fillets.sv`
 first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are the largest.
