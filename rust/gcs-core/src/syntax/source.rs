@@ -104,9 +104,10 @@ pub struct Module {
     /// Whether the file has a `preview { … }`: a drawing of its own, where the dimensions its
     /// components state are drawn rather than in a document using them (`Constraint::elsewhere`).
     pub previewed: bool,
-    /// **A given module's file and what was read from it** (#993 stage 2, `modules::is_step`):
-    /// `None` for a Solvent module.  A given module's `text` is empty, its `root` and `uses`
-    /// too; its file's text is here, shared with every program linked from it.
+    /// **What was read from a given module's file** (#993 stage 2, `modules::is_step`): `None` for
+    /// a Solvent module.  A given module's `text` is empty, its `root` and `uses` too; what its
+    /// file gave is here, shared with every program linked from it, and its file's text is the
+    /// host's.
     pub given: Option<std::sync::Arc<crate::modules::Given>>,
 }
 
@@ -175,11 +176,12 @@ impl Program {
         }
     }
 
-    /// A module's text by name, for a re-parse that links again without asking the host — a
-    /// given module's its file's (#993 stage 2), which a host may ask for.
+    /// A Solvent module's text by name, for a re-parse that links again without asking the host.
+    /// A given module's file is the host's, which the program keeps no copy of (#993 stage 2):
+    /// `relink` hands its reading on instead.
     pub fn module_text(&self, name: &str) -> Option<String> {
-        let m = self.modules.iter().find(|m| m.name == name)?;
-        Some(m.given.as_ref().map_or_else(|| m.text.clone(), |g| g.text.clone()))
+        let m = self.modules.iter().find(|m| m.name == name && m.given.is_none())?;
+        Some(m.text.clone())
     }
 
     /// The text this program was last rendered or parsed from.  Every `Span` indexes it.

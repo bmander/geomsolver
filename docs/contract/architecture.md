@@ -116,13 +116,17 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   bytes and the path the host found them at as `modules::decode` reads them, an exchange file
   lossily where its strings are not UTF-8, and refuses any other text that is not UTF-8 with 0 and
   `gcs_last_error`, never storing an empty module (`host_modules.rs`; `core.test.ts`, "an exchange
-  file is handed over as it came and never asked for its uses").  **A module's text crosses to a
-  worker once** (#993 stage 2): `gcs_module_digest` names the text a `use` reads by the core's
-  `modules::digest` (taken once, as it is handed over), so `related` copies a text out of the core
-  only when its digest is new, a job names each module `[name, digest, text]` with the text left
-  out where that worker was sent it last (`modules.sending`, the page's account of each worker;
-  `modules.received`, the worker's, as each message arrives), and a worker tells two lists apart
-  by `modulesKey` — names and digests — installing a list its core has already not again
+  file is handed over as it came and never asked for its uses").  It keeps what `link` is handed
+  (`modules::Found`: the text, shared, whether its path names an exchange file, and its digest)
+  and the path beside it, which `gcs_module_path` answers, so a host passing a module on passes
+  its path with it.  **A module's text crosses to a worker once** (#993 stage 2):
+  `gcs_module_digest` names the text a `use` reads by the core's `modules::digest` (taken once, as
+  it is handed over, and what a fresh link finds a file read before by), so `related` copies a
+  text out of the core only when its digest is new, a job names each module `[name, digest, path,
+  text]` with the text left out where that worker was sent it last (a `ModuleOutbox`, the page's
+  account of each worker, made with it; `modules.received`, the worker's, as each message
+  arrives), and a worker tells two lists apart by `modulesKey` — names, digests and paths —
+  installing a list its core has already not again
   (`core.test.ts`, "a module's text crosses to a worker once, and is named by its digest after";
   `object-builds.test.ts`, "a module's text crosses to a pool worker once, …"; `host_modules.rs`).  The dev server serves `rust/examples/` as
   `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
@@ -149,8 +153,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   file's bytes through `modules::decode`, given the path they found it at: UTF-8 as it stands, an
   exchange file lossily (its geometry is ASCII; real files carry Latin-1 in their strings),
   anything else refused.  **A file found by an exchange file's name is one whatever its text**:
-  an empty `bracket.step`, or one not starting `ISO-10303-21;`, is handed on marked so (`is_step`
-  answers it), and the kernel's reader refuses it at the `use` in its own words, once — E072
+  the resolver `modules::link` takes answers what the host found (`modules::Found`, `Found::at` a
+  path), so an empty `bracket.step`, or one not starting `ISO-10303-21;`, is given to the kernel's
+  reader as found by that name, never marked in its text, and the reader refuses it at the `use`
+  in its own words, once — E072
   "`bracket`: line 1, byte 0: the file does not start `ISO-10303-21;` at …" — never linked as an
   empty Solvent module or parsed as Solvent
   (`a_file_found_as_an_exchange_file_is_read_as_one_and_refused_if_it_is_none`,

@@ -18,9 +18,9 @@ import { Document } from '../core/program.js';
 /** The drawing a job is of, as the page holds it. */
 export interface Drawing {
   text: string;
-  /** The modules the page handed over and the text reaches, as `[use name, digest, text]`: the
-   *  library's own the worker's core has already, and a text the worker was sent before left out
-   *  (`modules.sending`, put back as the message arrives, `modules.received`). */
+  /** The modules the page handed over and the text reaches, as `[use name, digest, path, text]`:
+   *  the library's own the worker's core has already, and a text the worker was sent before left
+   *  out (`ModuleOutbox`, put back as the message arrives, `modules.receive`). */
   modules: Handed[];
   /** The page's parameter values, so the worker's drawing is the page's and not a fresh solve. */
   x: Float64Array;

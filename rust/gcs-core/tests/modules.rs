@@ -250,7 +250,7 @@ used := lib.rung.Rung(p, len: 10)
     assert!(e.map.ent_named("used.e").is_some(), "lib.rung's");
     let (mut p, _) = parse("use lib.twice\n");
     let twice = "component A(p: point) { }\ncomponent A(p: point) { }\n";
-    let linked = link(&mut p, &mut |_| Some(twice.into()));
+    let linked = link(&mut p, &mut |_| Some(twice.to_string()));
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E071");
     // and so is one defined twice in the document itself: the first stands, the second is said

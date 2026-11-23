@@ -46,6 +46,7 @@ export interface Abi {
   gcs_module_set(np: number, nn: number, pp: number, pn: number, tp: number, tn: number): number;
   gcs_module_forget(): void;
   gcs_module_provided(np: number, nn: number): number;
+  gcs_module_path(p: number, n: number): number;
   gcs_module_source(p: number, n: number): number;
   gcs_module_digest(p: number, n: number): number;
   gcs_module_search_paths(np: number, nn: number, sp: number, sn: number): number;

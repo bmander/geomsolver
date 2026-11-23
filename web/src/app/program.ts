@@ -26,7 +26,7 @@ import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
 import { loaded, loading, painted } from './loading.js';
-import { ProjectExplorer, givenFile, projectFile, sourceFile } from './project-explorer.js';
+import { GIVEN, ProjectExplorer, givenFile, projectFile, sourceFile } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
@@ -406,7 +406,7 @@ export function refreshProgram(): void {
  *  it is not Solvent and may be megabytes, so it is named and measured, and left to the `use`
  *  that reads its body.  Saving it still saves the file as it came. */
 function givenNotice(path: string, text: string): string {
-  const stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.(?:step|stp)$/, '');
+  const stem = path.slice(path.lastIndexOf('/') + 1).replace(GIVEN, '');
   const kb = text.length / 1024;   // its geometry is ASCII: characters are near enough bytes
   const size = kb < 1024 ? `${Math.ceil(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`;
   return `// ${path}: an ISO 10303-21 exchange file, ${size}.\n`

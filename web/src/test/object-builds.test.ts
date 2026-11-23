@@ -323,11 +323,13 @@ test('a module\'s text crosses to a pool worker once, and its jobs name it by di
     view.usePool(() => held, null, 1);
     view.readBehind();
     const digest = modules.digest('demo.m')!;
-    assert.deepEqual(held.builds[0].drawing.modules, [['demo.m', digest, mod]], 'the first job carries it');
+    assert.deepEqual(held.builds[0].drawing.modules, [['demo.m', digest, 'demo/m.sv', mod]],
+                     'the first job carries it');
     const first = held.builds[0];
     held.reply({ id: first.id, key: first.job.key, display: built(view.source, first.job.solid), ms: 1 });
     await until(() => held.builds.length === 2);
-    assert.deepEqual(held.builds[1].drawing.modules, [['demo.m', digest]], 'the next names it');
+    assert.deepEqual(held.builds[1].drawing.modules, [['demo.m', digest, 'demo/m.sv']],
+                     'the next names it');
     // the worker's side: each job's list put back as it arrives, the same list either way
     const lists = held.builds.map((b) => modules.received(b.drawing.modules));
     assert.deepEqual(lists[1], lists[0]);

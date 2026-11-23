@@ -7,6 +7,8 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// the project's file kinds, the app's one list (`tsc` has written it before this runs)
+import { projectFile } from '../dist/app/project-explorer.js';
 
 const web = join(dirname(fileURLToPath(import.meta.url)), '..');
 const root = join(web, '..', 'rust', 'examples');
@@ -15,7 +17,7 @@ function collect(path = '') {
   for (const entry of readdirSync(join(root, path), { withFileTypes: true })) {
     const name = path ? `${path}/${entry.name}` : entry.name;
     if (entry.isDirectory()) collect(name);
-    else if (/\.(?:svd?|step|stp|md|txt)$/.test(name)) {
+    else if (projectFile(name)) {
       files[name] = readFileSync(join(root, name), 'utf8');
     }
   }

@@ -1,11 +1,25 @@
+/** The extensions of a project's files, by kind: the Solvent sources the core reads (a model, a
+ *  drawing), the ISO 10303-21 exchange files a `use` reads a body from (#993 stage 2: the core's
+ *  `modules::MODULE_EXTENSIONS` past `sv`, in its order), and the plain text beside them (a
+ *  README).  The one list: the tree, the gatherers, the dev server and the packed examples
+ *  (`tools/serve.js`, `tools/copy-examples.js`) read it. */
+export const EXTENSIONS = { source: ['sv', 'svd'], given: ['step', 'stp'], text: ['md', 'txt'] };
+
+/** A path ending in one of `extensions`. */
+const ending = (extensions: string[]): RegExp => new RegExp(`\\.(?:${extensions.join('|')})$`);
+const PROJECT = ending(Object.values(EXTENSIONS).flat());
+const SOURCE = ending(EXTENSIONS.source);
+/** The ending an exchange file's path has: its stem is what a `use` names. */
+export const GIVEN = ending(EXTENSIONS.given);
+
 /** A file the tree shows: Solvent sources, the exchange files a `use` reads a body from, and
  *  the plain text beside them (a README). */
-export const projectFile = (path: string): boolean => /\.(?:svd?|step|stp|md|txt)$/.test(path);
+export const projectFile = (path: string): boolean => PROJECT.test(path);
 /** A file the core reads.  Any other project file is text to show, never to elaborate. */
-export const sourceFile = (path: string): boolean => /\.svd?$/.test(path);
+export const sourceFile = (path: string): boolean => SOURCE.test(path);
 /** An ISO 10303-21 exchange file (#993 stage 2): a body a document's `use` reads, carried to the
  *  core as it is and never shown in the editor — it is not Solvent, and it may be megabytes. */
-export const givenFile = (path: string): boolean => /\.(?:step|stp)$/.test(path);
+export const givenFile = (path: string): boolean => GIVEN.test(path);
 
 /** The chevron a folder or an outline row opens by, pointing at what it opens to. */
 export function disclosure(): SVGSVGElement {

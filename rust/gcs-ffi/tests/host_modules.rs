@@ -39,6 +39,9 @@ fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
         gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
                        module.as_ptr(), module.len());
         assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), module);
+        // and the path it was handed with, which a host passing it on passes too
+        assert_eq!(take(gcs_module_path(name.as_ptr(), name.len())), path);
+        assert!(gcs_module_path(b"std".as_ptr(), 3).is_null(), "the library's is no host's");
         // its digest names its text, the core's own, without the text crossing the ABI
         assert_eq!(take(gcs_module_digest(name.as_ptr(), name.len())),
                    format!("{:016x}", gcs_core::modules::digest(module)));
@@ -50,6 +53,7 @@ fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
         gcs_module_forget();
         assert!(gcs_module_source(name.as_ptr(), name.len()).is_null());
         assert!(gcs_module_digest(name.as_ptr(), name.len()).is_null());
+        assert!(gcs_module_path(name.as_ptr(), name.len()).is_null());
         assert!(report_of(doc).contains("E070"), "forgotten, the use is unresolved again");
     }
 }
@@ -93,9 +97,10 @@ fn an_exchange_file_is_kept_lossily_and_uses_nothing() {
 }
 
 /// A file the host found as `NAME.step` whose text is no exchange file — empty, or Solvent-looking
-/// text — is handed over as one and refused by the kernel's reader at the `use` (E072), once and in
-/// its words: never linked as an empty Solvent module (only E101 at the read), never parsed as
-/// Solvent (a flood of E100).
+/// text — is handed over as one, with the path it was found at, and refused by the kernel's reader
+/// at the `use` (E072), once and in its words: never linked as an empty Solvent module (only E101
+/// at the read), never parsed as Solvent (a flood of E100).  The core keeps the file's own text,
+/// marked by nothing: where it was found is its path, which a host passes on with it.
 #[test]
 fn a_file_found_as_an_exchange_file_that_is_none_is_refused_at_the_use() {
     let doc = "unit mm\nuse bracket\npart := solid(bracket)\n";
@@ -105,13 +110,17 @@ fn a_file_found_as_an_exchange_file_that_is_none_is_refused_at_the_use() {
             let path = "bracket.step";
             assert_eq!(gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
                                       text.as_ptr(), text.len()), 1);
-            // it uses nothing: it is not Solvent
-            let kept = take(gcs_module_source(name.as_ptr(), name.len()));
-            assert_eq!(take(gcs_program_uses(kept.as_ptr(), kept.len())), "[]");
+            assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), text);
+            assert_eq!(take(gcs_module_path(name.as_ptr(), name.len())), path);
             let r = report_of(doc);
             assert!(r.contains("E072") && r.contains("`bracket`: ")
                     && r.contains("the file does not start `ISO-10303-21;`"), "{text:?}: {r}");
             assert!(!r.contains("E100") && !r.contains("E101"), "said once: {r}");
+            // handed on as a worker is handed it, with its path, it is read the same
+            gcs_module_forget();
+            assert_eq!(gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
+                                      text.as_ptr(), text.len()), 1);
+            assert_eq!(report_of(doc), r);
             gcs_module_forget();
         }
     }
