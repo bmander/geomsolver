@@ -1030,15 +1030,29 @@ before ports 0.9 s to 0.4 s.
   std.top { … }`); a read in a definition's body (the document's or a module's, its file `use`ing
   the module), in a `ring`, or under an `in` of a frame that is not one of `std`'s is E106 at the
   read (`Given::unplaced` finds it where a closed body's lookup does not, so nothing else is
-  said of a definition's body or a frame's; in a `ring` the ring's own E021, the name outside it
-  and not turning with it, is said beside it), since placing a given body is later work (#993
-  stage 5).  Its lengths are the file's, carried to the document's unit by the model.  **A file
+  said of a definition's body or a frame's; in a `ring` the ring's own E021 is not said beside
+  it, `judge_rings`: passing the body as part of the ring is no fix for it), since placing a
+  given body is later work (#993 stage 5).  A set or a body made of it **at the root** stands in
+  the world wherever it is later read, as every root solid does: `S := { p | p in bracket }` then
+  `part := solid(S)` under `in f` is the body at the world, as a body over any root solid is
+  there; only a direct read of the given body under such an `in` is refused, since that is what
+  someone placing it would write.  Its lengths are the file's, carried to the document's unit by the model.  **A file
   the kernel refuses** is one E072 at the `use`, `` `bracket`: `` and the kernel's words
   (`Refusal`'s, `#n: …` where it names an entity), or how many solids a file of several gives;
-  its name is still known to the flattener and nothing is declared for
-  it, and whatever else a statement reading it says — or a statement reading a name one of those
-  declares, transitively, or a word's body reading it — follows only from the refusal and is left
-  unsaid (`program::words::given_unsaid`, applied as `elaborate` returns): one diagnostic.  `tests/given_bodies.rs` is the gate, the stage's own
+  its name is still known to the flattener and still resolves, and nothing is declared for it.
+  **What it leaves unmade** (`Walk::unmade_by_refusal`) is found by what the statements'
+  references resolve to, never by how they are spelled: the refused path, every declaration a
+  reference of which resolves to one (a body over it, a reading of it at an instant, a body over
+  those, transitively), and every region solid whose probe's relation reads one (with its
+  probe).  A reference resolving to one is quiet (`Expansion::quiet`, as a formal's whose
+  argument named nothing, #253) and its statement is not stated, a declaration included — so no
+  "no such entity" is made of it, and nothing reading it says more: one diagnostic.  What the
+  statement says wrong of its own (`x := part.volume + nosuch`'s `nosuch`), and a name a scope
+  cannot see (`point in part` in a definition's body), is said as it is with a readable file
+  (`given_bodies::a_refused_file_leaves_unmade_only_what_is_made_of_it`).  Statements no text
+  holds are numbered apart (`modules::GIVEN_STMTS`, `FOOT_STMTS`): a given body's declaration
+  `GIVEN_STMTS` plus its module's index, past every module's, a distance's foot's counting down
+  from the top.  `tests/given_bodies.rs` is the gate, the stage's own
   (`a_document_naming_a_file_exports_the_same_solid`) among it.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`

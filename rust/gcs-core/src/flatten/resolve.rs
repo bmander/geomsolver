@@ -630,6 +630,16 @@ struct Known<'k> {
     /// Every material declared, stated or refused, by absolute name: what a solid's `of` may
     /// name (#510 P3).
     materials: &'k BTreeSet<String>,
+    /// **What a refused file leaves unmade** (#993 stage 2): a given module whose file the kernel
+    /// refused, and every declaration made of one — `Walk::unmade_by_refusal`.  A reference
+    /// resolving to one is quiet and its statement is not emitted (`hit`): the refusal is said
+    /// once, at the `use`.
+    unmade: &'k BTreeSet<String>,
+    /// Set where a reference resolved to a name in `unmade`.
+    hit: &'k std::cell::Cell<bool>,
+    /// The region probes a statement read (`keys::probe`), where they are asked for: a probe's
+    /// relation reading a name in `unmade` leaves the region solid it is the probe of unmade.
+    probed: Option<&'k std::cell::RefCell<BTreeSet<String>>>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
@@ -659,7 +669,7 @@ fn rewrite(
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
     let Known { look, sets, solids, failed, arguments, unresolved, normals, charts, joints,
-        quiet, materials } = known;
+        quiet, materials, unmade, hit, probed } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // and a relation of an instance declared in it reads its own frame's datums turned (#566)
@@ -689,7 +699,17 @@ fn rewrite(
                 ref_text(r)
             ),
         )),
+        // what a given file the kernel refused leaves unmade: said once at its `use`, and the
+        // statement reading it not stated (#993 stage 2)
+        Some((abs, _)) if unmade.contains(&abs) => {
+            hit.set(true);
+            unresolved.set(true);
+            quiet.borrow_mut().insert(r.span);
+        }
         Some((abs, mut rest)) => {
+            if let Some(probed) = probed.filter(|_| super::keys::is_probe(&abs)) {
+                probed.borrow_mut().insert(abs.clone());
+            }
             // a plane's normal is minted only where it is read (`Sketch::plane_normal`)
             if let Some((_, of)) = rest.split_last().filter(|(f, _)| *f == NORMAL) {
                 normals.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
@@ -1665,6 +1685,8 @@ impl<'a> Walk<'a> {
         let joints = std::cell::RefCell::new(std::mem::take(&mut self.joints));
         let quiet = std::cell::RefCell::new(std::mem::take(&mut self.quiet));
         let materials: BTreeSet<String> = self.materials.keys().cloned().collect();
+        let unmade = self.unmade_by_refusal(&out, &alias, &sets, &solids, &failed, &materials);
+        let hit = std::cell::Cell::new(false);
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
             // a name), so the error is the one said and not every reference to it after
@@ -1679,10 +1701,11 @@ impl<'a> Walk<'a> {
             let arguments = &self.words.arguments;
             let (sets, solids, failed) = (&sets, &solids, &failed);
             let unresolved = std::cell::Cell::new(false);
+            hit.set(false);
             let known = Known {
                 look, sets, solids, failed, arguments,
                 unresolved: &unresolved, normals: &normals, charts: &charts, joints: &joints,
-                quiet: &quiet, materials: &materials,
+                quiet: &quiet, materials: &materials, unmade: &unmade, hit: &hit, probed: None,
             };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
@@ -1750,6 +1773,12 @@ impl<'a> Walk<'a> {
             if unresolved.get() && !matches!(st.kind, StmtKind::Decl(_)) {
                 continue;
             }
+            // nor is anything a refused file leaves unmade, a declaration among them: what else
+            // the statement says wrong of its own is said above (#993 stage 2)
+            let named = |d: &Decl| unmade.contains(&d.name.key().text);
+            if hit.get() || matches!(&st.kind, StmtKind::Decl(d) if named(d)) {
+                continue;
+            }
             // a curve of a drawn instance's point: the point's name is absolute now, and the
             // instance it belongs to is the innermost one whose component has the formal
             if let StmtKind::Decl(Decl { curve: Some(c), .. }) = &mut st.kind {
@@ -1792,6 +1821,67 @@ impl<'a> Walk<'a> {
         self.quiet = quiet.into_inner();
         self.judge_rings(&about, judged, &centres);
         (flat, alias)
+    }
+
+    /// **What a given file the kernel refused leaves unmade** (#993 stage 2): each given module
+    /// whose file was refused (said once, at its `use`, E072), and — by what the statements'
+    /// references resolve to, never by how they are spelled — every declaration made of one,
+    /// and every one made of those in turn: a solid over it, a region solid whose probe's
+    /// relation reads it (with its probe).  Nothing of them is stated, so nothing reading them
+    /// says more; an unrelated fault in the same statement, or a name a scope cannot see, is
+    /// still said.  Empty where no file was refused, and then nothing is walked.
+    #[allow(clippy::too_many_arguments)]
+    fn unmade_by_refusal(
+        &self,
+        out: &[(Stmt, Vec<PathStep>, Scope)],
+        alias: &BTreeMap<String, String>,
+        sets: &BTreeSet<String>,
+        solids: &BTreeSet<String>,
+        failed: &BTreeSet<String>,
+        materials: &BTreeSet<String>,
+    ) -> BTreeSet<String> {
+        let mut unmade = self.standard.given.refused_paths();
+        if unmade.is_empty() {
+            return unmade;
+        }
+        // each statement read again until nothing more is found unmade, against copies of what a
+        // reading notes, so the reading that states the statements notes it once
+        let (normals, charts, joints, quiet) = Default::default();
+        loop {
+            let mut more = BTreeSet::new();
+            for (st, _, sc) in out {
+                let own = match &st.kind {
+                    StmtKind::Decl(d) => Some(d.name.key().text.clone()),
+                    _ => None,
+                };
+                if own.as_ref().is_some_and(|n| unmade.contains(n)) {
+                    continue;
+                }
+                let (unresolved, hit, probed) = Default::default();
+                let known = Known {
+                    look: self.look(alias), sets, solids, failed,
+                    arguments: &self.words.arguments, unresolved: &unresolved, normals: &normals,
+                    charts: &charts, joints: &joints, quiet: &quiet, materials,
+                    unmade: &unmade, hit: &hit, probed: Some(&probed),
+                };
+                let mut kind = st.kind.clone();
+                rewrite(&mut kind, sc, known, &mut Vec::new(), &Default::default());
+                if !hit.get() {
+                    continue;
+                }
+                let owners = probed.into_inner().into_iter()
+                    .filter_map(|p| p.strip_suffix(super::keys::probe("").as_str()).map(String::from));
+                for n in own.into_iter().chain(owners) {
+                    more.insert(super::keys::probe(&n));
+                    more.insert(n);
+                }
+            }
+            let before = unmade.len();
+            unmade.extend(more);
+            if unmade.len() == before {
+                return unmade;
+            }
+        }
     }
 
     /// Every alias a call or a use made, checked once every name is known: one naming a private

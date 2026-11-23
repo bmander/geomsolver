@@ -444,6 +444,46 @@ fn two_spellings_of_a_given_body_are_one_solid() {
         .unwrap_or_else(|d| panic!("not the same solid: {d}"));
 }
 
+/// **A refused file's name still resolves, and only what it leaves unmade is quiet** (#993's
+/// review, R4): what is made of the refused body — a body over it, a set of its points, a body
+/// over that, a claim over it, a reading of it at an instant — is not made and says nothing, by
+/// what the statements' names resolve to; a fault of the statement's own, or a name a scope
+/// cannot see, is said as it is with a readable file.
+#[test]
+fn a_refused_file_leaves_unmade_only_what_is_made_of_it() {
+    let codes = |diags: &[Diag]| -> Vec<(Code, String)> {
+        diags.iter().map(|d| (d.code, d.message.clone())).collect()
+    };
+    let src = |file: &str, rest: &str| format!("unit mm\nuse {file}\nuse std\nuse std.solids (cut)\n\
+                                                part := solid({file})\n{rest}");
+    // an unrelated fault in a statement that reads the body made of it
+    let rest = "x := part.volume + nosuch\n";
+    let (_, readable) = read(&src("bracket", rest));
+    let (_, refused) = read(&src("assembly", rest));
+    let nosuch = (Code::E101, "`x`: no such entity: `nosuch`".to_string());
+    assert_eq!(codes(&readable), vec![nosuch.clone()], "{readable:?}");
+    assert_eq!(refused.len(), 2, "{refused:?}");
+    assert_eq!(refused[0].code, Code::E072);
+    assert_eq!(codes(&refused[1..]), vec![nosuch]);
+    // a definition's body cannot see the document's `part`, whatever its file
+    let rest = "component C() {\n  q := point in std.top\n  z := point in part\n}\nc := C()\n";
+    for file in ["bracket", "assembly"] {
+        let at = src(file, rest).find("z := point in part").unwrap() as u32 + 14;
+        let (_, diags) = read(&src(file, rest));
+        assert!(diags.iter().any(|d| d.code == Code::E101 && d.span.lo == at
+                                 && d.message == "no such entity: `part`"), "{file}: {diags:?}");
+    }
+    // and everything made of the refused body, however it is read, says nothing more
+    let rest = "set := solid({ p | p in assembly })\nother := solid(part)\nmore := solid(set)\n\
+                drill := solid(other)\nassembly cut other\nclaim every q in part: q in assembly\n\
+                cap := solid({ p | p in assembly; p distance(>= 10mm, along: n) std.top })\n\
+                moved := assembly at(under: std.z) 90deg\n";
+    let (e, diags) = read(&src("assembly", rest));
+    assert_eq!(codes(&diags).len(), 1, "{diags:?}");
+    assert_eq!(diags[0].code, Code::E072);
+    assert!(e.sketch.solids.is_empty(), "{:?}", e.sketch.solids);
+}
+
 /// **One cause, one diagnostic, the fix in the author's words** (#993's review, R8): a given body
 /// read in a `ring` is refused as one (E106), not also as a name outside the ring (E021); a body
 /// word extending it through a definition's formal is refused as extended (E080), not also as
@@ -469,3 +509,15 @@ fn a_given_body_refused_is_said_once_in_the_authors_words() {
     assert!(diags[0].message.ends_with("`part := solid(bracket)`, then `drill bore part`"),
             "{}", diags[0].message);
 }
+
+/// **Statements no text holds are numbered apart** (#993's review, R10): a given body's
+/// declaration past every module's statements, a distance's foot's at the very top, so neither is
+/// ever another's, nor a statement of the document or a module.
+#[test]
+fn statements_no_text_holds_are_numbered_apart() {
+    use gcs_core::modules::{FOOT_STMTS, GIVEN_STMTS, MODULE_STMTS};
+    assert!(MODULE_STMTS < GIVEN_STMTS);
+    // a given module's index is far below the room between the two ranges
+    assert!(GIVEN_STMTS.checked_add(1 << 20).is_some_and(|top| top < FOOT_STMTS - 2));
+}
+

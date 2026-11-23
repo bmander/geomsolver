@@ -183,8 +183,8 @@ impl Walk<'_> {
                 sweep: Some(Sweep::Given(file)),
                 ..Decl::point(DeclName::Written(name), [0.0; 2], None)
             };
-            // an identity no statement of the document or a module is minted
-            let id = StmtId(u32::MAX - m.k as u32);
+            // an identity no statement of the document, a module or a set's foot is minted
+            let id = StmtId(crate::modules::GIVEN_STMTS + m.k as u32);
             let st = Stmt { id, kind: StmtKind::Decl(d.clone()), span: at,
                             chained: Default::default() };
             let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
