@@ -177,8 +177,21 @@ fn quotient(a: [Iv;4],d: [Iv;4]) -> (I3,I3) {
     (p,std::array::from_fn(|k| (d[k]-p[k]*d[3])/w))
 }
 
-/// A pole and its weight, homogeneous, enclosed.
-fn lift(q: V,w: f64) -> [Iv;4] { let w = Iv::point(w); [Iv::point(q[0])*w,Iv::point(q[1])*w,Iv::point(q[2])*w,w] }
+/// A pole and its weight, homogeneous, enclosed — the pole **read from `about`**, a point of the
+/// spline's own (`centre`), which the quotient is carried back from (#1002). `A' − P W'` cancels
+/// only as far as its terms are enclosed: a pole read from the world's origin makes each as wide as
+/// the spline stands far from it, so a rational sheet ten times its size off was enclosed in rates
+/// ten times too wide, no box of a ray's reading against it proved, and a ball of such a net could
+/// not be cut by a plane there. Read from a point among the poles, the terms are as wide as the
+/// poles' own spread, wherever they stand.
+fn lift(q: V,about: V,w: f64) -> [Iv;4] {
+    let w = Iv::point(w);
+    [(Iv::point(q[0])-Iv::point(about[0]))*w,(Iv::point(q[1])-Iv::point(about[1]))*w,(Iv::point(q[2])-Iv::point(about[2]))*w,w]
+}
+
+/// The middle of a hull where it is bounded (the origin where not): the point a spline's poles
+/// there are read from (`lift`).
+fn centre(hull: I3) -> V { hull.map(|x| if x.bounds().is_some() { x.mid() } else { 0. }) }
 
 impl Enclosed<1> for BSpline {
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
@@ -188,12 +201,13 @@ impl Enclosed<1> for BSpline {
             if let Some(p) = self.restricted([a,b]) { return p }
         }
         let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
-        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],w(i)),[a,b],true);
-        let (at,d) = quotient(a,d);
         // (a curve keeps within its poles' hull: its weights are positive)
         let poles = self.poles_over(t);
         let hull: I3 = std::array::from_fn(|k| Iv::of_all(poles.iter().map(|q| q[k])));
-        Patch {at:meet3(at,hull),d:[d],proved:true}
+        let about = centre(hull);
+        let (a,d) = spline(self.degree,&self.knots,self.poles.len(),&|i| lift(self.poles[i],about,w(i)),[a,b],true);
+        let (at,d) = quotient(a,d);
+        Patch {at:meet3(add3(at,c3(about)),hull),d:[d],proved:true}
     }
 }
 
@@ -221,13 +235,14 @@ impl Enclosed<2> for Net {
         if self.weights.is_none() && !past.0 && !past.1 && self.du < BEZIER && self.dv < BEZIER {
             if let Some(p) = self.restricted(u,v) { return p }
         }
-        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],w(i,j)),v,true)).collect();
+        let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
+        let about = centre(hull);
+        let rows: Vec<([Iv;4],[Iv;4])> = (first..=last).map(|i| spline(self.dv,&self.vknots,nv,&|j| lift(self.poles[i][j],about,w(i,j)),v,true)).collect();
         let (a,au) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].0,u,true);
         let (av,_) = spline(self.du,&self.uknots,nu,&|i| rows[i-first].1,u,false);
         let (s,su) = quotient(a,au);
         let (_,sv) = quotient(a,av);
-        let hull: I3 = std::array::from_fn(|k| Iv::of_all(self.poles_over(u,v).map(|q| q[k])));
-        Patch {at:meet3(s,hull),d:[su,sv],proved:true}
+        Patch {at:meet3(add3(s,c3(about)),hull),d:[su,sv],proved:true}
     }
 }
 
@@ -620,7 +635,13 @@ impl Enclosed<2> for Blend {
         };
         let (Some((a,da)),Some((b,db))) = (edge(&self.a,self.ta),edge(&self.b,self.tb)) else { return Patch::ANY };
         let one = Iv::point(1.);
-        let p = add3(scale3(a.at,one-vv),scale3(b.at,vv));
+        // the point between the sections' **read from a point between them** (#1002): `(1 − v) A +
+        // v B` over a stretch of `v` is as wide as `A` and `B` stand far from where they are read
+        // from, so read from the world's origin a patch far from it was enclosed in a box as wide
+        // as that distance times the stretch — a canal ten thousand times its size off, cut 700
+        // times slower. From a point between them it is as wide as the sections stand apart
+        let about = centre(hull3(a.at,b.at));
+        let p = add3(c3(about),add3(scale3(sub3(a.at,c3(about)),one-vv),scale3(sub3(b.at,c3(about)),vv)));
         let pu = add3(scale3(a.d[0],da*(one-vv)),scale3(b.d[0],db*vv));
         let pv = sub3(b.at,a.at);
         let proved = a.proved && b.proved;
@@ -689,8 +710,12 @@ fn run_enclosed(run: &crate::family::Run,n: &[Iv],dn: &[Iv],u: Iv) -> Patch<2> {
             let tt = t0+u*(t1-t0);
             let Some(over) = tt.bounds() else { return Patch::ANY };
             let lifted = |src: &[Iv],i: usize| -> [Iv;4] { let wi = Iv::point(w(i)); [src[3*i]*wi,src[3*i+1]*wi,src[3*i+2]*wi,wi] };
-            let (a,d) = spline(*degree,knots,count,&|i| lifted(n,i),over,true);
+            // the poles read from a point among them, as any rational spline's (`lift`, #1002)
+            let about = centre(std::array::from_fn(|c| (1..count).fold(n[c],|h,i| h.hull(n[3*i+c]))));
+            let from = |i: usize| -> [Iv;4] { let wi = Iv::point(w(i)); let q: I3 = std::array::from_fn(|c| n[3*i+c]-Iv::point(about[c])); [q[0]*wi,q[1]*wi,q[2]*wi,wi] };
+            let (a,d) = spline(*degree,knots,count,&from,over,true);
             let (x,xt) = quotient(a,d);
+            let x = add3(x,c3(about));
             // the poles' rates read by the same basis (the weights stand still)
             let (ra,_) = spline(*degree,knots,count,&|i| lifted(dn,i),over,false);
             let moved: I3 = std::array::from_fn(|c| ra[c]/ra[3]);

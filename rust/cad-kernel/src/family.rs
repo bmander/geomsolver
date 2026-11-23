@@ -30,7 +30,7 @@
 //! of the rim with itself), held alike.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{hull,include,BSpline,Blend,Box3,Carry,Curve,Frame,Rigid,Surface,Uv,V,EMPTY};
+use super::geom::{hull,include,BSpline,Blend,Box3,Carry,Curve,Frame,Rigid,Surface,Uv,V,EMPTY,NEAR};
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
 use std::sync::Arc;
@@ -190,6 +190,9 @@ pub struct Sheet {
     pub run: Run,pub stations: Arc<Stations>,pub nodes: Vec<Vec<f64>>,pub closed: bool,
     /// Per piece, a box the wall keeps within over it (`bounds`): where `inverse` looks first.
     boxes: Vec<Box3>,
+    /// The diagonal of the box its pieces' boxes fill: the wall's own size, what `inverse` reads
+    /// near by — never where the wall stands (#1002).
+    size: f64,
     /// Whether the wall comes back to itself along `s` (`ring`): `s` periodic over its interval.
     ring: bool,
     /// Whether the wall may pass within a grid's step of itself (`layered`): a run of a fan that
@@ -213,11 +216,14 @@ impl Sheet {
         if !ok || nodes.len() != 6*stations.spans.len() || nodes.iter().any(|n| n.len() != len || n.iter().any(|x| !x.is_finite())) {
             return Err(format!("a face family's {} wall has numbers of the wrong count",run.kind()))
         }
-        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),ring:false,layered:false}.boxed())
+        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),size:0.,ring:false,layered:false}.boxed())
     }
-    /// The sheet with its pieces' boxes read off its numbers.
+    /// The sheet with its pieces' boxes read off its numbers, and its size off them.
     fn boxed(mut self) -> Sheet {
         self.boxes = self.stations.spans.iter().map(|&sp| self.bounds(sp)).collect();
+        let mut whole = EMPTY;
+        for b in &self.boxes { include(&mut whole,b.0); include(&mut whole,b.1); }
+        self.size = distance(whole.0,whole.1);
         self
     }
     /// Whole-circle walls run round once: `u` periodic with period 1.
@@ -232,6 +238,8 @@ impl Sheet {
     pub fn ring_period(&self) -> Option<f64> { let [a,b] = self.span(); self.ring.then_some(b-a) }
     /// The interval the wall runs over.
     pub fn span(&self) -> [f64;2] { self.stations.span() }
+    /// The wall's own size: the diagonal of the box its pieces' boxes fill.
+    pub fn size(&self) -> f64 { self.size }
     /// **The wall over a stretch of its interval** (#942 T1d-cube): its pieces over `[s0, s1]`, the
     /// first and last cut short there, each still the polynomial through its own six nodes — the
     /// same wall there to the rounding, and a surface of its own: an edge's fan that passes back
@@ -287,7 +295,7 @@ impl Sheet {
     /// The wall over the pieces `js` alone, read over `stations` (`Stations::band`'s of them).
     fn band(&self,stations: Arc<Stations>,js: std::ops::Range<usize>) -> Sheet {
         let nodes = self.nodes[6*js.start..6*js.end].to_vec();
-        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),ring:false,layered:false}.boxed()
+        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),size:0.,ring:false,layered:false}.boxed()
     }
     /// `∂S/∂s` at `(u, s)` as piece `j` reads it: at a joint, from either side of it.
     fn rate_in(&self,j: usize,[u,s]: Uv) -> V {
@@ -316,7 +324,8 @@ impl Sheet {
     /// A rim: the edge at station `s`, `C`, `C'` and `C''` in `u`.
     pub fn rim(&self,u: f64,s: f64) -> (V,V,V) { self.at(&self.numbers(s),u) }
     /// The point of the wall nearest `p`: Gauss–Newton from the last foot this thread found on it
-    /// where that settles on `p` itself, to the rounding (a mesh asks of one corner after the next);
+    /// where that settles near `p` (a mesh asks of one corner after the next) — within a thousandth
+    /// of the wall's own size, a layered wall's on `p` itself (`HALF_READ` of that size);
     /// else from the nearest of a grid — `u` in sixteenths, `s` at each piece's ends and quarters —
     /// read piece by piece nearest box first, none past the nearest point found (a piece keeps
     /// within its box), `s` held to the interval and `u` too unless the wall runs round, and the
@@ -324,12 +333,18 @@ impl Sheet {
     /// near `p` but not on it says nothing of a nearer one: #942 T1d-cube, a fan of the cube
     /// tumbling 75° passing within 5e-3 of itself, a point lying on one layer took its foot on the
     /// other, its normal 150° off, and a piece of the boundary was kept facing the wrong way.)
+    ///
+    /// **Near is read by the wall's size, never by where it stands** (#1002): read by the point's
+    /// distance from the origin, a foot settled within a thousandth of *that* was kept — a
+    /// millimetre for a wall a metre out, six for the issue's blade 6.3 m aft — so a point lying on
+    /// the wall took the last foot's wherever Newton's method stopped within that reach of it (a
+    /// rim, the blade's other side), and the same blade that united with its hub at the origin was
+    /// refused a metre from it.
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Sheet as usize;
-        let scale = 1.+dot(p,p).sqrt();
         // (a layered wall's last foot trusted only where it settles on `p` itself, its search from
         // the nearest four of the grid; any other's where it settles near `p`, from the nearest one)
-        let (on,starts) = if self.layered { (crate::util::fmath::HALF_READ*scale,4) } else { (1e-3*scale,1) };
+        let (on,starts) = if self.layered { (crate::util::fmath::HALF_READ*self.size,4) } else { (NEAR*self.size,1) };
         let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.settled(p,f));
         let (uv,_) = match warm {
             Some((uv,d)) if d <= on => (uv,d),

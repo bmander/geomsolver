@@ -24,7 +24,7 @@ fn close(a: f64,b: f64,tol: f64,what: &str) { assert!((a-b).abs() <= tol*b.abs()
 const Z: V = [0.,0.,1.];
 
 /// A solid of every kind of face: its name and its B-rep.
-fn solids() -> Vec<(&'static str,Brep)> {
+pub(crate) fn solids() -> Vec<(&'static str,Brep)> {
     let tilted = [0.2,-0.3,1.];
     // a half ellipse from pole to pole, two rational quarters, turned once: a revolution
     let (south,north): (V,V) = ([0.,0.,-1.],[0.,0.,1.]);

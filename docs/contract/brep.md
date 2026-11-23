@@ -553,6 +553,65 @@ a swap made without its callers knowing:
   `swept_closed::an_edge_is_read_certified_and_settled_as_a_ray_is`,
   `…::a_conic_and_a_spline_edge_are_read_certified`).
 
+**A solid is the same wherever it stands** (#1002): a step of every input is to decide nothing
+the kernel reads but the rounding of its coordinates. What is near, on or one is a part of the
+size of what is read, and what is enclosed is read from a point of its own — never a part of a
+point's distance from the origin. Three readings were, and a part built at the origin was refused,
+or built hundreds of times slower, a few of its own sizes from it.
+**Near is a part of what is searched** (`geom::NEAR`, a thousandth): a patch whose foot is
+searched for — a face family's wall (`family::Sheet::inverse`), a blend (`Blend::inverse`), a
+B-spline sheet and its offset (`net_search`, `offset_foot`) — keeps the foot Newton's method
+settles on from the last one found where it stands within `NEAR` of the patch's own size of the
+point (a layered wall's within `HALF_READ` of it), and searches the patch otherwise; a foot
+refined from a hint (`Surface::inverse_near`) is on its patch within a millionth of that size, and
+two of a blend's sections are one within a part in 10⁹ of theirs. The size is the patch's: a
+wall's the box its pieces' boxes fill (`Sheet::size`), a blend's the box of its two sections (not
+of its sweep: a coil comes back within its pitch of itself however long it runs), a sheet's its
+poles' box, a swept or turned curve's its own (the last two read once and kept by address,
+`geom`'s `kept_size`). Read as a part of `1 + |p|`, the point's distance from the origin, the
+reach was a millimetre for a wall a metre out and six for a blade 6.3 m aft — wider than its
+edge is thick — so a point lying on the wall kept the last foot's wherever Newton's method stopped
+within that of it (a rim, the blade's other side), the cubic through the blade's meeting with its
+hub's cylinder never closed in on the trace, and the union built at the origin was refused from a
+metre out, differently at each distance ("a shell of the arrangement is kept on one side of a
+cylinder and dropped on another", "a plane's pieces do not close", "a cylinder's pieces do not
+close"); and a part a hundredth of a millimetre across at the origin read a tenth of itself as
+near. **A rational spline is enclosed from a point among its poles** (`enclose`'s `lift`): its
+quotient's rate `(A' − P W') / W` cancels only as far as its terms are enclosed, and with each
+pole read from the origin they are as wide as the spline stands far from it — a rational net ten
+of its sizes out had rates enclosed ten times too wide, no box of a ray's reading against it was
+proved, every direction placing a point against its solid was given up, and a NURBS ball there
+could not be cut by a plane ("a piece of a plane touches the other solid's boundary … along no
+face of either", after three minutes where the cut at the origin takes a tenth of a second). The
+poles reaching the box are read from the middle of their hull, the point carried back after the
+quotient; a curve's, a net's and a family's rational run alike. **A blend's point is enclosed from
+a point between its sections**: `(1 − v) A + v B` over a stretch of `v` is as wide as `A` and `B`
+stand far from where they are read from; from the middle of their hull it is as wide as they stand
+apart (a canal ten thousand sizes out was cut 700 times slower, and refused ten times farther).
+A bar that says rounding reads the coordinates' size, as rounding does (`Traced::project`'s
+`settled`, four units in the last place of the point): no tolerance stands near it until a part
+is a million of its sizes out. **Not yet read so**: the bars `1e-9 (1 + |p|)` by which `query`,
+`ssi`, `topo`, `fillet` and the swept admission take two points for one or a point for on a
+surface, and `step_read`'s own — each the Boolean's tolerance for a solid standing its own size
+from the origin and wider the farther it stands (some forty tolerances for the issue's blade) —
+and the `1e-12 (1 + |p|)` a sheet's foot is settled within (`net_newton`, `continued_foot`,
+`net_settle`), which passes the tolerance a thousand sizes out: a hundred thousand out a rational
+net's feet stand a hundred tolerances off, and by its poles more. None decided a cut the gates
+below read, to a hundred thousand sizes out. Gates,
+`tests/far_from_origin.rs`:
+`the_issues_blade_unites_with_its_hub_wherever_it_is_drawn` (the issue's document at the origin
+and 6.318 m out: seven faces, fifteen edges, one volume within the tolerance's band),
+`the_issues_blade_and_its_hub_moved_unite_as_at_the_origin` (its two solids moved 1, 2 and 4 m,
+where it was refused a different way at each, united by the kernel alone to the origin's solid),
+`a_cut_far_from_the_origin_is_the_cut_at_it` (every kind of solid — `affine`'s, a rational net
+closed onto its poles, the blade — cut 10, 1000 and 100 000 sizes out to the origin's volume),
+`a_point_of_a_patch_is_its_own_foot_wherever_the_patch_stands` (points of every searched patch,
+on it and a millionth off, asked in no order, where it stands and a thousand sizes out, each its
+own foot within the tolerance and a sheet's `1e-12 |p|`) and
+`a_surface_is_enclosed_as_closely_far_from_the_origin_as_at_it` (`enclosures`' surfaces of every
+kind over the same boxes, moved 30 000 out: every sample held, no enclosure wider but by the
+coordinates' rounding).
+
 **A B-spline sheet's foot held at its patch's rim is let go once the descent pulls it back in**
 (`geom::net_newton`): its other parameter settled alone, the foot was returned on the rim a long
 way from a point of the patch, and the point read outside its face. **An edge a Boolean meets with
