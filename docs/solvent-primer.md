@@ -2424,10 +2424,12 @@ document's root:
 | written | what it is |
 |---|---|
 | `part := solid(bracket)` | the body whose stock is the given body: the one object, exported as the file's solid |
+| `part := solid({ p \| p in bracket })` | the same solid, to the byte |
 | `solid({ p \| p in bracket; p distance(>= 10mm, along: n) std.top })` | the points of it a set's other terms keep (its upper half, 10869) |
 | `drill cut part` | a hole drilled in the body made of it (below) |
 | `bracket cut pin` | the given body as a body word's tool: `pin` less the bracket |
 | `claim every q in pin: q in part` | a containment claim over it |
+| `moved := bracket at(under: std.z) 90deg` | the block turned a quarter about the world's z |
 
 - **Never extend the given body; name the body you make of it.** `drill cut bracket` is E080 —
   "`bracket` is the body a file gives, and it is never extended: name the body this makes of it,
@@ -2435,27 +2437,30 @@ document's root:
   { p | p not in drill }`.
 - **What is not read is not there.** `use bracket` alone makes no solid (`--step` says "this
   document has no solid to write"); `part := solid(bracket)` makes one object, `part`, in the
-  report, the cut list and an assembly's export.
+  report, the cut list and an assembly's export. However you read it, the objects are what you
+  make of it, never the given body beside them.
 - **It stands where the file puts it**: the file's origin and axes are the world's, and an `in
   std.top { … }` around the statement moves nothing. Read it in a component's body, a `ring`, or
   an `in f { … }` of a frame of your own and it is E106 — "placing a given body is not built yet
-  (#993 stage 5), so read it at the document's root". Draw what you add in the world's planes, at
-  the file's coordinates.
+  (#993 stage 5), so read it at the document's root". To stand it elsewhere, read it at an instant
+  at the root (`bracket at(under: std.z) 90deg`). Draw what you add in the world's planes, at the
+  file's coordinates.
 - **Units are the file's, carried to the document's.** A `unit in` document reading a millimetre
   file gets the same body in inches (`part.volume = 1.32654`, for 21738.05 mm³); a file written in
   inches, metres or feet reads to its size.
 - **A file that is not one solid is said once, at the `use`**, E072 in the reader's words:
   `` `shell`: #15: the file holds a shell-based surface model (SHELL_BASED_SURFACE_MODEL) and no
   solid ``, `` `pair`: #376: an assembly's component (NEXT_ASSEMBLY_USAGE_OCCURRENCE): assemblies
-  are not read yet ``, `` `twice`: the file gives 2 solids, and a given body is one solid ``.
-  Nothing that reads the name says more.
-- **Its faces have no names you can write.** The report lists them as `part.bracket.#given0` and
-  so on, in the file's order; nothing in a document reaches one, so a face of a given body cannot
-  yet be rounded, deleted or moved (#993 stages 3 and 4). `use bracket (x)` is E101, and a
+  are not read yet ``, `` `twice`: the file gives 2 solids, and a given body is one solid ``, and
+  for an empty `empty.step` `` `empty`: line 1, byte 0: the file does not start `ISO-10303-21;` at
+  the end ``. Nothing is said of what is made of it; a statement's own faults still are.
+- **Its faces have no names you can write.** The report gives the body's measures and no row per
+  face, and a claim's witness says `` a face of `bracket` ``. A face of a given body cannot yet
+  be rounded, deleted or moved (#993 stages 3 and 4), and a face path over it that names nothing
+  (`bracket.near.side`) is not refused until the solid is built. `use bracket (x)` is E101, and a
   top-level `bracket` of your own beside `use bracket` E071.
-- **Do not name the document after the file.** In one directory `NAME.sv` is found before
-  `NAME.step`, so `bracket.sv` beside `bracket.step` reads itself for `use bracket` and says
-  `` no such entity: `bracket` ``.
+- **A document is never its own module.** `bracket.sv` saying `use bracket` reads the
+  `bracket.step` beside it.
 
 `bracket.step` here is a 40 × 30 × 20 block drilled through along z by a hole of radius 6 about
 (20, 15); a second hole of radius 3 is drilled at (8, 8):
@@ -2489,13 +2494,6 @@ drilled.sv: solved
   part.bounds.y1 = 30
   part.bounds.z0 = 0
   part.bounds.z1 = 20
-  part.bracket.#given0.area = 600
-  part.bracket.#given1.area = 800
-  part.bracket.#given2.area = 1058.64
-  part.bracket.#given3.area = 800
-  part.bracket.#given4.area = 1058.64
-  part.bracket.#given5.area = 600
-  part.bracket.#given6.area = 753.974
   part.drill.hole.area = 376.974
   part.volume = 21172.6
 ```

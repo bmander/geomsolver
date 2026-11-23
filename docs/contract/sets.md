@@ -890,7 +890,7 @@ solid — a shell's cavity `{ c | c in B }`, then cut from `B` (`std.rounds`'s `
 body of `S` would be made of itself, and the membership reads `S`'s faces as its other terms leave
 them (its stratum), which no body of `S`'s says: it stays the region.  A face's side named by a
 path (`p in plate.near.side`, `p in cut_ball.ball.side`) is another set and stays a region.
-Through 0.230 the one membership was a region read off `S`'s faces, named and exported as a
+Through 0.229 the one membership was a region read off `S`'s faces, named and exported as a
 region is (a given body's seven faces reported as one `far`, a circle written as a spline).  A union of regions is read point by point (the meridian
 fold takes no complement yet).  `tests/solids_as_sets.rs::a_boolean_of_solids_is_the_body_term`
 and `outside_a_conjunction_is_a_union` are the gates.
