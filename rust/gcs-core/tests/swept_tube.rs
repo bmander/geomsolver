@@ -511,3 +511,28 @@ fn the_collar_charts_the_crossed_members_pinch() {
         }
     }
 }
+
+/// **The crossed reverse's sheet `−` holds a closed cuspidal edge folded beside its fold loop**
+/// (#880 T1f): beside the near-pinch at `(θ, t)` (1.076, 0.461) the spine doubles back, and a lobe
+/// of the sheet where `J` stands below nought (θ 1.02 to 1.44, t 0.16 to 0.44) lies within 2e-3 to
+/// 5e-2 of the fold loop through `(0.535, 0.873)` in space, under the feature: the search answered
+/// its cells beside that loop and never traced it, and the double curve ending on it at its two
+/// swallowtail points ran to `Undefined` ends with no event there. Now both closed edges are traced
+/// (`zero_set`'s beside reads the sign), and the lobe's two swallowtail points are where the
+/// double curve's runs end, (1.0201, 0.3481) and (1.4383, 0.1616).
+#[test]
+fn the_crossed_reverse_sheets_lobe_beside_its_fold_loop_is_traced() {
+    let (tool,path,roll,tol) = crate::common::bench::crossed(-1.);
+    let ring = Ring::read(&tool).unwrap();
+    let feature = 0.25*ring.thickness;
+    let tube = Tube::pinched(&ring,&path,roll,tol,feature).unwrap();
+    let (folds,_) = edges(&tube,Chart::Sheet(-1.),tol,feature).unwrap();
+    let closed: Vec<_> = folds.iter().filter(|p| p.closed()).collect();
+    assert_eq!(closed.len(),2,"two closed cuspidal edges: {:?}",folds.iter().map(|p| (p.ends,p.uv[0])).collect::<Vec<_>>());
+    let lobe = closed.iter().find(|p| p.uv.iter().all(|q| q[1] < 0.47)).expect("the lobe below the near-pinch");
+    let tails = swallowtails(&tube,-1.,&lobe.uv);
+    assert_eq!(tails.len(),2,"the lobe's swallowtail points {tails:?}");
+    for want in [[1.0201,0.3481],[1.4383,0.1616]] {
+        assert!(tails.iter().any(|q| (q[0]-want[0]).abs() < 1e-3 && (q[1]-want[1]).abs() < 1e-3),"no swallowtail point at {want:?}: {tails:?}");
+    }
+}

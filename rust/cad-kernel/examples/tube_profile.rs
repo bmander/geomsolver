@@ -56,6 +56,61 @@ fn main() {
         println!("least at the seed {:?}",cad_kernel::zero_set::Field::least(&field,s).map(|v| (v.f,v.grad)));
         return
     }
+    // (`CELL_AT=side,θ0,θ1,t0,t1,n`: the Jacobian's proved bound over the cell and over each of its
+    // n × n sub-cells, against `J`'s least read on a 9 × 9 grid in each)
+    if let Some(at) = std::env::var_os("CELL_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let (side,n) = (v[0],v[5] as usize);
+        for i in 0..n { for j in 0..n {
+            let a = [v[1]+(v[2]-v[1])*i as f64/n as f64,v[1]+(v[2]-v[1])*(i+1) as f64/n as f64];
+            let b = [v[3]+(v[4]-v[3])*j as f64/n as f64,v[3]+(v[4]-v[3])*(j+1) as f64/n as f64];
+            let b9 = tb.jacobian_bound(side,[a,b]).map(|b| (b.value.lo(),b.value.hi()));
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for p in 0..9 { for q in 0..9 {
+                if let Some(j) = tb.jacobian(side,a[0]+(a[1]-a[0])*p as f64/8.,b[0]+(b[1]-b[0])*q as f64/8.) { lo = lo.min(j); hi = hi.max(j) }
+            } }
+            let bad = b9.is_some_and(|(l,h)| l > hi || h < lo);
+            println!("{a:.4?} × {b:.4?}: bound {b9:?}, J read {lo:.3e} .. {hi:.3e}{}",if bad { "  WRONG" } else { "" });
+        } }
+        return
+    }
+    // (`EDGE_RECT=side,θ0,θ1,t0,t1`: a sheet's cuspidal edges traced over that rectangle alone)
+    if let Some(at) = std::env::var_os("EDGE_RECT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let field = tube::Edge {tube:&tb,chart:Chart::Sheet(v[0])};
+        let q = cad_kernel::zero_set::Question {rect:[[v[1],v[2]],[v[3],v[4]]],edges:&[],seeds:&[],tol,feature:0.25*ring.thickness};
+        match cad_kernel::zero_set::trace(&field,&q) {
+            Ok(t) => { for p in &t.pieces { println!("{} points {:?} {:?} .. {:?}",p.uv.len(),p.ends,p.uv[0],p.uv[p.uv.len()-1]) }
+                let s = &t.search; println!("search free {} monotone {} beside {} sampled {} unresolved {}",s.free,s.monotone,s.beside,s.sampled,s.unresolved.len());
+                // (`AGAINST=θ,t,…`: each such point's least distance in space, on the spine, from the pieces)
+                if let Ok(a) = std::env::var("AGAINST") {
+                    let x: Vec<f64> = a.split(',').map(|x| x.parse().unwrap()).collect();
+                    for c in x.chunks(2) {
+                        let y = tb.spine(c[0],c[1]).unwrap().s;
+                        let d = t.pieces.iter().flat_map(|p| p.uv.iter()).map(|q| cad_kernel::util::space::distance(tb.spine(q[0],q[1]).unwrap().s,y)).fold(f64::INFINITY,f64::min);
+                        println!("({},{}) {d:.4e} from the pieces in space",c[0],c[1]);
+                    }
+                } }
+            Err(e) => println!("{e}"),
+        }
+        return
+    }
+    if let Some(at) = std::env::var_os("LINE_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let (side,a,b,n) = (v[0],[v[1],v[2]],[v[3],v[4]],v[5] as usize);
+        let field = tube::Depth {tube:&tb,chart:Chart::Sheet(side),within:tol,holes:&[]};
+        for i in 0..=n {
+            let f = i as f64/n as f64;
+            let uv = [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
+            let sp = tb.spine(uv[0],uv[1]).unwrap();
+            let area = cad_kernel::util::space::norm(cad_kernel::util::space::cross(sp.s_th,sp.s_t));
+            println!("({:.6},{:.6}) J {:?} area {area:.3e} bound {:?} reading {:?}",uv[0],uv[1],tb.jacobian(side,uv[0],uv[1]),
+                tb.jacobian_bound(side,[[uv[0]-1e-4,uv[0]+1e-4],[uv[1]-1e-4,uv[1]+1e-4]]).map(|b| (b.value.lo(),b.value.hi())),
+                field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6}",c.depth,c.at),o => format!("{o:?}") }));
+        }
+        return
+    }
     if let Some(at) = std::env::var_os("COLLAR_AT") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
         let field = tube::Depth {tube:&tb,chart:Chart::Collar,within:tol,holes:&[]};
@@ -100,6 +155,18 @@ fn main() {
             println!("{chart:?}: {} edge pieces in {:?}, search {:?}; swallowtail points {tails:?}",folds.len(),clock.elapsed(),
                 search.iter().map(|s| (s.free,s.monotone,s.beside,s.sampled,s.unresolved.len())).collect::<Vec<_>>());
             for p in &folds { println!("  edge {} points {:?} ({:.5},{:.5}) .. ({:.5},{:.5})",p.uv.len(),p.ends,p.uv[0][0],p.uv[0][1],p.uv[p.uv.len()-1][0],p.uv[p.uv.len()-1][1]) }
+            // (`GAUGE`: each sheet edge's points with `J` and the gauge `∇J · k`, its sense carried)
+            if let (Chart::Sheet(side),true) = (chart,std::env::var_os("GAUGE").is_some()) {
+                for p in &folds {
+                    let mut sense = [1.,0.];
+                    for q in &p.uv {
+                        let (Some(k),Some(g)) = (tb.kernel(side,q[0],q[1]),tb.jacobian_gradient(side,q[0],q[1])) else { println!("    {q:?} none"); continue };
+                        let k = if k[0]*sense[0]+k[1]*sense[1] < 0. { [-k[0],-k[1]] } else { k };
+                        sense = k;
+                        println!("    ({:.6},{:.6}) J {:.3e} gauge {:+.4e} k {:?}",q[0],q[1],tb.jacobian(side,q[0],q[1]).unwrap_or(f64::NAN),g[0]*k[0]+g[1]*k[1],k);
+                    }
+                }
+            }
             if !tracing { continue }
             let clock = Instant::now();
             let lines: Vec<Vec<[f64;2]>> = folds.iter().map(|p| p.uv.clone()).collect();

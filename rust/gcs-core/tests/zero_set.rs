@@ -713,3 +713,40 @@ fn a_curve_running_to_where_its_field_is_undefined_ends_there() {
     assert!(edge(q) >= 0. && edge(q) <= 2.*TOL,"the end {q:?} {:e} from the field's edge",edge(q));
     for uv in &piece.uv { assert!((uv[1]-0.5).abs() <= TOL) }
 }
+
+/// **A loop within the feature of a traced curve in space, on the far side of its sign, is found**
+/// (#880 T1f): the plane `x = u/50`, `y = v` — a chart pressed fifty to one, as a spine doubled
+/// back beside a near-pinch brings a place far off in the parameters within the feature of another
+/// in space — and `f` the least of the line `x = 0` (positive beyond it) and a thin ellipse beside
+/// it (half axes 0.02 by 0.3, centred 0.07 off the line). Every cell of the ellipse lies within the
+/// feature of the line, and each was answered beside it, so the loop was never sought (the crossed
+/// reverse's closed cuspidal edge on its sheet `−`, within 2e-3 to 5e-2 of the fold loop traced
+/// first); inside it `f` reads the sign of the line's far side, so it is not answered by the line.
+#[test]
+fn a_loop_beside_a_traced_curve_on_the_far_side_of_its_sign_is_found() {
+    let (s,c,a,b) = (0.02,[0.07,0.5],0.02,0.3);
+    let map = move |uv: Uv| ([s*uv[0],uv[1],0.],[s,0.,0.],[0.,1.,0.]);
+    // (each branch 1-Lipschitz in space: the line's distance, and the ellipse's `a (ρ − 1)`)
+    let f = move |uv: Uv| {
+        let (x,y) = (s*uv[0],uv[1]);
+        let line = (x,[s,0.]);
+        let (dx,dy) = ((x-c[0])/a,(y-c[1])/b);
+        let rho = dx.dhypot(dy);
+        let ellipse = (a*(rho-1.),[s*dx/rho,a*dy/(b*rho)]);
+        if line.0 <= ellipse.0 { line } else { ellipse }
+    };
+    let bound = move |cell: Rect| {
+        let mid = [0.5*(cell[0][0]+cell[0][1]),0.5*(cell[1][0]+cell[1][1])];
+        Bound::lipschitz(f(mid).0,1.,0.5*(s*(cell[0][1]-cell[0][0])).dhypot(cell[1][1]-cell[1][0]))
+    };
+    let m = Mapped {f:Box::new(f),map:Box::new(map),bound:Some(Box::new(bound))};
+    let t = trace(&m,&question([[-1.,5.],[0.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"the line and the loop: {:?}",t.pieces.iter().map(|p| (p.uv[0],p.ends)).collect::<Vec<_>>());
+    let loops: Vec<_> = t.pieces.iter().filter(|p| p.closed()).collect();
+    let [lp] = loops[..] else { panic!("one loop: {:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>()) };
+    for uv in &lp.uv {
+        let (dx,dy) = ((s*uv[0]-c[0])/a,(uv[1]-c[1])/b);
+        assert!((a*(dx.dhypot(dy)-1.)).abs() <= TOL,"a point {uv:?} off the ellipse");
+    }
+    assert!(t.search.unresolved.is_empty(),"unresolved cells: {:?}",t.search.unresolved);
+}

@@ -429,6 +429,39 @@ impl<'a,F: Field> Tracer<'a,F> {
         hit
     }
 
+    /// **Whether a cell's middle `uv` is answered by a traced piece**: within `r` of one
+    /// (`near_traced`), on the side of it that `f` there says — `f`'s sign at the middle that of its
+    /// rate at the chord's nearest point toward the middle. A surface folded back on itself brings
+    /// a place of the chart far off in the parameters within the feature of a traced piece in space
+    /// and in the metric read at the middle, and a closed curve there is no part of that piece: on
+    /// the crossed reverse's sheet `−` a whole closed cuspidal edge (a lobe 0.4 by 0.3 in the
+    /// parameters, `J` below nought inside) stood within 2e-3 to 5e-2 of the traced fold loop in
+    /// space — the spine doubled back beside a near-pinch — and every cell of it was cleared beside
+    /// that loop (#880 T1f). Inside such a curve the middle reads the sign the traced piece's far
+    /// side has, so it is not answered by it: it is pulled onto its own curve or sampled.
+    fn beside(&self,uv: Uv,r: f64) -> bool {
+        let x = self.point(uv);
+        let reach = r+self.q.feature;
+        let g = self.metric(uv);
+        let mut near: Option<(f64,Uv)> = None;
+        self.grid.in_box(x.map(|c| c-reach),x.map(|c| c+reach),|i| {
+            let (a,b,p,q) = self.chords[i as usize];
+            if segment_distance(x,a,b) > r { return }
+            let m = metric_distance(g,uv,p,q);
+            if m > r || near.is_some_and(|(n,_)| n <= m) { return }
+            let (d,w) = ([q[0]-p[0],q[1]-p[1]],[uv[0]-p[0],uv[1]-p[1]]);
+            let dd = dot(d,apply(g,d));
+            let s = if dd > 0. { (dot(w,apply(g,d))/dd).clamp(0.,1.) } else { 0. };
+            near = Some((m,[p[0]+s*d[0],p[1]+s*d[1]]));
+        });
+        let Some((_,c)) = near else { return false };
+        // (the middle's sign against the piece's rate toward it; either unread, or either nought,
+        // and the piece answers it as before)
+        let (Some(m),Some(at)) = (self.field.least(uv),self.least(c)) else { return true };
+        let rate = dot(at.grad,[uv[0]-c[0],uv[1]-c[1]]);
+        !(m.f*rate < 0.)
+    }
+
     fn add_seed(&mut self,uv: Uv,end: End) {
         let x = self.point(uv);
         // a point found twice (a rectangle's corner, on two sides) is one seed
@@ -892,10 +925,10 @@ impl<'a,F: Field> Tracer<'a,F> {
             let graded = bound.is_some_and(|b| b.grad.is_some());
             let leaf = if graded { tol } else { feature };
             if 2.*reach <= leaf {
-                if self.near_traced(mid,reach+leaf) { out.beside += 1; continue }
+                if self.beside(mid,reach+leaf) { out.beside += 1; continue }
                 if let Some(s) = self.pulled(mid,reach) {
                     self.from_seed(s,None)?;
-                    if self.near_traced(mid,reach+leaf) { out.beside += 1; continue }
+                    if self.beside(mid,reach+leaf) { out.beside += 1; continue }
                 }
                 if bound.is_none() {
                     out.sampled += 1;

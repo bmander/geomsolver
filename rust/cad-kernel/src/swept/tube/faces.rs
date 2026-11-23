@@ -1070,6 +1070,8 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
         curves.push((Arc::new(Curve::BSpline(Arc::new(c))),pcs));
     }
     let mut pieces: Vec<Brep> = Vec::new();
+    // (each sheet's net over a window fitted once, its faces there sharing it)
+    let mut nets: Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)> = Vec::new();
     let mut charts = CHARTS.to_vec();
     if tube.pinch.is_some() { charts.push(Chart::Collar) }
     for chart in charts {
@@ -1136,7 +1138,7 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 if !keep { continue }
                 if debug() { eprintln!("tube: kept {chart:?} window {w}: {:?}",l.iter().map(|&(e,_)| lines[e].0).collect::<Vec<_>>()) }
                 let ls: Vec<&[(usize,bool)]> = std::iter::once(&l[..]).chain(holes[i].iter().map(|&j| &loops[j].0[..])).collect();
-                pieces.push(face(tube,chart,(w0,w1),&lines,&ls,arcs,&curves,vertices,tol)?);
+                pieces.push(face(tube,chart,(w0,w1),&lines,&ls,arcs,&curves,vertices,&mut nets,tol)?);
             }
         }
     }
@@ -1233,13 +1235,17 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
 /// torus; its loop's edges each the arc's curve and its use's pcurve, in the surface's parameters.
 #[allow(clippy::too_many_arguments)]
 fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>)],loops: &[&[(usize,bool)]],arcs: &[Arc2],
-    curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],tol: f64) -> Result<Brep,Unbuilt> {
+    curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],nets: &mut Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)>,tol: f64)
+    -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
         Chart::Sheet(side) => {
-            let net = sheet_net(tube,side,(w0,w1),FIT*tol)?;
-            (Surface::BSpline(Frame::WORLD,Arc::new(net)),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-a)/(b-a)]))
+            let net = match nets.iter().find(|(s,w,_)| *s == side && *w == (w0,w1)) {
+                Some((_,_,net)) => net.clone(),
+                None => { let net = Arc::new(sheet_net(tube,side,(w0,w1),FIT*tol)?); nets.push((side,(w0,w1),net.clone())); net }
+            };
+            (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-a)/(b-a)]))
         }
         Chart::Collar => {
             let [_,[lo,hi]] = tube.rect(chart);
