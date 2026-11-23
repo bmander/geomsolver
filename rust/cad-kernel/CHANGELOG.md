@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
+  distance from the origin, so a part built there was refused, or built hundreds of times slower,
+  once it stood a few of its own sizes off. A foot found from the last one on a face family's
+  wall, a blend, a B-spline sheet or its offset was taken for the nearest within a thousandth of
+  the *point's* distance from the origin (six millimetres, 6.3 m out); it is within a thousandth
+  of the patch's own size (`geom::NEAR`), and a foot refined from a hint is on its patch by that
+  size too. A rational spline's and a rational net's enclosures divided `A` by `W` with every pole
+  read from the origin, and a blend's read the point between its sections so, each as wide as the
+  distance from it; both are read from a point of the surface. A lofted blade unites with its hub
+  a metre out as at the origin, a NURBS ball is cut ten sizes out (refused before, after three
+  minutes), and a canal's cut ten thousand sizes out takes what it takes at the origin (700 times
+  that before). `family::Sheet::size` is new.
+
 - **Real files through a document** (#993 stage 2), each found by a CADGenBench input:
   - The reader refuses a face whose outer loop turns against the face's sense, or a hole the
     other way (`Brep::turned`, the rule `Brep::check` holds a solid to, at the measured

@@ -1705,15 +1705,10 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
 }
 
-/// **A net whose first and last rows of poles each collapse to a point is a ball**
-/// (brep-bench's geometry/nurbs-sphere): the standard biquadratic NURBS sphere, a 9 × 5 rational
-/// net, cut by `build::grid_sheet` two round and two up. Each collapsed row is a pole — one vertex
-/// and a degenerate edge in each face it bounds, as a sphere's are — so the sheet is a closed
-/// boundary `check` holds: the ball, `500π/3` and `100π`.
-#[test]
-fn a_net_closed_round_onto_two_poles_is_a_ball() {
+/// The standard biquadratic NURBS sphere of radius 5 about the origin, a 9 × 5 rational net closed
+/// round onto two poles, cut by `build::grid_sheet` two round and two up.
+pub(crate) fn nurbs_ball() -> gcs_core::brep::topo::Brep {
     use gcs_core::brep::nurbs::Net;
-    use gcs_core::brep::topo::EdgeCurve;
     let (r,h) = (5.,std::f64::consts::FRAC_1_SQRT_2);
     let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
     let circle_w = [1.,h,1.,h,1.,h,1.,h,1.];
@@ -1722,7 +1717,18 @@ fn a_net_closed_round_onto_two_poles_is_a_ball() {
     let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,0.,0.5,0.5,1.,1.,1.],
         poles:circle.iter().map(|c| meridian.iter().map(|m| [m[0]*c[0],m[0]*c[1],m[1]]).collect()).collect(),
         weights:Some(circle_w.iter().map(|wi| meridian_w.iter().map(|wj| wi*wj).collect()).collect())};
-    let ball = gcs_core::brep::build::grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap();
+    gcs_core::brep::build::grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap()
+}
+
+/// **A net whose first and last rows of poles each collapse to a point is a ball**
+/// (brep-bench's geometry/nurbs-sphere): the standard biquadratic NURBS sphere, a 9 × 5 rational
+/// net, cut by `build::grid_sheet` two round and two up. Each collapsed row is a pole — one vertex
+/// and a degenerate edge in each face it bounds, as a sphere's are — so the sheet is a closed
+/// boundary `check` holds: the ball, `500π/3` and `100π`.
+#[test]
+fn a_net_closed_round_onto_two_poles_is_a_ball() {
+    use gcs_core::brep::topo::EdgeCurve;
+    let ball = nurbs_ball();
     ball.check(1e-9).unwrap();
     assert_eq!(ball.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count(),4,"each face ends at a pole");
     assert_eq!(ball.vertices.len(),4,"a vertex at each pole, two round the equator");
