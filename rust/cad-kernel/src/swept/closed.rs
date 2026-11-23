@@ -704,6 +704,7 @@ const REACH: f64 = 0.0937;
 /// sweep within it of the tool over a spread of poses its square root wide, more stretches than
 /// membership reads.
 fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    if let Some(cut) = blank.and_then(|b| clipped_road(tool,path,roll,bar,tol,b)) { return cut }
     let (candidates,given) = super::contacts::candidates(tool,path,roll,tol)?;
     let trim = road_trim(tool,tol);
     // **the sweep within the blank's reach, where the whole does not close** (#880 T1c): cut from a
@@ -722,13 +723,96 @@ fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
             let Some(b) = blank else { return Err(whole) };
             let (lo,hi) = b.bounds();
             let g = REACH*b.size();
-            let reach = Some((lo.map(|x| x-g),hi.map(|x| x+g)));
+            let reach = Some(super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)));
             if crate::debug() { eprintln!("swept: the whole sweep's trim refused ({whole:?}): trimmed within the blank's reach") }
             super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach,..trim}).map_err(|_| whole)?.0
         }
         Err(whole) => return Err(whole),
     };
     cut_blank(swept,blank,tol)
+}
+
+/// How far past the blank's reach about the motion's axis the trim's reach stands, and the tool's
+/// clip twice as far, as a share of that reach: no round number, so neither cylinder stands on a
+/// face of the blank or the tool.
+const TURNED_REACH: f64 = 0.0937;
+
+/// **The contact's road within the blank's reach about the motion's axis** (the region the cut can
+/// depend on, settled before any surface is met): a screw, a turn or a slide about an axis carries
+/// every cylinder about it onto itself, so no point of the tool farther from the axis than the
+/// blank reaches ever enters the blank. The sweep is trimmed within a cylinder about the axis a
+/// little past the blank's reach (`radial_reach`, `trim::Reach::Turned`), and the tool clipped to a
+/// square prism about the axis whose sides stand a little past that — the reach carried onto
+/// itself, a point of the tool outside the clip never enters it — its candidates read with the
+/// clip's faces left out (`contacts::candidates_beyond`: they lie wholly past the reach, and so
+/// does all they sweep), and the sweep cut from the blank: the same cut, since the blank loses only
+/// what of the sweep lies within the reach, and there the clipped tool sweeps what the whole does.
+/// `None` where it does not apply (a tool within the clip already) or refuses: the whole road is
+/// taken then; a build past its budget is refused as it is.
+fn clipped_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: &Brep) -> Option<Result<Brep,Unbuilt>> {
+    let screw = path.screw()?;
+    let (o,z) = (screw.origin,unit(screw.axis));
+    let r = radial_reach(blank,o,z);
+    if !r.is_finite() { return None }
+    let grow = TURNED_REACH*r.max(0.1*blank.size());
+    let (reach,clip) = (r+grow,r+2.*grow);
+    if radial_reach(tool,o,z) <= clip { return None }
+    let [a,b] = axial_span(blank,o,z);
+    let [ta,tb] = axial_span(tool,o,z);
+    let margin = 0.1*(tb-ta).max(tool.size());
+    // (the clip a square prism about the axis, its sides `clip` from it: it need only hold the
+    // reach, which the motion carries onto itself — a clip by planes cuts a ruled or swept face in
+    // its own curves, where a cylinder about the axis cut it in traced ones, slow to read against
+    // the sheets)
+    let prism_about = prism(&square(add(o,scale(z,ta-margin)),z,clip),0.,tb-ta+2.*margin).ok()?;
+    let clipped = crate::boolean::combined(tool,&prism_about,crate::boolean::Op::Common,tol).ok()?;
+    if clipped.faces.is_empty() { return None }
+    let g = REACH*blank.size();
+    let within = super::trim::Reach::Turned {o,z,r:reach,span:[a-g,b+g]};
+    let built = (|| {
+        let (candidates,given) = super::contacts::candidates_beyond(&clipped,path,roll,tol,Some(reach))?;
+        let trim = super::trim::Trim {reach:Some(within),..road_trim(tool,tol)};
+        let (swept,_) = super::trim::trim(&clipped,path,roll,&candidates,&given,bar,tol,trim)?;
+        cut_blank(swept,Some(blank),tol)
+    })();
+    match built {
+        Ok(cut) => Some(Ok(cut)),
+        Err(e @ Unbuilt::Budget {..}) => Some(Err(e)),
+        Err(why) => { if crate::debug() { eprintln!("swept: the road within the blank's reach refused ({why:?}): the whole road taken") } None }
+    }
+}
+
+/// **A bound on how far `b` reaches from the line through `o` along the unit `z`**: a face on a
+/// cylinder about the line its radius; a plane square to it its edges' (a distance from the line is
+/// convex, so its greatest over a plane region is on its boundary) — a line's ends, a circle about
+/// the line its radius, any other curve its box's corners; any other face the corners of the
+/// solid's box (`Brep::bounds`, which holds its surfaces), the greatest over a box being at a
+/// corner.
+fn radial_reach(b: &Brep,o: V,z: V) -> f64 {
+    let radial = |p: V| { let q = sub(p,o); norm(sub(q,scale(z,dot(q,z)))) };
+    let corners = |(lo,hi): crate::geom::Box3| (0..8).map(|k: usize| radial(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })))
+        .fold(0.,f64::max);
+    let size = b.size();
+    let coaxial = |f: &Frame| norm(cross(f.z,z)) <= 1e-12 && radial(f.o) <= 1e-9*(1.+size);
+    let whole = corners(b.bounds());
+    let edge = |e: &crate::topo::Edge| match &e.curve {
+        EdgeCurve::Curve(Curve::Line {..}) => radial(b.vertices[e.v[0] as usize].p).max(radial(b.vertices[e.v[1] as usize].p)),
+        EdgeCurve::Curve(Curve::Circle(f,r)) if coaxial(f) => r.abs(),
+        EdgeCurve::Curve(c) => corners(c.bounds(e.t)),
+        EdgeCurve::Degenerate => radial(b.vertices[e.v[0] as usize].p),
+    };
+    b.faces.iter().map(|f| match &f.surface {
+        Surface::Cylinder(frame,r) if coaxial(frame) => r.abs(),
+        Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
+        _ => whole,
+    }).fold(0.,f64::max)
+}
+
+/// The span along the line through `o` along the unit `z` that `b`'s box holds.
+fn axial_span(b: &Brep,o: V,z: V) -> [f64;2] {
+    let (lo,hi) = b.bounds();
+    (0..8).map(|k: usize| dot(sub(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] }),o),z))
+        .fold([f64::INFINITY,f64::NEG_INFINITY],|[l,h],x| [l.min(x),h.max(x)])
 }
 
 /// A closed swept solid as the build returns it: alone, or cut from `blank` by the Boolean.
@@ -1488,6 +1572,14 @@ const JUDGED: usize = 8;
 /// the first member it so leaves out. Public, so what a build returned can be judged again apart
 /// from it.
 pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witnesses: &[V],tol: f64) -> Result<(),Unbuilt> {
+    judge_within(built,swept,domain,blank,None,witnesses,tol)
+}
+
+/// `judge`, the solid built as the sweep's part `within` a region where one is given (a trim's
+/// reach that is no box, `trim::Reach::Turned`): a point of the domain's box outside the region is
+/// held by nothing, and a point on its boundary not read.
+pub fn judge_within(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,within: Option<&Brep>,witnesses: &[V],tol: f64)
+    -> Result<(),Unbuilt> {
     use crate::query::{Located,Place};
     use crate::util::meter::{self,Stage};
     let (lo,hi) = domain.bounds();
@@ -1501,9 +1593,12 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     // (the grid is within the domain's box; a blank is the domain cut from, read as the blank)
     let solid = Located::new(built,tol);
     let blank = blank.map(|b| Located::new(b,tol));
+    let within = within.map(|b| Located::new(b,tol));
     let readings = crate::util::par::map(&points,|&p| -> Option<(V,bool)> {
         if !meter::charge(Stage::Judge,1,|| (p,"the built solid".into())) { return None }
+        let inside = match within.as_ref().map(|w| w.solid_place(p)) { Some(Place::On) => return None,x => x != Some(Place::Out) };
         let held = match solid.solid_place(p) { Place::In => true,Place::Out => false,Place::On => return None };
+        if !inside { return held.then_some((p,held)) }
         // (outside a blank, nothing is held whatever membership says: it is not read there)
         let should = match &blank {
             None => swept.member(p).ok()?,
@@ -1529,21 +1624,30 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     // turned in the faces' order refused (#780 R4)
     let size = { let (lo,hi) = built.bounds(); crate::util::space::distance(lo,hi) };
     let hair = (1e-4*size).max(64.*tol);
-    let turned = crate::util::par::indices(built.faces.len(),|fi| -> Option<V> {
+    // (each face: turned, with the point a hair in; or read facing out, a hair out out and a hair
+    // in in; or neither settled)
+    let turned = crate::util::par::indices(built.faces.len(),|fi| -> Option<Result<(),V>> {
         let f = &built.faces[fi];
         let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
         let p = (1..4).flat_map(|i| (1..4).map(move |j| [u0+(u1-u0)*i as f64/4.,v0+(v1-v0)*j as f64/4.]))
             .map(|uv| f.surface.point(uv)).find(|&p| solid.face_place(fi,p) == Place::In)?;
         let n = f.outward(p)?;
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
-        (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
+        match (solid.solid_place(outside),solid.solid_place(inside)) {
+            (Place::In,Place::Out) => Some(Err(inside)),
+            (Place::Out,Place::In) => Some(Ok(())),
+            _ => None,
+        }
     });
-    if let Some(at) = turned.into_iter().flatten().next() {
+    if let Some(at) = turned.iter().flatten().find_map(|r| r.err()) {
         if crate::debug() { eprintln!("judge: a face turned against its solid, read a hair ({hair:e}) in at {at:?}") }
         return Err(Unbuilt::Wrong {at,held:false})
     }
-    // turned inside out: every point it seems to hold, it leaves out
-    if crate::props::volume(built) < 0. {
+    // turned inside out: every point it seems to hold, it leaves out — read by its volume where a
+    // face was not read facing out (where every face was, the solid's point location holds the side
+    // each faces away from, and the volume, the sum of their fluxes, is that of what it holds:
+    // above nothing)
+    if turned.iter().any(|r| r.is_none()) && crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
             .or_else(|| witnesses.first().copied()).unwrap_or_else(|| built.vertices.first().map_or([0.;3],|v| v.p));
         return Err(Unbuilt::Wrong {at:inside,held:false})

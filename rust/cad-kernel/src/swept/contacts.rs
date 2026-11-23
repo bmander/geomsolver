@@ -1967,6 +1967,18 @@ pub fn sharp_edges(tool: &Brep) -> Result<Vec<(usize,[usize;2])>,V> {
 /// that end's rim (`crate::boolean::Given`), never searched for.
 pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64)
     -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
+    candidates_beyond(tool,path,roll,tol,None)
+}
+
+/// **`candidates`, the sweep wanted only within `beyond` of the motion's axis** (`closed`'s contact
+/// road, cut from a blank): the motion keeps every point's distance from its axis, so a face lying
+/// wholly farther from it than `beyond` — on a cylinder about the axis of a larger radius, or a
+/// plane along the axis standing farther from it, as the faces of a clip about the axis do
+/// (`trim::Reach::Turned`) — sweeps nothing within, nor does any edge of it: it gives no sheet, no
+/// fan and no meeting, and is not refused where it is in contact all over. The tool posed at the
+/// roll's ends holds it still, outside the reach.
+pub fn candidates_beyond(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64,beyond: Option<f64>)
+    -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
     use super::closed::Unbuilt;
     let screw = path.screw().ok_or(Unbuilt::Motion)?;
     // **a ball given poles off its contact** (#880 Q1b S5): under a turn or a screw a ball is in
@@ -2003,8 +2015,24 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
         Some(b) => { seated_tool = b; let (l,c) = read(&seated_tool); (&seated_tool,l,c) }
         None => (tool,drawn,drawn_contacts),
     };
-    let sharp = sharp_edges(tool).map_err(|at| Unbuilt::Curved {at})?;
     let size = tool.size();
+    let (axis_o,axis_z) = (screw.origin,crate::util::space::unit(screw.axis));
+    // (the faces past the reach: on a cylinder about the axis wider than `beyond`, or a plane along
+    // the axis farther than `beyond` from it)
+    let off: Vec<bool> = tool.faces.iter().map(|f| match (&f.surface,beyond) {
+        (Surface::Cylinder(frame,r),Some(beyond)) => {
+            let q = crate::util::space::sub(frame.o,axis_o);
+            let along = crate::util::space::dot(q,axis_z);
+            norm_of(crate::util::space::cross(frame.z,axis_z)) <= 1e-12
+                && norm_of(crate::util::space::sub(q,crate::util::space::scale(axis_z,along))) <= 1e-9*(1.+size)
+                && r.abs() > beyond
+        }
+        (Surface::Plane(frame),Some(beyond)) => crate::util::space::dot(frame.z,axis_z).abs() <= 1e-12
+            && crate::util::space::dot(crate::util::space::sub(frame.o,axis_o),crate::util::space::unit(frame.z)).abs() > beyond,
+        _ => false,
+    }).collect();
+    let sharp: Vec<(usize,[usize;2])> = sharp_edges(tool).map_err(|at| Unbuilt::Curved {at})?.into_iter()
+        .filter(|&(_,[f1,f2])| !off[f1] && !off[f2]).collect();
     let mut out = Vec::new();
     let mut given = Vec::new();
     // **under a turn, each sheet on the surface it sweeps** (#880 Q1b S5, `meridian_surface`): a
@@ -2013,7 +2041,6 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     // which the arrangement reads in closed form; a section is cut where its image folds back
     // (`folds`), each side its own sheet, and is not cut in stretches, which a screw asks for
     let turn = screw.is_turn();
-    let (axis_o,axis_z) = (screw.origin,crate::util::space::unit(screw.axis));
     let mut made: Vec<(Surface,Vec<[f64;2]>)> = Vec::new();
     let mut on = |curve: &crate::geom::Curve| -> Result<Option<Surface>,Unbuilt> {
         if !turn { return Ok(None) }
@@ -2027,6 +2054,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
     for (fi,contact) in contacts.into_iter().enumerate() {
+        if off[fi] { continue }
         match contact {
             Contact::Whole => {
                 let at = tool.faces[fi].loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
@@ -2190,7 +2218,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let sheets: Vec<crate::geom::Box3> = carried_all.iter().map(|(c,..)| c.sheet.bounds()).collect();
     // (the part of the roll a whole turn takes)
     let whole = (screw.ratio != 0.).then(|| std::f64::consts::TAU/(screw.ratio*(roll[1]-roll[0])).abs());
-    let jobs: Vec<(usize,usize,usize)> = (0..carried_all.len()).flat_map(|k| (0..2).flat_map(move |e| (0..tool.faces.len()).map(move |fi| (k,e,fi)))).collect();
+    let off = &off;
+    let jobs: Vec<(usize,usize,usize)> = (0..carried_all.len()).flat_map(|k| (0..2).flat_map(move |e| (0..tool.faces.len()).filter(move |&fi| !off[fi]).map(move |fi| (k,e,fi)))).collect();
     let met: Vec<crate::boolean::Given> = crate::util::par::indices(jobs.len(),|j| {
         let (k,e,fi) = jobs[j];
         let (c,_,on,order,section) = &carried_all[k];

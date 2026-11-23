@@ -1228,7 +1228,33 @@ is the same. The domed pin's whole trim does not close at its pole; within the r
 (`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`, to its
 closed form within 1e-9). The whole sweep is asked first: a torus screwed through a rod, its
 stretches' rails crossing the box, is split there unlike its neighbours. The narrow wheel stays
-S2's. **A tool of revolution has its seams turned off its contact's folds** (`contacts::seated`,
+S2's. **Cut from a blank under a screw, a turn or a slide, the road works first within the region the
+cut can depend on** (`closed::clipped_road`): the motion keeps every point's distance from its axis,
+so nothing of the tool farther from the axis than the blank reaches ever enters the blank. The
+blank's reach about the axis is bounded before any surface is met (`closed::radial_reach`: a face on
+a cylinder about the axis its radius, a plane square to it its edges', any other face its box's
+corners); the sweep is trimmed within a cylinder about the axis 0.0937 of that reach past it
+(`trim::Reach::Turned`, its box's corners outside it held by nothing in the judge,
+`closed::judge_within`), and the tool is clipped to a square prism about the axis twice as far out
+— the clip need only hold the reach, which the motion carries onto itself, and by planes it cuts a
+swept face in that face's own curves where a cylinder cut it in traced ones, slow to read against
+the sheets. Its candidates are read with every face lying wholly past the reach left out
+(`contacts::candidates_beyond`: on a cylinder about the axis wider than the reach, or a plane along
+the axis farther from it — what it sweeps stays past the reach — no sheet, no fan, no end meeting,
+and no refusal where it is in contact all over), and the result is cut from the blank: the same cut.
+Where the clipped road refuses, the whole road is taken; a build past its budget is refused as it is.
+A tool within the clip already goes the whole road. **A cylinder about the axis a sheet is carried
+round or along meets it in the sheet's paths** (`ssi::carried_round`): the sheet `carry_v(A(u))` of
+one section carried by a screw about the cylinder's axis or a slide along it meets it exactly in the
+`Iso` of each of the section's crossings of the cylinder, read certified (`query::curve_surface`) —
+the trim's reach, a rod about the screw — and is traced only where the section touches it. Traced,
+the reach's path round four turns was laid short of its end, and read slowly against every other
+sheet. The spline bar screwed through a rod (brep-bench) builds so in 2 s where the whole road took
+17, to the three kernels' volume within 5e-10
+(`swept_reach::a_bar_screwed_through_a_rod_is_cut_within_the_rods_reach`; the paths,
+`swept_reach::a_cylinder_about_the_screw_meets_a_carried_section_in_its_paths`). Clipped by a
+cylinder, its end pose's face pieces did not close at the section's seam, beside the rod, where the
+traced clip edges met the contact's rims. **A tool of revolution has its seams turned off its contact's folds** (`contacts::seated`,
 #880 T1e): turned about its own axis, the same solid, every face's seam turned with it. Where its
 contact folds (its image in the motion's invariants turning back) and a seam stands within a tenth
 of a radian of a fold, the tool is turned to put the seams in the middle of the widest gap between

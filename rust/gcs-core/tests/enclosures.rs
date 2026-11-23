@@ -167,6 +167,37 @@ fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
 /// **Every kind of surface is held by its enclosure** (#814 P2): over random boxes, its point and
 /// both partial derivatives at a grid of samples each lie in the enclosure — nets with a kink, a
 /// double knot and uneven weights, blends carried along a line and by a screw.
+/// **A long curve's whole spans' forms, kept for it, enclose as blossoming each span does**: a
+/// cubic and a quintic of 64 spans, a knot off the even spacing, read over random stretches — many
+/// covering spans whole, read off the forms `Curve::BSpline` keeps for it — and over stretches a
+/// rounding past its domain, each to the bit the curve read alone (`BSpline`'s own, no forms) gives,
+/// and every sample within.
+#[test]
+fn a_long_curves_kept_span_forms_enclose_as_its_spans_blossomed() {
+    let mut rng = Rng::new(0x5a2f);
+    for degree in [3,5] {
+        let n = 64+degree;
+        let poles: Vec<V> = (0..n).map(|i| { let t = i as f64*0.37; [t.cos()*(4.+t.sin()),t.sin()*3.,0.2*t+rng.uniform(-0.5,0.5)] }).collect();
+        let mut knots: Vec<f64> = (0..=degree).map(|_| 0.).collect();
+        knots.extend((1..n-degree).map(|k| if k == 20 { 19.5 } else { k as f64 }));
+        knots.extend((0..=degree).map(|_| (n-degree) as f64));
+        let spline = Arc::new(BSpline::new(degree,knots,poles).unwrap());
+        let curve = Curve::BSpline(spline.clone());
+        let [lo,hi] = spline.domain();
+        let ulp = |x: f64| x.abs()*f64::EPSILON+f64::MIN_POSITIVE;
+        let stretches = (0..400).map(|_| stretch(&mut rng,[lo,hi])).chain([[lo-ulp(lo),hi+ulp(hi)],[lo,hi],[lo+0.5,hi-0.25]]);
+        for t in stretches {
+            let (kept,alone) = (curve.enclose([t]),spline.enclose([t]));
+            assert_eq!(kept,alone,"degree {degree} over {t:?}");
+            for k in 0..=16 {
+                let x = (t[0]+(t[1]-t[0])*k as f64/16.).clamp(lo,hi);
+                let (at,d) = spline.d1(x);
+                assert!(held(&kept,at,[d]) || t[0] < lo || t[1] > hi,"degree {degree} over {t:?}: {at:?} at {x}");
+            }
+        }
+    }
+}
+
 #[test]
 fn every_kind_of_surface_is_held_by_its_enclosure() {
     let mut rng = Rng::new(812);

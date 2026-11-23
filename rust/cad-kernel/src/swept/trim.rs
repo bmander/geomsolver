@@ -69,13 +69,63 @@ pub struct Trim {
     /// How far to either side of a piece its membership is read, in the model's units: at least four
     /// times the membership mesh's sag, within which a side does not settle.
     pub hair: f64,
-    /// **The box the sweep is wanted within** (#880 T1c), where it is cut from a blank the box holds:
-    /// the trim builds the sweep's part inside it — the candidates' pieces outside it dropped, and
-    /// met only where they come near it, the box's own faces kept where the sweep holds them — the
-    /// same cut from the blank, since a blank inside the box loses only what of the sweep lies in
-    /// it. What the sweep does beyond — a fold's cusp where the tool stands at an end of a roll run
-    /// past the blank (the twist drill's steep flute wheel) — is not asked.
-    pub reach: Option<(V,V)>,
+    /// **The region the sweep is wanted within** (#880 T1c), where it is cut from a blank the
+    /// region holds: the trim builds the sweep's part inside it — the candidates' pieces outside it
+    /// dropped, and met only where they come near it, the region's own faces kept where the sweep
+    /// holds them — the same cut from the blank, since a blank inside the region loses only what of
+    /// the sweep lies in it. What the sweep does beyond — a fold's cusp where the tool stands at an
+    /// end of a roll run past the blank (the twist drill's steep flute wheel) — is not asked.
+    pub reach: Option<Reach>,
+}
+
+/// **A region the sweep is wanted within** (`Trim::reach`): a box, or a cylinder about the motion's
+/// axis (`Turned`), which a screw, a turn or a slide about that axis carries onto itself, so that
+/// no point of the tool outside it ever enters it (`closed`'s contact road, cut from a blank).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Reach {
+    /// The box from `lo` to `hi`.
+    Box(V,V),
+    /// The cylinder of radius `r` about the line through `o` along the unit `z`, from `span[0]` to
+    /// `span[1]` along it.
+    Turned { o: V,z: V,r: f64,span: [f64;2] },
+}
+
+impl Reach {
+    /// A box holding the region.
+    pub fn bounds(&self) -> (V,V) {
+        match *self {
+            Reach::Box(lo,hi) => (lo,hi),
+            Reach::Turned {o,z,r,span} => {
+                let ends = span.map(|t| add(o,scale(z,t)));
+                // (a circle of radius `r` square to `z` reaches `r √(1 − z_k²)` along axis `k`)
+                let reach: V = std::array::from_fn(|k| r*(1.-z[k]*z[k]).max(0.).sqrt());
+                (std::array::from_fn(|k| ends[0][k].min(ends[1][k])-reach[k]),std::array::from_fn(|k| ends[0][k].max(ends[1][k])+reach[k]))
+            }
+        }
+    }
+    /// Whether the box `b` comes within `r` of the region: its box, and for the cylinder, no point
+    /// of `b` farther than `r` past its side (the box's nearest distance from the axis, read at its
+    /// middle less its half diagonal).
+    pub fn reaches(&self,b: (V,V),r: f64) -> bool {
+        let (lo,hi) = self.bounds();
+        if !crate::boolean::overlap(&b,&(lo,hi),r) { return false }
+        match *self {
+            Reach::Box(..) => true,
+            Reach::Turned {o,z,r: radius,..} => {
+                let c = scale(add(b.0,b.1),0.5);
+                let q = sub(c,o);
+                let off = crate::util::space::norm(sub(q,scale(z,crate::util::space::dot(q,z))));
+                off-0.5*distance(b.0,b.1) <= radius+r
+            }
+        }
+    }
+    /// The region as a solid.
+    pub fn solid(&self) -> Result<Brep,String> {
+        match *self {
+            Reach::Box(lo,hi) => crate::build::block(lo,hi),
+            Reach::Turned {o,z,r,span} => crate::build::prism(&crate::build::disc(o,z,r),span[0],span[1]),
+        }
+    }
 }
 
 /// **The closed swept solid of `tool` under `path` over `roll`, trimmed from `candidates`** (E1):
@@ -342,8 +392,8 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let mut report = Report {faces:candidates.iter().map(|c| c.faces.len()).sum(),..Report::default()};
     // (the reach: a ball reaches it where it comes within its radius of the box; a point is past it
     // farther than the tolerance outside)
-    let reaches = |b: ([f64;3],[f64;3]),r: f64| trim.reach.is_none_or(|reach| crate::boolean::overlap(&b,&reach,r));
-    let held_box = trim.reach.map(|(lo,hi)| crate::build::block(lo,hi)).transpose().map_err(Unbuilt::Failed)?;
+    let reaches = |b: ([f64;3],[f64;3]),r: f64| trim.reach.is_none_or(|reach| reach.reaches(b,r));
+    let held_box = trim.reach.map(|reach| reach.solid()).transpose().map_err(Unbuilt::Failed)?;
     let candidates: Vec<&Brep> = candidates.iter().chain(held_box.as_ref()).collect();
     let boxed = held_box.is_some().then(|| candidates.len()-1);
     // 1. each candidate's faces zoned: the balls near the boundary, by (candidate, face)
@@ -365,7 +415,10 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         let sag = mesh.sag;
         if crate::timing() { let (lo,hi) = cand.bounds(); eprintln!("trim: candidate {k}: {} faces ({}), from {lo:.1?} to {hi:.1?}, {} triangles, sag {sag:.3}",
             cand.faces.len(),cand.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>().join(" "),mesh.tris.len()) }
-        let tris: Vec<(usize,[V;3])> = mesh.tris.iter().zip(&mesh.of).map(|(t,&f)| (f as usize,t.map(|i| mesh.pts[i as usize]))).collect();
+        // (a triangle clear of the reach, by more than the sag, holds no ball within it: not zoned)
+        let tris: Vec<(usize,[V;3])> = mesh.tris.iter().zip(&mesh.of).map(|(t,&f)| (f as usize,t.map(|i| mesh.pts[i as usize])))
+            .filter(|(_,t)| reaches((std::array::from_fn(|k| t[0][k].min(t[1][k]).min(t[2][k])),std::array::from_fn(|k| t[0][k].max(t[1][k]).max(t[2][k]))),sag))
+            .collect();
         let read = crate::util::par::map(&tris,|&(_,t)| zoned(&swept,t,sag,trim.resolution));
         let mut here = [0;3];
         for ((f,_),r) in tris.iter().zip(read) {
@@ -638,7 +691,9 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         }
     };
     let clock = crate::util::clock::Instant::now();
-    super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
+    // (within a region not a box, its box's corners outside it: the solid holds nothing there)
+    let within = matches!(trim.reach,Some(Reach::Turned {..})).then_some(domain);
+    super::closed::judge_within(&out,&swept,domain,None,within,&[],tol)?;
     if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))
 }

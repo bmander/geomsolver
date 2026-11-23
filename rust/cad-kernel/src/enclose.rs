@@ -190,7 +190,12 @@ fn quotient(a: [Iv;4],d: [Iv;4]) -> (I3,I3) {
 fn lift(q: V,w: f64) -> [Iv;4] { let w = Iv::point(w); [Iv::point(q[0])*w,Iv::point(q[1])*w,Iv::point(q[2])*w,w] }
 
 impl Enclosed<1> for BSpline {
-    fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
+    fn enclose(&self,t: [[f64;2];1]) -> Patch<1> { self.enclosed_with(t,None) }
+}
+
+impl BSpline {
+    /// `enclose`, its whole spans' Bézier forms read from `forms` where given (`span_forms`).
+    fn enclosed_with(&self,[t]: [[f64;2];1],forms: Option<&SpanForms>) -> Patch<1> {
         let [lo,hi] = self.domain();
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
         // (a stretch past the domain read as the curve is there, clamped: its point the end's, its
@@ -198,7 +203,7 @@ impl Enclosed<1> for BSpline {
         // over its whole `u` asks `[0, 1]` grown outward by a rounding, past the domain by an ulp,
         // which de Boor's hull in intervals read over every span, looser and slower)
         if self.weights.is_none() && self.degree < BEZIER && b >= lo && a <= hi {
-            if let Some(mut p) = self.restricted([a.max(lo),b.min(hi)]) {
+            if let Some(mut p) = self.restricted([a.max(lo),b.min(hi)],forms) {
                 if a < lo || b > hi { p.d[0] = p.d[0].map(|x| x.hull(Iv::point(0.))) }
                 return p
             }
@@ -247,6 +252,76 @@ impl Enclosed<2> for Net {
     }
 }
 
+/// **A span's Bézier form over the whole span** (`SpanForms`): the boxes of its point's control
+/// points and its rate's, its poles' largest coordinate `m`, its difference poles' `md`, and the
+/// least knot gap a difference is divided by.
+#[derive(Clone,Copy,Debug)]
+struct Whole { at: Box3,d: Box3,m: f64,md: f64,gap: f64 }
+
+/// **A curve's spans' Bézier forms, each over its whole span** (`BSpline::restricted`): indexed by
+/// the span's knot less the degree, `None` for a span with a difference's knot gap empty.
+struct SpanForms { spans: Vec<Option<Whole>> }
+
+/// The fewest spans a curve has for its whole spans' forms to be kept (`span_forms`): fewer are
+/// read as cheaply.
+const FORMED_SPANS: usize = 4*WIDE;
+
+/// How many curves' forms are kept at once: past it the store is emptied.
+const FORMED_CURVES: usize = 1024;
+
+thread_local! {
+    /// The forms each thread asked for last, each with its curve (held, so that its address is no
+    /// other's): read without taking the store's lock.
+    static HELD_FORMS: std::cell::RefCell<([Option<(std::sync::Arc<BSpline>,std::sync::Arc<SpanForms>)>;4],usize)> =
+        const { std::cell::RefCell::new(([const { None };4],0)) };
+}
+
+/// **`b`'s spans' whole Bézier forms, blossomed once for the curve and kept** (keyed by the curve,
+/// held, so no other takes its place): a stretch across many spans — a sheet's section, read at
+/// every box of a ray's or an edge's search — reads each span it covers whole off them, and
+/// blossoms only the two it ends in. The same points `restricted` blossoms, so the same enclosure.
+fn span_forms(b: &std::sync::Arc<BSpline>) -> std::sync::Arc<SpanForms> {
+    let held = HELD_FORMS.with(|c| c.borrow().0.iter().flatten().find(|(c,_)| std::sync::Arc::ptr_eq(c,b)).map(|e| e.1.clone()));
+    if let Some(f) = held { return f }
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<BSpline>,std::sync::Arc<SpanForms>)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = std::sync::Arc::as_ptr(b) as usize;
+    let stored = STORE.lock().unwrap().get(&key).map(|e| e.1.clone());
+    let forms = stored.unwrap_or_else(|| {
+        let p = b.degree;
+        let spans = (p..b.poles.len()).map(|k| {
+            let t = [b.knots[k],b.knots[k+1]];
+            if !(t[0] < t[1]) { return None }
+            let poles = &b.poles[k-p..=k];
+            let m = poles.iter().flatten().fold(0f64,|x,y| x.max(y.abs()));
+            let (mut at,mut d) = (EMPTY,EMPTY);
+            for j in 0..points(t,p) { include(&mut at,blossom(&b.knots,poles,k,p,t,j)) }
+            if p == 0 { include(&mut d,[0.;3]); return Some(Whole {at,d,m,md:0.,gap:f64::INFINITY}) }
+            let (mut q,mut md,mut gap) = ([[0.;3];BEZIER],0f64,f64::INFINITY);
+            for j in 0..p {
+                let g = b.knots[k+j+1]-b.knots[k-p+j+1];
+                if !(g > 0.) { return None }
+                q[j] = std::array::from_fn(|c| p as f64*(poles[j+1][c]-poles[j][c])/g);
+                md = md.max(q[j].iter().fold(0f64,|x,y| x.max(y.abs())));
+                gap = gap.min(g);
+            }
+            for j in 0..points(t,p-1) { include(&mut d,blossom(&b.knots[1..],&q[..p],k-1,p-1,t,j)) }
+            Some(Whole {at,d,m,md,gap})
+        }).collect();
+        let forms = std::sync::Arc::new(SpanForms {spans});
+        let mut store = STORE.lock().unwrap();
+        if store.len() >= FORMED_CURVES { store.clear() }
+        store.insert(key,(b.clone(),forms.clone()));
+        forms
+    });
+    HELD_FORMS.with(|c| {
+        let (slots,next) = &mut *c.borrow_mut();
+        slots[*next] = Some((b.clone(),forms.clone()));
+        *next = (*next+1)%slots.len();
+    });
+    forms
+}
+
 /// One more than the highest degree enclosed by restricted Bézier forms (`Net::restricted`,
 /// `BSpline::restricted`): the work arrays' size, past the quintic a ring's tubes are fitted with. A
 /// higher degree is read by de Boor in intervals.
@@ -288,8 +363,10 @@ impl BSpline {
     /// Bézier forms restricted to the stretch**: over each knot span the stretch reaches, the
     /// blossoms at its ends (`blossom`) — the piece over the stretch lies in their hull — and its
     /// rate's, a spline of a degree less on the poles' differences; each hull widened by its
-    /// rounding (`rounding`). `None` where a difference's knot gap is empty.
-    fn restricted(&self,[a,b]: [f64;2]) -> Option<Patch<1>> {
+    /// rounding (`rounding`). `None` where a difference's knot gap is empty. A span the stretch
+    /// covers whole read from `forms` where given: the same Bézier points, blossomed once for the
+    /// curve (`span_forms`).
+    fn restricted(&self,[a,b]: [f64;2],forms: Option<&SpanForms>) -> Option<Patch<1>> {
         let (p,n) = (self.degree,self.poles.len());
         let (k0,k1) = (span(p,&self.knots,n,a),span(p,&self.knots,n,b));
         let (mut at,mut d) = (EMPTY,EMPTY);
@@ -298,6 +375,21 @@ impl BSpline {
             if !(self.knots[k] < self.knots[k+1]) { continue }
             let t = [a.max(self.knots[k]),b.min(self.knots[k+1])];
             if !(t[0] <= t[1]) { continue }
+            if let Some(forms) = forms.filter(|_| t == [self.knots[k],self.knots[k+1]]) {
+                // (the whole span's: its point's and rate's boxes, its poles' largest coordinate,
+                // its differences' and their least knot gap — each difference's rounding `4 p ε m /
+                // gap` greatest at the least gap, `m` read so far)
+                let w = forms.spans[k-p]?;
+                m = m.max(w.m);
+                include(&mut at,w.at.0);
+                include(&mut at,w.at.1);
+                include(&mut d,w.d.0);
+                include(&mut d,w.d.1);
+                if p == 0 { continue }
+                md = md.max(w.md);
+                ed = ed.max(4.*p as f64*f64::EPSILON*m/w.gap);
+                continue
+            }
             let poles = &self.poles[k-p..=k];
             m = poles.iter().flatten().fold(m,|x,y| x.max(y.abs()));
             for j in 0..points(t,p) { include(&mut at,blossom(&self.knots,poles,k,p,t,j)) }
@@ -414,7 +506,15 @@ impl Enclosed<1> for Curve {
             Curve::Line {p,d} => Patch {at:add3(c3(*p),scale3(c3(*d),tv)),d:[c3(*d)],proved:true},
             Curve::Circle(f,r) => conic(f,*r,*r),
             Curve::Ellipse(f,a,b) => conic(f,*a,*b),
-            Curve::BSpline(b) => b.enclose([t]),
+            Curve::BSpline(b) => {
+                // (a long curve's whole spans' forms kept for it, where the stretch is wide)
+                let n = b.poles.len()-b.degree;
+                let wide = n >= FORMED_SPANS && b.weights.is_none() && b.degree < BEZIER && {
+                    let [lo,hi] = b.domain();
+                    (t[1]-t[0]).abs() > WIDE as f64*(hi-lo)/n as f64
+                };
+                if wide { b.enclosed_with([t],Some(&span_forms(b))) } else { b.enclose([t]) }
+            }
             Curve::Traced(c) => c.enclose([t]),
             Curve::Iso(b,u) => { let p = b.enclose([[*u,*u],t]); Patch {at:p.at,d:[p.d[1]],proved:p.proved} }
             Curve::SheetCut(c) => c.enclose([t]),

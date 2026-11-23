@@ -544,6 +544,30 @@ pub enum Recognised {
     RimHeld = 4,
 }
 
+/// **A cylinder about the axis a sheet carries its section round or along** (a swept solid's
+/// contact sheet against a rod about the screw's axis, or a trim's reach, `swept::trim::Reach`): a
+/// screw about the axis, or a slide along it, keeps every point's distance from the axis, so the
+/// sheet `carry_v(A(u))` meets the cylinder exactly along the paths of the section's points on it —
+/// the sheet's `Iso` at each of the section's crossings of the cylinder, read by
+/// `query::curve_surface`. A sheet whose two edges differ (a loft), a carry about another line, a
+/// section touching the cylinder or a reading refused: `None`, and the meeting is traced.
+fn carried_round(cy: &Frame,r: f64,sheet: &std::sync::Arc<super::geom::Blend>,tol: f64) -> Option<Vec<Curve>> {
+    if sheet.a != sheet.b || sheet.ta != sheet.tb { return None }
+    let z = unit(cy.z);
+    let off_axis = |p: V| { let q = sub(p,cy.o); norm(sub(q,scale(z,dot(q,z)))) };
+    let along = |d: V| norm(d) > 0. && norm(cross(unit(d),z)) <= 1e-12;
+    match sheet.carry {
+        Carry::Screw {center,axis,..} if along(axis) && off_axis(center) <= 1e-9*(1.+r) => {}
+        Carry::Line {delta} if along(delta) => {}
+        _ => return None,
+    }
+    let [t0,t1] = sheet.ta;
+    if !(t1 != t0) { return None }
+    let crate::query::Meets::At(roots) = crate::query::curve_surface(&sheet.a,[t0.min(t1),t0.max(t1)],&Surface::Cylinder(*cy,r),tol) else { return None };
+    if roots.iter().any(|&(_,touch)| touch) { return None }
+    Some(roots.into_iter().map(|(t,_)| Curve::Iso(sheet.clone(),((t-t0)/(t1-t0)).clamp(0.,1.))).collect())
+}
+
 /// **`f` with the recognitions `forms` bypassed** (#810): `intersect` leaves those pairs to be traced
 /// unless their meeting is given, here and on the threads `util::par` runs `f`'s work on
 /// (`util::bypass`).
@@ -619,6 +643,8 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
                 .or_else(|| plane_contact_section(&pl,&c)) => Ssi::Curves(curves),
         (Surface::Cylinder(cy,r),Surface::Revolution(_,c)) | (Surface::Revolution(_,c),Surface::Cylinder(cy,r))
             if let Some(curves) = recognised(Recognised::RimHeld,|| side_holding_rim(&cy,r,&c,tol)) => Ssi::Curves(curves),
+        (Surface::Cylinder(cy,r),Surface::Blend(_,sheet)) | (Surface::Blend(_,sheet),Surface::Cylinder(cy,r))
+            if let Some(curves) = carried_round(&cy,r,&sheet,tol) => Ssi::Curves(curves),
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };

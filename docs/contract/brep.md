@@ -490,7 +490,11 @@ a swap made without its callers knowing:
   box's ends (the patch over the box in their hull), its partials' the difference nets' alike, each
   hull widened by a bound on its rounding (`Net::restricted`, `BSpline::restricted`) — tighter than
   de Boor read in intervals, which loses the blending's dependence on the one parameter, and read
-  in floats; over many spans the hulls of its poles and their differences (`Net::hulled`); a
+  in floats; over many spans the hulls of its poles and their differences (`Net::hulled`); a long
+  curve's spans it covers whole read off their Bézier forms blossomed once for the curve and kept
+  (`enclose::span_forms`, the same enclosure,
+  `enclosures::a_long_curves_kept_span_forms_enclose_as_its_spans_blossomed`); a stretch a rounding
+  past a curve's domain read as the curve is there, clamped, its derivative with nought; a
   rational one, or one of a higher degree, by de Boor's algorithm in intervals span by span, the
   hull over the spans;
   lines, conics, quadrics, the torus, extrusions, revolutions, blends and their carries, a face
