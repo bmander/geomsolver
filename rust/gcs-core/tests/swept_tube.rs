@@ -245,7 +245,10 @@ fn the_half_turns_seams_are_traced_from_the_depth_on_every_chart() {
     let [disc] = discs[..] else { panic!("one disc: {discs:?}") };
     assert!((disc.radius-0.01).abs() < 1e-12,"the disc's radius {}",disc.radius);
     assert_eq!(minus.len(),3,"the sheet −'s seams: {:?}",minus.iter().map(|p| (p.uv[0],p.uv[p.uv.len()-1],p.ends)).collect::<Vec<_>>());
-    assert_eq!(minus.iter().filter(|p| p.ends.contains(&End::Edge(0))).count(),2,"two pieces from the disc's rim");
+    // (an end on an inner edge named by that edge, the folds' first: the disc's rim is read by its side)
+    let on_disc = |p: &gcs_core::brep::zero_set::Piece<_>| [(p.ends[0],p.uv[0]),(p.ends[1],p.uv[p.uv.len()-1])].iter()
+        .any(|(e,q)| matches!(e,End::Edge(_)) && disc.side(*q).abs() <= 1e-6);
+    assert_eq!(minus.iter().filter(|p| on_disc(p)).count(),2,"two pieces from the disc's rim");
     for k in 0..2 {
         let (circles,_) = edges(&tube,Chart::End(k),tol,feature).unwrap();
         assert_eq!(circles.len(),8,"the end {k}'s contact circles, in quarters");
