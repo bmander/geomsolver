@@ -510,6 +510,11 @@ rule above is the fixed one, run against `375efd5`.
 - **The faces' keys reached readers.** `--where part` listed `part.bracket.#given0.area` …
   `#given6`, and a claim's witness said `between bracket.#given0 and bracket.#given2`, names no
   document can write. The report lists no such row and the witness says `` a face of `bracket` ``.
+  The export's warning of thin faces did the same on real files (cgb246: `` the first,
+  `input.#given231`, 7.835 µm across, beside `input.#given229` and `input.#given233` ``) and
+  advised moving "one cut" a given body has none of; it says `` a face of `input` `` and, of a
+  body the file gives untouched, "The file `input` gives it so, and the document states nothing of
+  it: it is written as it is given".
 - **A given body's build was one in every unit.** Its key now reads the document's unit, so the
   same file read in millimetres and in inches is two builds, never one mesh drawn in both
   (solids.md).
@@ -591,10 +596,6 @@ in the kernel or the evaluator, and the measurements above are after the fixes.
   wait for stage 4. `repeat a in part` over a body made of one makes no copy, and says nothing.
 - **A face path that names nothing** (`input.near.side`, `ball.nosuch.side` alike) is accepted
   until the solid is built. Older than stage 2.
-- **The export's warning of thin faces still names face keys**: cgb246's export says `` `part`
-  holds 2 faces thinner than the export's 10.000 µm …: the first, `input.#given231`, 7.835 µm
-  across, beside `input.#given229` and `input.#given233` ``, and advises moving "one cut" — names
-  and advice no document over a given body can act on.
 - **A containment beside a cut**: `claim every q in part: q in bracket`, `drill cut part`, is
   undecided within the faceting's uncertainty where the bore is shared.
 - **benchy's export does not read back** (above), and **its STL is refused**: `the mesh has 1

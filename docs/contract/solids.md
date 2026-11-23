@@ -1294,8 +1294,11 @@ facets and half a minute — only where its box is asked, and a containment clai
 (`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
 keeps the face's key, for a host to pick it by
 (`given_bodies::a_given_bodys_faces_are_said_as_its_faces`); the export's warning of faces
-thinner than its tolerance still names them by key — `` the first, `input.#given231`, 7.835 µm
-across, beside `input.#given229` `` on CADGenBench 246 — and is open.
+thinner than its tolerance says each as `` a face of `bracket` `` too, once however many it stands
+beside, and where the body is the file's untouched it gives no advice to move a cut's end, for the
+document made no cut: "The file `bracket` gives it so, and the document states nothing of it: it is
+written as it is given" (`brep::export::said_slivers`;
+`given_solids::a_sliver_a_files_body_holds_is_said_as_the_files`).
 **A body whose stock is another solid, nothing on,
 through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, the two
 evaluations standing alike), so a containment between them, either way, holds exactly — its
