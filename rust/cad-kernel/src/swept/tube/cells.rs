@@ -528,15 +528,90 @@ impl Ask<'_> {
             }
         }
         if !breaks.is_empty() { breaks.sort_by(f64::total_cmp); breaks.dedup(); return Err(breaks) }
+        // (no side's curve turns at the run's end: its lines read it as a graph whose slope grows
+        // without bound there between the last line and the end, which the slope read at the lines'
+        // middles never sees — that way is no slab; the other is, the curve a graph over it there)
+        let delta = 0.5*(x1-x0)/LINES as f64;
+        for (bd,boxed) in [(&lo,boxed[0]),(&hi,boxed[1])] {
+            if boxed { continue }
+            for x in [x0,x1] {
+                let Some(y) = bd.value(self.tube,self.chart,axis,x,self.step) else { continue };
+                // (the turning point on this side: within the run's length of its end in space)
+                let m = self.tube.rates_at(self.chart,axis.point(x,y)).unwrap_or([1.,1.]);
+                let near = |t: &P| (t[axis.across()]-y).abs()*m[axis.across()] <= (x1-x0)*m[axis.along()];
+                if self.turns(axis,x,delta).iter().any(|t| (t[axis.along()]-x).abs() <= delta && near(t)) { return Err(Vec::new()) }
+            }
+        }
         Ok(Cell {chart:self.chart,axis,run:[x0,x1],lo,hi})
     }
 
+    /// **A stop's curve at the fraction `f` of its polyline's segment `s`**: the chord's point there
+    /// settled on the stop's own field (`Tube::stop`) along the chord's normal — the polyline
+    /// proposes, the field decides.
+    fn stop_at(&self,li: usize,s: usize,f: f64) -> Option<P> {
+        let (l,stop) = (&self.stops.lines[li].0,self.stops.lines[li].1);
+        let (p,q) = (l[s],l[s+1]);
+        let c = [p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f];
+        let d = [q[0]-p[0],q[1]-p[1]];
+        let len = d[0].hypot(d[1]);
+        if !(len > 0.) { return Some(c) }
+        let n = [-d[1]/len,d[0]/len];
+        let m = self.tube.rates_at(self.chart,c).map_or(1.,|m| m[0].max(m[1]).max(f64::MIN_POSITIVE));
+        let at = |w: f64| [c[0]+n[0]*w,c[1]+n[1]*w];
+        root(&|w: f64| self.tube.stop(self.chart,stop,at(w)),0.,self.tol/m).map(at)
+    }
+
+    /// **Where each curve turns across the line at `x`** (run's coordinate along `axis`), within a
+    /// segment of its polyline: each segment of the face's rings and of the stops whose curve
+    /// (`edge`, `stop_at`) bows past both its ends along the run, its extreme there (golden section
+    /// on the curve's fraction) where the line meets the curve twice within the segment — the
+    /// extreme beyond the line from the segment's ends — or passes within `delta` of it. The
+    /// polylines only propose: a line nearly tangent to a curve meets it twice inside one chord, and
+    /// no count of the chords' crossings sees that.
+    fn turns(&self,axis: Axis,x: f64,delta: f64) -> Vec<P> {
+        let a = axis.along();
+        let mut out = Vec::new();
+        let mut look = |p: P,q: P,g: &dyn Fn(f64) -> Option<P>| {
+            let (lo,hi) = (p[a].min(q[a]),p[a].max(q[a]));
+            let len = (p[0]-q[0]).abs().max((p[1]-q[1]).abs());
+            if x < lo-len-delta || x > hi+len+delta { return }
+            let Some(m) = g(0.5) else { return };
+            let sign = if m[a] > hi { 1. } else if m[a] < lo { -1. } else { return };
+            let h = |f: f64| g(f).map_or(f64::NEG_INFINITY,|v| sign*v[a]);
+            let (mut s,mut e) = (0f64,1f64);
+            let phi = 0.5*(5f64.sqrt()-1.);
+            let (mut c,mut d) = (e-phi*(e-s),s+phi*(e-s));
+            let (mut hc,mut hd) = (h(c),h(d));
+            while e-s > 1e-12 {
+                if hc > hd { e = d; d = c; hd = hc; c = e-phi*(e-s); hc = h(c) }
+                else { s = c; c = d; hc = hd; d = s+phi*(e-s); hd = h(d) }
+            }
+            let Some(t) = g(0.5*(s+e)) else { return };
+            // (twice met: the extreme beyond the line, the ends this side of it)
+            let end = if sign > 0. { hi } else { lo };
+            let twice = sign*(t[a]-x) > 0. && sign*(x-end) > 0.;
+            if twice || (t[a]-x).abs() <= delta { out.push(t) }
+        };
+        for (r,ring) in self.rings.iter().enumerate() {
+            let n = ring.len();
+            for s in 0..n { look(ring[s],ring[(s+1)%n],&|f| (self.edge)(r,s,Hold::At(f))) }
+        }
+        for (li,(l,_)) in self.stops.lines.iter().enumerate() {
+            for s in 0..l.len().saturating_sub(1) { look(l[s],l[s+1],&|f| self.stop_at(li,s,f)) }
+        }
+        out
+    }
+
     /// **Where a curve turns between the lines at `x − δ` and `x + δ`** (run's coordinate along
-    /// `axis`): where the face's rings and the stops cross the two lines a different number of
-    /// times, a curve's two crossings meet between them — its turning point across the run, read as
-    /// the middle of the nearest two crossings of one curve on the line that has them, each settled
-    /// on its own curve. None where no curve turns there.
+    /// `axis`), or meets the line at `x` twice within one segment of its polyline (`turns`): its
+    /// turning point across the run, the nearest to the line. Else, where the face's rings and the
+    /// stops cross the two lines a different number of times, a curve's two crossings meet between
+    /// them at a vertex of its polyline — read as the middle of the nearest two crossings of one
+    /// curve on the line that has them, each settled on its own curve. None where no curve turns
+    /// there.
     fn turning(&self,axis: Axis,x: f64,delta: f64) -> Option<f64> {
+        let (a,c) = (axis.along(),axis.across());
+        if let Some(t) = self.turns(axis,x,delta).into_iter().min_by(|p,q| (p[a]-x).abs().total_cmp(&(q[a]-x).abs())) { return Some(t[c]) }
         let closed: Vec<Vec<P>> = self.rings.iter().map(|r| { let mut c = r.clone(); c.push(r[0]); c }).collect();
         let rings: Vec<&[P]> = closed.iter().map(|c| &c[..]).collect();
         let polys: Vec<&[P]> = self.stops.lines.iter().map(|(l,_)| &l[..]).collect();

@@ -1368,7 +1368,7 @@ fn faces(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mut
                             None => {
                                 let (net,err) = cell.net(tube,parts[k].step,fit)
                                     .ok_or_else(|| failed(format!("the cell {cell:?} of {chart:?} not fitted within {fit:e}")))?;
-                                if debug() { eprintln!("tube: a cell of {chart:?} ({:?}, {:?}): {}×{} poles, fitted to {err:e}, read at 97² to {:e}",cell.axis,cell.run,
+                                if debug() { eprintln!("tube: a cell of {chart:?} ({:?}, {:?}) {:?} {:?}: {}×{} poles, fitted to {err:e}, read at 97² to {:e}",cell.axis,cell.run,cell.lo,cell.hi,
                                     net.poles.len(),net.poles[0].len(),super::cells::worst(tube,cell,&net,97,parts[k].step)) }
                                 let net = Arc::new(net);
                                 nets.insert((k,c),net.clone());
@@ -1684,14 +1684,24 @@ fn split_arc(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: 
             let rho = sign*p.rho;
             let line = &arcs[i].uses[used].1;
             let m = line.len()-1;
-            let j = (s.floor() as usize).min(m-1);
             let at = |j: usize| psi[0]+(psi[1]-psi[0])*j as f64/m as f64;
             let c = if used == 0 {
                 if axis != Axis::Columns { return Err(failed(format!("a seam along the pinch's rim at {q:?}"))) }
                 q[0]
             } else {
-                // (the collar's angle whose place on the sheet meets the seam's line, halved)
-                let a = axis.along();
+                // (the collar's angle whose place on the sheet meets the seam's line, halved within
+                // the segment of its polyline as it now stands that the line crosses nearest `q` —
+                // an arc split before is resampled over its shorter run, so a place along the
+                // polyline it was found on names another point of it)
+                let (a,b) = (axis.along(),axis.across());
+                let _ = s;
+                let y = |j: usize| -> Option<f64> {
+                    let (p,r) = (line[j],line[j+1]);
+                    let (pa,ra) = if a == 0 { (unwrap(p[0],q[0]),unwrap(r[0],q[0])) } else { (p[1],r[1]) };
+                    ((pa <= q[a]) != (ra <= q[a])).then(|| (p[b]+(r[b]-p[b])*(q[a]-pa)/(ra-pa)-q[b]).abs())
+                };
+                let j = (0..m).filter_map(|j| y(j).map(|d| (j,d))).min_by(|p,r| p.1.total_cmp(&r.1)).map(|p| p.0)
+                    .ok_or_else(|| failed(format!("a seam's line at {q:?} does not cross the pinch's rim")))?;
                 let g = |x: f64| p.rim(sign,x).map(|r| if a == 0 { unwrap(r[0],q[0]) } else { r[1] }-q[a]);
                 let (mut lo,mut hi) = (at(j),at(j+1));
                 let (Some(mut gl),Some(_)) = (g(lo),g(hi)) else { return Err(failed("the pinch's rim not read at a seam".into())) };
@@ -1729,12 +1739,43 @@ fn seamed(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mu
     on.sort_by(|p,q| p.0.cmp(&q.0).then(q.1.total_cmp(&p.1)));
     let mut ends: Vec<[f64;2]> = seams.iter().map(|s| s.ys).collect();
     let mut at: BTreeMap<(usize,usize),usize> = BTreeMap::new();
+    let mut last: Option<(usize,f64,usize,P)> = None;
+    let mut pieces: BTreeMap<usize,Vec<usize>> = BTreeMap::new();
     for &(arc,s,k,e) in &on {
         let sm = &seams[k];
         let Ends::On {used,shift,..} = sm.ends[e] else { unreachable!() };
         let p = sm.axis.point(sm.x,sm.ys[e]);
         let q = [p[0]-shift,p[1]];
-        let v = split_arc(tube,vertices,arcs,trims,arc,used,s,q,sm.axis)?;
+        // (two ends at one place of one arc — a seam's line cut at the edge it crosses, a piece
+        // each side — are one vertex: the arc is split there once)
+        let v = match last {
+            Some((a,t,v,r)) if a == arc && t == s && r == q => v,
+            _ => {
+                // (the piece of the arc, as split so far, its line crosses nearest `q`, and the
+                // place there along that piece's polyline: two ends a hair apart along the arc are
+                // ordered by their chords' fractions, which need not be the curve's order)
+                let (a,c) = (sm.axis.along(),sm.axis.across());
+                let ps = pieces.entry(arc).or_insert_with(|| vec![arc]).clone();
+                let near = ps.iter().filter_map(|&j| {
+                    let line = &arcs[j].uses[used].1;
+                    (0..line.len()-1).filter_map(|g| {
+                        let (p,r) = (line[g],line[g+1]);
+                        let (pa,ra) = if a == 0 { (unwrap(p[0],q[0]),unwrap(r[0],q[0])) } else { (p[1],r[1]) };
+                        if (pa <= q[a]) == (ra <= q[a]) { return None }
+                        let f = (q[a]-pa)/(ra-pa);
+                        let pc = if c == 0 { unwrap(p[0],q[0]) } else { p[1] };
+                        let rc = if c == 0 { unwrap(r[0],q[0]) } else { r[1] };
+                        Some(((pc+(rc-pc)*f-q[c]).abs(),j,g as f64+f))
+                    }).min_by(|x,y| x.0.total_cmp(&y.0))
+                }).min_by(|x,y| x.0.total_cmp(&y.0));
+                let (j,s) = near.map_or((arc,s),|n| (n.1,n.2));
+                let n = arcs.len();
+                let v = split_arc(tube,vertices,arcs,trims,j,used,s,q,sm.axis)?;
+                if arcs.len() > n { pieces.get_mut(&arc).expect("its pieces").push(n) }
+                v
+            }
+        };
+        last = Some((arc,s,v,q));
         at.insert((k,e),v);
         // (the seam's end at the vertex's own place across its line, settled there)
         let c = sm.axis.across();
