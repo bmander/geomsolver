@@ -317,3 +317,20 @@ fn the_corpus_is_written_again() {
     for (class, _) in rows.into_inner().unwrap() { *tally.entry(class).or_default() += 1; }
     for (k, n) in &tally { eprintln!("REWRITE SUMMARY {n:4}  {k}"); }
 }
+
+/// **A face read on its sheet's rows is written again and read on them again**
+/// (`topology::rows`, #993 stage 2): benchy's face #27487 under a slab (`step_kinds/
+/// crumpled_corner.step`), its edges up to 4.4e-3 off the rows of its sheet's crumpled corner and
+/// within 1e-4 of the crumple, is read on the rows; written, the file states 1e-2, what its edges
+/// stand off those rows, and read again by the edges' nearest feet the face leaps into the crumple
+/// as before. Read on the rows again, each row is no point: a row is collapsed to a pole's within
+/// the tolerance the boundary is checked to, never within the farthest an edge may stand off its
+/// face — a hundred times the uncertainty stated, a millimetre here, by which the 0.28 mm row the
+/// face's fourth edge lies along was a point, that edge was laid on a row across it 0.28 mm off,
+/// and the solid written of what was read was refused.
+#[test]
+fn a_face_read_on_its_sheets_rows_is_written_again() {
+    let text = include_str!("step_kinds/crumpled_corner.step");
+    let (n, _) = rewritten("crumpled_corner.step", text).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(n, 1);
+}

@@ -1709,13 +1709,17 @@ fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walk
 /// **A use of an edge lying along a row of its sheet's domain from end to end, read on that row**:
 /// the row `k` (the parameter held) at `at`, the other parameter's feet `y` of the edge's points
 /// at its parameters `t`, each within `tau` of the row's point there and running one way. None
-/// where any stands farther, or where they turn back.
-fn along_row(f: &Face,e: &Edge,vs: &[Vertex],k: usize,at: f64,tau: f64) -> Option<(Vec<f64>,Vec<f64>,f64)> {
+/// where any stands farther, or where they turn back, or where the row is collapsed to a point
+/// — its ends and its middle within `point`, the tolerance the boundary is checked to, of one
+/// another: a pole's, no row an edge lies along. (Not within `tau`, the farthest an edge may stand
+/// off its face: a hundred times the uncertainty a file states, a millimetre where the file the
+/// kernel writes of benchy states 1e-2, which made the 0.28 mm row its face's edge lies along a
+/// point, and the face read again refused.)
+fn along_row(f: &Face,e: &Edge,vs: &[Vertex],k: usize,at: f64,tau: f64,point: f64) -> Option<(Vec<f64>,Vec<f64>,f64)> {
     let Surface::BSpline(_,n) = &f.surface else { return None };
     let [a,z] = n.domain()[1-k];
     let with = |y: f64| if k == 0 { [at,y] } else { [y,at] };
-    // (a row collapsed to a point is a pole's, no row an edge lies along)
-    if distance(f.surface.point(with(a)),f.surface.point(with(z))) <= tau && distance(f.surface.point(with(a)),f.surface.point(with(0.5*(a+z)))) <= tau { return None }
+    if distance(f.surface.point(with(a)),f.surface.point(with(z))) <= point && distance(f.surface.point(with(a)),f.surface.point(with(0.5*(a+z)))) <= point { return None }
     let foot = |p: V,y0: f64| -> (f64,f64) {
         let mut y = y0;
         for _ in 0..60 {
@@ -1756,8 +1760,8 @@ fn along_row(f: &Face,e: &Edge,vs: &[Vertex],k: usize,at: f64,tau: f64) -> Optio
 /// normal turning over) holds points nearer the edge than the row the face ends at, and read by
 /// them the edge's curve in the face's parameters leaps into the fold and back. Its tolerance is
 /// then measured against the row, as any edge's is. None where no use lies along a row, or none
-/// reads otherwise there.
-fn rows(b: &Brep,f: &Face,tau: f64) -> Option<Face> {
+/// reads otherwise there. A row is a point (a pole's) within `point` (`along_row`).
+fn rows(b: &Brep,f: &Face,tau: f64,point: f64) -> Option<Face> {
     let Surface::BSpline(_,n) = &f.surface else { return None };
     let dom = n.domain();
     let mut g = f.clone();
@@ -1765,7 +1769,7 @@ fn rows(b: &Brep,f: &Face,tau: f64) -> Option<Face> {
     for c in g.loops.iter_mut().flatten() {
         let Some(e) = b.edges.get(c.edge as usize) else { continue };
         if !matches!(e.curve,EdgeCurve::Curve(_)) { continue }
-        let best = (0..2).flat_map(|k| dom[k].map(|at| (k,at))).filter_map(|(k,at)| along_row(f,e,&b.vertices,k,at,tau).map(|x| (k,at,x)))
+        let best = (0..2).flat_map(|k| dom[k].map(|at| (k,at))).filter_map(|(k,at)| along_row(f,e,&b.vertices,k,at,tau,point).map(|x| (k,at,x)))
             .min_by(|x,y| x.2.2.total_cmp(&y.2.2));
         let Some((k,at,(ts,ys,_))) = best else { continue };
         let uv = |y: f64| if k == 0 { [at,y] } else { [y,at] };
@@ -1806,7 +1810,7 @@ pub fn sound_solid(file: &File,found: &Found) -> Result<Given,Refusal> {
     let (mut rowed,mut at) = (Vec::new(),face(&u,&given));
     while let Some(fi) = at.filter(|f| !rowed.contains(f) && rowed.len() < 8) {
         rowed.push(fi);
-        let Some(f) = built.get(fi).and_then(|x| rows(&p.b,&x.face,p.far())) else { break };
+        let Some(f) = built.get(fi).and_then(|x| rows(&p.b,&x.face,p.far(),p.within)) else { break };
         built[fi].face = f;
         let Ok((g,verdict)) = p.judge(built.clone()) else { break };
         match verdict { Ok(()) => return Ok(g),Err(u) => at = face(&u,&g) }

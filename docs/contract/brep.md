@@ -2337,7 +2337,9 @@ again, so the export of the file was refused when read as a given body). Gates:
 **The foot of an edge is where its face is: a face whose edges lie along its sheet's domain's rows
 is bounded by those rows** (`topology::sound_solid`, `rows`, `along_row`). Where `sound` refuses a
 face read by its edges' nearest feet, the solid is read again with each use of that face lying along
-a row of its spline sheet at the domain's edge — the row not a pole's, every one of 65 points of the
+a row of its spline sheet at the domain's edge — the row not a pole's (its ends and middle not within
+the tolerance the boundary is checked to, max(1e-9 × size, the stated uncertainty), of one another),
+every one of 65 points of the
 edge within the reader's bound for an edge off its faces (max(100 × the stated uncertainty, 1e-3 ×
 the solid's size)) of the row at its foot on the row, the feet running one way — its pcurve laid
 along that row (a line where the feet run linear in the edge's parameter, else through them), and
@@ -2350,9 +2352,19 @@ measured against those rows as any edge's are, and held to `sound::LOOSE` as any
 of `u` and 0.0012 of `v` of it): its edges stand up to 4.4e-3 off the rows and within 1e-4 of the
 crumple, and read by those feet their curves in the face's parameters leapt into the crumple and
 back; read on the rows, their tolerances measure 4.2e-3 to 4.4e-3 (OCCT's 5.8e-3) and every one of
-benchy's 1385 faces is within its bar of both references. Gate:
+benchy's 1385 faces is within its bar of both references. **A pole's row is judged at the
+tolerance points are one at, never at the bar for an edge off its face** (#993 stage 2): written
+again, the file states 1e-2 (what its edges stand off the rows, `step::write_stating`), its bar a
+millimetre, and read again by its feet the face leaps as before — the writer's curves in its
+parameters, which lie along the rows, kept by no rule that keeps a file's curve only where it is as
+near the edge as the sheet's nearest foot, which the crumple is. Judged a pole within that bar, the
+face's 0.28 mm row was a point, its edge laid on a row across it 0.28 mm off and the face refused:
+the solid a document gives untouched could not be exported, its export refused by the reader that
+read it. Gate:
 `step_kinds::a_face_whose_edges_lie_along_its_sheets_rows_is_bounded_by_them` (a slab under that face,
-refused before, its faces their sheets' whole domains after), the corpus row.
+refused before, its faces their sheets' whole domains after),
+`step_rewrite::a_face_read_on_its_sheets_rows_is_written_again`,
+`given_solids::a_body_read_on_its_sheets_rows_exports_and_reads_back`, the corpus row.
 
 **A use is one curve in its face's parameters, its region what its leaps close, and the shells nest
 by their senses** (`sound`'s `Drawn::leap` and `reach`, `shells`). A face's region is its uses

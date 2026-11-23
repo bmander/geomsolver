@@ -499,7 +499,10 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
 }
 
 /// `text` read part by part, as `step_read::reading` reads it: the solids, or the part that
-/// refused it and its refusal, and where `sound` refused, the solids `topology` read.
+/// refused it and its refusal, and where `sound` refused, the solids `topology` read. Each solid
+/// is read as the reader reads it (`topology::sound_solid`: a face `sound` refuses read by its
+/// edges' feet read again on its sheet's rows, `rows`), and only where that refuses is it read
+/// part by part to say which.
 pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>)> {
     let file = context::parse(text).map_err(|r| (Stage::Context,r,None))?;
     let shapes = context::shapes(&file).map_err(|r| (Stage::Context,r,None))?;
@@ -508,8 +511,14 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
     let mut refused: Option<Refusal> = None;
     for f in shapes.solids {
         let placed = f.placed.clone();
-        let mut given = topology::solid(&file,f).map_err(|r| (Stage::Topology,r,None))?;
-        if let Err(u) = sound::sound(&given.brep,&given.context) { refused.get_or_insert(u.refusal(&given)); }
+        let mut given = match topology::sound_solid(&file,&f) {
+            Ok(g) => g,
+            Err(r) => {
+                let g = topology::solid(&file,f).map_err(|r| (Stage::Topology,r,None))?;
+                refused.get_or_insert(sound::sound(&g.brep,&g.context).err().map_or(r,|u| u.refusal(&g)));
+                g
+            }
+        };
         if let Some(p) = placed { given.brep = given.brep.moved(&p.motion); }
         out.push(given);
     }
