@@ -835,7 +835,7 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     for side in [1.,-1.] { points.extend(tube.hole(Chart::Sheet(side))?.into_iter().flatten().map(|p| (Chart::Sheet(side),p))) }
     let mut cuts: Vec<(Chart,[f64;2])> = CHARTS.iter().map(|&c| windows(trims,&points,c).map(|w| (c,w))).collect::<Result<_,_>>()?;
     if tube.pinch.is_some() { cuts.push((Chart::Collar,windows(trims,&points,Chart::Collar)?)) }
-    let collar_cuts = cuts_of(&cuts,Chart::Collar);
+    let collar_cuts = if tube.pinch.is_some() { cuts_of(&cuts,Chart::Collar) } else { [0.;2] };
     // the cuts from each swallowtail point toward the rim it opens away from (the way whose point a
     // disc's span beside it is kept), each to the first trim it meets or else that rim
     let mut across: Vec<Arc2> = Vec::new();
