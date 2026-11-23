@@ -294,3 +294,30 @@ fn a_given_body_is_held_to_its_measured_tolerances() {
     let out = exported_reads_back(&sk,i,&b);
     assert!(untouched(&out,&b));
 }
+
+/// **A sliver a file's body holds is said as the file's** (#993 stage 2): a slab 5 µm thick given
+/// as a file gives a body — its four walls thinner than the export's tolerance — is said by the
+/// export with each face as a face of the body, never by a key no document can write, and with
+/// no advice to move a cut's end, since the document made no cut: the file gives it so.  A body
+/// the document cuts from it keeps the advice, for there an end is the document's to move.
+#[test]
+fn a_sliver_a_files_body_holds_is_said_as_the_files() {
+    use gcs_core::brep::build::{prism,Profile,ProfileEdge};
+    let corners = [[0.,0.,0.],[20.,0.,0.],[20.,10.,0.],[0.,10.,0.]];
+    let slab = Profile {origin:[0.;3],normal:[0.,0.,1.],names:vec![],
+        loops:vec![(0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect()]};
+    let mut sk = Sketch::new();
+    let given = sk.solid(SolidDef::Given(Arc::new(Given::new(prism(&slab,0.,5e-3).unwrap(),4))),"bracket");
+    let part = sk.solid(SolidDef::Body {stock:given as u32,on:vec![],through:vec![],bound:vec![]},"part");
+    for i in [given,part] {
+        let exact = export::exact(&sk,i,None,None,&QUIET).unwrap_or_else(|r| panic!("not built: {}",r.message));
+        let s = export::slivers(&sk,i,&exact,None).expect("walls 5 µm tall are slivers");
+        for said in ["holds 4 faces thinner than the export's 10.000 µm: the first, a face of `bracket`, 5.000 µm across",
+            "The file `bracket` gives it so, and the document states nothing of it: it is written as it is given"] {
+            assert!(s.message.contains(said),"{said}: {}",s.message);
+        }
+        for unsaid in ["#given","move that end","a face of `bracket` and a face of `bracket`"] {
+            assert!(!s.message.contains(unsaid),"{unsaid}: {}",s.message);
+        }
+    }
+}

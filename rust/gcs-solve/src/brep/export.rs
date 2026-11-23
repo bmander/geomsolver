@@ -584,7 +584,12 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
     let found = super::sliver::slivers(b,bar);
     let first = found.first()?;
     let name = |f: usize| face_name(&b.faces,f as u32);
-    let names = |of: &[usize]| all_of(&of.iter().map(|&f| name(f)).collect::<Vec<_>>());
+    // (each name once: the faces of a body a file gives are all said alike, by the body)
+    let names = |of: &[usize]| {
+        let mut said: Vec<String> = Vec::new();
+        for &f in of { let n = name(f); if !said.contains(&n) { said.push(n) } }
+        all_of(&said)
+    };
     let solid = sk.solid_name(body);
     let faces = found.iter().filter(|s| matches!(s.thin,Thin::Face(_))).count();
     let edges = found.len()-faces;
@@ -602,16 +607,27 @@ fn said_slivers(sk: &Sketch,body: usize,b: &Brep,at: [f64;3],tolerance: Option<T
     let beside = if first.beside.is_empty() { String::new() } else { format!(", beside {}",names(&first.beside)) };
     let at = crate::space::add(first.at,at);
     let scale = cad::millimetres(sk);
+    // a body a file gives untouched (#993 stage 2): no cut of the document's ends there, so there
+    // is no end to move; the sliver is the file's, and is written as the file gives it
+    let advice = match given_read(sk,body) {
+        Some((given,true)) => format!("The file `{given}` gives it so, and the document states nothing of it: it is \
+            written as it is given"),
+        _ => "A sliver that thin is most often where one cut ends all but flush with another's face: move that end onto \
+            the face or clear of it".to_string(),
+    };
     Some(Sliver {witness:at.map(|x| x/scale),
-        message:format!("`{solid}` holds {counted}: the first, {what}{beside}, near ({:.4}, {:.4}, {:.4}) mm. A sliver that \
-            thin is most often where one cut ends all but flush with another's face: move that end onto the face or clear of it",
+        message:format!("`{solid}` holds {counted}: the first, {what}{beside}, near ({:.4}, {:.4}, {:.4}) mm. {advice}",
             at[0],at[1],at[2])})
 }
 
-/// A face of a built solid as a reader writes it (`face 3` where it has no name).
+/// A face of a built solid as a reader writes it (`face 3` where it has no name; a face of a body
+/// a file gives, which no written path reaches, as a face of that body: `Given::face_of`).
 fn face_name(faces: &[super::topo::Face],f: u32) -> String {
     faces.get(f as usize).map(|x| crate::vocab::public_path(&crate::solid::exact::joined(&x.name)))
-        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| format!("`{n}`"))
+        .filter(|n| !n.is_empty()).map_or_else(|| format!("face {f}"),|n| match crate::model::Given::face_of(&n) {
+            Some(of) => format!("a face of `{of}`"),
+            None => format!("`{n}`"),
+        })
 }
 
 /// A length in millimetres, written in the unit that suits it.
