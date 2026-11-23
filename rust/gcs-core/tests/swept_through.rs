@@ -2,9 +2,9 @@
 //! wholly before a blank to wholly past it cuts from it the prism over its shadow along the slide,
 //! built in the plane square to the slide — its walls extrusions of the tool's contact seen along
 //! the slide — and nothing else.
-use gcs_core::brep::build::{canal,ellipsoid,prism,square,torus};
+use gcs_core::brep::build::{canal,ellipsoid,prism,square};
 use gcs_core::brep::geom::Surface;
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::cut_from;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
@@ -34,7 +34,7 @@ fn a_canals_half_balls_are_sewn_onto_its_tube() {
     let length = turns*(4.*PI).hypot(1.5);
     let v = PI*r*r*length+4./3.*PI*r*r*r;
     let a = TAU*r*length+4.*PI*r*r;
-    let (got_v,got_a) = (volume(&spring),spring.faces.iter().map(|f| area(&spring,f)).sum::<f64>());
+    let (got_v,got_a) = (volume(&spring),crate::brep::total_area(&spring));
     assert!((got_v-v).abs() <= 1e-9*v,"the spring's volume {got_v}, a tube's and a ball's {v}");
     assert!((got_a-a).abs() <= 1e-9*a,"the spring's area {got_a}, a tube's and a ball's {a}");
     // its faces the tube's wall and the two half balls, no disc left between
@@ -43,22 +43,19 @@ fn a_canals_half_balls_are_sewn_onto_its_tube() {
 }
 
 /// **A coil spring pushed aslant through a plate is cut by its shadow** (brep-bench's
-/// `swept/coil-spring-pushed-aslant-through-plate`, the case `swept_contacts::coil_spring_case`
-/// builds by the contact's road): the closed class refuses the spring's coil (`Curved`), and the
-/// slide carries it from wholly below the plate to wholly above, so the plate loses the prism over
-/// its shadow — the union of its balls' shadows, whose loops overlap one another — at the kernel's
-/// tolerance, to the volume worked apart from the build (3541.9379700, to 5e-7): the plate, two
-/// solids (the shadow is a ring, its core left standing), walled by ten extrusions; and to a STEP
-/// file that reads back as the solid.
+/// `swept/coil-spring-pushed-aslant-through-plate`, `swept_contacts::coil_spring_case`): the closed
+/// class refuses the spring's coil (`Curved`), and the slide carries it from wholly below the plate
+/// to wholly above, so the plate loses the prism over its shadow — the union of its balls' shadows,
+/// whose loops overlap one another — at the kernel's tolerance, to the volume worked apart from the
+/// build (3541.9379700, to 5e-7): the plate, two solids (the shadow is a ring, its core left
+/// standing), walled by extrusions; and to a STEP file that reads back as the solid.
 #[test]
 fn a_coil_spring_pushed_through_a_plate_is_cut_by_its_shadow() {
-    let start = [2.,0.,-12.];
-    let spring = canal(start,0.4,[0.;3],[0.,0.,1.],3.*TAU,4.5,"spring").unwrap();
-    let plate = prism(&square([0.;3],[0.,0.,1.],15.),0.,4.).unwrap();
-    let tol = gcs_core::brep::geom::tolerance(plate.size().max(spring.size()));
-    let cut = cut_from(&plate,&spring,&slide(start,[3.,1.,18.]),[0.,TAU],0.002,tol).unwrap();
+    let case = crate::swept_contacts::coil_spring_case();
+    let tol = case.tolerance();
+    let cut = cut_from(case.blank.as_ref().unwrap(),&case.tool,&case.path,case.roll,case.bar,tol).unwrap();
     let v = volume(&cut);
-    assert!((v-3541.9379700).abs() <= 1e-6,"the cut's volume {v}, apart from the build 3541.9379700");
+    assert!((v-case.volume).abs() <= case.known,"the cut's volume {v}, apart from the build {}",case.volume);
     assert!(walled_by_extrusions(&cut),"the cut's faces: {:?}",cut.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>());
     assert_eq!(gcs_core::brep::sew::parts(&cut).len(),2,"the plate and the core of the spring's shadow");
     let text = gcs_core::brep::step::write(&cut,"swept",tol,gcs_core::brep::step::Fit::Exact).unwrap();
@@ -87,13 +84,11 @@ fn a_spheroid_pushed_aslant_through_a_slab_is_cut_by_its_shadow() {
 }
 
 /// **A slide that stops inside its blank is left to the other roads** (`through::cut` is `None`):
-/// the ring of `ring-pushed-in-past-its-fold` pushed down 8 into a block 8 deep ends inside it, and
-/// its sweep there is no prism over its shadow.
+/// the ring of `ring-pushed-in-past-its-fold` (`swept_contacts::ring_fold_case`) pushed down 8 into
+/// a block 8 deep ends inside it, and its sweep there is no prism over its shadow.
 #[test]
 fn a_slide_stopping_in_its_blank_is_not_cut_by_its_shadow() {
-    let lean = 65f64.to_radians();
-    let ring = torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap();
-    let block = crate::brep::block([-8.,-8.,-8.],[8.,8.,0.]);
-    let path = Trajectory::Twist(Screw {origin:[0.,0.,4.],axis:[0.,0.,-1.],ratio:0.,advance:8.});
-    assert!(gcs_core::brep::swept::through::cut(&block,&ring,&path,[0.,TAU],0.01,1e-8).is_none());
+    let case = crate::swept_contacts::ring_fold_case();
+    let blank = case.blank.as_ref().unwrap();
+    assert!(gcs_core::brep::swept::through::cut(blank,&case.tool,&case.path,case.roll,case.bar,case.tolerance()).is_none());
 }

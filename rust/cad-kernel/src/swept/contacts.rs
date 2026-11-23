@@ -341,21 +341,16 @@ pub fn face_contact_within(tool: &Brep,located: &Located,fi: usize,twist: &Twist
             fill(a,m,depth-1,out,surface,settle,tol);
             fill(m,b,depth-1,out,surface,settle,tol);
         }
-        let uv = &p.uv;
-        let filled: Vec<Vec<Uv>> = crate::util::par::indices(uv.len()-1,|i| {
-            let w = [uv[i],uv[i+1]];
+        let filled: Vec<Vec<Uv>> = crate::util::par::indices(p.uv.len()-1,|i| {
+            let w = [p.uv[i],p.uv[i+1]];
             let mut out = Vec::new();
             // a seam crossed between two points is no chord
             if (w[0][0]-w[1][0]).abs() > 0.5*span[0] || (w[0][1]-w[1][1]).abs() > 0.5*span[1] { out.push(w[1]) }
             else { fill(w[0],w[1],12,&mut out,surface,&settle,chord) }
             out
         });
-        let mut out: Vec<Uv> = Vec::with_capacity(p.uv.len());
-        out.push(p.uv[0]);
-        for f in filled { out.extend(f) }
-        p.uv = out;
-        let uv = &p.uv;
-        p.points = crate::util::par::indices(uv.len(),|i| surface.point(uv[i]));
+        p.uv = std::iter::once(p.uv[0]).chain(filled.into_iter().flatten()).collect();
+        p.points = crate::util::par::indices(p.uv.len(),|i| surface.point(p.uv[i]));
     }
     // **a piece is cut at every double point it passes** (#880 Q1b; S1: each piece ends on the face's
     // boundary or where `∇g = 0`): where the grid has not seen one as a saddle — one standing on a

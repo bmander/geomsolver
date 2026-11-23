@@ -85,8 +85,13 @@ pub(super) trait Candidate {
     /// Its point and its rate at `t`.
     fn at(&self,t: f64) -> (P,P);
     fn point(&self,t: f64) -> P { self.at(t).0 }
-    /// Its samples, evenly over its span, its two ends among them.
-    fn samples(&self) -> Vec<(f64,P)>;
+    /// How many stretches it is sampled in.
+    fn sample_count(&self) -> usize;
+    /// Its samples, `sample_count() + 1` evenly over its span, its two ends among them.
+    fn samples(&self) -> Vec<(f64,P)> {
+        let ([lo,hi],n) = (self.span(),self.sample_count());
+        (0..=n).map(|k| { let t = lo+(hi-lo)*k as f64/n as f64; (t,self.point(t)) }).collect()
+    }
     /// Whether the shadow is read on its left alone: the turn's axis, which has no right side.
     fn one_sided(&self) -> bool { false }
     /// The parameter of its point nearest `q`, near `t` (Gauss–Newton held to its span).
@@ -131,12 +136,8 @@ impl Candidate for Meridian {
             }
         }
     }
-    /// `SAMPLES + 1` evenly over its span (a segment's two ends).
-    fn samples(&self) -> Vec<(f64,P)> {
-        let [lo,hi] = self.span();
-        let n = if matches!(self,Meridian::Segment {..}) { 1 } else { SAMPLES };
-        (0..=n).map(|k| { let t = lo+(hi-lo)*k as f64/n as f64; (t,self.point(t)) }).collect()
-    }
+    /// `SAMPLES` (a segment's one).
+    fn sample_count(&self) -> usize { if matches!(self,Meridian::Segment {..}) { 1 } else { SAMPLES } }
     fn one_sided(&self) -> bool { matches!(self,Meridian::Segment {a,b} if a[0] == 0. && b[0] == 0.) }
 }
 
@@ -645,16 +646,31 @@ fn crossings<C: Candidate>(a: &C,b: &C,sa: &[(f64,P)],sb: &[(f64,P)],near: f64,s
     out
 }
 
+/// **Membership read on the tool meshed within `bar`**, and within an eighth of it where that
+/// leaves a reading unsettled — the finer mesh made once, when first asked.
+pub(super) struct Meshed<'a> { tool: &'a Brep,bar: f64,pub coarse: Solid,finer: Option<Solid> }
+
+impl<'a> Meshed<'a> {
+    pub(super) fn new(tool: &'a Brep,bar: f64) -> Result<Meshed<'a>,Unbuilt> {
+        Ok(Meshed {tool,bar,coarse:Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?,finer:None})
+    }
+    /// What `read` says of a mesh: the coarse one's, else the finer one's, else unsettled at `at`.
+    pub(super) fn read(&mut self,at: V,read: impl Fn(&Solid) -> Result<bool,super::member::Unsettled>) -> Result<bool,Unbuilt> {
+        if let Ok(b) = read(&self.coarse) { return Ok(b) }
+        if self.finer.is_none() { self.finer = Some(Solid::new(self.tool,self.bar/8.,1.).map_err(Unbuilt::Failed)?) }
+        read(self.finer.as_ref().unwrap()).map_err(|_| Unbuilt::Unsettled {at})
+    }
+}
+
 /// A piece of the arrangement kept on the shadow's boundary: the candidate, its stretch (walked
 /// from `t[0]` to `t[1]`, the shadow on its left) and its ends' places among the vertices.
 pub(super) struct Kept { pub m: usize,pub t: [f64;2],pub ends: [usize;2] }
 
 /// **A shadow's boundary, arranged** (the module's steps 2 and 3, and 4 but the build): the
-/// vertices the kept pieces end at, the pieces, and their loops — each a polyline along it and
-/// its signed area — grouped as regions, each counter-clockwise loop with the clockwise ones
-/// (holes) inside it.
+/// vertices the kept pieces end at, the pieces, and their loops — each with a polyline along it —
+/// grouped as regions, each a counter-clockwise loop and then the clockwise ones (holes) inside it.
 pub(super) struct Arranged { pub vertices: Vec<P>,pub kept: Vec<Kept>,pub loops: Vec<Vec<usize>>,pub polys: Vec<Vec<P>>,
-    pub regions: Vec<(usize,Vec<usize>)> }
+    pub regions: Vec<Vec<usize>> }
 
 /// **The candidates `cands` arranged into the boundary of a shadow** (steps 2 to 4): each split
 /// where another crosses it or it crosses itself (`crossings`), and where another's end stands on it,
@@ -780,7 +796,8 @@ pub(super) fn arranged<C: Candidate>(cands: &[C],near: f64,sag: f64,size: f64,sh
         l.iter().flat_map(|&k| {
             let p = &kept[k];
             let (lo,hi) = (p.t[0].min(p.t[1]),p.t[0].max(p.t[1]));
-            let n = samples[p.m].iter().filter(|(t,_)| *t > lo && *t < hi).count().max(16);
+            let s = &samples[p.m];
+            let n = (s.partition_point(|(t,_)| *t < hi)-s.partition_point(|(t,_)| *t <= lo)).max(16);
             (0..n).map(move |i| cands[p.m].point(p.t[0]+(p.t[1]-p.t[0])*i as f64/n as f64))
         }).collect()
     };
@@ -794,7 +811,7 @@ pub(super) fn arranged<C: Candidate>(cands: &[C],near: f64,sag: f64,size: f64,sh
         let Some(o) = inside else { return Err(Unbuilt::Failed("a hole in the tool's shadow lies in no region of it".into())) };
         holes[o].push(h);
     }
-    let regions = outers.into_iter().map(|o| (o,std::mem::take(&mut holes[o]))).collect();
+    let regions = outers.into_iter().map(|o| std::iter::once(o).chain(std::mem::take(&mut holes[o])).collect()).collect();
     Ok(Arranged {vertices,kept,loops,polys,regions})
 }
 
@@ -806,28 +823,20 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     let eps = 1e-9*(1.+size);
     let reader = Reader {tool,g,located:Located::new(tool,tol),eps,tol};
     let cands = candidates(&reader)?;
-    let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
+    let mut meshed = Meshed::new(tool,bar)?;
     let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
-    let swept = Swept::new(&solid,&path,[0.,TAU]);
     let near = 1e-7*(1.+size);
-    // membership read on the tool meshed finer where the mesh's sag leaves a reading unsettled
-    let member = |solid: &Solid,x: V| Swept::new(solid,&path,[0.,TAU]).member(x);
-    let mut finer: Option<Solid> = None;
-    let mut shadow = |p: P| -> Result<bool,Unbuilt> {
-        let x = g.at([p[0],0.,p[1]]);
-        if let Ok(b) = member(&solid,x) { return Ok(b) }
-        if finer.is_none() { finer = Some(Solid::new(tool,bar/8.,1.).map_err(Unbuilt::Failed)?) }
-        member(finer.as_ref().unwrap(),x).map_err(|_| Unbuilt::Unsettled {at:x})
-    };
-    let Arranged {vertices,kept,loops,polys,regions} = arranged(&cands,near,solid.sag,size,&mut shadow)?;
+    let sag = meshed.coarse.sag;
+    let mut shadow = |p: P| { let x = g.at([p[0],0.,p[1]]); meshed.read(x,|s| Swept::new(s,&path,[0.,TAU]).member(x)) };
+    let Arranged {vertices,kept,loops,polys,regions} = arranged(&cands,near,sag,size,&mut shadow)?;
+    let swept = Swept::new(&meshed.coarse,&path,[0.,TAU]);
     let (cands,kept) = (&cands,&kept);
     let edges = |l: &[usize]| -> Result<Vec<ProfileEdge>,Unbuilt> {
         l.iter().map(|&k| { let p = &kept[k]; cands[p.m].edge(p.t,vertices[p.ends[0]],vertices[p.ends[1]],&g).map_err(Unbuilt::Failed) }).collect()
     };
     let mut out = Brep::default();
-    for (o,holes) in &regions {
-        let mut ls = vec![edges(&loops[*o])?];
-        for &h in holes { ls.push(edges(&loops[h])?) }
+    for region in &regions {
+        let ls = region.iter().map(|&l| edges(&loops[l])).collect::<Result<_,_>>()?;
         let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:ls};
         let solid = crate::build::revolve(&profile,g.o,g.z,TAU).map_err(Unbuilt::Failed)?;
         out.join(&solid);

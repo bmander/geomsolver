@@ -948,9 +948,12 @@ fn named(mut b: Brep,name: &str) -> Brep {
 /// was traced against each disc's plane, which a coil's later turns cross again and again.
 fn ended(tube: Brep,start: Brep,end: Brep,name: &str) -> Result<Brep,String> {
     let tol = tolerance(tube.size()+start.size()+end.size());
-    // (a ball's tube and half ball have no flat face but their ends' discs)
-    let walls = |b: Brep| { let mut b = named(b,name); b.faces.retain(|f| !matches!(f.surface,Surface::Plane(..))); b.compacted() };
-    super::sew::sewn(&[walls(tube),walls(start),walls(end)],tol).map_err(|e| e.msg)
+    // (the tube's discs its caps, "start" and "end", as every sweep of a section names them; a half
+    // ball's its one flat face)
+    let walls = |mut b: Brep,disc: &dyn Fn(&Face) -> bool| { b.faces.retain(|f| !disc(f)); named(b.compacted(),name) };
+    let cap = |f: &Face| f.name == "start" || f.name == "end";
+    let flat = |f: &Face| matches!(f.surface,Surface::Plane(..));
+    super::sew::sewn(&[walls(tube,&cap),walls(start,&flat),walls(end,&flat)],tol).map_err(|e| e.msg)
 }
 
 /// Where a ball's tube's seam runs, square to the path's unit tangent `t`: the unit `x0` square to

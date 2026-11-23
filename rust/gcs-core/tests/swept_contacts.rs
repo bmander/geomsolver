@@ -436,8 +436,9 @@ fn a_sharp_edges_fan_is_in_contact_between_its_faces_contacts() {
 /// One of S4's three bench cases (#880 Q1b): the blank, the tool, its screw and roll, the mesh's bar,
 /// and the volume of the blank less the sweep computed apart from the build, with how closely that
 /// reading is known.
-struct Case { what: &'static str,blank: Option<Brep>,tool: Brep,path: gcs_core::brep::trajectory::Trajectory,roll: [f64;2],bar: f64,
-    volume: f64,known: f64 }
+pub(crate) struct Case { pub(crate) what: &'static str,pub(crate) blank: Option<Brep>,pub(crate) tool: Brep,
+    pub(crate) path: gcs_core::brep::trajectory::Trajectory,pub(crate) roll: [f64;2],pub(crate) bar: f64,
+    pub(crate) volume: f64,pub(crate) known: f64 }
 
 /// The rod of `torus-screwed-through-rod` and `v-wheel-screwed-through-rod`.
 fn rod() -> Brep { prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap() }
@@ -483,7 +484,7 @@ fn cut_through_the_front_door(case: &Case,tol: f64) { cut_within(case,tol,|_| 10
 
 impl Case {
     /// The kernel's own tolerance for the case: at the size of its blank or its tool, the greater.
-    fn tolerance(&self) -> f64 { gcs_core::brep::geom::tolerance(self.blank.as_ref().map_or(0.,|b| b.size()).max(self.tool.size())) }
+    pub(crate) fn tolerance(&self) -> f64 { gcs_core::brep::geom::tolerance(self.blank.as_ref().map_or(0.,|b| b.size()).max(self.tool.size())) }
 }
 
 /// The case cut at the kernel's own tolerance, held to its volume within its boundary's area times it.
@@ -739,7 +740,7 @@ fn spheroid_wheel_case() -> Case {
 /// a level plane — the union of its balls' shadows, ellipses, mapped by `(M Mᵀ)^(-1/2)` (`M` the
 /// projection) to discs of radius 0.4 about the mapped helix, measured by scanlines over discs a
 /// quarter and a tenth of a thousandth apart at 64,000 to 256,000 levels: 3541.9379700, to 5e-7.
-fn coil_spring_case() -> Case {
+pub(crate) fn coil_spring_case() -> Case {
     let start = [2.,0.,-12.];
     let spring = gcs_core::brep::build::canal(start,0.4,[0.;3],[0.,0.,1.],3.*std::f64::consts::TAU,4.5,"spring").unwrap();
     let plate = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],15.),0.,4.).unwrap();
@@ -813,7 +814,7 @@ fn s6s_free_form_faces_are_cut_through_the_front_door() {
 /// the outline's crossings as breakpoints, each line's length read across `y` to its share of the
 /// tolerance (`swept_slid::torus_pushed_by_lines`, 140.9978845384 away at 1e-9, unchanged at 1e-6;
 /// `the_fold_cases_references_are_their_definitions`).
-fn ring_fold_case() -> Case {
+pub(crate) fn ring_fold_case() -> Case {
     let lean = 65f64.to_radians();
     Case {what:"the ring past its fold",blank:Some(crate::brep::block([-8.,-8.,-8.],[8.,8.,0.])),
         tool:torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap(),
