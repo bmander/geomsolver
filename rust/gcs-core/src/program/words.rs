@@ -134,6 +134,11 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
 /// of how many solids it gives, a given body being one; and a file using one whose path it
 /// defines itself at its top level (E071), which would read two things by one name.
 fn given(p: &Program, say: &mut impl FnMut(Code, Span, String)) {
+    // a program that uses no given module asks nothing more: no file's `use`s walked, no file's
+    // own names read
+    if p.modules.iter().all(|m| m.given.is_none()) {
+        return;
+    }
     for m in &p.modules {
         let Some(g) = &m.given else { continue };
         if let Err(why) = &g.body {
