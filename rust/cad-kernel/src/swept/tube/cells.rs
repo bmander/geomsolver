@@ -306,26 +306,24 @@ impl Ask<'_> {
         let stopped: Vec<bool> = cuts.windows(2).map(|w| !self.tube.bounds_at(self.chart,axis.point(x,0.5*(w[0]+w[1])))).collect();
         let mut r = Read {x,face,lo:None,hi:None,blocked:false};
         let Some([f0,f1]) = face else { return r };
-        // (how far a point a way `d` along the line from a crossing stands from the crossed curve,
-        // in space: `d` times the line's rate times the sine of the angle between them, in the
-        // chart's metric there — a stop met obliquely beside a swallowtail point, where the face's
-        // edge and the cuspidal edge are tangent, reads apart along the line by far more than it is)
-        let off = |c: &Crossing,d: f64| -> f64 {
-            let l = &self.stops.lines[c.line].0;
-            let (p,q) = (l[c.seg],l[c.seg+1]);
-            let m = self.tube.rates_at(self.chart,axis.point(x,c.y)).unwrap_or([1.,1.]);
-            let sd = [(q[0]-p[0])*m[0],(q[1]-p[1])*m[1]];
-            let ld = axis.point(0.,m[axis.across()]);
-            let sine = (ld[0]*sd[1]-ld[1]*sd[0]).abs()/(ld[0].hypot(ld[1])*sd[0].hypot(sd[1])).max(f64::MIN_POSITIVE);
-            d.abs()*m[axis.across()]*sine
+        // (how far the face's end at `y` along the line stands in space from the stop it overlaps,
+        // crossed at `c`: the chart's two points' distance — beside a swallowtail point the face's
+        // join and the cuspidal edge are tangent to the kernel, along which the chart's map has no
+        // rate, so two places apart in the parameters by more than their polylines resolve are one
+        // point in space)
+        let off = |c: &Crossing,y: f64| -> f64 {
+            match (self.tube.at(self.chart,axis.point(x,c.y)),self.tube.at(self.chart,axis.point(x,y))) {
+                (Some(p),Some(q)) => distance(p.x,q.x),
+                _ => f64::INFINITY,
+            }
         };
         for (k,&s) in stopped.iter().enumerate() {
             if !s { continue }
             let (a,e) = (cuts[k],cuts[k+1]);
             // (a run's ends inside the face's extent, each beside the face's end it overlaps within
             // the tolerance in space, read as at that end)
-            let below = e <= f0 || (k+1 < cuts.len()-1 && a <= f0 && e < f1 && off(&stops[k],e-f0) <= self.tol);
-            let above = a >= f1 || (k >= 1 && e >= f1 && a > f0 && off(&stops[k-1],f1-a) <= self.tol);
+            let below = e <= f0 || (k+1 < cuts.len()-1 && a <= f0 && e < f1 && off(&stops[k],f0) <= self.tol);
+            let above = a >= f1 || (k >= 1 && e >= f1 && a > f0 && off(&stops[k-1],f1) <= self.tol);
             if below {
                 // (below the face: the highest such run's top, a crossing)
                 if k+1 < cuts.len()-1 {
