@@ -879,6 +879,15 @@ straight meeting took the step the spline's sharpest turn anywhere allows — a 
 met its tip in eight thousand steps fitted through a thousand, and a 16-tooth pinion's STEP grew
 sixfold. `brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form` and
 `planar_subtraction::a_flanks_prism_meets_the_tip_and_the_chamfers_in_closed_form` are the gates.
+**Four curves closing a loop are filled by their bilinearly blended Coons patch, exactly a net**
+(`nurbs::coons`; brep-bench's fill/coons-patch-of-four-parabolas): opposite curves made one space
+(the lower raised, `BSpline::elevated` — Bézier pieces raised and each inner knot taken out again,
+so each knot is once more and the curve as continuous as it was, never a kink `Net::kinks` would
+read — and each given the other's knots), each ruled blend a net whose linear direction's poles are
+at the other's Greville abscissae, the patch the sum less the corners' bilinear net, its boundary
+rows the curves' own poles bit for bit. Each curve's parameter is carried onto `[0, 1]`; no fill by
+another rule (an energy, a Hermite blend) is made under this name. Rational curves and an open loop
+are refused. `coons::the_block_under_the_coons_patch_of_four_parabolas` is the gate.
 **A B-spline curve's foot** (`BSpline::nearest`) is the nearest of seventeen samples a knot span,
 read off the span's Bézier form, the spans nearest box first and none past the nearest sample
 found, refined by Newton; each thread holds the last few feet by curve and point (a trace asks a

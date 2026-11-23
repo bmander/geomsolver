@@ -1264,7 +1264,6 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
     // a rational sheet has no index: the foot from its last one taken where it is near the sheet
     let warm = || start.filter(|_| n.weights.is_some()).and_then(|s| net_settle(n,p,s)).filter(|&(d,_)| d <= near).map(|(_,uv)| uv);
     let uv = warm().or_else(indexed).unwrap_or_else(|| {
-        let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
         // from the nearest poles' Greville points, the nearest first, then the grid
         let mut nearest = [(f64::INFINITY,(0,0));4];
         for (i,row) in n.poles.iter().enumerate() { for (j,&q) in row.iter().enumerate() {
@@ -1284,7 +1283,7 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
         let on = ON_SHEET*size;
         let mut best: Option<(f64,Uv)> = None;
         for &(_,at) in nearest.iter().filter(|c| c.0.is_finite()) {
-            let Some((d,uv)) = net_settle(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]) else { continue };
+            let Some((d,uv)) = net_settle(n,p,[super::nurbs::greville(&n.uknots,n.du,at.0),super::nurbs::greville(&n.vknots,n.dv,at.1)]) else { continue };
             if best.is_none_or(|b| d < b.0) { best = Some((d,uv)); }
             if d <= on || inside(uv) { break }
         }

@@ -71,6 +71,7 @@ mod components;
 mod composed_rounds;
 mod computed_point;
 mod conrod;
+mod coons;
 mod contact_trace;
 mod continuation;
 mod coordinates;
