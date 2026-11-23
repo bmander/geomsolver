@@ -127,6 +127,7 @@ mod extremal;
 mod extrude;
 mod face_edits;
 mod face_family;
+mod far_from_origin;
 mod far_seed;
 mod extruded_envelope;
 mod extruded_fields;

@@ -117,7 +117,7 @@ fn every_kind_of_curve_is_held_by_its_enclosure() {
 }
 
 /// The surfaces of every kind, each with the parameters it is read over.
-fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
+pub(crate) fn surfaces() -> Vec<(&'static str,Surface,[[f64;2];2])> {
     use std::f64::consts::{FRAC_PI_2,TAU};
     let f = Frame::new([0.5,-1.,2.],unit([0.2,-0.3,1.]),unit([1.,0.,-0.2]));
     let meridian = Curve::BSpline(Arc::new(BSpline::new(2,vec![0.,0.,0.,0.5,1.,1.,1.],vec![[1.,0.,-1.],[2.5,0.,0.],[0.5,0.,1.],[1.5,0.,2.]]).unwrap()));

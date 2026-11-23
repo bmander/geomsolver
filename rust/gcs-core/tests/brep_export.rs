@@ -668,7 +668,7 @@ fn moment(r: f64,bend: f64) -> f64 {
 
 /// The solid the document calls `name` built exactly at the export's own tolerance, or the test
 /// fails saying `what` and what the build said.
-fn exact_named(e: &gcs_core::program::Elaborated,sk: &Sketch,name: &str,what: &str) -> gcs_core::brep::topo::Brep {
+pub(crate) fn exact_named(e: &gcs_core::program::Elaborated,sk: &Sketch,name: &str,what: &str) -> gcs_core::brep::topo::Brep {
     let (out,said) = saying(|say| export::exact(sk,fixtures::solid(e,name),None,None,say));
     out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}")).solid
 }
