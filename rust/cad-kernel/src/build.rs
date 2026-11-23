@@ -24,7 +24,8 @@ const TAU: f64 = std::f64::consts::TAU;
 pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> },Spline(Arc<BSpline>),
     /// A curve read exactly in a frame over its own span, in the profile's plane (`turned::Exact`,
     /// `Curve::exact_span`): a turned contact's meridian (#780 C3), revolved only, or a slid torus's
-    /// apparent contour (#805), swept along the profile's normal only — each refused by the other.
+    /// apparent contour (#805), swept along the profile's normal only — each refused by the other;
+    /// or an ellipse (`Curve::Ellipse`), its whole turn, a loop of its own, swept or carried only.
     Exact(Curve) }
 
 /// A planar region: an outer loop and its holes, each a closed walk of edges (listed in any
@@ -138,8 +139,11 @@ impl Profile {
     }
 }
 
-/// An exact profile edge's span (`Curve::exact_span`; a profile holds no other curve as one).
-fn exact_span(c: &Curve) -> [f64;2] { c.exact_span().expect("a curve read exactly in a frame") }
+/// An exact profile edge's span (`Curve::exact_span`, an ellipse's whole turn; a profile holds no
+/// other curve as one).
+fn exact_span(c: &Curve) -> [f64;2] {
+    match c { Curve::Ellipse(..) => [0.,TAU],_ => c.exact_span().expect("a curve read exactly in a frame") }
+}
 
 /// Seventeen points evenly along an exact profile edge's span.
 fn exact_points(c: &Curve) -> Vec<V> {
@@ -284,12 +288,14 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                     (Surface::Plane(Frame::new(s.start(),cross(d,n),d)),false,0.,distance(s.end(),s.start()))
                 }
                 Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),s.t[0],s.t[1]),
-                // C(u) + v n: the step's tangent turned clockwise about n is its normal
-                Curve::BSpline(_) | Curve::Slid(_) | Curve::Trochoid(_) => (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
+                // C(u) + v n: the step's tangent turned clockwise about n is its normal (an ellipse's
+                // closed round it, as a file's elliptic cylinder is)
+                Curve::BSpline(_) | Curve::Slid(_) | Curve::Trochoid(_) | Curve::Ellipse(..) =>
+                    (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
                 Curve::Turned(..) => return Err("a turned contact's meridian is turned, not swept along a line".into()),
-                Curve::Ellipse(..) | Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
+                Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
                 | Curve::SheetCut(..) =>
-                    unreachable!("a profile has only lines, circles and splines"),
+                    unreachable!("a profile has only lines, circles, splines, ellipses and curves read exactly"),
             };
             // the side's parameters along the walk step, for the step's edge parameter
             let u_at = |t: f64| match s.curve { Curve::Line {..} => (t-s.t[0]).abs(),_ => t };

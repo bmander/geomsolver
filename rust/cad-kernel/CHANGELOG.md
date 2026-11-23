@@ -8,6 +8,24 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **An elliptic cylinder's rim is chamfered and rounded** (brep-bench's chamfer/elliptic-cylinder-rim,
+  chamfer/elliptic-hole-rim and fillet/elliptic-cylinder-rim):
+  - A profile takes an ellipse, its whole turn, as `ProfileEdge::Exact(Curve::Ellipse(..))`: a
+    prism (or a slide or a screw) sweeps it into a side closed round it, `Surface::Extrusion` of the
+    ellipse, written as STEP's own `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE`. A turn and a draft
+    refuse it by name.
+  - A spline or an ellipse swept along a line has an offset (`Surface::parallel`,
+    `Surface::has_parallel`): the sheet it is, its spline's poles carried along the sweep, read by
+    its signed distance as a B-spline sheet's. A ball rolls on it (`fillet::roll`), and
+    `fillet::flat_along` reads a chamfer's legs from `parallel` (it read `offset`'s closed forms
+    only, and refused a sheet's leg as wider than its face). A side swept from a spline is still
+    no surface closed round it (a spline has no period), so a loop round it is not chamfered yet.
+  - A foot on a net's continuation runs as far as it likes along a way the net is one straight
+    span, the line it lies on (it was held to the domain's width past it).
+  - `Curve::inverse` of an ellipse is its nearest point (`affine::ellipse_foot`): Newton from the
+    point's own angle settled, inside the ellipse near its evolute, on another stationary point.
+  - `fillet`'s seamed strip takes a swept curve's iso line, a line along the sweep.
+
 ## [0.22.0] - 2026-11-23
 
 - **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
