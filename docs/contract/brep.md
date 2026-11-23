@@ -2075,8 +2075,11 @@ axis (a revolution's point and direction) or vector (an extrusion's direction an
 its curve — a line's point, direction and length, a conic's placement and radii, a spline's
 degree, poles, knots and weights — to the solid's (`Solid::of`, a curve the writer fits checked
 for a spline alone), and an offset's distance and basis net; `step_roundtrip::same` compares
-those numbers too, as it does every other surface's. A `Brep` whose indices leave its arrays, or
-whose geometry holds no finite uncertainty, is refused, not followed. Gate:
+those numbers too, as it does every other surface's, a curve the writer fits held as `verify`
+holds it — the axis or vector the solid's and the curve read a B-spline, the fit's numbers no
+solid's (`a_slid_contour_reads_back`, `leaning_ring.sv`'s extrusion of a slid contour, refused
+while `same` compared the fit's 650 numbers with the solid's five). A `Brep` whose indices leave
+its arrays, or whose geometry holds no finite uncertainty, is refused, not followed. Gate:
 `step_rewrite::every_solid_read_is_written_again` (every checked-in file the reader reads, and
 nine written by hand — a prism on extrusions of lines, upright and aslant; an extrusion of a
 circle, of a circle aslant read as an ellipse, of an ellipse; a revolution of a line along its
