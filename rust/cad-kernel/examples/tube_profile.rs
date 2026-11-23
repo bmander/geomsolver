@@ -8,7 +8,7 @@
 //! `build` builds the solid by the tube road (`faces::solid`: faces, volume, time, covers read),
 //! `old` by the old ring road (`closed::ring`), `compare` reads the tube's certified cover against
 //! `depth::cover` on the grid, and `bound` the Jacobian's proved sign over cells against `J` read in
-//! them, and the sheets' edges' time. `TUBE_HALF` (degrees) sets the roll's half instead.
+//! them, and the sheets' edges' time; `READS` (with `build`) times the bench's reads after it. `TUBE_HALF` (degrees) sets the roll's half instead.
 //! The tube is read pinched (`Tube::pinched`): `pinch` reads each chart's cuspidal edges,
 //! swallowtail points and (with `trace`) depth's zero set, the collar's too (`SEEDS=θ,t,…` adds
 //! seeds); `fit` fits each sheet over a window holding the pinch and reads it against the sheet
@@ -355,6 +355,22 @@ fn main() {
                 let took = clock.elapsed();
                 println!("built: {} faces, volume {:.10}, check {:?}, in {:?}; {covers} covers, {:?} a cover",s.faces.len(),
                     cad_kernel::props::volume(&s),s.check(tol).err(),took,took/covers.max(1) as u32);
+                // (`READS`: the bench's four reads after the build, each timed — the area face by
+                // face, `check` at the size's tolerance, the volume, the mesh at its bar)
+                if std::env::var_os("READS").is_some() {
+                    let c = Instant::now();
+                    let mut area = 0.;
+                    for f in &s.faces { let c = Instant::now(); let a = cad_kernel::props::area(&s,f); area += a;
+                        println!("  area of {} ({}): {a:.6} in {:?}",f.name,f.surface.kind(),c.elapsed()) }
+                    println!("reads: area {area:.10} in {:?}",c.elapsed());
+                    let c = Instant::now(); let ok = s.check(cad_kernel::geom::tolerance(s.size())).err();
+                    println!("reads: check {ok:?} in {:?}",c.elapsed());
+                    let c = Instant::now(); let v = cad_kernel::props::volume(&s);
+                    println!("reads: volume {v:.10} in {:?}",c.elapsed());
+                    let bar = (1e-4*s.size()).min(5e-3*v/area);
+                    let c = Instant::now(); let m = cad_kernel::mesh::mesh(&s,bar,0.1);
+                    println!("reads: mesh at {bar:e}: {:?} triangles in {:?}",m.map(|m| m.tris.len()),c.elapsed());
+                }
                 // the misfits at the size's tolerance (`geom::tolerance` over the box's diagonal)
                 let (lo,hi) = s.bounds();
                 let size = ((hi[0]-lo[0]).powi(2)+(hi[1]-lo[1]).powi(2)+(hi[2]-lo[2]).powi(2)).sqrt();
