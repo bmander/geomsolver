@@ -528,6 +528,32 @@ impl Ask<'_> {
             }
         }
         if !breaks.is_empty() { breaks.sort_by(f64::total_cmp); breaks.dedup(); return Err(breaks) }
+        // (the face inside the run lies between the sides: each vertex of its rings within the run
+        // and each crossing of a ring's edge with the box's sides across, read on its own curve,
+        // stands between them or within the tolerance in space of one — a sliver of the face
+        // narrower than the lines' spacing, beside a swallowtail point, beyond a side, no line sees)
+        let beyond = |p: P| -> bool {
+            let (x,y) = (p[axis.along()],p[axis.across()]);
+            if !(x > x0 && x < x1 && y >= b0 && y <= b1) { return false }
+            let step = self.tol/self.tube.rates_at(self.chart,p).map_or(1.,|m| m[axis.across()].max(f64::MIN_POSITIVE));
+            let (Some(l),Some(h)) = (lo.value(self.tube,self.chart,axis,x,step),hi.value(self.tube,self.chart,axis,x,step)) else { return false };
+            if y >= l && y <= h { return false }
+            let at = |y: f64| self.tube.at(self.chart,axis.point(x,y)).map(|q| q.x);
+            let side = if y < l { l } else { h };
+            match (at(side),at(y)) { (Some(s),Some(v)) => distance(s,v) > self.tol,_ => false }
+        };
+        for (r,ring) in self.rings.iter().enumerate() {
+            let n = ring.len();
+            for s in 0..n {
+                let (p,q) = (ring[s],ring[(s+1)%n]);
+                if beyond(p) { breaks.push(p[axis.along()]) }
+                for v in [b0,b1] {
+                    if (p[axis.across()] <= v) == (q[axis.across()] <= v) { continue }
+                    if let Some(mut c) = (self.edge)(r,s,Hold::Line(axis.across(),v)) { c[axis.across()] = v; if beyond(c) { breaks.push(c[axis.along()]) } }
+                }
+            }
+        }
+        if !breaks.is_empty() { breaks.sort_by(f64::total_cmp); breaks.dedup(); return Err(breaks) }
         // (no side's curve turns at the run's end: its lines read it as a graph whose slope grows
         // without bound there between the last line and the end, which the slope read at the lines'
         // middles never sees — that way is no slab; the other is, the curve a graph over it there)
