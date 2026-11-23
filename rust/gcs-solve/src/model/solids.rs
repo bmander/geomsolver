@@ -852,6 +852,10 @@ impl SolidE {
 /// of `a`'s shape, and `a` is still where it was drawn, so being read at a value does not make
 /// `a` a feature — only being made into something else does.  A sweep is made of its stock: the
 /// swept body is what the stock passes through.
+///
+/// **A body a file gives is never an object** (#993 stage 2): it is what the document reads, an
+/// operand of what it makes, however it is read — a body's stock, a set's membership, a claim's,
+/// a tool — and never a part of its own in the report, the cut list, the picture or an assembly.
 pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
     for s in sk.solids.iter().filter(|s| !matches!(s.def, SolidDef::Placed { .. })) {
@@ -863,6 +867,7 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
     }
     (0..sk.solids.len())
         .filter(|&i| !used[i] && !sk.roles_of(EntRef::solid(i)).construction)
+        .filter(|&i| !matches!(sk.solids[i].def, SolidDef::Given(_)))
         .collect()
 }
 
