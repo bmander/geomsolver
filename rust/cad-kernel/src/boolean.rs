@@ -672,9 +672,11 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                 // a shell is one cell's side: kept and dropped at once, the complex has joined two
                 // cells the operation tells apart, round an edge whose faces it ordered wrongly
                 Some(w) if w != v => {
+                    let shell = c.shell_sides[f][k];
                     let f = &c.b.faces[f];
                     return Err(format!("a shell of the arrangement is kept on one side of a {}{} and dropped on another: \
-                        two of its cells joined round an edge",f.surface.kind(),if f.name.is_empty() { String::new() } else { format!(" (`{}`)",f.name) }))
+                        two of its cells joined round an edge{}",f.surface.kind(),if f.name.is_empty() { String::new() } else { format!(" (`{}`)",f.name) },
+                        joined_round(&c,shell,&|f: usize,k: usize| value(member[f][k]))))
                 }
                 _ => {}
             }
@@ -699,6 +701,43 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
         kept_origin.push(origin[f]);
     }
     Ok((healed(&edges,&pool,kept,&kept_origin,&laid,&mut handed),handed))
+}
+
+/// EXPERIMENT (#880 T1f): where a shell kept and dropped at once was joined: the edges round
+/// which a wedge of `shell` is bounded by sides the operation keeps and drops (`kept`, each face's
+/// side by its place in `shell_sides`), each with its ends, its curve's middle and the faces round
+/// it in order (with the operand face each came from); said in the refusal, the first such edge,
+/// and every one of them under `SOLVENT_BREP_DEBUG`.
+fn joined_round(c: &Complex,shell: usize,kept: &dyn Fn(usize,usize) -> bool) -> String {
+    let mut said: Vec<String> = Vec::new();
+    for (e,round) in c.radial.iter().enumerate() {
+        let n = round.len();
+        if n == 0 { continue }
+        // the values of the sides of each face round the edge that lie in `shell`
+        let values = |f: usize| (0..2).filter(|&k| c.shell_sides[f][k] == shell).map(|k| kept(f,k)).collect::<Vec<bool>>();
+        let mut found = false;
+        for i in 0..n {
+            if round[i].ahead != shell { continue }
+            let (fi,fj) = (round[i].face,round[(i+1)%n].face);
+            let v: Vec<bool> = values(fi).into_iter().chain(values(fj)).collect();
+            if v.contains(&true) && v.contains(&false) { found = true; break }
+        }
+        if !found { continue }
+        let edge = &c.b.edges[e];
+        let ends = edge.v.map(|v| c.b.vertices[v as usize].p);
+        let middle = edge.point(0.5*(edge.t[0]+edge.t[1]),&c.b.vertices);
+        let faces: Vec<String> = round.iter().map(|u| {
+            let o = &c.origins[u.face];
+            let from: Vec<String> = o.iter().map(|o| format!("{}{}",["A","B"].get(o.operand).unwrap_or(&"?"),o.face)).collect();
+            let sides: Vec<String> = (0..2).map(|k| format!("{}{}",if c.shell_sides[u.face][k] == shell { "*" } else { "" },
+                if kept(u.face,k) { "kept" } else { "dropped" })).collect();
+            format!("{} {} of {} [{}]",u.face,c.b.faces[u.face].surface.kind(),from.join("="),sides.join("|"))
+        }).collect();
+        said.push(format!(" (edge {e}{} from {:?} to {:?} through {middle:?}; round it {})",
+            if c.met.get(e) == Some(&true) { ", a meeting's" } else { "" },ends[0],ends[1],faces.join(", ")));
+    }
+    if super::debug() { for s in &said { eprintln!("boolean: shell {shell} joined round{s}") } }
+    said.into_iter().next().unwrap_or_default()
 }
 
 /// `faces` as one boundary over `edges` (`assemble`), the meetings that part nothing healed out
