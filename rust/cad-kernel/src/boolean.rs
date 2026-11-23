@@ -2236,8 +2236,16 @@ impl<'a> Arrangement<'a> {
         // both faces crosses a boundary of one, where it is seeded on that boundary (`On`, within
         // the tolerance), or lies closed inside both (a grid seed `In` both, or `unseen`), so only
         // seeds a B-spline face reads `Out` are dropped
-        seeds.retain(|&p| (0..2).all(|k| !matches!(surfaces[k],Surface::BSpline(..))
-            || self.located[faces.s[k]].face_place(faces.f[k],p) != Place::Out));
+        let crossing = |p: V| on[ob][fb].iter().chain(&on[oa][fa]).any(|&v| distance(self.pool.pts[v as usize],p) == 0.);
+        seeds.retain(|&p| {
+            let kept = (0..2).all(|k| !matches!(surfaces[k],Surface::BSpline(..))
+                || self.located[faces.s[k]].face_place(faces.f[k],p) != Place::Out);
+            if super::debug() && !kept && crossing(p) {
+                eprintln!("brep:   an edge's crossing dropped as off a face: {p:?}, places {:?}",
+                    [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],p)));
+            }
+            kept
+        });
         self.say.tracing(faces,surfaces,&seeds);
         let started = crate::util::clock::Instant::now();
         // beside a ridge's branch, or one marched in both surfaces' parameters, is beside a known meeting
