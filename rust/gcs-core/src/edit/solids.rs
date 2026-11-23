@@ -492,6 +492,13 @@ fn rounds_edit(
 ) -> Result<Edit, String> {
     let object = sk.solids.get(solid).ok_or("there is no such solid")?;
     let body = object.name.clone();
+    // a body a file gives is the file's, never extended (#993 stage 2): a round is written on a
+    // body made of it, as a body word is
+    if matches!(object.def, crate::model::SolidDef::Given(_)) {
+        return Err(format!("`{body}` is the body a file gives, and it is never extended: name \
+                            the body to {} — `part := solid({body})` — and pick its edges",
+                           word.as_str()));
+    }
     let size = size.trim();
     if size.is_empty() {
         return Err(format!("a {} says how big: {}", word.as_str(), match word {
@@ -545,6 +552,12 @@ fn rounds_edit(
             lowered: crate::syntax::Lowered::No,
         }),
     ));
+    // an edge picked is written by its two faces' names: one with none is refused, never taken
+    // as the whole body (which `all` below would read every face to be, none being nameable)
+    for (a, b) in edges {
+        written(a)?;
+        written(b)?;
+    }
     let mut stmts: Vec<StmtKind> = Vec::new();
     if whole || all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
         stmts.push(said(&[&body]));
