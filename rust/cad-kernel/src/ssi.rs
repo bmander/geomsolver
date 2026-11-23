@@ -2778,6 +2778,12 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
                     break
                 };
+                // EXPERIMENT (#880 T1f): the last steps of a march near its cap, read
+                if super::debug() && pts.len() >= 99_990 {
+                    let feet = |s: &Surface,x: V| if matches!(s,Surface::BSpline(..)) { crate::util::warm::kept(|| { let uv = s.inverse(x); (uv,s.area_factor(uv)) }) } else { ([0.;2],1.) };
+                    eprintln!("brep:   creeping: h {h:.2e} (least {:.2e}) turn {:.4} step {:.2e} feet a {:?} {:?} b {:?} {:?} fold {} {}",h0*1e-4,dot(tq,t).abs(),
+                        distance(p,q),feet(a,p),feet(a,q),feet(b,p),feet(b,q),folds_between(a,p,q),folds_between(b,p,q));
+                }
                 let turned = (dot(tq,t) > 0.) != facing;
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
