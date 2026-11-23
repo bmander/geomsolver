@@ -1289,11 +1289,8 @@ fn faces(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mut
         if debug() { eprintln!("tube: arc {} {:?} {:?} mid {:?} ends {:?} {:?}",curves.len(),arc.kind,arc.v,c.point(0.5),c.point(0.),c.point(1.)) }
         curves.push((Arc::new(Curve::BSpline(Arc::new(c))),pcs));
     }
-    // the second walk: each kept part's piece in the cell its inner point lies in, its net fitted
-    // once per cell and shared by every piece in it
-    let mut out = Assembly::default();
-    let mut used = vec![0usize;arcs.len()];
-    let mut nets: BTreeMap<(usize,usize),Arc<crate::nurbs::Net>> = BTreeMap::new();
+    // the second walk: each kept part's piece in the cell its inner point lies in
+    let mut pieces: Vec<(Chart,(f64,f64),Vec<(usize,usize,Vec<P>)>,Vec<Vec<(usize,bool)>>,usize,Option<usize>)> = Vec::new();
     for &chart in &charts {
         let cs = cuts_of(cuts,chart);
         for w in 0..2 {
@@ -1307,18 +1304,58 @@ fn faces(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mut
                 // (the part of the first walk it lies in, kept, and its cell)
                 let Some(k) = parts.iter().position(|p| p.chart == chart && p.w == w && within(inner,&p.rings)) else { continue };
                 let l = &g.loops[i].0;
-                let ls: Vec<&[(usize,bool)]> = std::iter::once(&l[..]).chain(g.holes[i].iter().map(|&j| &g.loops[j].0[..])).collect();
+                let ls: Vec<Vec<(usize,bool)>> = std::iter::once(l.clone()).chain(g.holes[i].iter().map(|&j| g.loops[j].0.clone())).collect();
                 if debug() { eprintln!("tube: kept {chart:?} window {w}: {:?}",l.iter().map(|&(e,_)| g.lines[e].0).collect::<Vec<_>>()) }
-                let on = match &parts[k].cover {
-                    None => On::Torus,
-                    Some(cover) => {
-                        let c = cover.leaves.iter().position(|(r,_)| inner[0] >= r[0][0] && inner[0] <= r[0][1] && inner[1] >= r[1][0] && inner[1] <= r[1][1])
-                            .ok_or_else(|| failed(format!("a piece of {chart:?} at {inner:?} in no cell")))?;
+                let c = match &parts[k].cover {
+                    None => None,
+                    Some(cover) => Some(cover.leaves.iter().position(|(r,_)| inner[0] >= r[0][0] && inner[0] <= r[0][1] && inner[1] >= r[1][0] && inner[1] <= r[1][1])
+                        .ok_or_else(|| failed(format!("a piece of {chart:?} at {inner:?} in no cell")))?),
+                };
+                if debug() { if let (Some(c),Some(cover)) = (c,&parts[k].cover) {
+                    let bb = poly.iter().fold([[f64::INFINITY,f64::NEG_INFINITY];2],|b,p| [[b[0][0].min(p[0]),b[0][1].max(p[0])],[b[1][0].min(p[1]),b[1][1].max(p[1])]]);
+                    eprintln!("tube: a piece of {chart:?} over {bb:?}, inner {inner:?}, in the leaf {:?}",cover.leaves[c].0)
+                } }
+                pieces.push((chart,(w0,w1),g.lines.clone(),ls,k,c));
+            }
+        }
+    }
+    // each cell's extent the hull of its pieces' edges as they are drawn: its run (and a box's sides)
+    // the least and most of their pcurves' poles in the chart's parameters, as placed — each edge's
+    // pcurve lies in its poles' hull, so every edge of the cell's faces is read inside the cell, and
+    // where an edge is a seam its poles are the seam's own line, the cell's side at its split the
+    // seam's very number (a run read from the first walk's polygons stops a chord's sag short of
+    // where the edges settled)
+    let mut hulls: BTreeMap<(usize,usize),[[f64;2];2]> = BTreeMap::new();
+    for (_,_,lines,ls,k,c) in &pieces {
+        let Some(c) = *c else { continue };
+        let h = hulls.entry((*k,c)).or_insert([[f64::INFINITY,f64::NEG_INFINITY];2]);
+        for l in ls { for &(e,_) in l {
+            let (i,u,ref placed) = lines[e];
+            let shift = placed[0][0]-arcs[i].uses[u].1[0][0];
+            for p in &curves[i].1[u].poles { for (j,x) in [p[0]+shift,p[1]].into_iter().enumerate() { h[j] = [h[j][0].min(x),h[j][1].max(x)] } }
+        } }
+    }
+    for (&(k,c),h) in &hulls {
+        let Some(cover) = parts[k].cover.as_mut() else { continue };
+        let cell = &mut cover.leaves[c].1;
+        let (a,b) = (cell.axis.along(),cell.axis.across());
+        cell.run = h[a];
+        if let super::cells::Bound::At(y) = &mut cell.lo { *y = h[b][0] }
+        if let super::cells::Bound::At(y) = &mut cell.hi { *y = h[b][1] }
+    }
+    // each piece's face, its net fitted once per cell and shared by every piece in it
+    let mut out = Assembly::default();
+    let mut used = vec![0usize;arcs.len()];
+    let mut nets: BTreeMap<(usize,usize),Arc<crate::nurbs::Net>> = BTreeMap::new();
+    for (chart,(w0,w1),lines,ls,k,c) in &pieces {
+        let (chart,k) = (*chart,*k);
+        let ls: Vec<&[(usize,bool)]> = ls.iter().map(|l| &l[..]).collect();
+        {
+            {
+                let on = match (&parts[k].cover,*c) {
+                    (None,_) | (_,None) => On::Torus,
+                    (Some(cover),Some(c)) => {
                         let cell = &cover.leaves[c].1;
-                        if debug() {
-                            let bb = poly.iter().fold([[f64::INFINITY,f64::NEG_INFINITY];2],|b,p| [[b[0][0].min(p[0]),b[0][1].max(p[0])],[b[1][0].min(p[1]),b[1][1].max(p[1])]]);
-                            eprintln!("tube: a piece of {chart:?} over {bb:?}, inner {inner:?}, in the leaf {:?}, its cell {:?} {:?}",cover.leaves[c].0,cell.axis,cell.run)
-                        }
                         let net = match nets.get(&(k,c)) {
                             Some(n) => n.clone(),
                             None => {
@@ -1334,8 +1371,8 @@ fn faces(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: &mut
                         On::Cell(cell,net,parts[k].step)
                     }
                 };
-                for l in &ls { for &(e,_) in l.iter() { used[g.lines[e].0] += 1 } }
-                face(tube,chart,(w0,w1),&g.lines,&ls,arcs,&curves,vertices,on,&mut out,tol)?;
+                for l in &ls { for &(e,_) in l.iter() { used[lines[e].0] += 1 } }
+                face(tube,chart,(*w0,*w1),lines,&ls,arcs,&curves,vertices,on,&mut out,tol)?;
             }
         }
     }
@@ -1461,11 +1498,19 @@ fn split_arc(tube: &Tube,vertices: &mut Vec<Vertex>,arcs: &mut Vec<Arc2>,trims: 
             let n = t.uv.len();
             if !matches!(t.shape,Shape::Traced) {
                 // (a join, read evenly along its own parameter: its point meeting the seam's line
-                // halved to the rounding within the segment, and each part its own share of it,
-                // read again)
-                let a = axis.along();
+                // halved to the rounding within the segment of its polyline as it now stands that
+                // the line crosses nearest `q` — a join split before is read again, so a place
+                // along the polyline it was found on names another point of it — and each part its
+                // own share of it, read again)
+                let (a,c) = (axis.along(),axis.across());
                 let g = |x: f64| t.at(tube,x).map(|p| p[used][a]-q[a]);
-                let j = (s.floor() as usize).min(n-2);
+                let line = if used == 0 { &t.uv } else { &t.partner };
+                let _ = s;
+                let j = (0..n-1).filter(|&j| (line[j][a] <= q[a]) != (line[j+1][a] <= q[a]))
+                    .min_by(|&i,&j| {
+                        let y = |j: usize| { let (p,r) = (line[j],line[j+1]); (p[c]+(r[c]-p[c])*(q[a]-p[a])/(r[a]-p[a])-q[c]).abs() };
+                        y(i).total_cmp(&y(j))
+                    }).ok_or_else(|| failed(format!("a seam's line at {q:?} does not cross its join")))?;
                 let (mut lo,mut hi) = (j as f64/(n-1) as f64,(j+1) as f64/(n-1) as f64);
                 let mut gl = g(lo).ok_or_else(|| failed("a join not read at a seam".into()))?;
                 loop {
