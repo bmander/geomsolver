@@ -95,7 +95,7 @@ fn a_given_body_is_meshed_on_no_page_thread() {
 }
 
 /// The unit a given body's mesh is cut at is of its own size, as an ordinary solid's is: its
-/// edges' box (`Brep::edge_bounds`) — the drilled block's 40 × 30 × 20 — not a mesh of it.
+/// edges' box (`Given::extent`) — the drilled block's 40 × 30 × 20 — not a mesh of it.
 #[test]
 fn a_given_bodys_mesh_unit_is_of_its_size() {
     let e = read(DOC);

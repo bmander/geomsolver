@@ -105,11 +105,13 @@ pub enum Node {
     Given(Given),
 }
 
-/// A `Given` node's B-rep (millimetres, about the origin the recipe is written about) and a digest
-/// of what it was read from: shared, never copied, and its `Debug` the digest and its size, since a
-/// read B-rep may be megabytes and a node's `Debug` is read where nodes are told apart.
+/// A `Given` node's B-rep as it was read (millimetres, about the file's origin), a digest of what
+/// it was read from, and `by`, what the build moves it by where the recipe is written about
+/// another origin (millimetres; nothing for the file's): shared, copied once, where the build
+/// makes it, and its `Debug` the digest and its size, since a read B-rep may be megabytes and a
+/// node's `Debug` is read where nodes are told apart.
 #[derive(Clone)]
-pub struct Given { pub brep: std::sync::Arc<crate::topo::Brep>,pub digest: u64 }
+pub struct Given { pub brep: std::sync::Arc<crate::topo::Brep>,pub digest: u64,pub by: V }
 
 impl std::fmt::Debug for Given {
     fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {

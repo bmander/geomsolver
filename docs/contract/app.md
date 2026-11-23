@@ -688,8 +688,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   is a body a file gives meshed there** (#993 stage 2): its B-rep may be thousands of faces, and
   what the page asks on opening and every edit — the objects not drawn (`overview::unbuilt`), an
   object's evaluation from its build, the unit a mesh is cut at (`solid::mesh_unit`,
-  `gcs_solid_mesh_unit`), the diagnosis without refusals — reads it as
-  its edges' box (`Brep::edge_bounds`, `solid::document::extent_at`) and its build, never its
+  `gcs_solid_mesh_unit`), the diagnosis without refusals — reads it as its edges' box, read
+  once (`model::Given::extent`, `solid::document::extent_at`), and its build, never its
   mesh.  Gate: `page_thread.rs`'s `a_given_body_is_meshed_on_no_page_thread`, which counts the
   B-reps meshed on the thread (`solid::brep_meshes`) around those calls and holds it at none.
   **The page's own thread builds no object** (#671): its

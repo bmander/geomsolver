@@ -351,10 +351,12 @@ pub enum SolidDef {
 /// named `GIVEN_FACE` and `k` (`Given::face_name`), a name no written path can reach, and the
 /// file's (`ADVANCED_FACE`'s, the file's vocabulary, usually empty or shared) are dropped —
 /// equal names would merge faces in a mesh and drop the edges between them.  Face `k` of the
-/// solid is face `k` of the read B-rep.
+/// solid is face `k` of the read B-rep.  It holds the recipe's node as the file gives it,
+/// unmoved (`brep::recipe::Given`), so a recipe shares its B-rep, and the box about it a scale is
+/// picked by, read once (`extent`).
 pub struct Given {
-    brep: std::sync::Arc<crate::brep::topo::Brep>,
-    digest: u64,
+    read: crate::brep::recipe::Given,
+    extent: crate::brep::geom::Box3,
 }
 
 /// What a given body's face names start with, the face's index following: `#` opens no name a
@@ -369,7 +371,11 @@ impl Given {
         for (k, f) in brep.faces.iter_mut().enumerate() {
             f.name = Given::face_name(k);
         }
-        Given { brep: std::sync::Arc::new(brep), digest }
+        let (lo, hi) = brep.edge_bounds();
+        let extent = if lo[0].is_finite() { (lo, hi) } else { brep.bounds() };
+        let brep = std::sync::Arc::new(brep);
+        let read = crate::brep::recipe::Given { brep, digest, by: [0.0; 3] };
+        Given { read, extent }
     }
 
     /// The name `Given::new` gives face `k`.
@@ -395,18 +401,33 @@ impl Given {
     }
 
     pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
-        &self.brep
+        &self.read.brep
     }
 
     pub fn digest(&self) -> u64 {
-        self.digest
+        self.read.digest
+    }
+
+    /// A box about it (millimetres): its vertices' and edges' (`Brep::edge_bounds`, what a scale
+    /// is picked by, never a surface inverted), or its whole bounds where it has none of them;
+    /// empty where neither has a point.
+    pub fn extent(&self) -> crate::brep::geom::Box3 {
+        self.extent
+    }
+
+    /// The recipe's node of it, written about `about` (millimetres, the world's where `None`): the
+    /// B-rep shared, the build moving it there.
+    pub fn node(&self, about: Option<[f64; 3]>) -> crate::brep::recipe::Given {
+        let by = about.map_or([0.0; 3], |a| a.map(|x| -x));
+        crate::brep::recipe::Given { by, ..self.read.clone() }
     }
 }
 
-/// The digest and the B-rep's size, never its every face: a read B-rep may be megabytes.
+/// The node's: the digest and the B-rep's size, never its every face (a read B-rep may be
+/// megabytes).
 impl std::fmt::Debug for Given {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Given {{ digest: {:016x}, faces: {} }}", self.digest, self.brep.faces.len())
+        self.read.fmt(f)
     }
 }
 
