@@ -11,8 +11,7 @@
 //! them, and the sheets' edges' time. `TUBE_HALF` (degrees) sets the roll's half instead.
 //! The tube is read pinched (`Tube::pinched`): `pinch` reads each chart's cuspidal edges,
 //! swallowtail points and (with `trace`) depth's zero set, the collar's too (`SEEDS=θ,t,…` adds
-//! seeds); `fit` fits each sheet over a window holding the pinch and reads it against the sheet
-//! outside the hole; `COLLAR_AT=ψ0,ψ1,ρ,n` reads the collar's side and depth along `ψ`;
+//! seeds); `COLLAR_AT=ψ0,ψ1,ρ,n` reads the collar's side and depth along `ψ`;
 //! `SEED_AT=side,θ,t,θ0,θ1` traces a sheet's depth from one seed alone over `[θ0, θ1]`.
 //!
 //! `cargo run --release -p cad-kernel --example tube_profile -- half-turn|full-turn|thin|eighty|tumble|crossed-forward|crossed-reverse [grid θ] [grid t] [trace]`
@@ -168,30 +167,6 @@ fn main() {
             let psi = v[0]+(v[1]-v[0])*i as f64/v[3];
             let uv = [psi,v[2]];
             println!("ψ {:.4}° side {:?} reading {:?}",psi.to_degrees(),tb.side(Chart::Collar,uv),field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6} (own {:.6})",c.depth,c.at,tb.own(Chart::Collar,uv)),o => format!("{o:?}") }));
-        }
-        return
-    }
-    // `fit`: each sheet's net over the window holding the pinch, and how far it stands from the
-    // sheet outside the hole
-    if args.iter().any(|a| a == "fit") {
-        let p = tb.pinch.as_ref().expect("a pinch");
-        let th = p.collar.at.1;
-        let (w0,w1) = (th-2.,th+1.);
-        for side in [1.,-1.] {
-            let clock = Instant::now();
-            let net = tube::faces::sheet_net(&tb,side,(w0,w1),0.1*tol).unwrap();
-            let el = clock.elapsed();
-            let mut worst = 0f64;
-            let n = 600;
-            for i in 0..=n { for j in 0..=n/2 {
-                let (u,v) = ((i as f64+0.37)/(n as f64+1.),(j as f64+0.61)/(n as f64/2.+1.));
-                let (a,b) = (w0+(w1-w0)*u,roll[0]+(roll[1]-roll[0])*v);
-                if p.side([a,b]) < 0. { continue }
-                let x = tb.point(side,a,b).unwrap().x;
-                let y = net.point(u,v);
-                worst = worst.max(((x[0]-y[0]).powi(2)+(x[1]-y[1]).powi(2)+(x[2]-y[2]).powi(2)).sqrt());
-            } }
-            println!("side {side:+}: {}×{} poles in {el:?}; outside the hole the sheet within {worst:e} (bar {:e})",net.poles.len(),net.poles[0].len(),0.1*tol);
         }
         return
     }

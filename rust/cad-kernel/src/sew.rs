@@ -67,6 +67,25 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     Ok(b)
 }
 
+/// **Faces already sharing their edges, made a closed solid** (#880 T1f): no vertex merged and no
+/// edge cut or paired by where it lies — the pieces' topology is given, each edge one curve its two
+/// faces' loops use — only `sewn`'s last steps: each edge's gap measured and refused past the
+/// tolerance, the shells oriented and checked. Where faces meet at a sheet's cuspidal edge every
+/// way on it runs within the tolerance of every other, and edges read by where they lie there are
+/// paired wrongly.
+pub fn assembled(b: Brep,tol: f64) -> Result<Brep,KernelError> {
+    if b.faces.is_empty() { return Err(KernelError::new(Kind::Open,"no faces to assemble")) }
+    let mut b = b.compacted();
+    b.measure_tolerances();
+    if let Some((i,e)) = b.edges.iter().enumerate().find(|(_,e)| e.tol > ON_CURVE*tol) {
+        return Err(KernelError::new(Kind::Refused,format!("an assembled edge {i} near {:?} stands {:e} off a face it bounds",
+            middle(&b,i),e.tol)))
+    }
+    orient(&mut b,tol)?;
+    b.check(tol)?;
+    Ok(b)
+}
+
 /// **Open sheets sewn where their boundaries are one curve** (`sewn`'s rules but the last): the
 /// pieces' vertices merged, boundary edges cut at one another's vertices and paired where they lie
 /// along one another, an edge bounding one face left a boundary, each edge's gap measured; nothing
