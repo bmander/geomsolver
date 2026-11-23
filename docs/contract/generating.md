@@ -2636,7 +2636,15 @@ between its sides' ends, and over a whole turn those are one point, so it halved
 never settled). Its bound is sampled evidence, not proof: the least far cover of the cell's nine
 points less their spread, a cell whose nine nothing else covers read clear — a Lipschitz bound from
 the middle alone clears nothing along the rims, where a sheet touches its end pose and the end's
-depth goes as the square of the distance. `Depth::along`, continuing a cover held at an end of the
+depth goes as the square of the distance. **What the trim's completeness is:** a curve through a point found
+exactly — a swallowtail point (its disc's rim), a crossing of a rim or a cut, an end pose's contact
+circle — is certain; a closed double curve touching none of them is found only where the search's
+sampled bound does not clear its cell, so one born and dying between a cell's nine points is
+missed. Not yet: the certified form where it costs little — away from the rims the 1-Lipschitz bound
+from the middle clears cells, and along a rim the quadratic touch can be bounded by the rim's own
+exact reading. **A defect of `zero_set` worked round, not fixed:** a cell spanning a whole period
+measures its longer way between its sides' ends, which over a whole turn are one point, so it is
+never halved that way and the search does not settle; to fix there, with a gate. `Depth::along`, continuing a cover held at an end of the
 roll, reads that end too: past the point's own contact `d` is no single basin over the stretch, and
 the golden section settled on the climb, 7e-6 off. A piece leaving one part across a cut seeds
 the part beside it (`round`): beside a seam the far cover may be read on one side only, so the cut's
