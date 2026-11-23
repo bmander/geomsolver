@@ -2720,7 +2720,11 @@ every trim (the windows) and from each swallowtail point to the rim it opens awa
 meets itself along its double curve); each window is walked as a planar graph whose nodes are a
 vertex at each of its places on the chart (a double curve's point has two on one sheet), and each
 part kept where its inner point bounds the sweep; a sheet's face lies on a net fitted over its
-window, an end pose's on its torus; sewn by `sew::sewn`. **The half turn builds**: 9 faces, `check`
+window, **cut to the box of the face's own pcurves** (`Net::segment`, exactly: the same surface at
+the same parameters, so trims and solid are unchanged, but none of the window's net past the box —
+folded back past a cuspidal edge, or the pinch's stand-in — is carried; the five cases and both
+crossed members build with the same faces and volumes to ten places), an end pose's on its torus;
+sewn by `sew::sewn`. **The half turn builds**: 9 faces, `check`
 at the call's tolerance, volume 12.2377154879 against the old road's 12.2377154283 (4.9e-9 of
 itself), its mesh's volume within its bar, and 19 119 of 20 000 seeded points read clear of the
 boundary each a member of the solid exactly where the depth is below nought, in some 40 s, nearly

@@ -1386,6 +1386,24 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
     if (area < 0.) == (n == 0) { uses = crate::topo::reverse_loop(uses) }
     rings.push(uses);
     }
+    // (a sheet's or the collar's net cut to the box of the face's own pcurves — their poles' box,
+    // which holds them —, exactly (`Net::segment`): the same surface at the same parameters, so the
+    // pcurves and trims stand as they are, but none of the window's net outside the face is carried,
+    // where it may fold back past a cuspidal edge or hold the pinch's stand-in)
+    let surface = match surface {
+        Surface::BSpline(frame,net) => {
+            let mut b = [[f64::INFINITY,f64::NEG_INFINITY];2];
+            for c in rings.iter().flatten() {
+                let Pcurve::Curve(pc) = &c.pcurve else { unreachable!("a pcurve of its own") };
+                let Curve::BSpline(pc) = &**pc else { unreachable!("a pcurve as a spline") };
+                for q in &pc.poles { for k in 0..2 { b[k] = [b[k][0].min(q[k]),b[k][1].max(q[k])] } }
+            }
+            let cut = net.segment(b[0],b[1]);
+            if debug() { eprintln!("tube: {chart:?}'s net {}×{} cut to {}×{} over {b:?}",net.poles.len(),net.poles[0].len(),cut.poles.len(),cut.poles[0].len()) }
+            Surface::BSpline(frame,Arc::new(cut))
+        }
+        s => s,
+    };
     out.faces.push(Face {surface,reversed:false,loops:rings,name:format!("{chart:?}")});
     Ok(out)
 }
