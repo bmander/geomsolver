@@ -144,10 +144,18 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     if let Some([a,b]) = solid.self_touching(tol).first() {
         let line = format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm",
             a[0],a[1],a[2],b[0],b[1],b[2]);
-        return Err(ExportRefusal::at(Stage::Blank,match mixed_vertex(sk,body,[*a,*b]) {
-            Some(why) => format!("{line}: {why}"),
-            None => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate statements \
-                leave them where each reads the body before the other): no manifold file describes it"),
+        return Err(ExportRefusal::at(Stage::Blank,match (mixed_vertex(sk,body,[*a,*b]),given_read(sk,body)) {
+            (Some(why),_) => format!("{line}: {why}"),
+            // a body a file gives (#993 stage 2): no statement made its faces, so no round of one
+            // is the cause; the file's own faces meet there, or the document's Booleans over them
+            (None,Some((given,true))) => format!("{line} (the faces the file `{given}` gives meet there and nowhere \
+                else near, and the document states nothing of them): the body the file gives is no manifold solid, \
+                and no manifold file describes it"),
+            (None,Some((given,false))) => format!("{line} (two of its pieces meet there and nowhere else near: faces \
+                the file `{given}` gives, or where the document's statements over its body leave them): no manifold \
+                file describes it"),
+            (None,None) => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate \
+                statements leave them where each reads the body before the other): no manifold file describes it"),
         }))
     }
     if let Some(p) = solid.pinches().first() {
@@ -157,6 +165,19 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
     Ok(Exact {solid,pattern:None,indexed:None,swept:false,emptied:None})
+}
+
+/// **The body a file gives that `body` reads** (#993 stage 2), by its name, and whether `body` is
+/// that body untouched — the file's, or `solid(bracket)` with nothing on, through or bound by it.
+/// `None` where it reads none.
+fn given_read(sk: &Sketch,body: usize) -> Option<(String,bool)> {
+    use crate::model::SolidDef;
+    let reached = crate::solid::operands_reached(sk,body).ok()?;
+    let given = reached.into_iter().find(|&i| matches!(sk.solids[i].def,SolidDef::Given(_)))?;
+    let untouched = given == body || matches!(&sk.solids[body].def,
+        SolidDef::Body {stock,on,through,bound} if *stock as usize == given && on.is_empty() && through.is_empty()
+            && bound.is_empty());
+    Some((sk.solids[given].name.clone(),untouched))
 }
 
 /// **Where the solid touches itself at a vertex of edges of both turns** (#962): the line `ends`

@@ -458,7 +458,7 @@ fn off_at(p: V,a: V,b: V,c: V) -> f64 {
 /// corner — each one's edge and the parameter at its middle. Two chords between the same two
 /// corners are such a pair: they bound nothing (a circle's segment thinner than its arc's chord
 /// sags, the arc one chord, the very chord its line is).
-fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f64)> {
+fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)],weld: f64) -> Vec<(usize,f64)> {
     let f = &b.faces[fi];
     // every chord: its ends in the face's parameters and their points' ids, its edge and
     // parameters, its loop and place
@@ -467,8 +467,7 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f
     // each end where the triangulation puts its corner: a point's id read at one place (within the
     // weld) is one corner, at the place first read — so two edges' chords between the same two
     // corners are the one chord they are there, not two a rounding apart (and so, by a box test,
-    // apart)
-    let weld = 1e-9*(1.+b.size());
+    // apart); `weld` is `mesh_with`'s, the boundary's size read once for every face
     let gap = |a: Uv,c: Uv| (a[0]-c[0]).dhypot(a[1]-c[1]);
     let mut corners: std::collections::BTreeMap<u32,Vec<Uv>> = std::collections::BTreeMap::new();
     let mut corner = |id: u32,uv: Uv| -> Uv {
@@ -580,6 +579,11 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
     let far_vertex = |v: usize| turned.and_then(|t| t.vertex[v]);
     for v in 0..b.vertices.len() { if let Some(w) = far_vertex(v) { alias[vid[v] as usize] = Some(vid[w as usize]); } }
     let far_edge = |e: usize| turned.and_then(|t| t.edge[e]);
+    // the least a parameter's scale is taken to be, where a surface's derivative vanishes, and
+    // the nearest two points of a face are apart: of the boundary's size, read once — it bounds
+    // every face's surface over its loops, and read per face it cost a large file more than its
+    // whole mesh (#993 stage 2)
+    let least = 1e-9*(1.+b.size());
     // every edge's samples, once: parameters and point ids (a far edge's after the rest)
     let mut samples: Vec<(Vec<f64>,Vec<u32>)> = vec![(Vec::new(),Vec::new());b.edges.len()];
     for e in (0..b.edges.len()).filter(|&e| far_edge(e).is_none()) {
@@ -622,7 +626,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
     // patterned sector's faces are left as they are)
     if turned.is_none() {
         for _ in 0..16 {
-            let found: Vec<(usize,f64)> = crate::util::par::indices(b.faces.len(),|fi| if kept(fi) { crossings(b,fi,&samples) } else { Vec::new() })
+            let found: Vec<(usize,f64)> = crate::util::par::indices(b.faces.len(),|fi| if kept(fi) { crossings(b,fi,&samples,least) } else { Vec::new() })
                 .into_iter().flatten().collect();
             if found.is_empty() { break }
             for (e,t) in found {
@@ -634,8 +638,6 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             }
         }
     }
-    // the least a parameter's scale is taken to be, where a surface's derivative vanishes
-    let least = 1e-9*(1.+b.size());
     // points of a face nearer than this are one
     let weld = least;
     // each face side by side: its new points, its triangles (a new point's id marked `NEW`, its

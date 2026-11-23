@@ -1255,6 +1255,7 @@ pub(crate) struct BrepFacets {
 
 pub(crate) fn brep_facets(b: &crate::brep::topo::Brep, mm: f64, unit: f64, index: &[usize],
                           origin: [f64; 3]) -> Result<BrepFacets, String> {
+    BREP_MESHES.with(|n| n.set(n.get() + 1));
     let bar = (crate::curve::flatness(unit) * mm).min(BREP_RELATIVE_SAG * b.size());
     let m = crate::brep::mesh::mesh(b, bar, BREP_ANGULAR).map_err(|e| e.to_string())?;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| p[k] / mm - origin[k]) };
@@ -1283,6 +1284,19 @@ pub(crate) fn brep_facets(b: &crate::brep::topo::Brep, mm: f64, unit: f64, index
         facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
     }
     Ok(BrepFacets { facets, corner_normals, brep_faces, bbox })
+}
+
+thread_local! {
+    /// How many B-reps this thread has meshed into facets (`brep_facets`).
+    static BREP_MESHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many B-reps this thread has meshed into a solid's facets** — an exact solid's boundary or
+/// a given body's (#993 stage 2): what a test of a host's thread reads before and after the calls
+/// it makes, to hold that they mesh nothing (`page_thread.rs`).  A count, not a time: the gate is
+/// the same on a slow machine.
+pub fn brep_meshes() -> usize {
+    BREP_MESHES.with(|n| n.get())
 }
 
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large
