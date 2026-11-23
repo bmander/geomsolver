@@ -942,10 +942,15 @@ fn named(mut b: Brep,name: &str) -> Brep {
     b
 }
 
-/// A ball's `tube` united with the half balls beyond its two ends, every face named `name`.
+/// A ball's `tube` united with the half balls beyond its two ends, every face named `name`. Each
+/// half ball's flat face is the tube's end disc there, so the three are sewn where those discs were,
+/// the discs left out (`sew::sewn`): nothing is met in space — united by the Boolean, the tube's wall
+/// was traced against each disc's plane, which a coil's later turns cross again and again.
 fn ended(tube: Brep,start: Brep,end: Brep,name: &str) -> Result<Brep,String> {
-    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b,name),super::boolean::Op::Union,0.);
-    Ok(union(&union(&named(tube,name),start)?,end)?)
+    let tol = tolerance(tube.size()+start.size()+end.size());
+    // (a ball's tube and half ball have no flat face but their ends' discs)
+    let walls = |b: Brep| { let mut b = named(b,name); b.faces.retain(|f| !matches!(f.surface,Surface::Plane(..))); b.compacted() };
+    super::sew::sewn(&[walls(tube),walls(start),walls(end)],tol).map_err(|e| e.msg)
 }
 
 /// Where a ball's tube's seam runs, square to the path's unit tangent `t`: the unit `x0` square to

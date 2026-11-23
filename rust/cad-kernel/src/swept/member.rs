@@ -18,7 +18,7 @@ use crate::topo::Brep;
 use crate::trajectory::Trajectory;
 use crate::util::bvh::{Bounds,Bvh};
 use crate::util::interval::Interval;
-use crate::util::space::{closest_on_triangle,cross,distance,dot,lerp,norm,sub};
+use crate::util::space::{add,closest_on_triangle,cross,distance,dot,lerp,norm,sub};
 
 type V = [f64;3];
 
@@ -36,6 +36,9 @@ const BEYOND_READS: usize = 256;
 /// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,
 /// and rounding's).
 pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
+    /// how far the mesh itself may stand off the boundary (`sag` is rounding's alone where the tool
+    /// is read exactly, `exact`)
+    mesh_sag: f64,
     /// Each vertex's angle-weighted normal, where every edge at it bounds two triangles (`None` where
     /// not, the winding read instead), and each edge's, the sum of its two triangles' unit normals:
     /// the side of a point whose nearest point of the mesh is on a vertex or an edge read off it
@@ -67,19 +70,26 @@ impl Solid {
         // on the tool, stood 1.1e-3 off a mesh that measured 9.5e-4, which `beyond` then proved outside)
         // (none where the tool is read exactly: its sag is rounding's alone)
         let exact = exactly(b,&m.pts).map(|faces| (faces,scale));
-        let sag = if exact.is_some() { 1e-12*(1.+size) } else {
+        let mesh_sag = {
             let off = |f: usize,x: V| b.faces[f].surface.implicit(x).abs();
-            let measured = m.tris.iter().zip(&m.of).map(|(t,&f)| {
-                let [p,q,r] = t.map(|i| m.pts[i as usize]);
-                let centre = [(p[0]+q[0]+r[0])/3.,(p[1]+q[1]+r[1])/3.,(p[2]+q[2]+r[2])/3.];
-                [lerp(p,q,0.5),lerp(q,r,0.5),lerp(r,p,0.5),centre].into_iter().map(|x| off(f as usize,x)).fold(0_f64,f64::max)
-            }).fold(0_f64,f64::max);
+            // (read in runs of triangles spread over the cores: a free-form face's implicit is a
+            // search, and a fine mesh has tens of thousands)
+            const RUN: usize = 1024;
+            let measured = crate::util::par::indices(m.tris.len().div_ceil(RUN),|k| {
+                let run = k*RUN..((k+1)*RUN).min(m.tris.len());
+                m.tris[run.clone()].iter().zip(&m.of[run]).map(|(t,&f)| {
+                    let [p,q,r] = t.map(|i| m.pts[i as usize]);
+                    let centre = [(p[0]+q[0]+r[0])/3.,(p[1]+q[1]+r[1])/3.,(p[2]+q[2]+r[2])/3.];
+                    [lerp(p,q,0.5),lerp(q,r,0.5),lerp(r,p,0.5),centre].into_iter().map(|x| off(f as usize,x)).fold(0_f64,f64::max)
+                }).fold(0_f64,f64::max)
+            }).into_iter().fold(0_f64,f64::max);
             m.sag.max(measured)/scale+1e-12*(1.+size)
         };
+        let sag = if exact.is_some() { 1e-12*(1.+size) } else { mesh_sag };
         let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
         let bounds = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
             (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
-        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact,bounds})
+        Ok(Solid {pts,tris:m.tris,tree,sag,mesh_sag,vertex_normals,edge_normals,exact,bounds})
     }
 
     /// The signed distance at `p` read exactly (`exactly`): the greatest of the faces' signed distances.
@@ -153,6 +163,65 @@ impl Solid {
         }
         w/(4.*std::f64::consts::PI)
     }
+
+    /// **Whether the line through `o` along the unit `d` meets the meshed tool** (a slide's shadow,
+    /// `through`): the line cast through the triangles' boxes and crossed with each triangle it
+    /// enters (Möller–Trumbore); in where the middle of a stretch between two crossings stands inside
+    /// deeper than the sag (the mesh's own, `mesh_sag`, where the tool is read exactly), out where it
+    /// crosses none and passes every triangle's side farther than the sag, and said to graze the
+    /// boundary otherwise (`Unsettled::Near`, its parameter along the line). A line meets a bounded
+    /// solid only by crossing its boundary, so no winding number is read.
+    pub fn line(&self,o: V,d: V) -> Result<bool,Unsettled> {
+        let (lo,hi) = self.bounds;
+        let reach = distance(lo,hi)+distance(o,lerp(lo,hi,0.5));
+        let sag = self.mesh_sag;
+        // (whether the line meets a box grown by `pad`, within `reach` of `o`)
+        let meets = |b: Bounds<3>,pad: f64| {
+            let (mut l,mut h) = (-reach,reach);
+            for k in 0..3 {
+                let (b0,b1) = (b.lo[k]-pad,b.hi[k]+pad);
+                if d[k] == 0. { if o[k] < b0 || o[k] > b1 { return false } continue }
+                let (a,z) = ((b0-o[k])/d[k],(b1-o[k])/d[k]);
+                l = l.max(a.min(z));
+                h = h.min(a.max(z));
+                if h < l { return false }
+            }
+            true
+        };
+        let mut hits: Vec<f64> = Vec::new();
+        self.tree.query(|b| meets(b,0.),|i| {
+            let [a,b,c] = self.tris[i].map(|k| self.pts[k as usize]);
+            let (e1,e2) = (sub(b,a),sub(c,a));
+            let q = cross(d,e2);
+            let det = dot(e1,q);
+            if det.abs() <= 1e-300 { return }
+            let w = sub(o,a);
+            let u = dot(w,q)/det;
+            let r = cross(w,e1);
+            let v = dot(d,r)/det;
+            if u < 0. || v < 0. || u+v > 1. { return }
+            hits.push(dot(e2,r)/det);
+        });
+        if hits.is_empty() {
+            let (p,q) = (add(o,crate::util::space::scale(d,-reach)),add(o,crate::util::space::scale(d,reach)));
+            let grazes = std::cell::Cell::new(false);
+            self.tree.query(|b| !grazes.get() && meets(b,sag),|i| {
+                let t = self.tris[i].map(|k| self.pts[k as usize]);
+                if (0..3).any(|k| crate::util::space::segments_distance(p,q,t[k],t[(k+1)%3]) <= sag) { grazes.set(true) }
+            });
+            return if grazes.get() { Err(Unsettled::Near {at:0.}) } else { Ok(false) }
+        }
+        hits.sort_by(f64::total_cmp);
+        for w in hits.windows(2) {
+            let (depth,inside) = self.signed_near(add(o,crate::util::space::scale(d,0.5*(w[0]+w[1]))));
+            if inside && depth > sag { return Ok(true) }
+        }
+        Err(Unsettled::Near {at:hits[0]})
+    }
+
+    /// How far the mesh may stand off the tool's boundary: its sag, measured, even where the tool
+    /// is read exactly (and `sag` is rounding's).
+    pub fn mesh_sag(&self) -> f64 { self.mesh_sag }
 
     /// The signed distance at `p`: negative inside.
     pub fn signed_distance(&self,p: V) -> f64 {

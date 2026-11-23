@@ -386,6 +386,7 @@ mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
 mod swept_slid;
+mod swept_through;
 mod swept_speed;
 mod swept_turned;
 mod swept_upright;

@@ -720,6 +720,21 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
                 _ => Ssi::Traced,
             }
         }
+        (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
+            if let (pl,Surface::Extrusion(e,c)) = if matches!(a,Surface::Plane(_)) { (f,b) } else { (g,a) }
+            && matches!(**c,Curve::BSpline(_) | Curve::Line {..}) && dot(pl.z,e.z).abs() >= SHALLOW => {
+            // a plane the sweep crosses at a slant (meeting each generator at `SHALLOW` or more):
+            // each of the curve's points carried along the sweep onto it, which is affine — so a
+            // B-spline's poles carried are the meeting's, its knots and weights kept, and a line's
+            // image a line (a circle's is an ellipse: traced)
+            let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
+            match &**c {
+                Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
+                    poles:sp.poles.iter().map(|&p| lift(p)).collect(),..(**sp).clone()}))]),
+                Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:unit(sub(lift(add(*p,*d)),lift(*p)))}]),
+                _ => unreachable!(),
+            }
+        }
         (Surface::Extrusion(e,c),ref s) | (ref s,Surface::Extrusion(e,c))
             if let Some(curves) = extruded(&e,&c,s,tol) => Ssi::Curves(curves),
         // (two slid contours' cylinders read once, the first against the second)

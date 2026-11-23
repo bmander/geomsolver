@@ -592,8 +592,9 @@ fn surfaces_meet_in_curves_on_both() {
 /// **A spline extruded and a surface the same all along it meet in closed form** (#644): a plane
 /// along the extrusion and a cylinder about a line along it in lines along it through where the
 /// spline crosses them, a cone about such a line in the spline carried onto it — a quintic over
-/// the spline's own parameter, refined only where it must be — each on both surfaces; a plane or a
-/// cylinder across the extrusion is traced as before.
+/// the spline's own parameter, refined only where it must be — each on both surfaces; a plane across
+/// it at a slant in the spline carried along it onto the plane, its poles carried; a cylinder across
+/// the extrusion is traced as before.
 #[test]
 fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
     use gcs_core::brep::geom::{Curve,Surface};
@@ -650,10 +651,23 @@ fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
             assert!((p[0]-q[0]).abs() < 1e-9 && (p[1]-q[1]).abs() < 1e-9,"{cone:?} at {t}: {p:?} over {q:?}");
         }
     }
-    // across the extrusion: traced
+    // across the extrusion: a cylinder traced; a plane at a slant met in the spline carried along
+    // the extrusion onto it, exactly (affine: its poles carried, over the spline's own parameter)
     let tilted = [0.3,-0.2,0.93];
     assert_eq!(intersect(&swept,&Surface::Cylinder(f([0.,0.,0.],tilted,x),2.),1e-9),Ssi::Traced);
-    assert_eq!(intersect(&swept,&Surface::Plane(f([0.,0.,0.],[0.,0.6,0.8],x)),1e-9),Ssi::Traced);
+    let slant = Surface::Plane(f([0.,0.,0.],[0.,0.6,0.8],x));
+    for (a,b) in [(&swept,&slant),(&slant,&swept)] {
+        let Ssi::Curves(cs) = intersect(a,b,1e-9) else { panic!("the slanted plane: traced") };
+        let [Curve::BSpline(c)] = &cs[..] else { panic!("the slanted plane: {cs:?}") };
+        assert_eq!(c.knots,spline.knots);
+        let [t0,t1] = spline.domain();
+        for k in 0..=200 {
+            let t = t0+(t1-t0)*k as f64/200.;
+            let (p,q) = (c.point(t),spline.point(t));
+            assert!(slant.implicit(p).abs() < 1e-9 && swept.implicit(p).abs() < 1e-9,"the slanted plane at {t}: {} {}",slant.implicit(p),swept.implicit(p));
+            assert!((p[0]-q[0]).abs() < 1e-9 && (p[1]-q[1]).abs() < 1e-9,"the slanted plane at {t}: {p:?} over {q:?}");
+        }
+    }
     // along it but touching the bow at its top (a tool's side in the pocket it cut), or crossing it
     // twice between two of the samples crossings are read at: traced, where a touch is read
     let top = (0..=100_000).map(|k| spline.point(k as f64/1e5)[1]).fold(f64::MIN,f64::max);

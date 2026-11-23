@@ -8,6 +8,31 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A slide through a blank, by its shadow** (`swept::through`): a tool the closed class refuses
+  (`Curved`, `Folded`) slid from wholly before a blank to wholly past it is cut as the blank less
+  the prism over the tool's shadow along the slide — each face's contact and each sharp edge carried
+  exactly onto the plane square to the slide, arranged and kept by whether the line along the slide
+  meets the tool, linked into regions, judged, extruded (its walls `Surface::Extrusion`s) and cut —
+  ahead of the contact's road. brep-bench's coil spring pushed aslant through a plate: 51 s to
+  0.6 s, the same solid (3541.93797026, to 1e-10), its walls ten extrusions where they were 21
+  fitted sheets.  The arrangement is `shadow::arranged`, shared with the whole turn's shadow
+  (`shadow::Candidate`), its crossings now found among runs of chords whose boxes meet, and a
+  candidate's crossings with itself read too.
+- **A line read against a meshed tool** (`member::Solid::line`): whether the line through a point
+  along a direction meets the tool, by its crossings with the mesh's triangles through their boxes,
+  no winding number read; and `Solid::mesh_sag`, the mesh's own sag where the tool is read exactly.
+  The sag of a mesh is measured over its triangles on all the cores.
+- **A contact's points filled to a chord of the caller's** (`contacts::face_contact_within`), each
+  still settled within the tolerance; `face_contact` fills to the tolerance as before, its settling,
+  filling and gradients spread over the cores.
+- **A plane meets an extrusion it crosses at a slant exactly** (`ssi`): a B-spline's or a line's
+  curve carried along the sweep onto the plane (affine, so its poles carried), where only a plane
+  square to the sweep did and any other was traced.
+- **A ball's tube has its half balls sewn on** (`build::canal`): each half ball's flat face is the
+  tube's end disc, so the three are sewn where the discs were (`sew::sewn`), not united by the
+  Boolean, which traced the tube's wall against each disc's plane — on the bench's three-turn spring
+  2.3 s of the build, now nothing.
+
 ## [0.23.0] - 2026-11-23
 
 - **A net's face read cell by cell** (#880, `props`'s `Cells` and `by_cells`): Green's `G` on a

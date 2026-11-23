@@ -867,7 +867,9 @@ curve carried along the step onto it (`ssi::intersect`), exactly, not traced and
 `a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
-along it through where the spline crosses or touches that surface, exactly; a cone about such a
+along it through where the spline crosses or touches that surface, exactly; a plane across it (square
+to it, or at a slant meeting each line along it at `ssi::SHALLOW` or more) in the spline carried
+along it onto the plane, its poles carried, exactly (and a line's in a line); a cone about such a
 line in the spline carried along it onto the cone, a quintic over the spline's own parameter on
 its knots each twice more (`nurbs::interpolate_on`, so the spline itself is held exactly and only
 the height is fitted), a span halved where it strays past a quarter of the tolerance. Only where

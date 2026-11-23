@@ -684,6 +684,10 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         // refuses it too (a face in contact all over, a meeting it does not close) (the road
         // refusing too, the closed class's refusal stands: the first thing it does not read, and
         // where)
+        // — first, a slide carrying such a tool wholly through the blank: the blank less the
+        // tool's shadow along the slide, extruded (`through`), no sheet met in space
+        Err(Unbuilt::Curved {..} | Unbuilt::Folded {..}) if let Some(b) = blank
+            && let Some(cut) = super::through::cut(b,tool,path,roll,bar,tol) => cut,
         Err(curved @ (Unbuilt::Curved {..} | Unbuilt::Folded {..})) if path.screw().is_some() => contacts_road(tool,path,roll,bar,tol,blank).or_else(|why| {
             if crate::debug() { eprintln!("swept: the contact's road refused too: {why:?}") }
             Err(curved)

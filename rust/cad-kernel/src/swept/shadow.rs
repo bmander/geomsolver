@@ -76,7 +76,35 @@ enum Meridian {
     Turned(Turned),
 }
 
-impl Meridian {
+/// **A curve of the plane a shadow is arranged in** (step 1's candidates, read in the plane's own
+/// coordinates): its span, its point and rate, and its samples — the polyline its crossings and
+/// its clearance from the others are read on. A turn's meridians (`Meridian`) and a slide's
+/// images (`through::Plan`) are arranged alike (`arranged`).
+pub(super) trait Candidate {
+    fn span(&self) -> [f64;2];
+    /// Its point and its rate at `t`.
+    fn at(&self,t: f64) -> (P,P);
+    fn point(&self,t: f64) -> P { self.at(t).0 }
+    /// Its samples, evenly over its span, its two ends among them.
+    fn samples(&self) -> Vec<(f64,P)>;
+    /// Whether the shadow is read on its left alone: the turn's axis, which has no right side.
+    fn one_sided(&self) -> bool { false }
+    /// The parameter of its point nearest `q`, near `t` (Gauss–Newton held to its span).
+    fn nearest(&self,q: P,mut t: f64) -> f64 {
+        let [lo,hi] = self.span();
+        for _ in 0..40 {
+            let (x,d) = self.at(t);
+            let dd = d[0]*d[0]+d[1]*d[1];
+            if !(dd > 0.) { break }
+            let next = (t-((x[0]-q[0])*d[0]+(x[1]-q[1])*d[1])/dd).clamp(lo,hi);
+            if (next-t).abs() <= 1e-15*(1.+t.abs()) { t = next; break }
+            t = next;
+        }
+        t
+    }
+}
+
+impl Candidate for Meridian {
     fn span(&self) -> [f64;2] {
         match self {
             Meridian::Segment {..} => [0.,1.],
@@ -84,7 +112,6 @@ impl Meridian {
             Meridian::Turned(t) => t.span,
         }
     }
-    /// Its point and its rate at `t`.
     fn at(&self,t: f64) -> (P,P) {
         match *self {
             Meridian::Segment {a,b} => ([a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])],[b[0]-a[0],b[1]-a[1]]),
@@ -104,7 +131,16 @@ impl Meridian {
             }
         }
     }
-    fn point(&self,t: f64) -> P { self.at(t).0 }
+    /// `SAMPLES + 1` evenly over its span (a segment's two ends).
+    fn samples(&self) -> Vec<(f64,P)> {
+        let [lo,hi] = self.span();
+        let n = if matches!(self,Meridian::Segment {..}) { 1 } else { SAMPLES };
+        (0..=n).map(|k| { let t = lo+(hi-lo)*k as f64/n as f64; (t,self.point(t)) }).collect()
+    }
+    fn one_sided(&self) -> bool { matches!(self,Meridian::Segment {a,b} if a[0] == 0. && b[0] == 0.) }
+}
+
+impl Meridian {
     /// Its stretch over `[t0, t1]`, from `a` to `b` (its ends as the arrangement placed them), as an
     /// edge of a profile in the half-plane `g`'s `x` and `z` span.
     fn edge(&self,[t0,t1]: [f64;2],a: P,b: P,g: &Frame) -> Result<ProfileEdge,String> {
@@ -121,25 +157,6 @@ impl Meridian {
             }
             Meridian::Turned(tu) => ProfileEdge::Exact(Curve::Turned(Arc::new(Turned {span,..tu}))),
         })
-    }
-    /// The parameter of its point nearest `q`, near `t` (Gauss–Newton held to its span).
-    fn nearest(&self,q: P,mut t: f64) -> f64 {
-        let [lo,hi] = self.span();
-        for _ in 0..40 {
-            let (x,d) = self.at(t);
-            let dd = d[0]*d[0]+d[1]*d[1];
-            if !(dd > 0.) { break }
-            let next = (t-((x[0]-q[0])*d[0]+(x[1]-q[1])*d[1])/dd).clamp(lo,hi);
-            if (next-t).abs() <= 1e-15*(1.+t.abs()) { t = next; break }
-            t = next;
-        }
-        t
-    }
-    /// Its samples, `n + 1` of them evenly over its span (a segment's two ends).
-    fn samples(&self,n: usize) -> Vec<(f64,P)> {
-        let [lo,hi] = self.span();
-        let n = if matches!(self,Meridian::Segment {..}) { 1 } else { n };
-        (0..=n).map(|k| { let t = lo+(hi-lo)*k as f64/n as f64; (t,self.point(t)) }).collect()
     }
 }
 
@@ -573,36 +590,56 @@ fn united(cands: Vec<Meridian>,eps: f64) -> Vec<Meridian> {
     out
 }
 
-/// Where the candidates `a` and `b` cross, as their parameters: their samples' polylines crossing,
-/// each held to both exact curves by Newton.
-fn crossings(a: &Meridian,b: &Meridian,sa: &[(f64,P)],sb: &[(f64,P)],near: f64) -> Vec<[f64;2]> {
-    let boxed = |s: &[(f64,P)]| s.iter().fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],(_,p)| [[lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]]);
-    let ([la,ha],[lb,hb]) = (boxed(sa),boxed(sb));
-    if la[0] > hb[0]+near || lb[0] > ha[0]+near || la[1] > hb[1]+near || lb[1] > ha[1]+near { return vec![] }
+/// How many of a polyline's chords a box is drawn about, for the crossings' search.
+const CHUNK: usize = 16;
+
+/// Where the candidates `a` and `b` cross — or where `a` crosses itself, `same` — as their
+/// parameters: their samples' polylines crossing, each held to both exact curves by Newton. Only
+/// chords whose runs of `CHUNK` lie in boxes meeting (grown by `near`) are read against each other,
+/// so long candidates of many samples are crossed in time near their length; a candidate against
+/// itself reads no chord against itself or its neighbours, and keeps a crossing only of two
+/// parameters apart.
+fn crossings<C: Candidate>(a: &C,b: &C,sa: &[(f64,P)],sb: &[(f64,P)],near: f64,same: bool) -> Vec<[f64;2]> {
+    type Box2 = [[f64;2];2];
+    let boxed = |s: &[(f64,P)]| -> Box2 { s.iter().fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],(_,p)| [[lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]]) };
+    let apart = |x: &Box2,y: &Box2| x[0][0] > y[1][0]+near || y[0][0] > x[1][0]+near || x[0][1] > y[1][1]+near || y[0][1] > x[1][1]+near;
+    if sa.len() < 2 || sb.len() < 2 || apart(&boxed(sa),&boxed(sb)) { return vec![] }
+    // each run of `CHUNK` chords, its first chord's index and the box of its points
+    let runs = |s: &[(f64,P)]| -> Vec<(usize,Box2)> { (0..s.len()-1).step_by(CHUNK).map(|i| (i,boxed(&s[i..(i+CHUNK+1).min(s.len())]))).collect() };
+    let (ra,rb) = (runs(sa),runs(sb));
     let ([a0,a1],[b0,b1]) = (a.span(),b.span());
     let mut out: Vec<[f64;2]> = Vec::new();
-    for i in 0..sa.len()-1 {
-        let (p0,p1) = (sa[i].1,sa[i+1].1);
-        for j in 0..sb.len()-1 {
-            let (q0,q1) = (sb[j].1,sb[j+1].1);
-            let (d,e) = ([p1[0]-p0[0],p1[1]-p0[1]],[q1[0]-q0[0],q1[1]-q0[1]]);
-            let den = d[0]*e[1]-d[1]*e[0];
-            if den.abs() <= 1e-300 { continue }
-            let w = [q0[0]-p0[0],q0[1]-p0[1]];
-            let (s,t) = ((w[0]*e[1]-w[1]*e[0])/den,(w[0]*d[1]-w[1]*d[0])/den);
-            if s < -SLACK || s > 1.+SLACK || t < -SLACK || t > 1.+SLACK { continue }
-            let mut x = [sa[i].0+s*(sa[i+1].0-sa[i].0),sb[j].0+t*(sb[j+1].0-sb[j].0)];
-            // Newton on `a(x₀) − b(x₁) = 0`: `da dx₀ − db dx₁ = −f`, by Cramer's rule
-            for _ in 0..50 {
-                let ((pa,da),(pb,db)) = (a.at(x[0]),b.at(x[1]));
-                let f = [pa[0]-pb[0],pa[1]-pb[1]];
-                if f[0].dhypot(f[1]) <= 1e-13*(1.+pa[0].abs()+pa[1].abs()) { break }
-                let det = cross2(db,da);
-                if det.abs() <= 1e-300 { break }
-                let dx = [cross2(f,db)/det,cross2(f,da)/det];
-                x = [(x[0]+dx[0]).clamp(a0,a1),(x[1]+dx[1]).clamp(b0,b1)];
+    for (ia,ba) in &ra {
+        for (ib,bb) in &rb {
+            if same && ib < ia || apart(ba,bb) { continue }
+            for i in *ia..(ia+CHUNK).min(sa.len()-1) {
+                let (p0,p1) = (sa[i].1,sa[i+1].1);
+                for j in *ib..(ib+CHUNK).min(sb.len()-1) {
+                    if same && j <= i+1 { continue }
+                    let (q0,q1) = (sb[j].1,sb[j+1].1);
+                    let (d,e) = ([p1[0]-p0[0],p1[1]-p0[1]],[q1[0]-q0[0],q1[1]-q0[1]]);
+                    let den = d[0]*e[1]-d[1]*e[0];
+                    if den.abs() <= 1e-300 { continue }
+                    let w = [q0[0]-p0[0],q0[1]-p0[1]];
+                    let (s,t) = ((w[0]*e[1]-w[1]*e[0])/den,(w[0]*d[1]-w[1]*d[0])/den);
+                    if s < -SLACK || s > 1.+SLACK || t < -SLACK || t > 1.+SLACK { continue }
+                    let mut x = [sa[i].0+s*(sa[i+1].0-sa[i].0),sb[j].0+t*(sb[j+1].0-sb[j].0)];
+                    // Newton on `a(x₀) − b(x₁) = 0`: `da dx₀ − db dx₁ = −f`, by Cramer's rule
+                    for _ in 0..50 {
+                        let ((pa,da),(pb,db)) = (a.at(x[0]),b.at(x[1]));
+                        let f = [pa[0]-pb[0],pa[1]-pb[1]];
+                        if f[0].dhypot(f[1]) <= 1e-13*(1.+pa[0].abs()+pa[1].abs()) { break }
+                        let det = cross2(db,da);
+                        if det.abs() <= 1e-300 { break }
+                        let dx = [cross2(f,db)/det,cross2(f,da)/det];
+                        x = [(x[0]+dx[0]).clamp(a0,a1),(x[1]+dx[1]).clamp(b0,b1)];
+                    }
+                    // (a crossing of a candidate with itself is of two of its parameters: Newton
+                    // run onto one point of it found none)
+                    if same && (x[0]-x[1]).abs() <= (sa[i+1].0-sa[i].0).abs() { continue }
+                    if dist(a.point(x[0]),b.point(x[1])) <= near { out.push(x) }
+                }
             }
-            if dist(a.point(x[0]),b.point(x[1])) <= near { out.push(x) }
         }
     }
     out
@@ -610,26 +647,35 @@ fn crossings(a: &Meridian,b: &Meridian,sa: &[(f64,P)],sb: &[(f64,P)],near: f64) 
 
 /// A piece of the arrangement kept on the shadow's boundary: the candidate, its stretch (walked
 /// from `t[0]` to `t[1]`, the shadow on its left) and its ends' places among the vertices.
-struct Kept { m: usize,t: [f64;2],ends: [usize;2] }
+pub(super) struct Kept { pub m: usize,pub t: [f64;2],pub ends: [usize;2] }
 
-/// **The closed solid `tool` sweeps turned a whole turn about the unit `axis` through `c`**, by its
-/// shadow (the module's), membership read on the tool meshed within `bar`, built to `tol`.
-pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
-    let g = Frame::about(c,axis);
-    let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
-    let eps = 1e-9*(1.+size);
-    let reader = Reader {tool,g,located:Located::new(tool,tol),eps,tol};
-    let cands = candidates(&reader)?;
-    let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
-    let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
-    let swept = Swept::new(&solid,&path,[0.,TAU]);
-    let near = 1e-7*(1.+size);
+/// **A shadow's boundary, arranged** (the module's steps 2 and 3, and 4 but the build): the
+/// vertices the kept pieces end at, the pieces, and their loops — each a polyline along it and
+/// its signed area — grouped as regions, each counter-clockwise loop with the clockwise ones
+/// (holes) inside it.
+pub(super) struct Arranged { pub vertices: Vec<P>,pub kept: Vec<Kept>,pub loops: Vec<Vec<usize>>,pub polys: Vec<Vec<P>>,
+    pub regions: Vec<(usize,Vec<usize>)> }
+
+/// **The candidates `cands` arranged into the boundary of a shadow** (steps 2 to 4): each split
+/// where another crosses it or it crosses itself (`crossings`), and where another's end stands on it,
+/// to within `near`; each piece kept where `shadow` — the shadow's membership — holds on one side of
+/// it alone, read a hair to each side (under a third of the way to the nearest other candidate, and
+/// past the sag `sag` of the mesh the membership reads, `size` the scale of both); the kept pieces
+/// linked end to end into loops (where several meet at a point, the one turning most to the right),
+/// the counter-clockwise ones regions and the clockwise ones their holes.
+pub(super) fn arranged<C: Candidate>(cands: &[C],near: f64,sag: f64,size: f64,shadow: &mut dyn FnMut(P) -> Result<bool,Unbuilt>)
+    -> Result<Arranged,Unbuilt> {
     // (2) the arrangement: each candidate's split parameters
-    let samples: Vec<Vec<(f64,P)>> = cands.iter().map(|m| m.samples(SAMPLES)).collect();
-    let mut splits: Vec<Vec<f64>> = cands.iter().map(|m| m.span().to_vec()).collect();
+    let samples: Vec<Vec<(f64,P)>> = cands.iter().map(|m| m.samples()).collect();
+    // (a closed candidate split at its middle as well: its two ends one point, a span split nowhere
+    // else would be no piece — a ball's or a spheroid's contact seen along a slide, crossing nothing)
+    let mut splits: Vec<Vec<f64>> = cands.iter().map(|m| {
+        let [a,b] = m.span();
+        if dist(m.point(a),m.point(b)) <= near { vec![a,0.5*(a+b),b] } else { vec![a,b] }
+    }).collect();
     for i in 0..cands.len() {
-        for j in i+1..cands.len() {
-            for [s,t] in crossings(&cands[i],&cands[j],&samples[i],&samples[j],near) { splits[i].push(s); splits[j].push(t) }
+        for j in i..cands.len() {
+            for [s,t] in crossings(&cands[i],&cands[j],&samples[i],&samples[j],near,i == j) { splits[i].push(s); splits[j].push(t) }
         }
     }
     // each candidate's ends standing on another
@@ -644,16 +690,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     }
     // (3) each piece kept where the shadow lies on one side of it alone: read a hair to each side,
     // the hair under a third of the way to the nearest other candidate (so it stands in the cells
-    // beside the piece, however thin), on the tool meshed finer where the mesh's sag leaves a
-    // reading unsettled
-    let member = |solid: &Solid,x: V| Swept::new(solid,&path,[0.,TAU]).member(x);
-    let mut finer: Option<Solid> = None;
-    let mut shadow = |p: P| -> Result<bool,Unbuilt> {
-        let x = g.at([p[0],0.,p[1]]);
-        if let Ok(b) = member(&solid,x) { return Ok(b) }
-        if finer.is_none() { finer = Some(Solid::new(tool,bar/8.,1.).map_err(Unbuilt::Failed)?) }
-        member(finer.as_ref().unwrap(),x).map_err(|_| Unbuilt::Unsettled {at:x})
-    };
+    // beside the piece, however thin), past the mesh's sag where that leaves room
     // the distance from `p` to the candidates but the piece `[t0, t1]` of candidate `i` it is on
     let clearance = |i: usize,[t0,t1]: [f64;2],p: P| -> f64 {
         let (lo,hi) = (t0.min(t1),t0.max(t1));
@@ -673,7 +710,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         let mut ts = std::mem::take(&mut splits[i]);
         ts.sort_by(f64::total_cmp);
         ts.dedup_by(|x,y| dist(m.point(*x),m.point(*y)) <= near);
-        let axis_piece = matches!(m,Meridian::Segment {a,b} if a[0] == 0. && b[0] == 0.);
+        let one_sided = m.one_sided();
         for w in ts.windows(2) {
             let (pa,pb) = (m.point(w[0]),m.point(w[1]));
             if dist(pa,pb) <= near { continue }
@@ -684,8 +721,8 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
                 let l = d[0].dhypot(d[1]);
                 if !(l > 0.) { continue }
                 let n = scale2(left(d),1./l);
-                let hair = (0.3*clearance(i,[w[0],w[1]],p)).min((8.*solid.sag).max(1e-6*(1.+size))).max(1e-9*(1.+size));
-                let read = shadow(add2(p,scale2(n,hair))).and_then(|l| Ok((l,!axis_piece && shadow(add2(p,scale2(n,-hair)))?)));
+                let hair = (0.3*clearance(i,[w[0],w[1]],p)).min((8.*sag).max(1e-6*(1.+size))).max(1e-9*(1.+size));
+                let read = shadow(add2(p,scale2(n,hair))).and_then(|l| Ok((l,!one_sided && shadow(add2(p,scale2(n,-hair)))?)));
                 match read { Ok(both) => { sides = Ok(Some(both)); break }
                     Err(e) => sides = Err(e) }
             }
@@ -737,10 +774,15 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         }
         loops.push(walk);
     }
-    // each loop's polyline and its signed area: counter-clockwise a region, clockwise a hole
-    let (cands,kept) = (&cands,&kept);
+    // each loop's polyline (each piece read at as many points as its candidate's samples hold over
+    // it, sixteen at least) and its signed area: counter-clockwise a region, clockwise a hole
     let polyline = |l: &[usize]| -> Vec<P> {
-        l.iter().flat_map(|&k| { let p = &kept[k]; (0..16).map(move |i| cands[p.m].point(p.t[0]+(p.t[1]-p.t[0])*i as f64/16.)) }).collect()
+        l.iter().flat_map(|&k| {
+            let p = &kept[k];
+            let (lo,hi) = (p.t[0].min(p.t[1]),p.t[0].max(p.t[1]));
+            let n = samples[p.m].iter().filter(|(t,_)| *t > lo && *t < hi).count().max(16);
+            (0..n).map(move |i| cands[p.m].point(p.t[0]+(p.t[1]-p.t[0])*i as f64/n as f64))
+        }).collect()
     };
     let polys: Vec<Vec<P>> = loops.iter().map(|l| polyline(l)).collect();
     let areas: Vec<f64> = polys.iter().map(|p| crate::planar::signed_area(p)).collect();
@@ -752,13 +794,40 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
         let Some(o) = inside else { return Err(Unbuilt::Failed("a hole in the tool's shadow lies in no region of it".into())) };
         holes[o].push(h);
     }
+    let regions = outers.into_iter().map(|o| (o,std::mem::take(&mut holes[o]))).collect();
+    Ok(Arranged {vertices,kept,loops,polys,regions})
+}
+
+/// **The closed solid `tool` sweeps turned a whole turn about the unit `axis` through `c`**, by its
+/// shadow (the module's), membership read on the tool meshed within `bar`, built to `tol`.
+pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
+    let g = Frame::about(c,axis);
+    let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
+    let eps = 1e-9*(1.+size);
+    let reader = Reader {tool,g,located:Located::new(tool,tol),eps,tol};
+    let cands = candidates(&reader)?;
+    let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
+    let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
+    let swept = Swept::new(&solid,&path,[0.,TAU]);
+    let near = 1e-7*(1.+size);
+    // membership read on the tool meshed finer where the mesh's sag leaves a reading unsettled
+    let member = |solid: &Solid,x: V| Swept::new(solid,&path,[0.,TAU]).member(x);
+    let mut finer: Option<Solid> = None;
+    let mut shadow = |p: P| -> Result<bool,Unbuilt> {
+        let x = g.at([p[0],0.,p[1]]);
+        if let Ok(b) = member(&solid,x) { return Ok(b) }
+        if finer.is_none() { finer = Some(Solid::new(tool,bar/8.,1.).map_err(Unbuilt::Failed)?) }
+        member(finer.as_ref().unwrap(),x).map_err(|_| Unbuilt::Unsettled {at:x})
+    };
+    let Arranged {vertices,kept,loops,polys,regions} = arranged(&cands,near,solid.sag,size,&mut shadow)?;
+    let (cands,kept) = (&cands,&kept);
     let edges = |l: &[usize]| -> Result<Vec<ProfileEdge>,Unbuilt> {
         l.iter().map(|&k| { let p = &kept[k]; cands[p.m].edge(p.t,vertices[p.ends[0]],vertices[p.ends[1]],&g).map_err(Unbuilt::Failed) }).collect()
     };
     let mut out = Brep::default();
-    for &o in &outers {
-        let mut ls = vec![edges(&loops[o])?];
-        for &h in &holes[o] { ls.push(edges(&loops[h])?) }
+    for (o,holes) in &regions {
+        let mut ls = vec![edges(&loops[*o])?];
+        for &h in holes { ls.push(edges(&loops[h])?) }
         let profile = Profile {origin:g.o,normal:g.y,names:Vec::new(),loops:ls};
         let solid = crate::build::revolve(&profile,g.o,g.z,TAU).map_err(Unbuilt::Failed)?;
         out.join(&solid);
