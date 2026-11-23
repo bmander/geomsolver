@@ -11,7 +11,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{include,widen,Box3,Curve,Rigid,Surface,Uv,V,EMPTY};
-use crate::util::space::{add,distance,dot,norm,normalised,scale,sub};
+use crate::util::space::{add,distance,dot,norm,normalised,scale,segment_distance,sub};
 
 /// A point of the boundary, and the tolerance it was built to (#735 A3): the farthest any point
 /// merged into it stood, or any edge's curve ends from it (`Brep::measure_tolerances`); 0 for a
@@ -671,9 +671,7 @@ impl Brep {
     /// edges, its surface's `bounds_over` the parameters its loops reach. What a `through:` cutter
     /// spans and a tool is culled by, so a sample between a curve's extremes is never its edge.
     pub fn bounds(&self) -> Box3 {
-        let mut b = EMPTY;
-        for v in &self.vertices { include(&mut b,v.p); }
-        for e in &self.edges { if let EdgeCurve::Curve(c) = &e.curve { widen(&mut b,c.bounds(e.t)); } }
+        let mut b = self.edge_bounds();
         for f in self.faces.iter().filter(|f| !f.loops.is_empty()) { widen(&mut b,f.surface.bounds_over(|| self.parameter_range(f))); }
         b
     }
@@ -991,14 +989,19 @@ impl Brep {
     /// rounds: CADGenBench 246's, 248's and 250's, 3e-2 mm wide and less), never two pieces of
     /// material meeting along a line.
     pub fn self_touching_edges(&self,tol: f64) -> Vec<[u32;2]> {
-        // (the pairs of edges one after the other in a loop, the lower first)
-        let mut sides: std::collections::BTreeSet<[u32;2]> = Default::default();
-        for l in self.faces.iter().flat_map(|f| &f.loops) {
-            for (k,c) in l.iter().enumerate() {
-                let next = l[(k+1)%l.len()].edge;
-                if next != c.edge { sides.insert([c.edge.min(next),c.edge.max(next)]); }
+        // (the pairs of edges one after the other in a loop, the lower first: read once a twin is
+        // near, which most solids never have)
+        let paired = std::cell::OnceCell::new();
+        let sides = || paired.get_or_init(|| {
+            let mut sides: std::collections::BTreeSet<[u32;2]> = Default::default();
+            for l in self.faces.iter().flat_map(|f| &f.loops) {
+                for (k,c) in l.iter().enumerate() {
+                    let next = l[(k+1)%l.len()].edge;
+                    if next != c.edge { sides.insert([c.edge.min(next),c.edge.max(next)]); }
+                }
             }
-        }
+            sides
+        });
         // the edges between each pair of vertices, then each against the ones after it there
         let mut between: std::collections::BTreeMap<[u32;2],Vec<usize>> = Default::default();
         for (i,e) in self.edges.iter().enumerate() {
@@ -1013,7 +1016,7 @@ impl Brep {
             for (j,&i) in list.iter().enumerate() {
                 let a = &self.edges[i];
                 let twin = (j+1..list.len()).find(|&k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol)
-                    && !sides.contains(&[i.min(list[k]) as u32,i.max(list[k]) as u32]));
+                    && !sides().contains(&[i.min(list[k]) as u32,i.max(list[k]) as u32]));
                 if let Some(k) = twin { out.push([i as u32,list[k] as u32]); }
             }
         }
@@ -1094,14 +1097,8 @@ impl Brep {
             (c.edge,(0..=16).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/16.,&self.vertices)).collect())
         }).collect();
         if lines.len() < 2 { return false }
-        let to_segment = |p: V,a: V,b: V| {
-            let (d,w) = (crate::util::space::sub(b,a),crate::util::space::sub(p,a));
-            let dd = dot(d,d);
-            let s = if dd > 0. { (dot(w,d)/dd).clamp(0.,1.) } else { 0. };
-            distance(p,[a[0]+s*d[0],a[1]+s*d[1],a[2]+s*d[2]])
-        };
         lines.iter().enumerate().all(|(i,(_,pts))| pts.iter().all(|&p| lines.iter().enumerate()
-            .any(|(k,(_,q))| k != i && q.windows(2).any(|w| to_segment(p,w[0],w[1]) <= bar))))
+            .any(|(k,(_,q))| k != i && q.windows(2).any(|w| segment_distance(p,w[0],w[1]) <= bar))))
     }
 
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive), by

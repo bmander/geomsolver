@@ -6,7 +6,7 @@
 //! **The same solid.** `step::write` writes a `Brep` as one solid a lump (`step::lumps`), a lump
 //! with voids a `BREP_WITH_VOIDS`, its faces lump by lump (its outer shell's, then its voids');
 //! "the same" is the solids read joined back into one (`joined`), its volume the lumps' sum less
-//! the voids, and `b`'s faces taken in the order written (`written_order`). For `b` and
+//! the voids, and `b`'s faces taken in the order written (`step::written_order`). For `b` and
 //! `text = write(b, …)`, `r` the solids `read(text)` gives, joined, is the same solid when:
 //!
 //! * a face for each face `b` wrote, in its order, read from the `ADVANCED_FACE` written for it,
@@ -324,7 +324,7 @@ fn turned(read: &Surface,written: &Surface) -> bool {
 /// with the vertices only it ends at (it bounds nothing and has no length).
 pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<Measured,String> {
     // (`b`'s faces in the order the file writes them: each lump's outer shell's, then its voids')
-    let order = written_order(b);
+    let order = gcs_core::brep::step::written_order(b);
     let (pb,pm);
     let (b,mb) = if order.iter().enumerate().all(|(k,&f)| k == f) { (b,mb) } else {
         pb = Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:order.iter().map(|&f| b.faces[f].clone()).collect()};
@@ -536,12 +536,6 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
         out.push(given);
     }
     match refused { Some(r) => Err((Stage::Sound,r,Some(out))),None => Ok(out) }
-}
-
-/// The order `step::write` writes `b`'s faces in (`step::lumps`): each lump's outer shell's faces,
-/// then its voids'.
-pub fn written_order(b: &Brep) -> Vec<usize> {
-    gcs_core::brep::step::lumps(b).map(|l| l.iter().flat_map(gcs_core::brep::step::Lump::faces).collect()).unwrap_or_else(|_| (0..b.faces.len()).collect())
 }
 
 /// How many solids `step::write` writes `b` as: one a lump (`step::lumps`).

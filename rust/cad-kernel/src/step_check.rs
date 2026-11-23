@@ -48,11 +48,12 @@ impl Solid {
     /// The solid a STEP file of the core's own B-rep must describe (`crate::step`): its
     /// counts (a solid a lump, a shell its outer one and each void's: `step::lumps`), and each
     /// face, in the order the writer writes them, its surface as that writer writes it.
-    pub fn of(b: &crate::topo::Brep) -> Solid {
+    pub fn of(b: &crate::topo::Brep) -> Solid { Solid::of_lumps(b,&crate::step::written_lumps(b)) }
+    /// `of`, `b` written as `lumps` (`step::written_lumps`, or what `step::write_stating` wrote:
+    /// the same, read once).
+    pub fn of_lumps(b: &crate::topo::Brep,lumps: &[crate::step::Lump]) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
-        // (in the order the writer writes them: each lump's outer shell's faces, then its voids';
-        // a solid the writer refuses, whose file is never verified, in its own order)
-        let lumps = crate::step::lumps(b).unwrap_or_else(|_| vec![crate::step::Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}]);
+        // (in the order the writer writes them: each lump's outer shell's faces, then its voids')
         let faces = lumps.iter().flat_map(crate::step::Lump::faces).map(|fi| (fi,&b.faces[fi])).map(|(fi,f)| {
             // a sheet, a loft's face, a family's wall and an affine image are written as nets (one
             // the writer could not fit was refused there, and has no numbers here)
@@ -187,7 +188,7 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
         .flat_map(|e| e.part("ADVANCED_BREP_SHAPE_REPRESENTATION").and_then(|v| v.get(1)).and_then(Value::list).unwrap_or(&[])
             .iter().filter_map(Value::reference).collect::<Vec<_>>()).collect();
     let shells_in_file = file.count("CLOSED_SHELL")+file.count("OPEN_SHELL");
-    if breps.len() != solid.solids || shells_in_file != solid.shells || file.count("MANIFOLD_SOLID_BREP")+file.count("BREP_WITH_VOIDS") != breps.len() {
+    if breps.len() != solid.solids || shells_in_file != solid.shells || solids_counted(&file) != breps.len() {
         return Err(format!("the file has {} solids and {shells_in_file} shells, the solid {} and {}",breps.len(),solid.solids,solid.shells));
     }
     for b in &breps {
@@ -198,11 +199,20 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     Ok(Verified {entities:file.entities.len(),faces:walked.faces,edges:walked.edges.len(),vertices:walked.vertices.len(),splines:walked.splines})
 }
 
-/// A file's solids, simple entities, in its order: each a `MANIFOLD_SOLID_BREP` or a
-/// `BREP_WITH_VOIDS`.
+/// The kinds of entity a solid is written as: a lump, and a lump with voids.
+const SOLIDS: [&str;2] = ["MANIFOLD_SOLID_BREP","BREP_WITH_VOIDS"];
+
+/// Whether `e` is a solid: a simple entity of a kind in `SOLIDS`.
+fn is_solid(e: &Entity) -> bool { e.simple().is_some_and(|(n,_)| SOLIDS.contains(&n)) }
+
+/// A file's solids (`is_solid`), in its order.
 fn solids<'a,'b>(file: &'b File<'a>) -> Vec<&'b Entity<'a>> {
-    file.entities.iter().filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP" || n == "BREP_WITH_VOIDS")).collect()
+    file.entities.iter().filter(|e| is_solid(e)).collect()
 }
+
+/// How many of a file's entities are of a kind in `SOLIDS` (`File::count`, which counts a complex
+/// entity of either too): as many as its `solids`, in a file the writer made.
+fn solids_counted(file: &File) -> usize { SOLIDS.iter().map(|n| file.count(n)).sum() }
 
 /// Walk the solids `breps` from their closed shells down against `solid`: each solid's outer
 /// closed shell, and a `BREP_WITH_VOIDS`'s voids, each an `ORIENTED_CLOSED_SHELL` of a closed
@@ -355,7 +365,7 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
             .iter().filter_map(Value::reference).collect();
         (defined[k],reps[k],contexts[k]) = (definition,rep,values.get(2).and_then(Value::reference));
         let Some(solid) = solid else { continue };
-        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP" || n == "BREP_WITH_VOIDS")).collect();
+        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| is_solid(e)).collect();
         if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
         walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
         solids += breps.len();
@@ -366,7 +376,7 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
     let (faces,splines,edge_uses,vertex_uses) = (sum(&|w| w.faces),sum(&|w| w.splines),sum(&|w| w.edges.len()),sum(&|w| w.vertices.len()));
     let edges: BTreeSet<u32> = walked.iter().flat_map(|w| w.edges.iter().copied()).collect();
     let vertices: BTreeSet<u32> = walked.iter().flat_map(|w| w.vertices.iter().copied()).collect();
-    let in_file = file.count("MANIFOLD_SOLID_BREP")+file.count("BREP_WITH_VOIDS");
+    let in_file = solids_counted(&file);
     if solids != in_file { return Err(format!("the file has {in_file} solids, its parts {solids}")) }
     if faces != file.count("ADVANCED_FACE") { return Err(format!("the file has {} faces, its parts {faces}",file.count("ADVANCED_FACE"))) }
     if edge_uses != edges.len() || edges.len() != file.count("EDGE_CURVE") {
@@ -530,7 +540,7 @@ pub fn colours(text: &str) -> Result<Vec<(String,[f64;3])>,String> {
         let Some(("ADVANCED_BREP_SHAPE_REPRESENTATION",values)) = file.get(rep).simple() else { continue };
         let mut colour: Option<[f64;3]> = None;
         for r in values.get(1).and_then(Value::list).unwrap_or(&[]).iter().filter_map(Value::reference) {
-            if !(file.get(r).is("MANIFOLD_SOLID_BREP") || file.get(r).is("BREP_WITH_VOIDS")) { continue }
+            if !SOLIDS.iter().any(|n| file.get(r).is(n)) { continue }
             match styled.get(&r).map_or(&[][..],|v| &v[..]) {
                 [] => {}
                 [(_,c)] if colour.is_none_or(|k| k == *c) => colour = Some(*c),
@@ -555,6 +565,34 @@ fn placement(file: &File,r: u32,what: &str) -> Result<[f64;9],String> {
     Ok(out)
 }
 
+/// The three numbers of the `kind` (a `CARTESIAN_POINT` or a `DIRECTION`) `r` refers to.
+fn triple<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>,kind: &str) -> Result<[f64;3],String> {
+    let r = r.ok_or_else(|| format!("a {kind} reference expected"))?;
+    match get(r).simple() {
+        Some((name,v)) if name == kind => {
+            let x = v.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no coordinates"))?;
+            let x = x.iter().map(|x| x.number().ok_or_else(|| format!("{kind}: a number expected")))
+                .collect::<Result<Vec<f64>,String>>()?;
+            x.try_into().map_err(|_| format!("#{r}: not three coordinates"))
+        }
+        _ => Err(format!("#{r} is not a {kind}")),
+    }
+}
+
+/// The numbers of the axis placement `at` of the entity `owner`: its origin, axis and reference
+/// direction.
+fn placed<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,owner: u32,at: Option<&Value>) -> Result<Vec<f64>,String> {
+    let at = at.and_then(Value::reference).ok_or_else(|| format!("#{owner}: no placement"))?;
+    let Some(("AXIS2_PLACEMENT_3D",p)) = get(at).simple() else {
+        return Err(format!("#{owner}'s placement #{at} is not an AXIS2_PLACEMENT_3D"))
+    };
+    let mut out = Vec::with_capacity(9);
+    for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] {
+        out.extend(triple(get,p.get(k).and_then(Value::reference),kind)?);
+    }
+    Ok(out)
+}
+
 /// The numbers of the curve `r` a swept surface sweeps, as `curve_numbers` lays a solid's out: a
 /// line, a circle, an ellipse or a B-spline (simple, or the complex entity with its weights).
 fn swept_curve<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>) -> Result<Vec<f64>,String> {
@@ -563,28 +601,13 @@ fn swept_curve<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>) -> Result
     let numbers = |v: Option<&Value>,what: &str| -> Result<Vec<f64>,String> {
         v.and_then(Value::list).ok_or_else(|| format!("#{r}: {what} expected"))?.iter().map(|x| x.number().ok_or_else(|| format!("#{r}: {what}: a number expected"))).collect()
     };
-    let triple = |at: Option<u32>,kind: &str| -> Result<Vec<f64>,String> {
-        let at = at.ok_or_else(|| format!("#{r}: a {kind} reference expected"))?;
-        match get(at).simple() {
-            Some((n,v)) if n == kind => numbers(v.get(1),"three coordinates").and_then(|x| if x.len() == 3 { Ok(x) } else { Err(format!("#{at}: not three coordinates")) }),
-            _ => Err(format!("#{at} is not a {kind}")),
-        }
-    };
-    let placed = |at: Option<&Value>| -> Result<Vec<f64>,String> {
-        let at = at.and_then(Value::reference).ok_or_else(|| format!("#{r}: no placement"))?;
-        let Some(("AXIS2_PLACEMENT_3D",p)) = get(at).simple() else { return Err(format!("#{r}'s placement #{at} is not an AXIS2_PLACEMENT_3D")) };
-        let mut out = triple(p.get(1).and_then(Value::reference),"CARTESIAN_POINT")?;
-        out.extend(triple(p.get(2).and_then(Value::reference),"DIRECTION")?);
-        out.extend(triple(p.get(3).and_then(Value::reference),"DIRECTION")?);
-        Ok(out)
-    };
     // a B-spline's degree, poles, multiplicities and knots, and weights
     let spline = |curve: &[Value],knots: &[Value],weights: Option<&[Value]>| -> Result<Vec<f64>,String> {
         let degree = curve.first().and_then(Value::int).ok_or_else(|| format!("#{r}: a degree expected"))?;
         let poles = curve.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no poles"))?;
         let (mults,values) = (numbers(knots.first(),"multiplicities")?,numbers(knots.get(1),"knots")?);
         let mut out = vec![3.,degree as f64,poles.len() as f64,values.len() as f64,if weights.is_some() { 1. } else { 0. }];
-        for p in poles { out.extend(triple(p.reference(),"CARTESIAN_POINT")?); }
+        for p in poles { out.extend(triple(get,p.reference(),"CARTESIAN_POINT")?); }
         out.extend(mults);
         out.extend(values);
         if let Some(w) = weights { out.extend(numbers(w.first(),"weights")?); }
@@ -596,13 +619,13 @@ fn swept_curve<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>) -> Result
             let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no vector"))?;
             let Some(("VECTOR",w)) = get(at).simple() else { return Err(format!("#{r}'s #{at} is not a VECTOR")) };
             let mut out = vec![0.];
-            out.extend(triple(v.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
-            out.extend(triple(w.get(1).and_then(Value::reference),"DIRECTION")?);
+            out.extend(triple(get,v.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
+            out.extend(triple(get,w.get(1).and_then(Value::reference),"DIRECTION")?);
             out.push(number(w.get(2),"a vector's length")?);
             Ok(out)
         }
-        Some(("CIRCLE",v)) => Ok([1.].into_iter().chain(placed(v.get(1))?).chain([number(v.get(2),"a radius")?]).collect()),
-        Some(("ELLIPSE",v)) => Ok([2.].into_iter().chain(placed(v.get(1))?).chain([number(v.get(2),"a semi-axis")?,number(v.get(3),"a semi-axis")?]).collect()),
+        Some(("CIRCLE",v)) => Ok([1.].into_iter().chain(placed(get,r,v.get(1))?).chain([number(v.get(2),"a radius")?]).collect()),
+        Some(("ELLIPSE",v)) => Ok([2.].into_iter().chain(placed(get,r,v.get(1))?).chain([number(v.get(2),"a semi-axis")?,number(v.get(3),"a semi-axis")?]).collect()),
         Some(("B_SPLINE_CURVE_WITH_KNOTS",v)) if v.len() == 9 => spline(&v[1..6],&v[6..8],None),
         None => match (e.part("B_SPLINE_CURVE"),e.part("B_SPLINE_CURVE_WITH_KNOTS")) {
             (Some(c),Some(k)) if c.len() == 5 && k.len() == 3 => spline(c,&k[..2],e.part("RATIONAL_B_SPLINE_CURVE")),
@@ -619,16 +642,6 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
     let reals = |values: &[Value],what: &str| -> Result<Vec<f64>,String> {
         values.iter().map(|v| v.number().ok_or_else(|| format!("{what}: a number expected"))).collect()
     };
-    let triple = |r: Option<u32>,kind: &str| -> Result<[f64;3],String> {
-        let r = r.ok_or_else(|| format!("a {kind} reference expected"))?;
-        match get(r).simple() {
-            Some((name,v)) if name == kind => {
-                let x = reals(v.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no coordinates"))?,kind)?;
-                x.try_into().map_err(|_| format!("#{r}: not three coordinates"))
-            }
-            _ => Err(format!("#{r} is not a {kind}")),
-        }
-    };
     let compare = |what: &str,written: &[f64],solid: &[f64]| -> Result<(),String> {
         if written.len() != solid.len() { return Err(format!("{what}: {} numbers written, the solid has {}",written.len(),solid.len())) }
         match written.iter().zip(solid).position(|(a,b)| !near(*a,*b)) {
@@ -637,20 +650,11 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
             None => Ok(()),
         }
     };
-    // an elementary surface's placement `v[1]`: its origin, axis and reference direction
-    let placed = |v: &[Value]| -> Result<Vec<f64>,String> {
-        let (_,place) = match get(v.get(1).and_then(Value::reference).ok_or("no placement")?).simple() {
-            Some(p @ ("AXIS2_PLACEMENT_3D",_)) => p,
-            _ => return Err(format!("#{r}'s placement is not an AXIS2_PLACEMENT_3D")),
-        };
-        let mut written = Vec::new();
-        for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] { written.extend(triple(place.get(k).and_then(Value::reference),kind)?); }
-        Ok(written)
-    };
     let elementary = |name: &str,kind: u8,scalars: usize| -> Result<bool,String> {
         let Some((n,v)) = e.simple().filter(|(n,_)| *n == name) else { unreachable!() };
         if expected.kind != kind { return Err(format!("#{r} is a {n}, the solid's surface kind {}",expected.kind)) }
-        let mut written = placed(v)?;
+        // (its placement `v[1]`: its origin, axis and reference direction)
+        let mut written = placed(get,r,v.get(1))?;
         if v.len() != 2+scalars { return Err(format!("#{r}: {} parameters",v.len())) }
         written.extend(reals(&v[2..],n)?);
         compare(n,&written,&expected.numbers)?;
@@ -671,7 +675,7 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
             let [big,minor] = [2,3].map(|k| v.get(k).and_then(Value::number));
             let (Some(big),Some(minor)) = (big,minor) else { return Err(format!("#{r}: its radii expected")) };
             if !(big < minor) { return Err(format!("#{r}: a degenerate torus whose major radius {big} is not under its minor {minor}")) }
-            let mut written = placed(v)?;
+            let mut written = placed(get,r,v.get(1))?;
             written.extend([if outer { big } else { -big },minor]);
             compare("DEGENERATE_TOROIDAL_SURFACE",&written,&expected.numbers)?;
             return Ok(false)
@@ -691,8 +695,8 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
                 let (axis,parts) = if kind == REVOLUTION { ("AXIS1_PLACEMENT",["CARTESIAN_POINT","DIRECTION"]) } else { ("VECTOR",["DIRECTION",""]) };
                 let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no {axis}"))?;
                 let Some((_,a)) = get(at).simple().filter(|(n,_)| *n == axis) else { return Err(format!("#{r}'s #{at} is not an {axis}")) };
-                let mut written: Vec<f64> = triple(a.get(1).and_then(Value::reference),parts[0])?.to_vec();
-                if kind == REVOLUTION { written.extend(triple(a.get(2).and_then(Value::reference),parts[1])?); }
+                let mut written: Vec<f64> = triple(get,a.get(1).and_then(Value::reference),parts[0])?.to_vec();
+                if kind == REVOLUTION { written.extend(triple(get,a.get(2).and_then(Value::reference),parts[1])?); }
                 else { written.push(a.get(2).and_then(Value::number).ok_or_else(|| format!("#{at}: a vector's length expected"))?); }
                 let head = written.len();
                 compare(name,&written,expected.numbers.get(..head).unwrap_or(&expected.numbers))?;
@@ -732,7 +736,7 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
     let mut poles = Vec::with_capacity(3*rows.len()*columns);
     for row in rows {
         let row = row.list().filter(|c| c.len() == columns).ok_or_else(|| format!("#{r}: the control points are not a grid"))?;
-        for p in row { poles.extend(triple(p.reference(),"CARTESIAN_POINT")?); }
+        for p in row { poles.extend(triple(get,p.reference(),"CARTESIAN_POINT")?); }
     }
     if let Some(w) = weights {
         let w = w.first().and_then(Value::list).ok_or_else(|| format!("#{r}: no weights"))?;
