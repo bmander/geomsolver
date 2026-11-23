@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A solid is the same wherever it stands** (#1002): three readings measured a patch by its
+  distance from the origin, so a part built there was refused, or built hundreds of times slower,
+  once it stood a few of its own sizes off. A foot found from the last one on a face family's
+  wall, a blend, a B-spline sheet or its offset was taken for the nearest within a thousandth of
+  the *point's* distance from the origin (six millimetres, 6.3 m out); it is within a thousandth
+  of the patch's own size (`geom::NEAR`), and a foot refined from a hint is on its patch by that
+  size too. A rational spline's and a rational net's enclosures divided `A` by `W` with every pole
+  read from the origin, and a blend's read the point between its sections so, each as wide as the
+  distance from it; both are read from a point of the surface. A lofted blade unites with its hub
+  a metre out as at the origin, a NURBS ball is cut ten sizes out (refused before, after three
+  minutes), and a canal's cut ten thousand sizes out takes what it takes at the origin (700 times
+  that before). `family::Sheet::size` is new.
+
 - **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
   a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
   the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
