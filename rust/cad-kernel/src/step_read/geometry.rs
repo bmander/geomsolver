@@ -303,11 +303,7 @@ fn reversed(c: &Curve) -> Option<Curve> {
         Curve::Line {p,d} => Curve::Line {p:*p,d:scale(*d,-1.)},
         Curve::Circle(f,r) => Curve::Circle(Frame {y:scale(f.y,-1.),z:scale(f.z,-1.),..*f},*r),
         Curve::Ellipse(f,a,b) => Curve::Ellipse(Frame {y:scale(f.y,-1.),z:scale(f.z,-1.),..*f},*a,*b),
-        Curve::BSpline(s) => {
-            let (a,z) = (s.knots[0],s.knots[s.knots.len()-1]);
-            Curve::BSpline(Arc::new(BSpline {degree:s.degree,knots:s.knots.iter().rev().map(|k| a+z-k).collect(),
-                poles:s.poles.iter().rev().copied().collect(),weights:s.weights.as_ref().map(|w| w.iter().rev().copied().collect())}))
-        }
+        Curve::BSpline(s) => Curve::BSpline(Arc::new(s.reversed())),
         _ => return None,
     })
 }

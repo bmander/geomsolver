@@ -139,10 +139,8 @@ fn the_block_under_the_coons_patch_of_four_parabolas() {
         ]]}).unwrap()
     }).collect();
     let floor = [[0.,0.,0.],[0.,10.,0.],[10.,10.,0.],[10.,0.,0.]];
-    faces.push(face(&Profile {origin:floor[0],normal:[0.,0.,-1.],names:Vec::new(),
-        loops:vec![(0..4).map(|k| ProfileEdge::Line {a:floor[k],b:floor[(k+1)%4]}).collect()]}).unwrap());
-    let [a,b,c,d] = &arcs;
-    faces.push(sheet(coons([a,b,c,d]).unwrap()).unwrap());
+    faces.push(face(&crate::swept_rings::polygon(&floor)).unwrap());
+    faces.push(sheet(coons(arcs.each_ref()).unwrap()).unwrap());
     let solid = sewn(&faces,1e-7).unwrap();
     solid.check(1e-9).unwrap();
     assert_eq!(solid.faces.len(),6);
