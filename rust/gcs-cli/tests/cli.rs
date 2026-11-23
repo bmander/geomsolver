@@ -2416,3 +2416,69 @@ fn a_document_naming_a_step_file_beside_it_exports_its_body() {
     assert!(std::fs::read_to_string(&svg).unwrap().starts_with("<svg"));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// **Every report entry point sees one object for `part := solid(bracket)`, none for a bare `use
+/// bracket`** (#993 stage 2): the default report, `--json`, the cut list (`--parts`, in text and
+/// in `--json`), `--components`; and a drawing's views over the model draw the body where the
+/// file puts it, 40 × 20 from the front and 40 × 30 from the top.
+#[test]
+fn a_given_body_is_one_object_in_every_report() {
+    let dir = std::env::temp_dir().join(format!("solventc-given-reports-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/step_file/drilled_ap214.step"), dir.join("bracket.step")).unwrap();
+    let said = |args: &[&str]| {
+        let out = run(args);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    for (body, objects) in [("part := solid(bracket)\n", vec!["part"]), ("", vec![])] {
+        let doc = dir.join("doc.sv");
+        std::fs::write(&doc, format!("unit mm\nuse bracket\n{body}")).unwrap();
+        let doc = doc.to_str().unwrap();
+        let report = said(&[doc]);
+        assert!(report.contains(": solved") && !report.contains("bracket"), "{report}");
+        let n = objects.len();
+        let parts = said(&["--parts", doc]);
+        let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+        assert!(parts.contains(&format!("cut list: {}, {} ", plural(n, "part"), plural(n, "object"))),
+                "{parts}");
+        assert!(!parts.contains("× bracket"), "{parts}");
+        if n == 1 {
+            assert!(parts.contains("1 × part: 40 × 30 × 20 — part"), "{parts}");
+        }
+        let json = said(&["--json", "--parts", doc]);
+        let cut = &json[json.find("\"cutList\"").expect("a cut list")..];
+        let cut = &cut[..cut.find(']').unwrap() + 1];
+        assert_eq!(cut.matches("\"objects\"").count(), n, "{cut}");
+        assert!(!cut.contains("bracket"), "{cut}");
+        assert!(!said(&["--json", doc]).contains("bracket"));
+        let components = said(&["--components", doc]);
+        assert!(!components.contains("bracket"), "{components}");
+    }
+    std::fs::write(dir.join("doc.sv"), "unit mm\nuse bracket\npart := solid(bracket)\n").unwrap();
+    let sheet = dir.join("views.svd");
+    let svg = dir.join("views.svg");
+    std::fs::write(&sheet, "model m from \"doc.sv\"\nsheet s {\n  view front(m.part) from front at \
+                            (60mm, 150mm)\n  view top(m.part) from top at (60mm, 65mm)\n}\n").unwrap();
+    said(&[sheet.to_str().unwrap(), "--output", svg.to_str().unwrap()]);
+    let svg = std::fs::read_to_string(&svg).unwrap();
+    // each view's extent, in the page's pixels (96 a 25.4 mm inch)
+    let px = 96.0 / 25.4;
+    for (view, w, h) in [("front", 40.0, 20.0), ("top", 40.0, 30.0)] {
+        let at = svg.find(&format!("id=\"{view}\"")).unwrap_or_else(|| panic!("no {view}: {svg}"));
+        let group = &svg[at..at + svg[at..].find("</g>").unwrap()];
+        let pts: Vec<(f64, f64)> = group.split("points=\"").skip(1)
+            .flat_map(|s| s[..s.find('"').unwrap()].split_whitespace().map(|p| {
+                let (x, y) = p.split_once(',').unwrap();
+                (x.parse::<f64>().unwrap(), y.parse::<f64>().unwrap())
+            }).collect::<Vec<_>>()).collect();
+        let span = |f: fn(&(f64, f64)) -> f64| {
+            let v: Vec<f64> = pts.iter().map(f).collect();
+            v.iter().cloned().fold(f64::MIN, f64::max) - v.iter().cloned().fold(f64::MAX, f64::min)
+        };
+        assert!((span(|p| p.0) - w * px).abs() < 1e-3 && (span(|p| p.1) - h * px).abs() < 1e-3,
+                "{view}: {} × {}", span(|p| p.0) / px, span(|p| p.1) / px);
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

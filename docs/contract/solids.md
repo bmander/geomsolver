@@ -1280,7 +1280,13 @@ part` lists no per-face row of a given body's faces (`report::positions_where`; 
 in the body's), and a containment claim's witness says one as `` a face of `bracket` ``
 (`model::Given::face_said`, `between drill.hole and a face of `bracket``); the claim's JSON
 keeps the face's key, for a host to pick it by
-(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`). The OCCT route refuses `Node::Given`, naming
+(`given_bodies::a_given_bodys_faces_are_said_as_its_faces`).
+**A body whose stock is another solid, nothing on,
+through or bound and no binding placing it, is one set with that stock** (`clear::one_set`, the two
+evaluations standing alike), so a containment between them, either way, holds exactly — its
+interval nothing — where the facets of a curved face alone would leave it within the faceting's
+uncertainty; a body anything is taken from is judged by its boundary as before, never the wrong way
+(`given_bodies::a_body_and_its_untouched_stock_hold_each_other`). The OCCT route refuses `Node::Given`, naming
 `--kernel rust` (`gcs-cli/src/cad/native.rs`). Gate: `tests/given_solids.rs` —
 `its_export_reads_back_as_the_file_gave_it` (the export read back `step_roundtrip::same` as the
 file's B-rep, bare and as a body's stock), `a_slot_is_cut_from_a_given_body`,

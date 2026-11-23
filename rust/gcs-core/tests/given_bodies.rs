@@ -364,6 +364,340 @@ fn a_document_naming_a_file_exports_the_same_solid() {
         .unwrap_or_else(|d| panic!("not the same solid: {d}"));
 }
 
+/// `src` linked against the shelf and `more` before it (a host's resolver over other files),
+/// then elaborated: every diagnostic of both.
+fn read_with(src: &str, more: &[(&str, &str)]) -> (Elaborated, Vec<Diag>) {
+    let (mut prog, errs) = parse(src);
+    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
+    let shelf = shelf();
+    let mut diags = link(&mut prog, &mut |name| {
+        more.iter().find(|(n, _)| *n == name).map(|(_, t)| t.to_string())
+            .or_else(|| shelf.get(name).cloned()).or_else(|| gcs_core::library::resolve(name))
+    });
+    let e = elaborate(&prog);
+    diags.extend(e.diags.iter().cloned());
+    (e, diags)
+}
+
+/// Two solids in one product's shape: the drilled block, and the void file's cube beside it
+/// (its outer shell renumbered into the block's file), written by hand.
+const TWO: &str = include_str!("step_file/two_solids_ap214.step");
+
+/// **A file that gives several solids is refused at the `use`, saying how many** (E072): the
+/// reader does give two, and the document reading the name hears one diagnostic, at the `use`.
+#[test]
+fn a_file_of_several_solids_is_refused_saying_how_many() {
+    let solids = gcs_core::brep::step_read::read(TWO).unwrap_or_else(|r| panic!("{r}"));
+    assert_eq!(solids.len(), 2);
+    let src = "unit mm\nuse two\npart := solid(two)\nset := solid({ p | p in two })\n";
+    let (e, diags) = read_with(src, &[("two", TWO)]);
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    let d = &diags[0];
+    assert_eq!((d.code, d.span.lo), (Code::E072, src.find("use two").unwrap() as u32), "{d:?}");
+    assert_eq!(d.message, "`two`: the file gives 2 solids, and a given body is one solid");
+    assert!(!e.ok());
+}
+
+/// The volume and world box of the solid the document calls `name`, in the document's unit.
+fn measure(e: &Elaborated, name: &str) -> (f64, [f64; 3], [f64; 3]) {
+    let s = e.sketch.evaluated_solid(solid(e, name), gcs_core::solid::ApproximationPolicy::Report)
+        .unwrap_or_else(|m| panic!("`{name}`: {m}"));
+    let b = s.world_bounds();
+    (s.volume(), b.lo, b.hi)
+}
+
+fn boxed(got: ([f64; 3], [f64; 3]), lo: [f64; 3], hi: [f64; 3], tol: f64) -> bool {
+    (0..3).all(|k| (got.0[k] - lo[k]).abs() <= tol && (got.1[k] - hi[k]).abs() <= tol)
+}
+
+/// A frame `f` standing at (100, 0, 0), square to the world, and a 10-cube `box` and `part :=
+/// solid(bracket)` at the root: what a read under the frame is compared with.
+const POSED: &str = "unit mm\nuse bracket\nuse std\nuse std.solids\nin std.top {\n  c := point\n\
+    fix((100, 0)) c\n\
+    k0 := point\n  k1 := point\n  k2 := point\n  k3 := point\n  fix((0, 0)) k0\n  fix((10, 0)) k1\n\
+    fix((10, 10)) k2\n  fix((0, 10)) k3\n  (s0 := line(k0, k1)) -> (s1 := line(k1, k2)) -> \
+    (s2 := line(k2, k3)) -> (s3 := line(k3, k0)) -> close\n  sq := face(s0, s1, s2, s3)\n}\n\
+    box := solid(std.solids.Prism(sq, from: 0mm, to: 10mm))\npart := solid(bracket)\n\
+    in (f := frame) {\n}\nf.origin coincident c\nf.u parallel std.x\nf.v parallel std.y\n\
+    f.u perpendicular f.v\n";
+
+/// **Wherever a read would have to place the given body it is refused, never left at the
+/// world** (E106), and wherever the language reads it in place it is right.  Refused: a `ring`'s
+/// copies, a mirrored instance, two closed instances of one binding (said once), a frame with a
+/// joint, a claim under a posed frame, a component's formal given it in a posed instance.  Right:
+/// a body over a body made of it, written under a posed frame, stands where a body over any root
+/// solid does (no root solid's body rides a frame); a body made of it turned at an instant of a
+/// line; and a `repeat`'s copies, each where the file put it.  (The solid it sweeps about a line:
+/// `the_solid_a_given_body_sweeps_is_swept`, in the slow tier.)
+#[test]
+fn a_given_body_is_refused_wherever_it_would_have_to_be_placed() {
+    let e106 = |src: &str, at: &str, words: &str| {
+        let (e, diags) = read(src);
+        assert!(!e.ok(), "{src}");
+        let lo = src.find(at).unwrap_or_else(|| panic!("no `{at}`")) as u32;
+        assert!(diags.iter().any(|d| d.code == Code::E106 && d.span.lo == lo
+                                     && d.message.contains(words)), "{at}: {diags:?}");
+        diags
+    };
+    let holder = "unit mm\nuse bracket\nuse std\ncomponent Holder() {\n  \
+                  part := solid(bracket)\n}\n";
+    // a ring turns each copy (the ring's own E021 beside it is the ring's)
+    e106("unit mm\nuse bracket\nuse std\nin std.top {\n  hub := point\n  fix((0, 0)) hub\n}\n\
+          ring 3 about hub {\n  part := solid(bracket)\n}\n", "bracket)\n}", "a `ring`");
+    // a mirrored instance, and two instances of one binding: the read in the definition's body,
+    // said once
+    for calls in ["left := Holder() mirrored(front)\n", "a := Holder()\nb := Holder()\n"] {
+        let src = format!("{holder}{calls}");
+        let diags = e106(&src, "bracket)\n}", "a definition's body");
+        assert_eq!(diags.len(), 1, "{calls}: {diags:?}");
+    }
+    // a frame with a joint
+    let src = "unit mm\nuse bracket\nuse std\nuse std.motion (spins)\nin std.top {\n  o := point\n\
+               fix((0, 0)) o\n}\nin (arm := frame) {\n  part := solid(bracket)\n}\n\
+               arm spins(1) o\n";
+    let diags = e106(src, "bracket)\n}", "`in arm`");
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    // a claim under a posed frame
+    e106(&format!("{POSED}in f {{\n  claim every q in part: q in bracket\n}}\n"), "bracket\n}",
+         "`in f`");
+    // a component's formal given it, the instance posed: the body reads it in place of the formal
+    let (e, diags) = read(&format!("{POSED}component Copy(b: solid) {{\n  o := solid(b)\n}}\n\
+                                    hg := Copy(b: bracket) in f\n"));
+    assert!(!e.ok() && diags.iter().any(|d| d.code == Code::E106), "{diags:?}");
+
+    // a body over a body made of it, under the posed frame: where `solid(box)` there stands
+    let e = solved(&format!("{POSED}in f {{\n  obox := solid(box)\n  opart := solid(part)\n}}\n"));
+    let (v, lo, hi) = measure(&e, "obox");
+    assert!(close(v, 1000.0) && boxed((lo, hi), [0.0; 3], [10.0; 3], 1e-9), "{lo:?} {hi:?}");
+    let (v, lo, hi) = measure(&e, "opart");
+    assert!(close(v, drilled_volume()) && boxed((lo, hi), [0.0; 3], [40.0, 30.0, 20.0], 1e-9),
+            "{v} {lo:?} {hi:?}");
+    // turned a quarter about the world's z: x from −30 to 0, y from 0 to 40
+    let e = solved("unit mm\nuse bracket\nuse std\npart := solid(bracket)\n\
+                    turned := part at(under: std.z) 90deg\n");
+    let (v, lo, hi) = measure(&e, "turned");
+    assert!(close(v, drilled_volume()) && boxed((lo, hi), [-30.0, 0.0, 0.0], [0.0, 40.0, 20.0],
+                                                 1e-9), "{v} {lo:?} {hi:?}");
+    // a `repeat` turns nothing: each copy is the file's body where it stands
+    let e = solved("unit mm\nuse bracket\nuse std\nrepeat 2 {\n  part := solid(bracket)\n}\n");
+    for copy in ["#3.0.part", "#3.1.part"] {
+        let (v, lo, hi) = measure(&e, copy);
+        assert!(close(v, drilled_volume()) && boxed((lo, hi), [0.0; 3], [40.0, 30.0, 20.0], 1e-9),
+                "{copy}: {v} {lo:?} {hi:?}");
+    }
+}
+
+/// **One body per given module, however many files `use` it** (rule 6): the document and a
+/// module of its own both `use bracket`, the document reads it in three statements, and the
+/// model holds one given body, read by both bodies made of it.
+#[test]
+fn one_body_per_module_however_many_files_use_it() {
+    let src = "unit mm\nuse bracket\nuse lib.holder\nuse std\na := solid(bracket)\n\
+               b := solid(bracket)\nclaim every q in a: q in bracket\n";
+    let (mut e, diags) = read(src);
+    assert!(diags.is_empty() && e.ok(), "{diags:?}");
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let given: Vec<usize> = (0..e.sketch.solids.len())
+        .filter(|&i| matches!(e.sketch.solids[i].def, gcs_core::model::SolidDef::Given(_)))
+        .collect();
+    assert_eq!(given, vec![solid(&e, "bracket")]);
+    for name in ["a", "b"] {
+        assert!(matches!(e.sketch.solids[solid(&e, name)].def,
+                         gcs_core::model::SolidDef::Body { stock, .. }
+                             if stock as usize == given[0]));
+    }
+    // the module's file `use`s it too, and its component reading it is refused where it reads
+    let (_, diags) = read("unit mm\nuse bracket\nuse lib.holder\na := solid(bracket)\n\
+                           h := lib.holder.Holder()\n");
+    assert_eq!(diags.iter().filter(|d| d.code == Code::E106).count(), 1, "{diags:?}");
+}
+
+/// **A body with a void, through the language**: its volume `20³ − 4/3·π·4³`; a cube standing in
+/// the hollow is not in it, and one in its material is (claims); and its export, by the kernel's
+/// writer, passes `step_check` and reads back the same solid as the file gave, void and all.
+#[test]
+fn a_body_with_a_void_is_read_claimed_and_written_again() {
+    use crate::step_roundtrip::{measured, same, stages, Found};
+    use gcs_core::brep::{export, step::Fit, sweep::Say};
+    let cube = |at: f64| format!("in std.top {{\n  k0 := point\n  k1 := point\n  k2 := point\n\
+        k3 := point\n  fix(({a}, {a})) k0\n  fix(({b}, {a})) k1\n  fix(({b}, {b})) k2\n\
+        fix(({a}, {b})) k3\n  (s0 := line(k0, k1)) -> (s1 := line(k1, k2)) -> (s2 := line(k2, k3)) \
+        -> (s3 := line(k3, k0)) -> close\n  sq := face(s0, s1, s2, s3)\n}}\n\
+        cube := solid(std.solids.Prism(sq, from: {a}mm, to: {b}mm))\n", a = at - 0.5, b = at + 0.5);
+    let want = 8000.0 - 4.0 / 3.0 * std::f64::consts::PI * 64.0;
+    for (at, holds) in [(0.0, false), (7.0, true)] {
+        let e = solved(&format!("unit mm\nuse void\nuse std\nuse std.solids\n\
+                                 part := solid(void)\n{}\
+                                 claim every q in cube: q in part\n", cube(at)));
+        assert!((volume(&e, "part") - want).abs() < 1e-9 * want, "{}", volume(&e, "part"));
+        let v = gcs_core::diagnose::judge_solids(&e.sketch);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].holds(), Some(holds), "a cube at {at}: {v:?}");
+    }
+    let e = solved("unit mm\nuse void\npart := solid(void)\n");
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let x = export::exact(&e.sketch, solid(&e, "part"), None, None, &say)
+        .unwrap_or_else(|m| panic!("{m:?}"));
+    let text = export::step(&x, "part", None, &say).unwrap_or_else(|m| panic!("{m:?}"));
+    assert!(text.contains("BREP_WITH_VOIDS"));
+    let original = stages(VOID).unwrap_or_else(|(by, r, _)| panic!("{by:?}: {r}"));
+    let back = stages(&text).unwrap_or_else(|(by, r, _)| panic!("read back, {by:?}: {r}"));
+    assert_eq!(back.len(), 1);
+    let b = &original[0].brep;
+    let tol = original[0].context.uncertainty.unwrap_or(1e-7);
+    same(b, &measured(b), &text, &back[0], Fit::Exact, tol, &mut Found::default())
+        .unwrap_or_else(|d| panic!("not the same solid: {d}"));
+}
+
+/// **Edits with a given body in the document**: the gestures the app makes over a solid, and the
+/// source map's own re-texts, none panicking.  The given body has no statement of its own (its
+/// `use` makes it): deleting it, rounding it, resizing its sweep, drawing on its faces or taking
+/// from it is refused in words, the document untouched; the body made of it is rounded whole,
+/// taken from, deleted, or its edge refused for faces with no name to write; a statement appended
+/// and a re-text are adopted in place, and the outline shows the one object.
+#[test]
+fn edits_over_a_given_body_are_made_or_refused_in_words() {
+    use gcs_core::edit::{self, EdgeWord, Kind, SolidSweep};
+    use gcs_core::model::EntRef;
+    let src = "unit mm\nuse bracket\npart := solid(bracket)\n";
+    let e = solved(src);
+    let (g, p) = (solid(&e, "bracket"), solid(&e, "part"));
+    let untouched = |x: &edit::Edit| x.kind == Kind::None && x.text == src;
+    let refused = |what: &str, x: edit::Edit, words: &str| {
+        assert!(untouched(&x), "{what}: {:?}", x.text);
+        let why = x.refused.unwrap_or_else(|| panic!("{what}: refused without a word"));
+        assert!(why.contains(words), "{what}: {why}");
+    };
+    let rebuilt = |text: &str| {
+        let (mut next, errs) = parse(text);
+        assert!(errs.is_empty(), "{errs:?}");
+        assert!(relink(&mut next, &e.program).is_empty());
+        let mut e = elaborate(&next);
+        assert!(e.ok(), "{:?}\n{text}", e.diags);
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+        e
+    };
+    // the given body itself
+    refused("delete", edit::remove(&e, &e.program, &e.sketch, &[EntRef::solid(g)], &[]),
+            "`bracket` is the body a file gives, made by its `use`");
+    let edges = gcs_core::overview::workspace::solid_edges(&e.sketch, g);
+    assert_eq!(edges.len(), 14);
+    let pair = edges[0].faces.clone();
+    for (what, faces, edges, whole) in [("whole", vec![], vec![], true),
+                                         ("an edge", vec![], vec![pair.clone()], false),
+                                         ("a face", vec![pair.0.clone()], vec![], false)] {
+        refused(&format!("round {what}"),
+                edit::add_rounds(&e.program, &e.sketch, g, EdgeWord::Round, &faces, &edges, whole,
+                                 "1"), "never extended");
+    }
+    let depth = SolidSweep { depth: Some("5".into()), ..Default::default() };
+    refused("resweep", edit::set_sweep(&e, &e.program, g, &depth), "no statement makes");
+    refused("turn", edit::set_turn(&e, &e.program, g, "90"), "no statement makes");
+    refused("draw on a face", edit::sketch_on_face(&e, &e.sketch, g, &pair.0, None, None), "");
+    assert_eq!(edit::face_plane(&e, &e.sketch, g, &pair.0), None);
+    refused("cut from it", edit::add_body_word(&e.program, gcs_core::syntax::BodyWord::Cut,
+                                               &["part"], "bracket"), "never extended");
+    // the body made of it
+    let x = edit::add_rounds(&e.program, &e.sketch, p, EdgeWord::Round, &[], &[], true, "1");
+    assert_eq!((x.kind, x.refused.as_deref()), (Kind::Structural, None));
+    assert!(x.text.ends_with("round(r: 1) part\n"), "{}", x.text);
+    let rounded = rebuilt(&x.text);
+    // built, or refused in the solid's own words: never a panic
+    let _ = rounded.sketch.evaluated_solid(solid(&rounded, "part"),
+                                           gcs_core::solid::ApproximationPolicy::Report);
+    let pair = gcs_core::overview::workspace::solid_edges(&e.sketch, p)[0].faces.clone();
+    refused("round an edge of the body", edit::add_rounds(&e.program, &e.sketch, p,
+            EdgeWord::Round, &[], &[pair.clone()], false, "1"), "no name the document can write");
+    refused("draw on the body's face", edit::sketch_on_face(&e, &e.sketch, p, &pair.0, None, None),
+            "");
+    let x = edit::add_body_word(&e.program, gcs_core::syntax::BodyWord::Cut, &["bracket"], "part");
+    assert_eq!(x.kind, Kind::Structural, "{:?}", x.refused);
+    rebuilt(&x.text);
+    // both asked for: the body's statement goes, the given body is kept, and counted
+    let x = edit::remove(&e, &e.program, &e.sketch, &[EntRef::solid(g), EntRef::solid(p)], &[]);
+    assert_eq!((x.kind, x.text.as_str(), x.kept), (Kind::Structural, "unit mm\nuse bracket\n", 1));
+    // a statement appended, adopted; a re-text; and the outline: one row, `part`
+    let x = edit::add_point(&e.program, 1.0, 2.0);
+    let mut held = solved(src);
+    assert!(held.retext("unit mm\nuse bracket\npart := solid(bracket)  \n"));
+    assert!(held.adopt(&x.text, &[]));
+    rebuilt(&x.text);
+    let rows = gcs_core::overview::outline::outline(&held);
+    assert_eq!(rows.iter().map(|n| n.label.as_str()).collect::<Vec<_>>(), vec!["part"]);
+    assert_eq!(rows[0].solid, Some(p));
+    let (mut fresh, _) = read(src);
+    let sk = fresh.sketch.clone();
+    assert!(untouched(&edit::reconcile(&mut fresh, &sk)));
+}
+
+/// **A body whose stock is the given body, untouched, is the same set** (`part :=
+/// solid(bracket)`): each holds the other exactly, whatever the bore's faceting — the claim's
+/// judge reads the two as one set (`clear::one_set`) and so answers, where comparing their
+/// facets alone left it within the faceting's uncertainty; a body made of that body too.  A
+/// body with anything taken from it is judged by its boundary as before: never wrongly, though
+/// the bore it shares with the file's body leaves both ways within the faceting's uncertainty.
+#[test]
+fn a_body_and_its_untouched_stock_hold_each_other() {
+    let e = solved("unit mm\nuse bracket\nwhole := solid(bracket)\nagain := solid(whole)\n\
+                    claim every q in whole: q in bracket\nclaim every q in bracket: q in whole\n\
+                    claim every q in again: q in bracket\nclaim every q in bracket: q in again\n");
+    let v = gcs_core::diagnose::judge_solids(&e.sketch);
+    assert_eq!(v.len(), 4);
+    assert!(v.iter().all(|v| v.holds() == Some(true)), "{v:?}");
+    // the block drilled again is within the file's body, and the file's body not within it:
+    // neither judged the wrong way
+    let e = solved(&format!("{DRILL}part := solid(bracket)\ndrill cut part\n\
+                             claim every q in part: q in bracket\n\
+                             claim every q in bracket: q in part\n"));
+    let v = gcs_core::diagnose::judge_solids(&e.sketch);
+    assert!(v.len() == 2 && v[0].holds() != Some(false) && v[1].holds() != Some(true), "{v:?}");
+}
+
+/// **The library's case** (`rust/examples/given/bought_block.sv`, its file `drilled_block.step`
+/// beside it): a block bought in, named by its file, and the one hole a designer drills in it.
+/// Read as `solventc` reads it, it is one object, the block less a 5 mm hole through its 20 mm,
+/// and its claim on the volume is kept, judged by `std.measures`; the bound brought under the
+/// volume, it is refuted.
+#[test]
+fn the_librarys_case_drills_a_bought_block() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/given");
+    let src = std::fs::read_to_string(dir.join("bought_block.sv")).unwrap();
+    let judged = |src: &str| {
+        let (mut prog, errs) = parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let linked = link(&mut prog,
+                          &mut |m| fixtures::module_beside(&dir, "given/bought_block.sv", m));
+        assert!(linked.is_empty(), "{linked:?}");
+        let mut e = elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.diags);
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+        let answers = gcs_core::report::measure_answers(&e.sketch, &e.measures);
+        assert_eq!(answers.len(), 1);
+        (answers[0].holds, e)
+    };
+    let (holds, e) = judged(&src);
+    assert_eq!(holds, Some(true));
+    let block = solid(&e, "block");
+    assert_eq!(gcs_core::model::objects(&e.sketch), vec![block]);
+    let want = drilled_volume() - std::f64::consts::PI * 2.5 * 2.5 * 20.0;
+    assert!(close(volume(&e, "block"), want), "{} against {want}", volume(&e, "block"));
+    let (holds, _) = judged(&src.replace("21400 * 1mm^3", "21300 * 1mm^3"));
+    assert_eq!(holds, Some(false));
+}
+
+/// **The solid a given body sweeps turning about a line is swept**: read at the document's root
+/// under a line, a quarter turn about the world's z, it reaches out to the far corner's radius, 50,
+/// and holds more than the body.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: a given body's sweep meshed")]
+fn the_solid_a_given_body_sweeps_is_swept() {
+    let e = solved("unit mm\nuse bracket\nuse std\nswept := solid({ p | some t in (0deg, 90deg): \
+                    p in bracket at(under: std.z) t })\n");
+    let (v, lo, hi) = measure(&e, "swept");
+    assert!(v > drilled_volume() && boxed((lo, hi), [-30.0, 0.0, 0.0], [40.0, 50.0, 20.0], 1e-2),
+            "{v} {lo:?} {hi:?}");
+}
+
 /// **A given body's build key reads the document's unit** (#993 stage 2, the review's R1): the
 /// file's numbers are millimetres whatever the document says, and a display is in the
 /// document's unit, so the same file read in millimetres and in inches is two builds — never the
