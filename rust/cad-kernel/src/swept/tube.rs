@@ -32,7 +32,7 @@ pub mod faces;
 use super::closed::Unbuilt;
 use super::depth::{Cover,Reading};
 use super::patches::Element;
-use super::rings::Ring;
+use super::rings::{Collar,Ring};
 use crate::trajectory::Trajectory;
 use crate::util::fmath::{Det,HALF_READ,THIRD_READ};
 use crate::util::space::{add,cross,dot,norm,scale,sub};
@@ -52,7 +52,9 @@ pub fn covers_read() -> usize { COVERS.load(Ordering::Relaxed) }
 /// for depth), the motion and its roll, the core circle's radius and height in the ring's frame,
 /// and the tube.
 pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub radius: f64,pub height: f64,pub r: f64,
-    pub rates: Option<Rates> }
+    pub rates: Option<Rates>,
+    /// The pinch the collar charts, where the core circle's sweep is singular (`Tube::pinched`).
+    pub pinch: Option<Pinch<'a>> }
 
 /// **How fast the motion carries the core circle over the roll**, bounded: its rotation's spin
 /// (`Trajectory::spin_bound`) and the first four rates of the circle's points
@@ -94,7 +96,7 @@ impl<'a> Tube<'a> {
             }).map(|i| i.ok()).map(|i| i.unwrap_or(crate::util::interval::Interval::ZERO));
             Some(Rates {spin:path.spin_bound().ok()?,jet:path.point_jet_bound_over(boxed,domain,true).ok()?})
         })();
-        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates})
+        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None})
     }
 
     /// The core circle's point at `θ` in the tool's coordinates, and its first and second rates.
@@ -193,25 +195,33 @@ impl<'a> Tube<'a> {
     }
 }
 
-/// **A chart of the tube road**: a sheet `X±` over `(θ, t)` (`Sheet(±1)`), or the tool posed at
-/// an end of the roll over `(θ, ψ)` (`End(0)` the start, `End(1)` the end), `ψ` round its tube from
-/// the outward way about the ring's axis toward its own.
+/// **A chart of the tube road**: a sheet `X±` over `(θ, t)` (`Sheet(±1)`), the tool posed at an
+/// end of the roll over `(θ, ψ)` (`End(0)` the start, `End(1)` the end), `ψ` round its tube from
+/// the outward way about the ring's axis toward its own, or the collar about the pinch over
+/// `(ψ, ρ)` (`Collar`, `Pinch`).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Chart { Sheet(f64),End(usize) }
+pub enum Chart { Sheet(f64),End(usize),Collar }
 
 impl Tube<'_> {
     /// The chart's rectangle of parameters.
     pub fn rect(&self,c: Chart) -> crate::zero_set::Rect {
-        match c { Chart::Sheet(_) => [[0.,TAU],self.roll],Chart::End(_) => [[0.,TAU],[0.,TAU]] }
+        match c {
+            Chart::Sheet(_) => [[0.,TAU],self.roll],Chart::End(_) => [[0.,TAU],[0.,TAU]],
+            Chart::Collar => { let r = self.pinch.as_ref().map_or(0.,|p| p.rho); [[0.,TAU],[-r,r]] }
+        }
     }
 
     /// The instant a chart's point is its own at.
     pub fn own(&self,c: Chart,uv: [f64;2]) -> f64 {
-        match c { Chart::Sheet(_) => uv[1],Chart::End(k) => self.roll[k] }
+        match c {
+            Chart::Sheet(_) => uv[1],Chart::End(k) => self.roll[k],
+            Chart::Collar => self.pinch.as_ref().and_then(|p| p.collar.place(uv[0],uv[1])).map_or(f64::NAN,|p| p[1]),
+        }
     }
 
     /// **The chart's point at `uv`**, its two rates and a unit normal: a sheet's (`point`, its
-    /// spine's normal), or the posed tool's in closed form (its outward normal).
+    /// spine's normal), the posed tool's in closed form (its outward normal), or the collar's
+    /// (`collar_at`).
     pub fn at(&self,c: Chart,uv: [f64;2]) -> Option<Point> {
         match c {
             Chart::Sheet(side) => self.point(side,uv[0],uv[1]),
@@ -225,6 +235,7 @@ impl Tube<'_> {
                 Some(Point {x:m.point(x),x_th:m.vector(scale(et,self.radius+self.r*cp)),
                     x_t:m.vector(scale(add(scale(er,-sp),scale(ez,cp)),self.r)),n:m.vector(n),area:1.})
             }
+            Chart::Collar => self.collar_at(uv[0],uv[1]),
         }
     }
 
@@ -232,10 +243,17 @@ impl Tube<'_> {
     /// (beyond its cuspidal edge the instants beside hold it); on an end pose the part moving out
     /// of the sweep — at the start the part the motion leaves behind (`n · v < 0`), at the end the
     /// part leading (`n · v > 0`), read against the point's speed — the rest held by the instants
-    /// inside the roll. Nought on its contact circles, the sheets' rims.
+    /// inside the roll. Nought on its contact circles, the sheets' rims. A sheet's points deep in
+    /// the pinch's hole (`Pinch::deep`) are the collar's, not the sheet's (none): it is read on
+    /// across the hole's rim, which as an inner edge stops the tracer, so its exit there is settled
+    /// on the field; on the collar its own side (`collar_side`).
     pub fn side(&self,c: Chart,uv: [f64;2]) -> Option<f64> {
         match c {
-            Chart::Sheet(side) => self.jacobian(side,uv[0],uv[1]),
+            Chart::Sheet(side) => {
+                if self.pinch.as_ref().is_some_and(|p| p.deep(uv)) { return None }
+                self.jacobian(side,uv[0],uv[1])
+            }
+            Chart::Collar => self.collar_side(uv[0],uv[1]),
             Chart::End(k) => {
                 let m = self.path.at(self.roll[k]).ok()?;
                 let p = self.at(c,uv)?;
@@ -311,7 +329,19 @@ impl Field for Depth<'_> {
         self.value(&p,t)
     }
 
+    /// The chart's point and rates; on a sheet inside the pinch's hole the net's (`Tube::net_point`,
+    /// its rates by differences): the sheet's own map is a cone point at the pinch, where a cell
+    /// holding it keeps a reach of the tube's size however it is halved, and the search asked four
+    /// million cells of the forward member.
     fn surface(&self,uv: [f64;2]) -> (V,V,V) {
+        if let (Chart::Sheet(side),Some(p)) = (self.chart,&self.tube.pinch) {
+            if p.side(uv) < 0. {
+                let [h,k] = self.tube.steps(self.chart);
+                let x = |a: f64,b: f64| self.tube.net_point(side,a,b).unwrap_or([f64::NAN;3]);
+                let d = |a: V,b: V,e: f64| scale(sub(a,b),0.5/e);
+                return (x(uv[0],uv[1]),d(x(uv[0]+h,uv[1]),x(uv[0]-h,uv[1]),h),d(x(uv[0],uv[1]+k),x(uv[0],uv[1]-k),k))
+            }
+        }
         match self.tube.at(self.chart,uv) { Some(p) => (p.x,p.x_th,p.x_t),None => ([f64::NAN;3],[f64::NAN;3],[f64::NAN;3]) }
     }
 
@@ -369,17 +399,24 @@ pub struct Edge<'a> { pub tube: &'a Tube<'a>,pub chart: Chart }
 impl Field for Edge<'_> {
     type At = ();
     fn least(&self,uv: [f64;2]) -> Option<Value<()>> {
-        let grad = match self.chart { Chart::Sheet(side) => self.tube.jacobian_gradient(side,uv[0],uv[1]),Chart::End(_) => None };
+        let grad = match self.chart {
+            Chart::Sheet(side) => self.tube.jacobian_gradient(side,uv[0],uv[1]),Chart::End(_) => None,
+            Chart::Collar => self.tube.side_gradient(Chart::Collar,uv),
+        };
         Some(Value {f:self.tube.side(self.chart,uv)?,grad,at:()})
     }
     fn along(&self,uv: [f64;2],_: &()) -> Option<Value<()>> { self.least(uv) }
     fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
-        match self.chart { Chart::Sheet(side) => self.tube.jacobian_bound(side,c),Chart::End(k) => self.tube.contact_bound(k,c) }
+        match self.chart {
+            Chart::Sheet(side) => self.tube.jacobian_bound(side,c),Chart::End(k) => self.tube.contact_bound(k,c),
+            Chart::Collar => None,
+        }
     }
     fn surface(&self,uv: [f64;2]) -> (V,V,V) {
         let s = match self.chart {
             Chart::Sheet(_) => self.tube.spine(uv[0],uv[1]).map(|s| (s.s,s.s_th,s.s_t)),
             Chart::End(_) => self.tube.at(self.chart,uv).map(|p| (p.x,p.x_th,p.x_t)),
+            Chart::Collar => self.tube.collar_metric(uv[0],uv[1]),
         };
         s.unwrap_or(([f64::NAN;3],[f64::NAN;3],[f64::NAN;3]))
     }
@@ -587,7 +624,9 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
 /// sheet its cuspidal edges, on an end pose its contact circles.
 pub fn edges(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<()>>,Vec<crate::zero_set::Search>),Unbuilt> {
     let periodic = [true,matches!(chart,Chart::End(_))];
-    round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&[],&|_| 1.,tol,feature)
+    let hole = tube.hole(chart)?;
+    let side = |uv: [f64;2]| tube.pinch.as_ref().filter(|_| !hole.is_empty()).map_or(1.,|p| p.side(uv));
+    round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&hole,&side,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: where it stops bounding the sweep: {why}")))
 }
 
@@ -675,9 +714,13 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
     let holes: Vec<Disc> = tails.iter().filter(|&&at| !held(at)).map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
     let mut inner: Vec<Vec<[f64;2]>> = edges.to_vec();
     inner.extend(holes.iter().map(|d| d.polygon(RIM)));
-    let side = |uv: [f64;2]| holes.iter().map(|d| d.side(uv)).fold(tube.side(chart,uv).unwrap_or(-1.),f64::min);
+    inner.extend(tube.hole(chart)?);
+    let side = |uv: [f64;2]| holes.iter().map(|d| d.side(uv)).fold(tube.side(chart,uv).unwrap_or(-1.),f64::min)
+        .min(match (chart,&tube.pinch) { (Chart::Sheet(_),Some(p)) => p.side(uv),_ => f64::INFINITY });
+    let mut seeds = seeds.to_vec();
+    seeds.extend(beside_edges(tube,chart,edges,tol,feature));
     let clock = std::time::Instant::now();
-    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,seeds,&inner,&side,tol,feature)
+    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,&seeds,&inner,&side,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))?;
     if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() { eprintln!("seams of {chart:?}: {} pieces in {:?}",pieces.len(),clock.elapsed()) }
     Ok((pieces,search,holes))
@@ -724,6 +767,327 @@ pub fn swallowtails(tube: &Tube,side: f64,uv: &[[f64;2]]) -> Vec<[f64;2]> {
             }
         }
         last = Some((p,g));
+    }
+    out
+}
+
+/// Chords the pinch's hole's rim is read in as an inner edge of a sheet: a turn of the collar in
+/// four times a disc's (structural: the rim is one curve read in three charts, and the tracer's
+/// runs end on it where its chord stands; each crossing is then settled on the rim itself).
+const HOLE_RIM: usize = 4*RIM;
+
+/// **The pinch** (#880 T1f): where the instant `t*` touches the meridian at `θ*` whole
+/// (`Ring::touched_once`), the core circle's sweep `S` is singular — `S_t` along `S_θ`, the sheets'
+/// normal undefined there — and the collar (`rings::Collar`) charts both sheets about it as one
+/// annulus over `(ψ, ρ)`, `(A, B)(θ, t) = ρ (−sin ψ, cos ψ)`: `ρ > 0` the sheet `+` (`S + r N` with
+/// `N = (B e_r − A e_z)/|(A, B)|`, the point `c + r (cos ψ, sin ψ)` round the meridian), `ρ < 0`
+/// the sheet `−`, `ρ = 0` the meridian at `t*`. Its hole in the sheets' `(θ, t)` is
+/// `|(A, B)| < ρ₀` about the instant (within `reach`, the rim's box doubled: a near miss elsewhere
+/// in the roll is no hole), its rim `|(A, B)| = ρ₀` one curve read in three charts — the collar's
+/// `ρ = ±ρ₀` and each sheet's `place(ψ, ±ρ₀)` — so one edge by construction. `sense` is the sign
+/// of `det ∂(A, B)/∂(θ, t)`, which orients the collar against the sheets.
+pub struct Pinch<'a> { pub collar: Collar<'a>,pub rho: f64,pub reach: [f64;2],pub sense: f64 }
+
+impl<'a> Pinch<'a> {
+    /// The pinch of radius `rho` about the collar's instant; none where its rim is not read whole.
+    pub fn new(collar: Collar<'a>,rho: f64) -> Option<Pinch<'a>> {
+        let [[a,b],[c,d]] = collar.jacobian;
+        let mut p = Pinch {collar,rho,reach:[0.;2],sense:(a*d-b*c).signum()};
+        p.reach = p.box_of(rho)?;
+        Some(p)
+    }
+
+    /// The rim's box at `rho` about the instant, read at `HOLE_RIM` points, doubled.
+    fn box_of(&self,rho: f64) -> Option<[f64;2]> {
+        let (t0,th0) = self.collar.at;
+        let mut reach = [0f64;2];
+        for i in 0..HOLE_RIM {
+            let [th,t] = self.collar.place(TAU*i as f64/HOLE_RIM as f64,rho)?;
+            let way = (th-th0+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+            reach = [reach[0].max(2.*way.abs()),reach[1].max(2.*(t-t0).abs())];
+        }
+        Some(reach)
+    }
+
+    /// **Which side of the hole's rim a sheet's `(θ, t)` lies**: `|(A, B)| − ρ₀`, nought on the rim,
+    /// below inside; outside the hole's reach the radius itself (no hole there).
+    pub fn side(&self,uv: [f64;2]) -> f64 {
+        let (t0,th0) = self.collar.at;
+        let way = (uv[0]-th0+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+        if !(way.abs() <= self.reach[0] && (uv[1]-t0).abs() <= self.reach[1]) { return self.rho }
+        self.collar.ab(uv[0],uv[1]).map_or(self.rho,|ab| ab[0].dhypot(ab[1])-self.rho)
+    }
+
+    /// **Whether a sheet's `(θ, t)` lies deep in the hole**: `|(A, B)|` under `ρ₀/2`, where the
+    /// sheet's net reads its stand-in (`Tube::net_point`) — structural: between it and the rim the
+    /// sheet is its own, and read, beyond the rim, as the tracer's exit asks.
+    pub fn deep(&self,uv: [f64;2]) -> bool { !(self.side(uv) > -0.5*self.rho) }
+
+    /// The rim's place `(θ, t)` on the sheet `side` at the collar's angle `ψ`.
+    pub fn rim(&self,side: f64,psi: f64) -> Option<[f64;2]> { self.collar.place(psi,side*self.rho) }
+
+    /// **The collar's angle at a sheet's `(θ, t)`** about the pinch: `(A, B) = ρ (−sin ψ, cos ψ)`
+    /// with `ρ`'s sign the sheet's.
+    pub fn psi(&self,side: f64,uv: [f64;2]) -> Option<f64> {
+        let [a,b] = self.collar.ab(uv[0],uv[1])?;
+        Some((-side*a).datan2(side*b).rem_euclid(TAU))
+    }
+
+    /// The Jacobian of `(A, B)` by `(θ, t)` at a place, by central differences at `ε^(1/3)` of the
+    /// angle and of the roll's extent (`THIRD_READ`), as the collar reads its own.
+    fn rates(&self,th: f64,t: f64) -> Option<[[f64;2];2]> {
+        let c = &self.collar;
+        let (ht,hs) = (THIRD_READ,THIRD_READ*(c.roll[1]-c.roll[0]).abs());
+        let (p,m) = (c.ab(th+ht,t)?,c.ab(th-ht,t)?);
+        let (q,n) = (c.ab(th,t+hs)?,c.ab(th,t-hs)?);
+        Some([[(p[0]-m[0])/(2.*ht),(q[0]-n[0])/(2.*hs)],[(p[1]-m[1])/(2.*ht),(q[1]-n[1])/(2.*hs)]])
+    }
+}
+
+impl<'a> Tube<'a> {
+    /// **The tool read as a tube, its pinch charted**: `Tube::new`, and where an instant inside
+    /// the roll touches a meridian whole (`Ring::touched_once`) the collar about it, its radius
+    /// `ρ₀` by the rule: the collar's reach — the greatest of the terms' scale halved at which its
+    /// rim is read whole (beyond it `(A, B)` folds over the roll and the chart ends) — and within
+    /// it the collar's own cuspidal edges traced (`edges` on `Chart::Collar`, to `tol`, `feature`
+    /// its step) and their swallowtail points (`swallowtails_on`); `ρ₀` half the least `|ρ|` of
+    /// those and of the reach, so the collar holds no swallowtail point and its rim stands at most
+    /// halfway out to each (the sheets' own reading of them, discs and joins, stays theirs).
+    /// Refused by name where two instants touch a meridian whole or the collar is not regular.
+    pub fn pinched(ring: &'a Ring,path: &'a Trajectory,roll: [f64;2],tol: f64,feature: f64) -> Result<Tube<'a>,Unbuilt> {
+        let mut tube = Tube::new(ring,path,roll)?;
+        let events = ring.touched_once(path,tube.roll)?;
+        let event = match events[..] {
+            [] => return Ok(tube),
+            [e] => e,
+            _ => return Err(Unbuilt::Failed(format!("the tube road: {} instants touch a meridian whole, not one",events.len()))),
+        };
+        let fresh = || Collar::new(ring,path,tube.roll,event)
+            .ok_or_else(|| Unbuilt::Failed(format!("the tube road: the collar about the meridian touched whole at {event:?} is not regular")));
+        let collar = fresh()?;
+        // (the reach: the terms' scale halved until the rim is read whole)
+        let whole = |rho: f64| (0..HOLE_RIM).all(|i| { let psi = TAU*i as f64/HOLE_RIM as f64;
+            collar.place(psi,rho).is_some() && collar.place(psi,-rho).is_some() });
+        let mut reach = collar.size;
+        while !whole(reach) {
+            reach *= 0.5;
+            if !(reach > tol) { return Err(Unbuilt::Failed(format!("the tube road: the collar at {event:?} is read whole on no rim"))) }
+        }
+        tube.pinch = Pinch::new(collar,reach);
+        let (folds,_) = edges(&tube,Chart::Collar,tol,feature)?;
+        let tails: Vec<[f64;2]> = folds.iter().flat_map(|f| swallowtails_on(&tube,Chart::Collar,&f.uv)).collect();
+        let least = tails.iter().map(|p| p[1].abs()).fold(reach,f64::min);
+        tube.pinch = Pinch::new(fresh()?,0.5*least);
+        if tube.pinch.is_none() { return Err(Unbuilt::Failed(format!("the tube road: the collar at {event:?} not read on its rim"))) }
+        if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() {
+            eprintln!("pinch at {event:?}: reach {reach}, the collar's swallowtail points {tails:?}, ρ₀ {}",0.5*least)
+        }
+        Ok(tube)
+    }
+
+    /// **The pinch's hole on a chart**, as its inner edges: on a sheet the rim `place(ψ, ±ρ₀)` read
+    /// in `HOLE_RIM` chords; none on any other chart or where there is no pinch.
+    pub fn hole(&self,chart: Chart) -> Result<Vec<Vec<[f64;2]>>,Unbuilt> {
+        let (Chart::Sheet(side),Some(p)) = (chart,&self.pinch) else { return Ok(Vec::new()) };
+        let line: Option<Vec<[f64;2]>> = (0..=HOLE_RIM).map(|i| p.rim(side,TAU*i as f64/HOLE_RIM as f64)).collect();
+        let mut line = line.ok_or_else(|| Unbuilt::Failed("the tube road: the pinch's rim not read".into()))?;
+        for j in 1..line.len() { line[j][0] = line[j-1][0]+(line[j][0]-line[j-1][0]+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI }
+        Ok(vec![line])
+    }
+
+    /// **The collar's point at `(ψ, ρ)`** with its rates in closed form: its place `(θ, t)`
+    /// (`Collar::place`), the tool's point `c + r (cos ψ, sin ψ)` round the meridian at `θ` posed at
+    /// `t`, and its rates by the chain rule through the place's — `D ∂(θ, t)/∂ψ = ρ (−cos ψ, −sin ψ)`
+    /// and `D ∂(θ, t)/∂ρ = (−sin ψ, cos ψ)`, `D` the Jacobian of `(A, B)` by `(θ, t)`; its normal the
+    /// tool's outward one there.
+    pub fn collar_at(&self,psi: f64,rho: f64) -> Option<Point> { self.collar_parts(psi,rho).map(|p| p.0) }
+
+    /// **A regular metric for the collar's cuspidal edges** (`Edge`'s on the collar, as a sheet's
+    /// reads its spine's): the collar's own rates are parallel on its edges, so its point and, for
+    /// rates, the tool's own way round its tube there posed and the collar's rate in `ρ`.
+    pub fn collar_metric(&self,psi: f64,rho: f64) -> Option<(V,V,V)> {
+        self.collar_parts(psi,rho).map(|(p,round)| (p.x,round,p.x_t))
+    }
+
+    /// The collar's point and rates (`collar_at`), and the tool's own rate round its tube posed.
+    fn collar_parts(&self,psi: f64,rho: f64) -> Option<(Point,V)> {
+        let p = self.pinch.as_ref()?;
+        let [th,t] = p.collar.place(psi,rho)?;
+        let [[d00,d01],[d10,d11]] = p.rates(th,t)?;
+        let det = d00*d11-d01*d10;
+        if !(det != 0.) { return None }
+        let solve = |b0: f64,b1: f64| [(d11*b0-d01*b1)/det,(d00*b1-d10*b0)/det];
+        let ((sp,cp),(s,c)) = (psi.dsin_cos(),th.dsin_cos());
+        let f = &self.ring.frame;
+        let (er,et,ez) = (f.dir([c,s,0.]),f.dir([-s,c,0.]),f.z);
+        let nl = add(scale(er,cp),scale(ez,sp));
+        let q = add(f.at([self.radius*c,self.radius*s,self.height]),scale(nl,self.r));
+        let m = self.path.at(t).ok()?;
+        let (xth,xt) = (m.vector(scale(et,self.radius+self.r*cp)),m.velocity(q));
+        let xpsi = m.vector(scale(add(scale(er,-sp),scale(ez,cp)),self.r));
+        let ([thp,tp],[thr,tr]) = (solve(-rho*cp,-rho*sp),solve(-sp,cp));
+        Some((Point {x:m.point(q),x_th:add(xpsi,add(scale(xth,thp),scale(xt,tp))),x_t:add(scale(xth,thr),scale(xt,tr)),
+            n:m.vector(nl),area:1.},xpsi))
+    }
+
+    /// **Which side of the collar can bound the sweep**: `−sgn(D) (X_ψ × X_ρ) · n` over the rates'
+    /// lengths — the sign of the sheets' `J` at the place (the collar is one regular chart of both
+    /// sheets, oriented against them by `D`), smooth through the meridian, where `J` is not read;
+    /// nought on the collar's cuspidal edges.
+    pub fn collar_side(&self,psi: f64,rho: f64) -> Option<f64> {
+        let p = self.collar_at(psi,rho)?;
+        let l = norm(p.x_th)*norm(p.x_t);
+        (l > 0.).then(|| -self.pinch.as_ref().map_or(1.,|q| q.sense)*dot(cross(p.x_th,p.x_t),p.n)/l)
+    }
+
+    /// **The sheet's point for its net, the hole filled smoothly** (`rings::Hole::stand_in`'s rule
+    /// on the tube): inside the hole, where `ρ = |(A, B)|` is below `ρ₀/2`, `S + s r (B e_r − A e_z)/h`
+    /// with `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)`, `β(x) = e^(1 − 1/(1 − x²))` — smooth through the pinch, the
+    /// sheet itself from `ρ₀/2` out — so a net fitted over a window holding the hole fits the very
+    /// sheet across its rim, which the faces cut it along; the sheet's point elsewhere.
+    pub fn net_point(&self,side: f64,theta: f64,t: f64) -> Option<V> {
+        if let Some(p) = &self.pinch {
+            if p.side([theta,t]) < 0. {
+                let [a,b] = p.collar.ab(theta,t)?;
+                let rho = a.dhypot(b);
+                let half = 0.5*p.rho;
+                if rho < half {
+                    let x = rho/half;
+                    let h = (rho*rho+half*half*(1.-1./(1.-x*x)).exp()).sqrt();
+                    let sp = self.spine(theta,t)?;
+                    let m = self.path.at(t).ok()?;
+                    let (s,c) = theta.dsin_cos();
+                    let f = &self.ring.frame;
+                    let nn = sub(scale(m.vector(f.dir([c,s,0.])),b),scale(m.vector(f.z),a));
+                    return Some(add(sp.s,scale(nn,side*self.r/h)))
+                }
+            }
+        }
+        self.point(side,theta,t).map(|p| p.x)
+    }
+
+    /// The step of a chart's differences in each parameter: `ε^(1/3)` of an angle, of the roll, or
+    /// of the collar's width (`THIRD_READ`).
+    fn steps(&self,c: Chart) -> [f64;2] {
+        let r = self.rect(c);
+        [THIRD_READ,match c { Chart::End(_) => THIRD_READ,_ => THIRD_READ*(r[1][1]-r[1][0]) }]
+    }
+
+    /// The direction in a chart's parameters along which its rates cancel (`kernel`, on any chart).
+    pub fn kernel_on(&self,c: Chart,uv: [f64;2]) -> Option<[f64;2]> {
+        let p = self.at(c,uv)?;
+        let (a,b,cc) = (dot(p.x_th,p.x_th),dot(p.x_th,p.x_t),dot(p.x_t,p.x_t));
+        let k = if cc >= a { [cc,-b] } else { [-b,a] };
+        let l = k[0].dhypot(k[1]);
+        (l > 0.).then(|| [k[0]/l,k[1]/l])
+    }
+
+    /// The gradient of a chart's side (`Tube::side`) in its parameters, by central differences.
+    pub fn side_gradient(&self,c: Chart,uv: [f64;2]) -> Option<[f64;2]> {
+        let [h,k] = self.steps(c);
+        let f = |a: f64,b: f64| self.side(c,[a,b]);
+        Some([(f(uv[0]+h,uv[1])?-f(uv[0]-h,uv[1])?)/(2.*h),(f(uv[0],uv[1]+k)?-f(uv[0],uv[1]-k)?)/(2.*k)])
+    }
+}
+
+/// **The swallowtail points on a chart's cuspidal edge** (`swallowtails`, read on any chart): where
+/// the chart's kernel runs along the edge — `∇side · k` changing sign between two of its points —
+/// each settled by Newton's method on `(side, ∇side · k) = 0` while its steps shrink.
+pub fn swallowtails_on(tube: &Tube,chart: Chart,uv: &[[f64;2]]) -> Vec<[f64;2]> {
+    let gauge = |p: [f64;2],sense: [f64;2]| -> Option<(f64,f64,[f64;2])> {
+        let k = tube.kernel_on(chart,p)?;
+        let k = if k[0]*sense[0]+k[1]*sense[1] < 0. { [-k[0],-k[1]] } else { k };
+        let g = tube.side_gradient(chart,p)?;
+        Some((tube.side(chart,p)?,g[0]*k[0]+g[1]*k[1],k))
+    };
+    let [h,ht] = tube.steps(chart);
+    let mut out = Vec::new();
+    let mut sense = [1.,0.];
+    let mut last: Option<([f64;2],f64)> = None;
+    for &p in uv {
+        let Some((_,g,k)) = gauge(p,sense) else { last = None; continue };
+        sense = k;
+        if let Some((q,gq)) = last {
+            if (g < 0.) != (gq < 0.) {
+                let f = gq/(gq-g);
+                let mut x = [q[0]+(p[0]-q[0])*f,q[1]+(p[1]-q[1])*f];
+                let mut prev = f64::INFINITY;
+                for _ in 0..32 {
+                    let Some((j0,g0,_)) = gauge(x,sense) else { break };
+                    let (Some(a),Some(b),Some(c),Some(d)) = (gauge([x[0]+h,x[1]],sense),gauge([x[0]-h,x[1]],sense),
+                        gauge([x[0],x[1]+ht],sense),gauge([x[0],x[1]-ht],sense)) else { break };
+                    let m = [[(a.0-b.0)/(2.*h),(c.0-d.0)/(2.*ht)],[(a.1-b.1)/(2.*h),(c.1-d.1)/(2.*ht)]];
+                    let det = m[0][0]*m[1][1]-m[0][1]*m[1][0];
+                    if !(det.abs() > 0.) { break }
+                    let dx = [(j0*m[1][1]-g0*m[0][1])/det,(m[0][0]*g0-m[1][0]*j0)/det];
+                    let step = dx[0].dhypot(dx[1]);
+                    if !(step < prev) { break }
+                    prev = step;
+                    x = [x[0]-dx[0],x[1]-dx[1]];
+                }
+                out.push(x);
+            }
+        }
+        last = Some((p,g));
+    }
+    out
+}
+
+/// **Where a trim crosses the pinch's rim beside a cuspidal edge's end**, as seeds: the rim is one
+/// curve in `ψ`, read on the collar at `(ψ, ±ρ₀)` and on a sheet at `place(ψ, ±ρ₀)`, its rate in
+/// space the collar's in `ψ`. From each edge's end on it, along it each way by steps doubling from
+/// the tolerance in space out to the feature, the far cover's depth is read where the chart bounds
+/// the sweep; where it stands below nought beside the edge and passes nought further on, its root
+/// is halved to the rounding. About the pinch a double curve runs within a degree of the cuspidal
+/// edge it folds beside (the forward's 0.6°, a sliver 2.3e-3 across, covered at most 6.5e-5 deep),
+/// between the rim's samples, and is crossed only there.
+pub fn beside_edges(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tol: f64,feature: f64) -> Vec<[f64;2]> {
+    let Some(pinch) = &tube.pinch else { return Vec::new() };
+    let field = Depth {tube,chart,within:tol,holes:&[]};
+    let rho = pinch.rho;
+    let value = |uv: [f64;2]| -> Option<f64> { match field.reading(uv)?.1 { Reading::Far(c) => Some(c.depth),Reading::Alone => Some(f64::INFINITY),_ => None } };
+    // (an end on the rim: its rim's sign and angle)
+    let on = |q: [f64;2]| -> Option<(f64,f64)> { match chart {
+        Chart::Collar => (q[1].abs() >= rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),
+        Chart::Sheet(side) => (pinch.side(q).abs() <= HALF_READ*rho).then(|| pinch.psi(side,q).map(|psi| (side,psi)))?,
+        Chart::End(_) => None,
+    } };
+    let rim = |sign: f64,psi: f64| -> Option<[f64;2]> { match chart { Chart::Collar => Some([psi,sign*rho]),_ => pinch.rim(sign,psi) } };
+    let mut out = Vec::new();
+    for e in edges {
+        for q in [e[0],e[e.len()-1]] {
+            let Some((sign,psi)) = on(q) else { continue };
+            let Some(p) = tube.collar_at(psi,sign*rho) else { continue };
+            let rate = norm(p.x_th);
+            if !(rate > 0.) { continue }
+            for way in [1.,-1.] {
+                let at = |s: f64| rim(sign,psi+way*s/rate);
+                let mut s = tol;
+                let mut below: Option<f64> = None;
+                while s <= feature {
+                    let Some(x) = at(s) else { break };
+                    if tube.side(chart,x).is_some_and(|v| v > 0.) {
+                        match value(x) {
+                            Some(v) if v < 0. => below = Some(s),
+                            Some(_) => {
+                                if let Some(a) = below {
+                                    let (mut a,mut b) = (a,s);
+                                    loop {
+                                        let m = 0.5*(a+b);
+                                        if !(m > a && m < b) { break }
+                                        if at(m).and_then(value).is_some_and(|v| v < 0.) { a = m } else { b = m }
+                                    }
+                                    if let Some(x) = at(b) { out.push(x) }
+                                }
+                                break
+                            }
+                            None => break,
+                        }
+                    } else if below.is_some() { break }
+                    s *= 2.;
+                }
+            }
+        }
     }
     out
 }

@@ -2787,6 +2787,63 @@ tube's cover the far cover at the end. Within `depth::cover`'s contract (no stre
 than the tolerance is stepped over, so the sign of a cover is never misread), not #998's fall
 (which read a covered point `Alone`); the old road's `covered`, `ends_met` and `passed_back` decide
 on that sign alone.
+**The collar as the tube road's third chart** (#880 T1f, `Tube::pinched`, `Chart::Collar`,
+`tube::Pinch`; gated by `swept_tube::the_collar_charts_the_crossed_members_pinch`): where an
+instant inside the roll touches a meridian whole (`Ring::touched_once`) the spine is singular —
+`n = S_θ × S_t = R (B e_r − A e_z)`, so the sheets' normal is `(B e_r − A e_z)/|(A, B)|` and both
+sheets turn half round the meridian across `(θ*, t*)` — and the collar `(ψ, ρ)`,
+`(A, B)(θ, t) = ρ (−sin ψ, cos ψ)`, charts them as one annulus: `ρ > 0` the sheet `+`, `ρ < 0` the
+sheet `−` (each collar point the sheet's point at its place to 1e-15), `ρ = 0` the meridian. Its
+point is the tool's `c + r (cos ψ, sin ψ)` at the place posed, its rates by the chain rule through
+the place's (`D ∂(θ, t)/∂ψ = ρ (−cos ψ, −sin ψ)`, `D ∂(θ, t)/∂ρ = (−sin ψ, cos ψ)`, `D` the
+Jacobian of `(A, B)`); its side `−sgn(D) (X_ψ × X_ρ) · n` over the rates' lengths has the sheets'
+`J`'s sign at every place and is smooth through the meridian, where `J` is not read; its cuspidal
+edges are traced on a regular metric (the tool's own way round its tube posed and the rate in `ρ`:
+the collar's own rates are parallel on its edges, and the march stalled there).
+**`ρ₀` by its rule**: the collar's reach is the terms' scale halved until its rim is read whole
+(beyond it `(A, B)` folds over the roll: the reverse's rim is not read all round past 0.135);
+within it the collar's cuspidal edges are traced and their swallowtail points read
+(`swallowtails_on`), and `ρ₀` is half the least `|ρ|` of those and of the reach, so the collar
+holds no swallowtail point and its rim stands at most halfway out to each. Forward: the reach
+0.1742 holds the two at `ρ` 0.0710 and 0.087, so `ρ₀` 0.0355; reverse: the reach 0.1091 holds
+none (its nearest, −0.135, lies past it), so 0.0545. **The hole**: the sheets' points with
+`|(A, B)| < ρ₀` about the instant (within the rim's box doubled) are the collar's; its rim is one
+curve read in three charts (the collar's `ρ = ±ρ₀`, each sheet's `place(ψ, ±ρ₀)`), an inner edge of
+the sheets' edges and depth, which read on across it to `ρ₀/2` (`Pinch::deep`) so the tracer's
+exit settles on the field; inside, the sheet is filled by a smooth stand-in, `S + s r (B e_r −
+A e_z)/h`, `h² = ρ² + (ρ₀/2)² β(2ρ/ρ₀)` (`Tube::net_point`, the old road's `Hole::stand_in` on the
+tube), which is also the depth's metric there: the sheet's own map is a cone point at the pinch,
+and a cell holding it kept a reach of the tube's size however halved (the forward's search asked
+four million cells). **The sheets' nets about the hole**: a uniform net over a window's whole
+roll holds its bar outside the hole only from `ρ₀` 0.14 forward and 0.12 reverse (at 1024 × 512 and
+3.5 s a sheet) — past the forward's swallowtail points and at the reverse's reach — so a window
+holding the hole is fitted with its parameters graded toward where it misses (`faces::sheet_net`,
+each interval over the bar halved, neighbours within a factor two), read against the sheet
+outside the hole: forward 241 × 230 poles in 1.3 s. **Measured on the collar**: the reverse's
+depth gives two trims rim to rim at `ψ` 175.5° and 337.9° (the meridian's 175.333° and
+337.210°), the sheet `+`'s runs ending on the hole's rim at the same own instants (0.867, 0.970);
+the forward's gives its trim at 72.83°, its other (257.1°) and the sheets' runs into the hole not
+yet found: there each double curve runs within 0.6° of the cuspidal edge it folds beside (a
+covered sliver 2.3e-3 across, at most 6.5e-5 deep), between the rim's samples; the collar's rim is
+read beside each edge's end (`beside_edges`, evidence). **The faces' side** (`faces::solid`, in place, not yet
+building either member): the collar is traced first and its runs' ends on the rim seed the sheets';
+every run's end on the rim, kept or not, is one vertex in three charts (`faces::rim_vertex`,
+solved on the rim as the root in `ψ` of the far cover's depth on the collar, `hole_crossing`), so a
+kept trim whose partner passes into the collar switches there; a cover whose place lies in the hole
+is the collar's (`Tube::in_collar`, `ψ` in closed form from the tool's point, `ρ` square to
+`(A, B)`, settled); the collar's windows are cut in `ψ` clear of its trims and the sheets' clear of
+the hole too (`chart_cuts`); the rim is an edge on each sign between its vertices (`Kind::Hole`,
+the collar's use and the sheet's). **The reverse's next refusal**: a run of the sheet `+` ends at
+the cut `θ = 2π` (t 1.4597, covered at −0.072) with no piece across it: at `θ = 0` its seed lies
+within the tolerance in space of the run from (0, 0.6988) (covered at 1.4613, own 0.699), a triple
+point of the sheet with itself, and `zero_set`'s duplicate test (`near_traced`) reads in space alone,
+so it drops a second preimage there (`zero_set::through` from the same seed traces it to the roll's
+end at (0.9046, b)). **Not yet**: that, and three readings off the pinch — the reverse's near miss of a second whole-touch
+(`|(A, B)|` 6.3e-4, 3.6e-4 of the terms' scale, at (1.0764, 0.4611), no root, where the sheets fold
+through within a few ten-thousandths and a graded net asks 866 × 855 poles), and the sheet `−`'s
+stalls of each member (forward at (2.9903, 0.6355), 0.02 from its swallowtail point (2.9730,
+0.6227), where the far cover is born within the tolerance of nought; reverse at (1.4390, 0.1605)
+on a cuspidal edge with nothing covering either side).
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

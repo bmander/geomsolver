@@ -24,7 +24,7 @@
 //! them. Each window's edges are walked as a planar graph, and each part kept where its inner point
 //! bounds the sweep (`Tube::side` above nought, and no other instant holding it). A sheet's face
 //! lies on a net fitted over its window as a map (`nurbs::fit_net`), an end pose's on its torus.
-use super::{Chart,Depth,Disc,Tube,edges,seams,swallowtails};
+use super::{Chart,Depth,Disc,Tube,edges,seams,swallowtails,swallowtails_on};
 use crate::geom::{Curve,Frame,Surface};
 use crate::nurbs::BSpline;
 use crate::swept::closed::Unbuilt;
@@ -94,11 +94,59 @@ impl Tube<'_> {
         }
         let l = self.ring.frame.local(c.point);
         let th = l[1].datan2(l[0]).rem_euclid(TAU);
+        if let Some(uv) = self.in_collar(x,c) { return Some((Chart::Collar,uv)) }
         let side = [1.,-1.].into_iter().min_by(|&s,&r| {
             let d = |s: f64| self.point(s,th,c.at).map_or(f64::INFINITY,|p| distance(p.x,x));
             d(s).total_cmp(&d(r))
         })?;
         Some((Chart::Sheet(side),self.settled(side,x,[th,c.at])?))
+    }
+
+    /// **The collar's parameters of a point `x` its cover `c` names inside the pinch's hole**: `ψ`
+    /// round the tube at the tool's point in closed form, `ρ` from `(A, B)` at the place read
+    /// square to it, settled by Gauss–Newton on the collar's point (`settled_on`); none where the
+    /// cover's place lies outside the hole.
+    fn in_collar(&self,x: V,c: &Cover) -> Option<P> {
+        let p = self.pinch.as_ref()?;
+        let l = self.ring.frame.local(c.point);
+        let th = l[1].datan2(l[0]).rem_euclid(TAU);
+        if !(p.side([th,c.at]) < 0.) { return None }
+        let psi = (l[2]-self.height).datan2(l[0].dhypot(l[1])-self.radius).rem_euclid(TAU);
+        let [a,b] = p.collar.ab(th,c.at)?;
+        let (sp,cp) = psi.dsin_cos();
+        self.settled_on(Chart::Collar,x,[psi,-a*sp+b*cp])
+    }
+
+    /// A chart's parameters of its point `x`, from `uv` by Gauss–Newton on its point (`settled`'s,
+    /// on any chart), while the steps shrink.
+    fn settled_on(&self,chart: Chart,x: V,mut uv: P) -> Option<P> {
+        let mut prev = f64::INFINITY;
+        for _ in 0..CORRECTIONS {
+            let p = self.at(chart,uv)?;
+            let r = sub(x,p.x);
+            let (a,b,c) = (dot(p.x_th,p.x_th),dot(p.x_th,p.x_t),dot(p.x_t,p.x_t));
+            let (g0,g1) = (dot(p.x_th,r),dot(p.x_t,r));
+            let det = a*c-b*b;
+            if !(det > 0.) { return None }
+            let d = [(c*g0-b*g1)/det,(a*g1-b*g0)/det];
+            let step = d[0].dhypot(d[1]);
+            if !(step < prev) { break }
+            prev = step;
+            uv = [uv[0]+d[0],uv[1]+d[1]];
+        }
+        Some(uv)
+    }
+
+    /// **Where a chart's point `q` stands on the pinch's rim**: the rim's sign and the collar's
+    /// angle there — on the collar at `ρ = ±ρ₀`, on a sheet where `|(A, B)| = ρ₀` to the rounding of
+    /// `ρ₀` (where the tracer's exit settled it on the hole's side).
+    fn on_hole(&self,chart: Chart,q: P) -> Option<(f64,f64)> {
+        let p = self.pinch.as_ref()?;
+        match chart {
+            Chart::Collar => (q[1].abs() >= p.rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),
+            Chart::Sheet(side) => if p.side(q).abs() <= HALF_READ*p.rho { p.psi(side,q).map(|psi| (side,psi)) } else { None },
+            Chart::End(_) => None,
+        }
     }
 
     /// **Where a cuspidal edge reaches the roll's end `k`**: the root of `J` along the rim from its
@@ -137,6 +185,27 @@ fn crossing(field: &Depth,k: usize,mut th: f64,mut c: Cover) -> Option<(f64,Cove
         th -= step;
     }
     Some((th,c))
+}
+
+/// **A run's crossing of the pinch's rim**, solved on the rim — one curve read in three charts (the
+/// collar's `ρ = ±ρ₀`, the sheet's `place(ψ, ±ρ₀)`) — as the root in `ψ` of the far cover's depth
+/// on the collar at `(ψ, sign ρ₀)` continued from `c` (`Depth::along`), by Newton's method while the
+/// steps shrink. The crossing's angle and its cover.
+fn hole_crossing(tube: &Tube,sign: f64,mut psi: f64,mut c: Cover,tol: f64) -> Option<(f64,Cover)> {
+    let rho = sign*tube.pinch.as_ref()?.rho;
+    let field = Depth {tube,chart:Chart::Collar,within:tol,holes:&[]};
+    let mut prev = f64::INFINITY;
+    for _ in 0..CORRECTIONS {
+        let v = field.along([psi,rho],&c)?;
+        let g = v.grad?[0];
+        if !(g.abs() > 0.) { return None }
+        let step = v.f/g;
+        c = v.at;
+        if !(step.abs() < prev) { break }
+        prev = step.abs();
+        psi -= step;
+    }
+    Some((psi,c))
 }
 
 /// A vertex: its point, and its parameters on each chart it lies on (a chart twice where it is
@@ -191,10 +260,12 @@ impl Trim {
 }
 
 /// What an edge of the faces is, for its curve in space: a run traced, a sheet's rim at the roll's
-/// end `k` between two angles, or a cut at an angle across a sheet (between two instants) or
-/// across an end pose's band (between two angles round its tube, `ψ` unwrapped).
+/// end `k` between two angles, a cut at an angle across a sheet (between two instants), across an
+/// end pose's band (between two angles round its tube, `ψ` unwrapped) or across the collar
+/// (between its two rims), or the pinch's rim on the sheet `sign` between two of the collar's
+/// angles.
 #[derive(Clone,Debug)]
-enum Kind { Trim(usize),Rim { side: f64,k: usize,th: [f64;2] },Across { chart: Chart,th: f64,v: [f64;2] } }
+enum Kind { Trim(usize),Rim { side: f64,k: usize,th: [f64;2] },Across { chart: Chart,th: f64,v: [f64;2] },Hole { sign: f64,psi: [f64;2] } }
 
 /// An edge of the faces: what it is, its vertices, and its uses, each a chart and its polyline
 /// there (in the chart's own parameters, an end pose's `ψ` unwrapped along it).
@@ -207,6 +278,23 @@ struct Arc2 { kind: Kind,v: [usize;2],uses: Vec<(Chart,Vec<P>)> }
 fn windows(trims: &[Trim],points: &[P]) -> Result<[f64;2],Unbuilt> {
     let mut ths: Vec<f64> = trims.iter().flat_map(|t| t.uv.iter().chain(&t.partner).map(|p| p[0].rem_euclid(TAU))).collect();
     ths.extend(points.iter().map(|p| p[0].rem_euclid(TAU)));
+    clear_cuts(ths)
+}
+
+/// **Each family of charts' windows' cuts** (`clear_cuts`): the sheets' and end poses' angle round
+/// the axis, clear of every trim's use on them, every swallowtail point and the pinch's hole on
+/// the sheets; and the collar's `ψ`, clear of every trim's use on it.
+fn chart_cuts(tube: &Tube,trims: &[Trim],points: &[P]) -> Result<([f64;2],[f64;2]),Unbuilt> {
+    let on = |collar: bool| -> Vec<f64> { trims.iter().flat_map(|t| [(t.own,&t.uv),(t.other,&t.partner)])
+        .filter(|(c,_)| (*c == Chart::Collar) == collar).flat_map(|(_,l)| l.iter().map(|p| p[0].rem_euclid(TAU))).collect() };
+    let mut ths = on(false);
+    ths.extend(points.iter().map(|p| p[0].rem_euclid(TAU)));
+    ths.extend(tube.hole(Chart::Sheet(1.))?.iter().flatten().map(|p| p[0].rem_euclid(TAU)));
+    Ok((clear_cuts(ths)?,clear_cuts(on(true))?))
+}
+
+/// Two angles splitting the largest gap in `ths` at its thirds (`windows`' rule).
+fn clear_cuts(mut ths: Vec<f64>) -> Result<[f64;2],Unbuilt> {
     if ths.is_empty() { return Ok([0.5*PI,1.5*PI]) }
     ths.sort_by(f64::total_cmp);
     let n = ths.len();
@@ -236,15 +324,20 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     let mut trims: Vec<Trim> = Vec::new();
     // (each swallowtail point, and the cuts from it: its sheet, its point, its vertex)
     let mut tails: Vec<(f64,P,usize)> = Vec::new();
-    for side in [1.,-1.] {
-        let chart = Chart::Sheet(side);
+    // (where there is a pinch the collar first: its runs' ends on the hole's rim seed the sheets')
+    let charts = if tube.pinch.is_some() { vec![Chart::Collar,Chart::Sheet(1.),Chart::Sheet(-1.)] } else { vec![Chart::Sheet(1.),Chart::Sheet(-1.)] };
+    let mut on_hole: Vec<(f64,f64)> = Vec::new();
+    for chart in charts {
+        let side = if let Chart::Sheet(s) = chart { s } else { 0. };
         let (folds,_) = edges(tube,chart,tol,feature)?;
         let folds: Vec<Vec<P>> = folds.into_iter().map(|p| p.uv).collect();
-        let points: Vec<P> = folds.iter().flat_map(|f| swallowtails(tube,side,f)).collect();
+        let points: Vec<P> = folds.iter().flat_map(|f| if side != 0. { swallowtails(tube,side,f) } else { swallowtails_on(tube,chart,f) }).collect();
+        if chart == Chart::Collar && !points.is_empty() { return Err(failed(format!("the collar holds swallowtail points {points:?}"))) }
         // the corners: each fold's end on a rim, settled there
         let mut corners: Vec<(usize,P)> = Vec::new();
         for f in &folds {
             for q in [f[0],f[f.len()-1]] {
+                if side == 0. { continue }
                 let Some(k) = on_rim(q[1]) else { continue };
                 let c = tube.corner(side,k,q[0]).ok_or_else(|| failed(format!("a corner of the sheet {side} at {q:?} not settled")))?;
                 if corners.iter().any(|(_,d)| (d[0]-c[0]).abs() <= HALF_READ) { continue }
@@ -254,7 +347,10 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 corners.push((vertices.len()-1,c));
             }
         }
-        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&[],tol,feature)?;
+        let seeds: Vec<P> = on_hole.iter().filter(|h| side == 0. || h.0 == side).filter_map(|&(sign,psi)| match chart {
+            Chart::Collar => tube.pinch.as_ref().map(|p| [psi,sign*p.rho]),_ => tube.pinch.as_ref().and_then(|p| p.rim(sign,psi)) }).collect();
+        if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
+        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
         let field = Depth {tube,chart,within:tol,holes:&discs};
         // the pieces joined across the cuts `round` traces in
         let mut runs: Vec<(Vec<P>,Vec<Cover>)> = pieces.into_iter().map(|p| (p.uv,p.at)).collect();
@@ -286,7 +382,12 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             break
         }
         // each piece cut into runs by what covers it, and the runs kept
-        let class = |c: &Cover| on_rim(c.at).map_or(2,|k| k);
+        // (an end pose's, a sheet's, or — its place inside the pinch's hole — the collar's)
+        let in_hole = |c: &Cover| tube.pinch.as_ref().is_some_and(|p| {
+            let l = tube.ring.frame.local(c.point);
+            p.side([l[1].datan2(l[0]).rem_euclid(TAU),c.at]) < 0.
+        });
+        let class = |c: &Cover| on_rim(c.at).map_or(if in_hole(c) { 3 } else { 2 },|k| k);
         let mut kept: Vec<(Vec<P>,Vec<Cover>,[bool;2])> = Vec::new();
         for (uv,at) in runs {
             let n = uv.len();
@@ -296,7 +397,14 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 let (u,c) = (uv[from..i].to_vec(),at[from..i].to_vec());
                 let m = c.len()/2;
                 // (a double curve of the sheets traced on both preimages: the later one's kept)
-                let keep = class(&c[m]) != 2 || u[m][1] > c[m].at;
+                let keep = class(&c[m]) < 2 || tube.own(chart,u[m]) > c[m].at;
+                // (each end on the pinch's rim a vertex, kept or not: a kept trim's partner
+                // switches chart there; and a seed of the charts read after)
+                for (q,cv) in [(u[0],&c[0]),(u[u.len()-1],&c[c.len()-1])] {
+                    let Some((sign,psi)) = tube.on_hole(chart,q) else { continue };
+                    let j = rim_vertex(tube,&mut vertices,sign,psi,cv.clone(),tol)?;
+                    if let Some((_,[psi,_])) = vertices[j].on.iter().find(|(ch,_)| *ch == Chart::Collar) { on_hole.push((sign,*psi)) }
+                }
                 // (whether each end is a switch of what covers it)
                 if keep && !u.is_empty() { kept.push((u,c,[from > 0,i < n])) }
                 from = i;
@@ -328,7 +436,20 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 let i = if e == 0 { 0 } else { t.uv.len()-1 };
                 let (q,c) = (t.uv[i],at[i].clone());
                 if switch[e] { continue }
+                // a crossing of the pinch's rim
+                if let Some((sign,psi)) = tube.on_hole(chart,q) {
+                    let j = rim_vertex(tube,&mut vertices,sign,psi,c,tol)?;
+                    let v = &vertices[j];
+                    let own = v.on.iter().find(|(ch,_)| *ch == chart).map(|(_,p)| *p).expect("on its chart");
+                    let other = trims[ti].other;
+                    let p = v.on[2..].iter().find(|(ch,_)| *ch == other).map(|(_,p)| *p)
+                        .ok_or_else(|| failed(format!("a crossing of the pinch's rim at {q:?} whose partner is not on {other:?}")))?;
+                    let t = &mut trims[ti];
+                    (t.uv[i],t.partner[i],t.ends[e]) = (own,p,j);
+                    continue
+                }
                 // a rim crossing
+                if side == 0. { return Err(failed(format!("a trim of the collar ends at {q:?}, at no event"))) }
                 if let Some(k) = on_rim(q[1]) {
                     let (th,c) = crossing(&field,k,q[0],c).ok_or_else(|| failed(format!("a rim crossing from {q:?} not settled")))?;
                     let own = [th.rem_euclid(TAU),tube.roll[k]];
@@ -385,7 +506,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             // here the crossing's point on the end pose)
             let own = vertices[v].on.iter().filter(|(c,_)| *c == t.own).map(|(_,p)| *p)
                 .min_by(|x,y| apart(*x).total_cmp(&apart(*y))).expect("on the chart");
-            let other = vertices[v].on.iter().find(|(c,_)| *c == t.other).map(|(_,p)| *p)
+            let other = vertices[v].on.iter().find(|(c,p)| *c == t.other && !(t.other == t.own && *p == own)).map(|(_,p)| *p)
                 .ok_or_else(|| failed("a switch whose crossing is not on the trim's partner".into()))?;
             let t = &mut trims[ti];
             if e == 0 { t.uv.insert(0,own); t.partner.insert(0,other) } else { t.uv.push(own); t.partner.push(other) }
@@ -401,6 +522,21 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
         }
     }
     build(tube,&mut vertices,&trims,&tails,tol)
+}
+
+/// **The vertex where a run crosses the pinch's rim** (`hole_crossing`, from the collar's angle
+/// `psi` and the run's cover `c` there): on the collar, on the sheet `sign` and on its partner —
+/// one crossing read once, a vertex already at its point (within the tolerance) taken.
+fn rim_vertex(tube: &Tube,vertices: &mut Vec<Vertex>,sign: f64,psi: f64,c: Cover,tol: f64) -> Result<usize,Unbuilt> {
+    let p = tube.pinch.as_ref().ok_or_else(|| failed("a rim crossing with no pinch".into()))?;
+    let (psi,c) = hole_crossing(tube,sign,psi,c,tol).ok_or_else(|| failed(format!("a crossing of the pinch's rim from ψ {psi} not settled")))?;
+    let (psi,rho) = (psi.rem_euclid(TAU),sign*p.rho);
+    let x = tube.collar_at(psi,rho).ok_or_else(|| failed("no collar at a crossing of its rim".into()))?.x;
+    if let Some(j) = vertices.iter().position(|v| v.on.iter().any(|(ch,q)| *ch == Chart::Collar && q[1] == rho) && distance(v.x,x) <= tol) { return Ok(j) }
+    let place = p.rim(sign,psi).ok_or_else(|| failed("the pinch's rim not read at a crossing".into()))?;
+    let (ch,pp) = tube.partner(x,&c).ok_or_else(|| failed(format!("no partner of a crossing of the pinch's rim at ψ {psi}")))?;
+    vertices.push(Vertex {x,on:vec![(Chart::Collar,[psi,rho]),(Chart::Sheet(sign),place),(ch,pp)]});
+    Ok(vertices.len()-1)
 }
 
 /// **A trim joined to its swallowtail point inside its disc** (`rings::joined_by_normal_form`, the
@@ -562,7 +698,7 @@ fn unwrap(x: f64,near: f64) -> f64 { x-TAU*((x-near)/TAU).round() }
 fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,usize)],tol: f64) -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
     let points: Vec<P> = tails.iter().map(|t| t.1).collect();
-    let cuts = windows(trims,&points)?;
+    let (cuts,collar_cuts) = if tube.pinch.is_some() { chart_cuts(tube,trims,&points)? } else { (windows(trims,&points)?,[0.;2]) };
     let mut arcs: Vec<Arc2> = Vec::new();
     for (i,t) in trims.iter().enumerate() {
         arcs.push(Arc2 {kind:Kind::Trim(i),v:t.ends,uses:vec![(t.own,t.uv.clone()),(t.other,t.partner.clone())]});
@@ -613,6 +749,38 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,u
             }
         }
     }
+    // the pinch's rim, each sheet's, split at every vertex on it and at the collar's cuts
+    if let Some(p) = &tube.pinch {
+        for sign in [1.,-1.] {
+            let rho = sign*p.rho;
+            let mut splits: Vec<(f64,usize)> = vertices.iter().enumerate()
+                .flat_map(|(j,v)| v.on.iter().filter(|(c,q)| *c == Chart::Collar && q[1] == rho).map(move |(_,q)| (q[0].rem_euclid(TAU),j))).collect();
+            for &c in &collar_cuts {
+                let x = tube.collar_at(c,rho).ok_or_else(|| failed("no collar at a cut".into()))?.x;
+                let place = p.rim(sign,c).ok_or_else(|| failed("the pinch's rim not read at a cut".into()))?;
+                vertices.push(Vertex {x,on:vec![(Chart::Collar,[c,rho]),(Chart::Sheet(sign),place)]});
+                splits.push((c,vertices.len()-1));
+            }
+            splits.sort_by(|p,q| p.0.total_cmp(&q.0));
+            let n = splits.len();
+            for i in 0..n {
+                let (t0,v0) = splits[i];
+                let (t1,v1) = if i+1 < n { splits[i+1] } else { (splits[0].0+TAU,splits[0].1) };
+                let m = (((t1-t0)/(TAU/256.)).ceil() as usize).max(4);
+                let psis: Vec<f64> = (0..=m).map(|j| t0+(t1-t0)*j as f64/m as f64).collect();
+                let own: Vec<P> = psis.iter().map(|&a| [a,rho]).collect();
+                let mut sheet: Vec<P> = psis.iter().map(|&a| p.rim(sign,a)).collect::<Option<_>>().ok_or_else(|| failed("the pinch's rim not read".into()))?;
+                for j in 1..sheet.len() { sheet[j][0] = unwrap(sheet[j][0],sheet[j-1][0]) }
+                arcs.push(Arc2 {kind:Kind::Hole {sign,psi:[t0,t1]},v:[v0,v1],uses:vec![(Chart::Collar,own),(Chart::Sheet(sign),sheet)]});
+            }
+        }
+        for &c in &collar_cuts {
+            let at = |rho: f64| vertices.iter().position(|v| v.on.iter().any(|(ch,q)| *ch == Chart::Collar && q[0] == c && q[1] == rho));
+            let (Some(v0),Some(v1)) = (at(-p.rho),at(p.rho)) else { return Err(failed("a collar's cut with no vertex on its rim".into())) };
+            let line: Vec<P> = (0..=32).map(|j| [c,-p.rho+2.*p.rho*j as f64/32.]).collect();
+            arcs.push(Arc2 {kind:Kind::Across {chart:Chart::Collar,th:c,v:[-p.rho,p.rho]},v:[v0,v1],uses:vec![(Chart::Collar,line.clone()),(Chart::Collar,line)]});
+        }
+    }
     // the cuts across each chart at the windows' angles
     let at_rim = |vs: &Vec<Vertex>,chart: Chart,q: P| vs.iter().position(|v| v.on.iter().any(|(c,p)| *c == chart && p[0] == q[0] && p[1] == q[1]));
     for &c in &cuts {
@@ -630,7 +798,7 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &[Trim],tails: &[(f64,P,u
             arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[plus,plus+way*width]},v:[v0,v1],uses:vec![(chart,line.clone()),(chart,line)]});
         }
     }
-    faces(tube,vertices,&arcs,trims,cuts,tol)
+    faces(tube,vertices,&arcs,trims,(cuts,collar_cuts),tol)
 }
 
 /// A use's polyline placed in a window from `w0` (its angle within a turn above `w0`, its middle's
@@ -642,7 +810,7 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
     line.iter().map(|q| {
         let th = q[0]+shift;
         match chart {
-            Chart::Sheet(_) => Some([th,q[1]]),
+            Chart::Sheet(_) | Chart::Collar => Some([th,q[1]]),
             Chart::End(k) => {
                 let (plus,way,_) = band(tube,k,q[0])?;
                 let o = ((q[1]-plus)*way).rem_euclid(TAU);
@@ -655,7 +823,7 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
 
 /// **The faces of every chart**, each window's planar graph walked, each part kept where its inner
 /// point bounds the sweep, sewn.
-fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: [f64;2],tol: f64) -> Result<Brep,Unbuilt> {
+fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],(sheet_cuts,collar_cuts): ([f64;2],[f64;2]),tol: f64) -> Result<Brep,Unbuilt> {
     let fit = FIT*tol;
     // each arc's curve in space and its uses' pcurves, in the uses' own parameters
     let mut curves: Vec<(Arc<Curve>,Vec<BSpline>)> = Vec::new();
@@ -684,11 +852,25 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: [f64
                 let f = |s: f64| { let p = [th,v[0]+(v[1]-v[0])*s]; (tube.at(chart,p).map_or([f64::NAN;3],|q| q.x),vec![p,p]) };
                 fitted(&f,&at,&[fit,fit])?
             }
+            Kind::Hole {sign,psi} => {
+                let pinch = tube.pinch.as_ref().ok_or_else(|| failed("a pinch's rim with no pinch".into()))?;
+                let (rho,near) = (sign*pinch.rho,arc.uses[1].1[0][0]);
+                let f = |s: f64| {
+                    let a = psi[0]+(psi[1]-psi[0])*s;
+                    let x = tube.collar_at(a,rho).map_or([f64::NAN;3],|q| q.x);
+                    let q = pinch.rim(sign,a).unwrap_or([f64::NAN;2]);
+                    (x,vec![[a,rho],[unwrap(q[0],near),q[1]]])
+                };
+                fitted(&f,&at,&[fit,fit])?
+            }
         };
         curves.push((Arc::new(Curve::BSpline(Arc::new(c))),pcs));
     }
     let mut pieces: Vec<Brep> = Vec::new();
-    for chart in [Chart::Sheet(1.),Chart::Sheet(-1.),Chart::End(0),Chart::End(1)] {
+    let mut charts = vec![Chart::Sheet(1.),Chart::Sheet(-1.),Chart::End(0),Chart::End(1)];
+    if tube.pinch.is_some() { charts.push(Chart::Collar) }
+    for chart in charts {
+        let cuts = if chart == Chart::Collar { collar_cuts } else { sheet_cuts };
         for w in 0..2 {
             let (w0,w1) = if w == 0 { (cuts[0],cuts[1]) } else { (cuts[1],cuts[0]+TAU) };
             // the window's edges: (arc, use, its polyline placed)
@@ -724,12 +906,12 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: [f64
                 let area: f64 = (0..poly.len()).map(|j| { let (p,q) = (poly[j],poly[(j+1)%poly.len()]); p[0]*q[1]-p[1]*q[0] }).sum();
                 if debug() {
                     let named = |e: usize| match arcs[lines[e].0].kind { Kind::Trim(i) => format!("trim {i}"),Kind::Rim {..} => "rim".into(),
-                        Kind::Across {th,..} => format!("across {th}") };
+                        Kind::Across {th,..} => format!("across {th}"),Kind::Hole {sign,..} => format!("the pinch's rim {sign}") };
                     eprintln!("tube: {chart:?} window {w}: a loop {:?}, area {area:e}",l.iter().map(|&(e,f)| (arcs[lines[e].0].v,f,named(e))).collect::<Vec<_>>())
                 }
                 if area <= 0. { continue }
                 let inner = interior(&poly).ok_or_else(|| failed(format!("a part of {chart:?} with no inner point")))?;
-                let q = match chart { Chart::Sheet(_) => inner,Chart::End(k) => {
+                let q = match chart { Chart::Sheet(_) | Chart::Collar => inner,Chart::End(k) => {
                     let (plus,way,_) = band(tube,k,inner[0]).ok_or_else(|| failed("no band".into()))?; [inner[0],plus+way*inner[1]] } };
                 let field = Depth {tube,chart,within:tol,holes:&[]};
                 let keep = match field.reading(q) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
@@ -823,9 +1005,14 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
         Chart::Sheet(side) => {
-            let f = |u: f64,v: f64| tube.point(side,w0+(w1-w0)*u,a+(b-a)*v).map_or([f64::NAN;3],|p| p.x);
-            let (net,_) = crate::nurbs::fit_net(&f,DEGREE,DEGREE,32,16,FIT*tol).ok_or_else(|| failed(format!("the sheet {side} not fitted over a window")))?;
+            let net = sheet_net(tube,side,(w0,w1),FIT*tol)?;
             (Surface::BSpline(Frame::WORLD,Arc::new(net)),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-a)/(b-a)]))
+        }
+        Chart::Collar => {
+            let [_,[lo,hi]] = tube.rect(chart);
+            let f = |u: f64,v: f64| tube.at(chart,[w0+(w1-w0)*u,lo+(hi-lo)*v]).map_or([f64::NAN;3],|p| p.x);
+            let (net,_) = crate::nurbs::fit_net(&f,DEGREE,DEGREE,32,16,FIT*tol).ok_or_else(|| failed("the collar not fitted over a window".into()))?;
+            (Surface::BSpline(Frame::WORLD,Arc::new(net)),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-lo)/(hi-lo)]))
         }
         Chart::End(k) => {
             let m = tube.path.at(tube.roll[k]).map_err(|_| failed("no pose at an end".into()))?;
@@ -878,3 +1065,81 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
     Ok(out)
 }
 
+/// The most points a graded net is read at along either way (structural, as `fit_net`'s caps).
+const MOST_GRADED: usize = 4096;
+
+/// **A sheet's net over the window `(w0, w1)`**, fitted as a map (`nurbs::fit_net`) to `bar`; where
+/// the window holds the pinch's hole, through the sheet with the hole filled smoothly
+/// (`Tube::net_point`) and its parameters graded toward it (`fit_graded`): about the pinch the sheet
+/// bends at the scale of `ρ₀` (its normal turns half round across the hole), which a uniform grid
+/// over the whole roll meets only with `ρ₀` past the swallowtail points (measured: the bar held
+/// outside the hole from `ρ₀` 0.14 forward and 0.12 reverse at 1024 × 512).
+pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64) -> Result<crate::nurbs::Net,Unbuilt> {
+    let [a,b] = tube.roll;
+    let holds = tube.pinch.as_ref().is_some_and(|p| { let th = p.collar.at.1; let th = w0+(th-w0).rem_euclid(TAU); th < w1 });
+    let fit = if holds {
+        let f = |u: f64,v: f64| tube.net_point(side,w0+(w1-w0)*u,a+(b-a)*v).unwrap_or([f64::NAN;3]);
+        // (read against the sheet where the net is kept: outside the hole, the faces' rim)
+        let kept = |u: f64,v: f64| tube.pinch.as_ref().is_none_or(|p| p.side([w0+(w1-w0)*u,a+(b-a)*v]) >= 0.);
+        fit_graded(&f,&kept,DEGREE,32,16,bar)
+    } else {
+        let f = |u: f64,v: f64| tube.point(side,w0+(w1-w0)*u,a+(b-a)*v).map_or([f64::NAN;3],|p| p.x);
+        crate::nurbs::fit_net(&f,DEGREE,DEGREE,32,16,bar)
+    };
+    let (net,err) = fit.ok_or_else(|| failed(format!("the sheet {side} not fitted over a window")))?;
+    if debug() { eprintln!("tube: the sheet {side} over ({w0}, {w1}): {}×{} poles, fitted to {err:e}",net.poles.len(),net.poles[0].len()) }
+    Ok(net)
+}
+
+/// **A net through `f` over the unit square, its parameters graded where it bends**: interpolated
+/// row by row and then pole by pole (as `nurbs::fit_net`) at parameters that start even and are
+/// halved, interval by interval, where the net misses `f` at an interval's middle by more than
+/// `bar` along any row or column where `kept` — each neighbour halved too where it would stand more than twice
+/// as wide (the grading kept within a factor two, structural, so the interpolant does not ring) —
+/// until none does. None where `f` is not read or a way asks more than `MOST_GRADED` points.
+fn fit_graded(f: &dyn Fn(f64,f64) -> V,kept: &dyn Fn(f64,f64) -> bool,degree: usize,nu: usize,nv: usize,bar: f64) -> Option<(crate::nurbs::Net,f64)> {
+    let even = |n: usize| (0..=n).map(|i| i as f64/n as f64).collect::<Vec<f64>>();
+    let (mut us,mut vs) = (even(nu),even(nv));
+    loop {
+        let grid: Vec<Vec<V>> = vs.iter().map(|&v| us.iter().map(|&u| f(u,v)).collect()).collect();
+        if grid.iter().flatten().flatten().any(|x| !x.is_finite()) { return None }
+        let rows: Vec<BSpline> = grid.iter().map(|r| crate::nurbs::interpolate(r,&us,degree)).collect::<Option<_>>()?;
+        let cols: Vec<BSpline> = (0..rows[0].poles.len()).map(|i| crate::nurbs::interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&vs,degree))
+            .collect::<Option<_>>()?;
+        let net = crate::nurbs::Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
+            poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
+        let off = |u: f64,v: f64| if kept(u,v) { distance(net.point(u,v),f(u,v)) } else { 0. };
+        let eu: Vec<f64> = us.windows(2).map(|w| vs.iter().map(|&v| off(0.5*(w[0]+w[1]),v)).fold(0.,f64::max)).collect();
+        let ev: Vec<f64> = vs.windows(2).map(|w| us.iter().map(|&u| off(u,0.5*(w[0]+w[1]))).fold(0.,f64::max)).collect();
+        let worst = eu.iter().chain(&ev).fold(0f64,|m,&e| m.max(e));
+        if debug() {
+            let hist = |ts: &[f64]| (0..20).map(|k| ts.iter().filter(|&&t| t >= k as f64/20. && t < (k+1) as f64/20.).count()).collect::<Vec<_>>();
+            let at = |ts: &[f64],es: &[f64]| { let i = (0..es.len()).max_by(|&i,&j| es[i].total_cmp(&es[j])).unwrap(); (ts[i],es[i]) };
+            eprintln!("graded: {}×{}, worst {worst:e} at u {:?} v {:?}; u {:?} v {:?}",us.len(),vs.len(),at(&us,&eu),at(&vs,&ev),hist(&us),hist(&vs))
+        }
+        if !(worst > bar) { return Some((net,worst)) }
+        let (gu,gv) = (graded(&us,&eu,bar),graded(&vs,&ev,bar));
+        if gu.len() > MOST_GRADED || gv.len() > MOST_GRADED { return None }
+        (us,vs) = (gu,gv);
+    }
+}
+
+/// The parameters `ts` with each interval whose error is over `bar` halved, and each neighbour of a
+/// halved one halved too where it would stand more than twice as wide.
+fn graded(ts: &[f64],errors: &[f64],bar: f64) -> Vec<f64> {
+    let n = errors.len();
+    let mut split: Vec<bool> = errors.iter().map(|&e| e > bar).collect();
+    loop {
+        let width = |i: usize,s: &[bool]| (ts[i+1]-ts[i])*if s[i] { 0.5 } else { 1. };
+        let more: Vec<usize> = (0..n).filter(|&i| !split[i] && ((i > 0 && width(i,&split) > 2.*width(i-1,&split))
+            || (i+1 < n && width(i,&split) > 2.*width(i+1,&split)))).collect();
+        if more.is_empty() { break }
+        for i in more { split[i] = true }
+    }
+    let mut out = vec![ts[0]];
+    for i in 0..n {
+        if split[i] { out.push(0.5*(ts[i]+ts[i+1])) }
+        out.push(ts[i+1]);
+    }
+    out
+}

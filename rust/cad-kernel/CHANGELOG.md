@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The collar about the pinch as the tube road's third chart** (#880 T1f): `Tube::pinched` reads
+  the tool as a tube and, where an instant inside the roll touches a meridian whole, charts the
+  pinch by `rings::Collar` over `(ψ, ρ)` (`Chart::Collar`, `tube::Pinch`): its point and rates in
+  closed form through the place's (`Tube::collar_at`), its side the sheets' `J` in sign
+  (`Tube::collar_side`), its cuspidal edges on a regular metric (`Tube::collar_metric`), their
+  swallowtail points read on any chart (`tube::swallowtails_on`), its radius `ρ₀` by a rule (half
+  the least of its reach and the `|ρ|` of the swallowtail points it holds). The sheets are cut by
+  the hole `|(A, B)| < ρ₀`, its rim an inner edge of their edges and depth (`Tube::hole`,
+  `Pinch::side`, `Pinch::deep`), read across the rim to `ρ₀/2` and, inside, by a smooth stand-in
+  (`Tube::net_point`), which is also the depth's metric there; a sheet's window holding the hole is
+  fitted with its parameters graded toward it (`tube::faces::sheet_net`). The collar's trims beside
+  its cuspidal edges are seeded on its rim (`tube::beside_edges`). Not yet faces.
 - **The tube road's own certified cover, and its charts' sides proved over cells** (#880 T1f):
   `Tube::cover` reads how a point stands under the sweep with the torus's depth in closed form and
   a bound on its second rate along the roll (`swept::tube::cover`: `|d''| ≤ A + V² max(1/g, 1/ρ)`),

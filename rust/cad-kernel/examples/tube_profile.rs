@@ -9,6 +9,11 @@
 //! `old` by the old ring road (`closed::ring`), `compare` reads the tube's certified cover against
 //! `depth::cover` on the grid, and `bound` the Jacobian's proved sign over cells against `J` read in
 //! them, and the sheets' edges' time. `TUBE_HALF` (degrees) sets the roll's half instead.
+//! The tube is read pinched (`Tube::pinched`): `pinch` reads each chart's cuspidal edges,
+//! swallowtail points and (with `trace`) depth's zero set, the collar's too (`SEEDS=θ,t,…` adds
+//! seeds); `fit` fits each sheet over a window holding the pinch and reads it against the sheet
+//! outside the hole; `COLLAR_AT=ψ0,ψ1,ρ,n` reads the collar's side and depth along `ψ`;
+//! `SEED_AT=side,θ,t,θ0,θ1` traces a sheet's depth from one seed alone over `[θ0, θ1]`.
 //!
 //! `cargo run --release -p cad-kernel --example tube_profile -- half-turn|full-turn|thin|eighty|tumble|crossed-forward|crossed-reverse [grid θ] [grid t] [trace]`
 use cad_kernel::swept::depth::Reading;
@@ -37,7 +42,82 @@ fn main() {
     let tol = tube_r/50_000.;
     let roll = [-(half as f64).to_radians(),(half as f64).to_radians()];
     let ring = Ring::read(&tool).unwrap();
-    let tb = Tube::new(&ring,&path,roll).unwrap();
+    let clock = Instant::now();
+    let tb = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    if let Some(p) = &tb.pinch { println!("pinch at (t*, θ*) {:?}: ρ₀ {}, reach {:?}, in {:?}",p.collar.at,p.rho,p.reach,clock.elapsed()) }
+    if let Some(at) = std::env::var_os("SEED_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let chart = Chart::Sheet(v[0]);
+        let field = tube::Depth {tube:&tb,chart,within:tol,holes:&[]};
+        let rect = [[v[3],v[4]],roll];
+        let r = cad_kernel::zero_set::through(&field,&cad_kernel::zero_set::Question {rect,edges:&[],seeds:&[[v[1],v[2]]],tol,feature:0.25*ring.thickness});
+        match r { Ok(t) => for p in &t.pieces { println!("{} points {:?} {:?} .. {:?}",p.uv.len(),p.ends,p.uv[0],p.uv[p.uv.len()-1]) },Err(e) => println!("{e}") }
+        let s = [v[1],v[2]];
+        println!("least at the seed {:?}",cad_kernel::zero_set::Field::least(&field,s).map(|v| (v.f,v.grad)));
+        return
+    }
+    if let Some(at) = std::env::var_os("COLLAR_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let field = tube::Depth {tube:&tb,chart:Chart::Collar,within:tol,holes:&[]};
+        for i in 0..=(v[3] as usize) {
+            let psi = v[0]+(v[1]-v[0])*i as f64/v[3];
+            let uv = [psi,v[2]];
+            println!("ψ {:.4}° side {:?} reading {:?}",psi.to_degrees(),tb.side(Chart::Collar,uv),field.reading(uv).map(|r| match r.1 { Reading::Far(c) => format!("far {:.3e} at {:.6} (own {:.6})",c.depth,c.at,tb.own(Chart::Collar,uv)),o => format!("{o:?}") }));
+        }
+        return
+    }
+    // `fit`: each sheet's net over the window holding the pinch, and how far it stands from the
+    // sheet outside the hole
+    if args.iter().any(|a| a == "fit") {
+        let p = tb.pinch.as_ref().expect("a pinch");
+        let th = p.collar.at.1;
+        let (w0,w1) = (th-2.,th+1.);
+        for side in [1.,-1.] {
+            let clock = Instant::now();
+            let net = tube::faces::sheet_net(&tb,side,(w0,w1),0.1*tol).unwrap();
+            let el = clock.elapsed();
+            let mut worst = 0f64;
+            let n = 600;
+            for i in 0..=n { for j in 0..=n/2 {
+                let (u,v) = ((i as f64+0.37)/(n as f64+1.),(j as f64+0.61)/(n as f64/2.+1.));
+                let (a,b) = (w0+(w1-w0)*u,roll[0]+(roll[1]-roll[0])*v);
+                if p.side([a,b]) < 0. { continue }
+                let x = tb.point(side,a,b).unwrap().x;
+                let y = net.point(u,v);
+                worst = worst.max(((x[0]-y[0]).powi(2)+(x[1]-y[1]).powi(2)+(x[2]-y[2]).powi(2)).sqrt());
+            } }
+            println!("side {side:+}: {}×{} poles in {el:?}; outside the hole the sheet within {worst:e} (bar {:e})",net.poles.len(),net.poles[0].len(),0.1*tol);
+        }
+        return
+    }
+    // `pinch`: each chart's cuspidal edges, swallowtail points and depth's zero set about the pinch
+    if args.iter().any(|a| a == "pinch") {
+        let charts = [Chart::Sheet(1.),Chart::Sheet(-1.),Chart::Collar];
+        for chart in charts {
+            let clock = Instant::now();
+            let (folds,search) = match tube::edges(&tb,chart,tol,0.25*ring.thickness) { Ok(e) => e,Err(e) => { println!("{chart:?}: edges refused: {e:?}"); continue } };
+            let tails: Vec<[f64;2]> = folds.iter().flat_map(|f| tube::swallowtails_on(&tb,chart,&f.uv)).collect();
+            println!("{chart:?}: {} edge pieces in {:?}, search {:?}; swallowtail points {tails:?}",folds.len(),clock.elapsed(),
+                search.iter().map(|s| (s.free,s.monotone,s.beside,s.sampled,s.unresolved.len())).collect::<Vec<_>>());
+            for p in &folds { println!("  edge {} points {:?} ({:.5},{:.5}) .. ({:.5},{:.5})",p.uv.len(),p.ends,p.uv[0][0],p.uv[0][1],p.uv[p.uv.len()-1][0],p.uv[p.uv.len()-1][1]) }
+            if !tracing { continue }
+            let clock = Instant::now();
+            let lines: Vec<Vec<[f64;2]>> = folds.iter().map(|p| p.uv.clone()).collect();
+            let extra: Vec<[f64;2]> = std::env::var("SEEDS").ok().map(|v| { let x: Vec<f64> = v.split(',').map(|x| x.parse().unwrap()).collect(); x.chunks(2).map(|c| [c[0],c[1]]).collect() }).unwrap_or_default();
+            match tube::seams(&tb,chart,&lines,&tails,&extra,tol,0.25*ring.thickness) {
+                Ok((pieces,_,discs)) => {
+                    for d in &discs { println!("  disc about {:?}: radius {:e}",d.at,d.radius) }
+                    println!("{chart:?}: depth zero set {} pieces in {:?}",pieces.len(),clock.elapsed());
+                    for p in &pieces {
+                        println!("  {} points, ends {:?}, ({:.6}, {:.6}) .. ({:.6}, {:.6}), covered at {:.6} .. {:.6}, own {:.6} .. {:.6}",p.uv.len(),p.ends,p.uv[0][0],p.uv[0][1],
+                            p.uv[p.uv.len()-1][0],p.uv[p.uv.len()-1][1],p.at[0].at,p.at[p.at.len()-1].at,tb.own(chart,p.uv[0]),tb.own(chart,p.uv[p.uv.len()-1]));
+                    }
+                }
+                Err(e) => println!("{chart:?}: depth zero set refused in {:?}: {e:?}",clock.elapsed()),
+            }
+        }
+        return
+    }
     println!("tube: radius {} height {} r {} roll {:?} tol {:e}",tb.radius,tb.height,tb.r,roll,tol);
     // `bound`: the Jacobian's proved sign over cells against `J` read inside them
     if args.iter().any(|a| a == "bound") {
@@ -152,6 +232,7 @@ fn main() {
             let (th,t) = (th0+dth*i as f64/4.,t0+dt*j as f64/4.);
             let r = tb.reading(side,th,t,tol);
             let f = cad_kernel::zero_set::Field::least(&field,[th,t]);
+            if let Some(p) = &tb.pinch { print!("[hole {:+.3e}] ",p.side([th,t])) }
             println!("({th:.6},{t:.6}) J {:.3e} reading {:?} least {:?}",tb.jacobian(side,th,t).unwrap(),r.map(|r| match r { cad_kernel::swept::depth::Reading::Far(c) => format!("far {:.3e} at {:.6}",c.depth,c.at),o => format!("{o:?}") }),
                 f.map(|v| (v.f,v.grad)));
         } }

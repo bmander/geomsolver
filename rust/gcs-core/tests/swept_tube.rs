@@ -177,7 +177,7 @@ fn the_charts_sides_are_bounded_over_cells() {
         for i in 0..nu { for j in 0..nv {
             let at = |k: usize,f: f64| r[k][0]+(r[k][1]-r[k][0])*f;
             let c = [[at(0,i as f64/nu as f64),at(0,(i+1) as f64/nu as f64)],[at(1,j as f64/nv as f64),at(1,(j+1) as f64/nv as f64)]];
-            let bound = match chart { Chart::Sheet(side) => tube.jacobian_bound(side,c),Chart::End(k) => tube.contact_bound(k,c) };
+            let bound = match chart { Chart::Sheet(side) => tube.jacobian_bound(side,c),Chart::End(k) => tube.contact_bound(k,c),Chart::Collar => None };
             let Some(bound) = bound else { continue };
             proved += 1;
             let [lo,hi] = bound.value.bounds().unwrap();
@@ -348,4 +348,55 @@ fn the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road() {
     eprintln!("the crossed reverse member at 5° by the tube road: {} faces, volume {v:.10}",solid.faces.len());
     assert_eq!(solid.faces.len(),8);
     held(&solid,&tube,&path,roll,v);
+}
+
+/// **The collar charts the pinch of each crossed member** (#880 T1f, `Tube::pinched`,
+/// `Chart::Collar`): where an instant touches a meridian whole the core circle's sweep is singular
+/// and the collar `(ψ, ρ)` charts both sheets about it. `ρ₀` by its rule — half the least of the
+/// collar's reach (the terms' scale halved until its rim is read whole) and the `|ρ|` of the
+/// swallowtail points on the collar's own cuspidal edges inside it: forward the reach 0.1742 holds
+/// the two at `ρ` 0.0710 and 0.087, so `ρ₀` 0.0355; reverse the reach 0.1091 holds none, so
+/// 0.0545. The collar is the sheets: at its rims each of its points is the sheet's point at its
+/// place (`ρ > 0` the sheet `+`), its side the sheet's `J` in sign; and its depth's zero set is
+/// what the old road's collar reading measured, trims crossing it rim to rim at `ψ` 175.5° and
+/// 337.9° reverse (175.333° and 337.210° on the meridian) and at 72.83° forward (72.883°), each
+/// with its covering instant past its own on the strip's side. And the sheets read up to the
+/// hole's rim: their depth stops there, their runs ending on it where the collar's begin (reverse,
+/// own instants 0.867 and 0.970 on both).
+#[test]
+fn the_collar_charts_the_crossed_members_pinch() {
+    use gcs_core::brep::swept::tube::seams;
+    for (observer,rho0,psis) in [(1.,0.0355,vec![72.83]),(-1.,0.0545,vec![175.5,337.9])] {
+        let (tool,path,roll,tol) = crate::common::bench::crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let feature = 0.25*ring.thickness;
+        let tube = Tube::pinched(&ring,&path,roll,tol,feature).unwrap();
+        let pinch = tube.pinch.as_ref().expect("a pinch");
+        eprintln!("observer {observer}: ρ₀ {}, at {:?}",pinch.rho,pinch.collar.at);
+        assert!((pinch.rho-rho0).abs() < 1e-3*rho0.max(0.05),"ρ₀ {} against {rho0}",pinch.rho);
+        // the collar is the sheets at its rims, and its side is their J in sign
+        for i in 0..24 {
+            let psi = TAU*i as f64/24.;
+            for side in [1.,-1.] {
+                let rho = side*pinch.rho;
+                let p = tube.at(Chart::Collar,[psi,rho]).unwrap();
+                let [th,t] = pinch.rim(side,psi).unwrap();
+                let q = tube.point(side,th,t).unwrap();
+                assert!(gcs_core::brep::util::space::distance(p.x,q.x) < 1e-12,"the collar off the sheet {side} at ψ {psi}");
+                let (j,s) = (tube.jacobian(side,th,t).unwrap(),tube.side(Chart::Collar,[psi,rho]).unwrap());
+                assert!(j.abs() < 1e-6 || (j > 0.) == (s > 0.),"the collar's side {s} against J {j} at ψ {psi}, ρ {rho}");
+            }
+        }
+        // the collar's trims, rim to rim
+        let (folds,_) = edges(&tube,Chart::Collar,tol,feature).unwrap();
+        let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();
+        let (pieces,_,_) = seams(&tube,Chart::Collar,&lines,&[],&[],tol,feature).unwrap();
+        for &want in &psis {
+            let p = pieces.iter().find(|p| (p.uv[0][0].to_degrees()-want).abs() < 1.).unwrap_or_else(|| panic!("no trim at ψ {want}°"));
+            let n = p.uv.len();
+            assert_eq!(p.uv[0][1].abs(),pinch.rho);
+            assert_eq!(p.uv[n-1][1].abs(),pinch.rho);
+            assert!(p.uv[0][1]*p.uv[n-1][1] < 0.,"a trim at ψ {want}° not across the collar");
+        }
+    }
 }
