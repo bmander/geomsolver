@@ -30,7 +30,7 @@
 //! of the rim with itself), held alike.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use super::geom::{hull,include,BSpline,Blend,Box3,Carry,Curve,Frame,Rigid,Surface,Uv,V,EMPTY,NEAR};
+use super::geom::{diagonal,hull,include,widen,BSpline,Blend,Box3,Carry,Curve,Frame,Rigid,Surface,Uv,V,EMPTY,NEAR};
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
 use std::sync::Arc;
@@ -222,8 +222,8 @@ impl Sheet {
     fn boxed(mut self) -> Sheet {
         self.boxes = self.stations.spans.iter().map(|&sp| self.bounds(sp)).collect();
         let mut whole = EMPTY;
-        for b in &self.boxes { include(&mut whole,b.0); include(&mut whole,b.1); }
-        self.size = distance(whole.0,whole.1);
+        for &b in &self.boxes { widen(&mut whole,b); }
+        self.size = diagonal(whole);
         self
     }
     /// Whole-circle walls run round once: `u` periodic with period 1.

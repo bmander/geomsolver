@@ -9,17 +9,19 @@
 //! blend's point): how near its point a foot found from the last one is to be taken for the
 //! nearest, as a part of the point's distance from the origin; a rational spline's quotient, each
 //! term read from the origin; and a blend's point between its sections, alike.
-use crate::common::{read_solved,saying};
+use crate::brep::{nurbs_ball,total_area};
+use crate::brep_export::exact_named;
+use crate::common::read_solved;
 use crate::enclosures::surfaces;
 use gcs_core::brep::boolean::{combined,face_parameters,Op};
-use gcs_core::brep::build::{grid_sheet,prism,square};
+use gcs_core::brep::build::{prism,square};
 use gcs_core::brep::enclose::Enclosed;
 use gcs_core::brep::geom::{tolerance,Rigid,Surface,V};
-use gcs_core::brep::nurbs::Net;
+use gcs_core::brep::props;
 use gcs_core::brep::topo::Brep;
-use gcs_core::brep::{export,props};
+use gcs_core::interval::Iv;
 use gcs_core::rng::Rng;
-use gcs_core::space::{add,cross,distance,normalised,scale};
+use gcs_core::space::{add,cross,distance,norm,normalised,scale};
 
 /// The issue's document: a lens section on its mid-chord lofted along a line — chord, pitch and
 /// thickness falling along the span — and the hub's cylinder it is united with, every point of
@@ -79,25 +81,19 @@ blade union part
 /// The solid the issue's document calls `name`, drawn `x0` millimetres along x, built exactly.
 fn drawn(x0: f64,name: &str) -> Brep {
     let (e,sk) = read_solved(&BLADE.replace("x0 := 6318mm",&format!("x0 := {x0}mm")));
-    let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
-    out.unwrap_or_else(|why| panic!("drawn {x0} mm out: `{name}`: {why:?}\n{said}")).solid
+    exact_named(&e,&sk,name,&format!("drawn {x0} mm out"))
 }
 
 /// A step of `k` sizes, off every axis.
 fn step(size: f64,k: f64) -> Rigid { Rigid {t:[0.9*k*size,0.3*k*size,-0.3*k*size],..Rigid::identity()} }
 
-/// The standard biquadratic NURBS sphere of radius 5, a rational net closed round onto two poles,
-/// cut two round and two up (`brep::a_net_closed_round_onto_two_poles_is_a_ball`).
-fn nurbs_ball() -> Brep {
-    let (r,h) = (5.,std::f64::consts::FRAC_1_SQRT_2);
-    let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
-    let circle_w = [1.,h,1.,h,1.,h,1.,h,1.];
-    let meridian = [[0.,-r],[r,-r],[r,0.],[r,r],[0.,r]];
-    let meridian_w = [1.,h,1.,h,1.];
-    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,0.,0.5,0.5,1.,1.,1.],
-        poles:circle.iter().map(|c| meridian.iter().map(|m| [m[0]*c[0],m[0]*c[1],m[1]]).collect()).collect(),
-        weights:Some(circle_w.iter().map(|wi| meridian_w.iter().map(|wj| wi*wj).collect()).collect())};
-    grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap()
+/// `part` is the solid `at_origin` is, somewhere else: valid, of as many faces and edges, and of
+/// its volume within the tolerance's band over its boundary.
+fn the_origins(part: &Brep,at_origin: &Brep,what: &str) {
+    part.check(10.*tolerance(part.size())).unwrap_or_else(|e| panic!("{what}: {e}"));
+    assert_eq!((part.faces.len(),part.edges.len()),(at_origin.faces.len(),at_origin.edges.len()),"{what}");
+    let (v,whole,band) = (props::volume(part),props::volume(at_origin),tolerance(at_origin.size())*total_area(at_origin));
+    assert!((v-whole).abs() <= band,"{what}: {v} against the origin's {whole} ({:e} past a band of {band:e})",(v-whole).abs());
 }
 
 /// **The issue's blade unites with its hub wherever it is drawn** (#1002): the document at the
@@ -107,15 +103,9 @@ fn nurbs_ball() -> Brep {
 #[test]
 fn the_issues_blade_unites_with_its_hub_wherever_it_is_drawn() {
     let at_origin = drawn(0.,"part");
-    let whole = props::volume(&at_origin);
-    let area: f64 = at_origin.faces.iter().map(|f| props::area(&at_origin,f)).sum();
-    let band = tolerance(at_origin.size())*area;
-    for (x0,part) in [(0.,at_origin.clone()),(6318.,drawn(6318.,"part"))] {
-        part.check(10.*tolerance(part.size())).unwrap_or_else(|e| panic!("drawn {x0} mm out: {e}"));
-        assert_eq!((part.faces.len(),part.edges.len()),(7,15),"drawn {x0} mm out");
-        let v = props::volume(&part);
-        assert!((v-whole).abs() <= band,"drawn {x0} mm out: {v} against the origin's {whole} ({:e} past a band of {band:e})",(v-whole).abs());
-    }
+    at_origin.check(10.*tolerance(at_origin.size())).unwrap_or_else(|e| panic!("drawn at the origin: {e}"));
+    assert_eq!((at_origin.faces.len(),at_origin.edges.len()),(7,15));
+    the_origins(&drawn(6318.,"part"),&at_origin,"drawn 6318 mm out");
 }
 
 /// **…and its two solids moved unite as they do at the origin** (#1002): the blade and the hub's
@@ -129,29 +119,21 @@ fn the_issues_blade_and_its_hub_moved_unite_as_at_the_origin() {
     let (blade,barrel) = (drawn(0.,"blade"),drawn(0.,"barrel"));
     let united = |x: f64| {
         let out = Rigid {t:[x,0.,0.],..Rigid::identity()};
-        let part = combined(&barrel.moved(&out),&blade.moved(&out),Op::Union,0.).unwrap_or_else(|e| panic!("moved {x} mm: {e}"));
-        part.check(10.*tolerance(part.size())).unwrap_or_else(|e| panic!("moved {x} mm: {e}"));
-        part
+        combined(&barrel.moved(&out),&blade.moved(&out),Op::Union,0.).unwrap_or_else(|e| panic!("moved {x} mm: {e}"))
     };
     let at_origin = united(0.);
-    let whole = props::volume(&at_origin);
-    let band = tolerance(at_origin.size())*at_origin.faces.iter().map(|f| props::area(&at_origin,f)).sum::<f64>();
-    for x in [1000.,2000.,4000.] {
-        let part = united(x);
-        assert_eq!((part.faces.len(),part.edges.len()),(at_origin.faces.len(),at_origin.edges.len()),"moved {x} mm");
-        let v = props::volume(&part);
-        assert!((v-whole).abs() <= band,"moved {x} mm: {v} against the origin's {whole} ({:e} past a band of {band:e})",(v-whole).abs());
-    }
+    at_origin.check(10.*tolerance(at_origin.size())).unwrap_or_else(|e| panic!("at the origin: {e}"));
+    for x in [1000.,2000.,4000.] { the_origins(&united(x),&at_origin,&format!("moved {x} mm")); }
 }
 
 /// A solid of every kind of face the kernel builds, each with its name: `affine`'s (planes, a
 /// cylinder, a cone and its frustum, a sphere, a torus, a rational spline turned, a spline
-/// extruded, a canal's blend), a rational net closed onto its poles, and the issue's blade, a face
-/// family's walls.
-fn solids() -> Vec<(String,Brep)> {
-    let mut out: Vec<(String,Brep)> = crate::affine::solids().into_iter().map(|(n,b)| (n.to_string(),b)).collect();
-    out.push(("a NURBS ball".into(),nurbs_ball()));
-    out.push(("the issue's blade".into(),drawn(0.,"blade")));
+/// extruded, a canal's blend), a rational net closed onto its poles (`brep::nurbs_ball`), and the
+/// issue's blade, a face family's walls.
+fn solids() -> Vec<(&'static str,Brep)> {
+    let mut out = crate::affine::solids();
+    out.push(("a NURBS ball",nurbs_ball()));
+    out.push(("the issue's blade",drawn(0.,"blade")));
     out
 }
 
@@ -217,7 +199,7 @@ fn a_point_of_a_patch_is_its_own_foot_wherever_the_patch_stands() {
                         let p = add(x,scale(n,off));
                         let foot = f.surface.point(f.surface.inverse(p));
                         let what = format!("{name}, {k} sizes out, face {fi} ({}) at {uv:?}, {off:e} off",f.surface.kind());
-                        let bar = 1e-9*size+1e-12*gcs_core::space::norm(p);
+                        let bar = 1e-9*size+1e-12*norm(p);
                         assert!(distance(foot,x) <= bar,"{what}: its foot {:e} from it",distance(foot,x));
                         assert!((f.surface.implicit(p).abs()-off).abs() <= bar,"{what}: read {:e} off",f.surface.implicit(p));
                     }
@@ -238,7 +220,7 @@ fn a_surface_is_enclosed_as_closely_far_from_the_origin_as_at_it() {
     let far = [3e4,-1e4,2e4];
     let out = Rigid {t:far,..Rigid::identity()};
     // what rounding coordinates that far out may widen an enclosure by: a part in 10¹⁰ of them
-    let rounding = 1e-10*gcs_core::space::norm(far);
+    let rounding = 1e-10*norm(far);
     let mut rng = Rng::new(1002);
     for (what,s,[du,dv]) in surfaces() {
         // (an offset's enclosure says nothing, anywhere)
@@ -253,11 +235,11 @@ fn a_surface_is_enclosed_as_closely_far_from_the_origin_as_at_it() {
             for i in 0..=4 { for j in 0..=4 {
                 let uv = [u[0]+(u[1]-u[0])*i as f64/4.,v[0]+(v[1]-v[0])*j as f64/4.];
                 let (p,su,sv) = moved.d1(uv);
-                let held = |iv: gcs_core::interval::Iv,x: f64| iv.lo()-rounding <= x && x <= iv.hi()+rounding;
+                let held = |iv: Iv,x: f64| iv.lo()-rounding <= x && x <= iv.hi()+rounding;
                 assert!((0..3).all(|c| held(there.at[c],p[c]) && held(there.d[0][c],su[c]) && held(there.d[1][c],sv[c])),
                     "{what}, moved, over {u:?} × {v:?} at {uv:?}: {p:?} {su:?} {sv:?} outside {there:?}");
             } }
-            let width = |iv: gcs_core::interval::Iv| iv.hi()-iv.lo();
+            let width = |iv: Iv| iv.hi()-iv.lo();
             for c in 0..3 {
                 for (which,a,b) in [("point",near.at[c],there.at[c]),("rate along u",near.d[0][c],there.d[0][c]),("rate along v",near.d[1][c],there.d[1][c])] {
                     assert!(width(b) <= 1.01*width(a)+rounding,"{what} over {u:?} × {v:?}: its {which} enclosed {:e} wide at the origin and {:e} moved",

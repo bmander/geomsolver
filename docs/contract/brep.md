@@ -564,7 +564,7 @@ B-spline sheet and its offset (`net_search`, `offset_foot`) — keeps the foot N
 settles on from the last one found where it stands within `NEAR` of the patch's own size of the
 point (a layered wall's within `HALF_READ` of it), and searches the patch otherwise; a foot
 refined from a hint (`Surface::inverse_near`) is on its patch within a millionth of that size, and
-two of a blend's sections are one within a part in 10⁹ of theirs. The size is the patch's: a
+two of a blend's sections are one within the tolerance of theirs (`geom::tolerance`). The size is the patch's: a
 wall's the box its pieces' boxes fill (`Sheet::size`), a blend's the box of its two sections (not
 of its sweep: a coil comes back within its pitch of itself however long it runs), a sheet's its
 poles' box, a swept or turned curve's its own (the last two read once and kept by address,
@@ -583,8 +583,9 @@ of its sizes out had rates enclosed ten times too wide, no box of a ray's readin
 proved, every direction placing a point against its solid was given up, and a NURBS ball there
 could not be cut by a plane ("a piece of a plane touches the other solid's boundary … along no
 face of either", after three minutes where the cut at the origin takes a tenth of a second). The
-poles reaching the box are read from the middle of their hull, the point carried back after the
-quotient; a curve's, a net's and a family's rational run alike. **A blend's point is enclosed from
+poles reaching the box are read from the middle of their hull (a family's run's from its middle
+pole), the point carried back by the quotient itself (`quotient`); a curve's, a net's and a
+family's run alike. **A blend's point is enclosed from
 a point between its sections**: `(1 − v) A + v B` over a stretch of `v` is as wide as `A` and `B`
 stand far from where they are read from; from the middle of their hull it is as wide as they stand
 apart (a canal ten thousand sizes out was cut 700 times slower, and refused ten times farther).
