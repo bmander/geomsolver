@@ -1542,6 +1542,23 @@ Refused by name: both faces shrinking to points, a shrunk face holding another e
 (the flat would take it), a loop winding round the shrunk face's surface, what the offset closes onto
 missing that surface or lying in it, a stretch of a loop (no stretch closing to a point is cut off
 yet), and a leg past the radius (`None`: no point stands that far in).
+**A leg is read from any offset the kernel reads** (`Surface::parallel`, not only `offset`'s closed
+forms): a B-spline sheet's, and a spline's or an ellipse's swept along a line, read as the sheet it
+is by its signed distance ([brep.md](brep.md)). So an elliptic cylinder's rim is chamfered
+(brep-bench's chamfer/elliptic-cylinder-rim and chamfer/elliptic-hole-rim): the floor's one edge
+the ellipse itself (`build::ProfileEdge::Exact(Curve::Ellipse)`, a whole turn), its side swept from
+it closed round it, the leg on the top the ellipse's parallel curve, the flat fitted. Along a
+closed curve each section's area counts at the rate its points' parallel curve runs, `L ∓ 2πs`, and
+the solid meets its closed form to 1e-11 — at a leg of 3.5 too, a hair inside the ellipse's least
+radius of curvature (3.6), where the side's signed distance is read at the ellipse's nearest point
+(`affine::ellipse_foot`; Newton from the point's own angle settled there on another of the
+distance's stationary points), and placed aslant far off the origin, and swept 100 up, past the
+sheet's straight span (`brep::an_elliptic_cylinders_rim_chamfered_is_its_closed_form`,
+`brep::an_elliptic_holes_rim_chamfered_is_a_countersink`). A ball rolls round the same rim whole,
+the side closed round the ellipse (`brep::a_ball_rolled_round_an_elliptic_rim_is_its_closed_form`,
+brep-bench's fillet/elliptic-cylinder-rim, built before in halves on a lofted sheet). A side swept
+from a spline is no closed surface (a spline has no period), so a loop round it is not chamfered
+yet: its strip cannot wind round.
 
 **Rounds against a sphere** (#962's 7, `rounds/vane.sv`): a plane meets a sphere in a circle about
 the line through the sphere's centre square to the plane, so a vane's flat side filled into a
