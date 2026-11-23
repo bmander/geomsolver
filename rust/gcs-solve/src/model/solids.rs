@@ -377,6 +377,23 @@ impl Given {
         format!("{GIVEN_FACE}{k}")
     }
 
+    /// **A face's path as a reader is told it** (#993's review, R9): a given body's face, which
+    /// no written path reaches (stage 3 chooses one by what it is, never by an index), is "a
+    /// face of `bracket`", the path up to it; any other path is as it is.
+    pub fn face_said(path: &str) -> String {
+        match Given::face_of(path) {
+            Some(of) => format!("a face of `{of}`"),
+            None => path.to_string(),
+        }
+    }
+
+    /// Where `path` names a given body's face (`bracket.#given4`, `part.bracket.#given0`), the
+    /// path up to it, never empty: what a reader can write of it.
+    pub fn face_of(path: &str) -> Option<&str> {
+        let at = path.find(&format!(".{GIVEN_FACE}"))?;
+        (at > 0).then(|| &path[..at])
+    }
+
     pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
         &self.brep
     }
@@ -852,6 +869,10 @@ impl SolidE {
 /// of `a`'s shape, and `a` is still where it was drawn, so being read at a value does not make
 /// `a` a feature — only being made into something else does.  A sweep is made of its stock: the
 /// swept body is what the stock passes through.
+///
+/// **A body a file gives is never an object** (#993 stage 2): it is what the document reads, an
+/// operand of what it makes, however it is read — a body's stock, a set's membership, a claim's,
+/// a tool — and never a part of its own in the report, the cut list, the picture or an assembly.
 pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
     for s in sk.solids.iter().filter(|s| !matches!(s.def, SolidDef::Placed { .. })) {
@@ -863,6 +884,7 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
     }
     (0..sk.solids.len())
         .filter(|&i| !used[i] && !sk.roles_of(EntRef::solid(i)).construction)
+        .filter(|&i| !matches!(sk.solids[i].def, SolidDef::Given(_)))
         .collect()
 }
 

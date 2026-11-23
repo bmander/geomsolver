@@ -139,6 +139,17 @@ pub fn is_step(text: &str) -> bool {
 /// document far below it), so a module's ids depend only on the modules before it and its text.
 pub const MODULE_STMTS: u32 = 1 << 30;
 
+/// Where the ids of statements no text holds start, past every module's (#993's review, R10):
+/// a given body's declaration (`flatten::given`) is `GIVEN_STMTS` plus its module's index, and a
+/// distance's foot's statements (`flatten::sets`, `FOOT_STMTS`) count down from the top — so
+/// neither is ever a statement of the document, a module, or each other.
+pub const GIVEN_STMTS: u32 = 3 << 30;
+
+/// The highest statement id, the first of the three a distance's foot adds to a set's body
+/// (`flatten::sets`), each applied under a prefix of its own; below it, down to `GIVEN_STMTS`'s
+/// range, nothing is minted.
+pub const FOOT_STMTS: u32 = u32::MAX;
+
 pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<Diag> {
     link_from(prog, resolve, None)
 }

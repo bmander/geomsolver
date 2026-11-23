@@ -120,6 +120,23 @@ impl Given {
         }
     }
 
+    /// Whether `path` is a given module's, its body a solid however its file was read: what a
+    /// reading at an instant of it places (`Walk::settle_readings`).
+    pub(super) fn gives(&self, path: &str) -> bool {
+        self.modules.contains_key(path)
+    }
+
+    /// Every given module's path, its body a solid's name however its file was read.
+    pub(super) fn paths(&self) -> impl Iterator<Item = String> + '_ {
+        self.modules.keys().cloned()
+    }
+
+    /// The paths of the given modules the walk reads whose file the kernel refused: names a
+    /// read of finds, and nothing is declared for (`Walk::unmade_by_refusal`).
+    pub(super) fn refused_paths(&self) -> BTreeSet<String> {
+        self.modules.iter().filter(|(_, m)| !m.body).map(|(p, _)| p.clone()).collect()
+    }
+
     /// Whether `path` is a given module whose file the kernel refused: a name known, read
     /// silently, since the refusal is said at the `use`.
     pub(super) fn refused(&self, path: &str) -> bool {
@@ -166,8 +183,8 @@ impl Walk<'_> {
                 sweep: Some(Sweep::Given(file)),
                 ..Decl::point(DeclName::Written(name), [0.0; 2], None)
             };
-            // an identity no statement of the document or a module is minted
-            let id = StmtId(u32::MAX - m.k as u32);
+            // an identity no statement of the document, a module or a set's foot is minted
+            let id = StmtId(crate::modules::GIVEN_STMTS + m.k as u32);
             let st = Stmt { id, kind: StmtKind::Decl(d.clone()), span: at,
                             chained: Default::default() };
             let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };

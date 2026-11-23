@@ -1663,8 +1663,9 @@ pub(super) fn probe(key: String, at: Span) -> Decl {
 }
 
 /// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so
-/// each is applied under a prefix of its own: past any a program numbers.
-const FOOT_STATEMENTS: u32 = u32::MAX;
+/// each is applied under a prefix of its own: past any a program numbers, in a range of their own
+/// (`modules::FOOT_STMTS`).
+const FOOT_STATEMENTS: u32 = crate::modules::FOOT_STMTS;
 
 /// A set's body walked along the `k`th of two directions solved for at `point` (`Toward::Chart`).
 fn charted(point: Ref, k: u8, key: String) -> Pass {
