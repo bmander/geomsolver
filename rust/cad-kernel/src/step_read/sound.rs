@@ -91,7 +91,7 @@ pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
     edges(b,context,size)?;
     let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,floor));
     for r in faces { r? }
-    shells(b,size,floor).map(|_| ())
+    shells(b,shells_of(b),size,floor).map(|_| ())
 }
 
 /// **How a boundary's shells nest** (`shells`): its faces' components by the edges they share, in
@@ -100,14 +100,32 @@ pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
 #[derive(Clone,Debug)]
 pub struct Nesting { pub shells: Vec<Vec<usize>>,pub outward: Vec<bool>,pub about: Vec<Option<usize>> }
 
-/// The nesting of `b`'s shells (`Nesting`), each judged as `sound` judges it: refused where a shell
-/// faces neither way, a void lies outside every lump or inside another void, a lump inside a lump,
-/// or two shells cross.
-pub fn nesting(b: &Brep) -> Result<Nesting,Unsound> {
+/// The nesting of `b`'s shells (`Nesting`), `shells` its faces' components (`shells_of`), each
+/// judged as `sound` judges it: refused where a shell faces neither way, a void lies outside every
+/// lump or inside another void, a lump inside a lump, or two shells cross.
+pub fn nesting(b: &Brep,shells: Vec<Vec<usize>>) -> Result<Nesting,Unsound> {
     if b.faces.is_empty() { return Err(Unsound {why:Why::Open,face:None,edge:None,msg:"the boundary has no faces: it bounds nothing".into()}) }
     indexed(b)?;
     let size = extent(b);
-    shells(b,size,crate::geom::tolerance(size))
+    self::shells(b,shells,size,crate::geom::tolerance(size))
+}
+
+/// **A boundary's faces' components by the edges they share**, each a shell: numbered as first
+/// seen, so the shells stand in the order of their first faces, and each shell's faces in their
+/// order. Every edge a face uses must be in range (`indexed`).
+pub fn shells_of(b: &Brep) -> Vec<Vec<usize>> {
+    let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
+    let mut user = vec![usize::MAX;b.edges.len()];
+    for (fi,f) in b.faces.iter().enumerate() {
+        for c in f.loops.iter().flatten() {
+            let e = c.edge as usize;
+            if user[e] == usize::MAX { user[e] = fi } else { joined.union(user[e],fi) }
+        }
+    }
+    let (label,n) = joined.labels();
+    let mut shells: Vec<Vec<usize>> = vec![Vec::new();n];
+    for (fi,&l) in label.iter().enumerate() { shells[l].push(fi); }
+    shells
 }
 
 /// Every index in range and every number finite, so nothing after reads past an array or loops on
@@ -1062,25 +1080,13 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
     angle > half(p.sag,la)+half(q.sag,lb)+off
 }
 
-/// The faces' components by the edges they share, each a shell: each facing one way, out or in
-/// (`facing`); the outward ones (lumps) and the inward ones (voids) nested so that the shell
-/// nearest about each is of the other sense — a lump inside nothing or inside a void, a void
-/// inside a lump — and no two crossing. However many lumps: a cut can part a body, and a file
-/// written before #993 stage 2 put all its lumps in one shell's faces.
-fn shells(b: &Brep,size: f64,floor: f64) -> Result<Nesting,Unsound> {
+/// The faces' components by the edges they share (`shells_of`), each a shell: each facing one
+/// way, out or in (`facing`); the outward ones (lumps) and the inward ones (voids) nested so that
+/// the shell nearest about each is of the other sense — a lump inside nothing or inside a void, a
+/// void inside a lump — and no two crossing. However many lumps: a cut can part a body, and a
+/// file written before #993 stage 2 put all its lumps in one shell's faces.
+fn shells(b: &Brep,shells: Vec<Vec<usize>>,size: f64,floor: f64) -> Result<Nesting,Unsound> {
     use crate::query::Place;
-    let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
-    let mut user = vec![usize::MAX;b.edges.len()];
-    for (fi,f) in b.faces.iter().enumerate() {
-        for c in f.loops.iter().flatten() {
-            let e = c.edge as usize;
-            if user[e] == usize::MAX { user[e] = fi } else { joined.union(user[e],fi) }
-        }
-    }
-    // (numbered as first seen, so the shells stand in the order of their first faces)
-    let (label,n) = joined.labels();
-    let mut shells: Vec<Vec<usize>> = vec![Vec::new();n];
-    for (fi,&l) in label.iter().enumerate() { shells[l].push(fi); }
     let tol_of = |s: &[usize]| s.iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol).fold(floor,f64::max);
     // each shell alone, and where a point stands against it
     let parts: Vec<Brep> = if shells.len() == 1 { Vec::new() } else {

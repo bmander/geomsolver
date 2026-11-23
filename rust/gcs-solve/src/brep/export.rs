@@ -346,8 +346,8 @@ pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
     let (uncertainty,fit) = step_accuracy(tolerance);
-    let (text,stated) = super::step::write_stating(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
-    let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
+    let (text,stated,lumps) = super::step::write_stating(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
+    let verified = super::step_check::verify(&text,&super::step_check::Solid::of_lumps(&exact.solid,&lumps))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
     super::step_read::read(&text)
         .map_err(|r| ExportRefusal::at(Stage::Step,format!("the STEP file does not read back: the kernel's reader refuses it: {r}")))?;

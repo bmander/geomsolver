@@ -13,6 +13,7 @@
 //! measure's own noise, since nothing is fitted). Held over every file of `tests/step_file` the
 //! reader reads, and over small files written here by hand whose faces lie on the surfaces a
 //! reading makes and the kernel's own construction does not.
+use crate::common::{step::Ents,unit};
 use crate::step_roundtrip::{joined,measured,same,stages,Found};
 use gcs_core::brep::geom::{Curve,Surface};
 use gcs_core::brep::step::{write,Fit};
@@ -20,75 +21,6 @@ use gcs_core::brep::step_check::{verify,Solid};
 use gcs_core::brep::step_read::Given;
 
 type V = [f64; 3];
-
-fn real(x: f64) -> String { format!("{x:.17E}") }
-fn reals(x: &[f64]) -> String { x.iter().map(|&x| real(x)).collect::<Vec<_>>().join(",") }
-fn unit(a: V) -> V { let l = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt(); [a[0] / l, a[1] / l, a[2] / l] }
-fn logical(b: bool) -> &'static str { if b { ".T." } else { ".F." } }
-
-/// A file's entities, numbered from 100 as they are added.
-struct Ents { next: u32, text: String }
-
-impl Ents {
-    fn new() -> Ents { Ents { next: 100, text: String::new() } }
-    fn add(&mut self, s: impl AsRef<str>) -> u32 {
-        let n = self.next;
-        self.next += 1;
-        self.text += &format!("#{n} = {};\n", s.as_ref());
-        n
-    }
-    fn point(&mut self, p: V) -> u32 { self.add(format!("CARTESIAN_POINT('',({}))", reals(&p))) }
-    fn dir(&mut self, d: V) -> u32 { self.add(format!("DIRECTION('',({}))", reals(&d))) }
-    fn place(&mut self, o: V, z: V, x: V) -> u32 {
-        let (o, z, x) = (self.point(o), self.dir(z), self.dir(x));
-        self.add(format!("AXIS2_PLACEMENT_3D('',#{o},#{z},#{x})"))
-    }
-    fn vertex(&mut self, p: V) -> u32 { let p = self.point(p); self.add(format!("VERTEX_POINT('',#{p})")) }
-    fn line(&mut self, p: V, d: V) -> u32 {
-        let (p, d) = (self.point(p), self.dir(d));
-        let v = self.add(format!("VECTOR('',#{d},1.)"));
-        self.add(format!("LINE('',#{p},#{v})"))
-    }
-    fn circle(&mut self, o: V, z: V, x: V, r: f64) -> u32 { let a = self.place(o, z, x); self.add(format!("CIRCLE('',#{a},{})", real(r))) }
-    fn ellipse(&mut self, o: V, z: V, x: V, a: f64, b: f64) -> u32 {
-        let p = self.place(o, z, x);
-        self.add(format!("ELLIPSE('',#{p},{},{})", real(a), real(b)))
-    }
-    fn plane(&mut self, o: V, z: V) -> u32 { let a = self.place(o, z, [1., 0., 0.]); self.add(format!("PLANE('',#{a})")) }
-    /// The extrusion of `curve` along `d`.
-    fn extrusion(&mut self, curve: u32, d: V) -> u32 {
-        let d = self.dir(d);
-        let v = self.add(format!("VECTOR('',#{d},1.)"));
-        self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{curve},#{v})"))
-    }
-    /// The revolution of `curve` about the `z` axis.
-    fn revolution(&mut self, curve: u32) -> u32 {
-        let (o, z) = (self.point([0.; 3]), self.dir([0., 0., 1.]));
-        let a = self.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
-        self.add(format!("SURFACE_OF_REVOLUTION('',#{curve},#{a})"))
-    }
-    fn edge(&mut self, a: u32, b: u32, curve: u32) -> u32 { self.add(format!("EDGE_CURVE('',#{a},#{b},#{curve},.T.)")) }
-    /// A face of one loop of `(edge, along)`, of `sense`.
-    fn face(&mut self, uses: &[(u32, bool)], surface: u32, sense: bool) -> u32 {
-        let uses: Vec<String> = uses.iter().map(|&(e, along)| format!("#{}", self.add(format!("ORIENTED_EDGE('',*,*,#{e},{})", logical(along))))).collect();
-        let l = self.add(format!("EDGE_LOOP('',({}))", uses.join(",")));
-        let b = self.add(format!("FACE_OUTER_BOUND('',#{l},.T.)"));
-        self.add(format!("ADVANCED_FACE('',(#{b}),#{surface},{})", logical(sense)))
-    }
-    /// The file of the solid bounded by `faces`.
-    fn file(self, faces: &[u32]) -> String {
-        let faces: Vec<String> = faces.iter().map(|f| format!("#{f}")).collect();
-        format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\n\
-            FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n\
-            #1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n\
-            #2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n\
-            #3 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-07),#1,'distance_accuracy_value','');\n\
-            #4 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('','') );\n\
-            #10 = CARTESIAN_POINT('',(0.,0.,0.));\n#11 = DIRECTION('',(0.,0.,1.));\n#12 = DIRECTION('',(1.,0.,0.));\n\
-            #13 = AXIS2_PLACEMENT_3D('',#10,#11,#12);\n{}#50 = CLOSED_SHELL('',({}));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n\
-            #52 = ADVANCED_BREP_SHAPE_REPRESENTATION('',(#13,#51),#4);\nENDSEC;\nEND-ISO-10303-21;\n", self.text, faces.join(","))
-    }
-}
 
 /// **A prism of the polygon `base` (counter-clockwise about `z`, at `z = 0`) along `d`** (a unit
 /// vector rising along `z`): its caps planes, each side the extrusion of its base's edge's `LINE`.
@@ -103,23 +35,23 @@ fn prism(base: &[[f64; 2]], d: V, h: f64) -> String {
     for k in 0..n {
         let (p, q) = (base[k], base[(k + 1) % n]);
         let way = unit([q[0] - p[0], q[1] - p[1], 0.]);
-        let lb = e.line(at(p, 0.), way);
+        let lb = e.line(at(p, 0.), way, 1.);
         lines.push(lb);
-        bottom.push(e.edge(low[k], low[(k + 1) % n], lb));
-        let lt = e.line(at(p, h), way);
-        top.push(e.edge(high[k], high[(k + 1) % n], lt));
-        let lr = e.line(at(p, 0.), d);
-        rise.push(e.edge(low[k], high[k], lr));
+        bottom.push(e.edge(low[k], low[(k + 1) % n], lb, true));
+        let lt = e.line(at(p, h), way, 1.);
+        top.push(e.edge(high[k], high[(k + 1) % n], lt, true));
+        let lr = e.line(at(p, 0.), d, 1.);
+        rise.push(e.edge(low[k], high[k], lr, true));
     }
     let mut faces = Vec::new();
-    let (b, t) = (e.plane([0.; 3], [0., 0., 1.]), e.plane(at([0., 0.], h), [0., 0., 1.]));
+    let (b, t) = (e.plane([0.; 3], [0., 0., 1.], [1., 0., 0.]), e.plane(at([0., 0.], h), [0., 0., 1.], [1., 0., 0.]));
     let down: Vec<(u32, bool)> = (0..n).rev().map(|k| (bottom[k], false)).collect();
-    faces.push(e.face(&down, b, false));
+    faces.push(e.outer_face(&down, b, false));
     let up: Vec<(u32, bool)> = (0..n).map(|k| (top[k], true)).collect();
-    faces.push(e.face(&up, t, true));
+    faces.push(e.outer_face(&up, t, true));
     for k in 0..n {
         let side = e.extrusion(lines[k], d);
-        faces.push(e.face(&[(bottom[k], true), (rise[(k + 1) % n], true), (top[k], false), (rise[k], false)], side, true));
+        faces.push(e.outer_face(&[(bottom[k], true), (rise[(k + 1) % n], true), (top[k], false), (rise[k], false)], side, true));
     }
     e.file(&faces)
 }
@@ -134,13 +66,13 @@ fn drum(ring: &dyn Fn(&mut Ents, f64) -> (u32, V), side: &dyn Fn(&mut Ents) -> u
     let (cb, pb) = ring(&mut e, z0);
     let (ct, pt) = ring(&mut e, z1);
     let (vb, vt) = (e.vertex(pb), e.vertex(pt));
-    let (eb, et) = (e.edge(vb, vb, cb), e.edge(vt, vt, ct));
+    let (eb, et) = (e.edge(vb, vb, cb, true), e.edge(vt, vt, ct, true));
     let g = seam(&mut e, pb, pt);
-    let es = e.edge(vb, vt, g);
+    let es = e.edge(vb, vt, g, true);
     let s = side(&mut e);
-    let (b, t) = (e.plane([0., 0., z0], [0., 0., 1.]), e.plane([0., 0., z1], [0., 0., 1.]));
-    let faces = [e.face(&[(eb, false)], b, false), e.face(&[(et, true)], t, true),
-        e.face(&[(eb, true), (es, true), (et, false), (es, false)], s, true)];
+    let (b, t) = (e.plane([0., 0., z0], [0., 0., 1.], [1., 0., 0.]), e.plane([0., 0., z1], [0., 0., 1.], [1., 0., 0.]));
+    let faces = [e.outer_face(&[(eb, false)], b, false), e.outer_face(&[(et, true)], t, true),
+        e.outer_face(&[(eb, true), (es, true), (et, false), (es, false)], s, true)];
     e.file(&faces)
 }
 
@@ -166,20 +98,20 @@ fn written_here() -> Vec<(&'static str, String)> {
         ("a prism on extrusions of lines", prism(&[[0., 0.], [3., 0.], [3., 4.], [0., 4.]], z, 5.)),
         ("a prism aslant on extrusions of lines", prism(&[[0., 0.], [3., 0.], [1., 2.]], aslant, 2.)),
         ("an extrusion of a circle", drum(&round(2.), &|e| { let c = e.circle([0.; 3], z, [1., 0., 0.], 2.); e.extrusion(c, z) },
-            &|e, p, q| e.line(p, unit([q[0] - p[0], q[1] - p[1], q[2] - p[2]])), 0., 3.)),
+            &|e, p, q| e.line(p, unit([q[0] - p[0], q[1] - p[1], q[2] - p[2]]), 1.), 0., 3.)),
         ("an extrusion of a circle aslant", drum(&|e, h| {
             let o = [aslant[0] * h / aslant[2], aslant[1] * h / aslant[2], h];
             (e.circle(o, z, [1., 0., 0.], 2.), [o[0] + 2., o[1], h])
         }, &|e| { let c = e.circle([0.; 3], z, [1., 0., 0.], 2.); e.extrusion(c, aslant) },
-            &|e, p, _| e.line(p, aslant), 0., 3.)),
+            &|e, p, _| e.line(p, aslant, 1.), 0., 3.)),
         ("an extrusion of an ellipse", drum(&|e, h| (e.ellipse([0., 0., h], z, [1., 0., 0.], 3., 1.5), [3., 0., h]),
             &|e| { let c = e.ellipse([0.; 3], z, [1., 0., 0.], 3., 1.5); e.extrusion(c, z) },
-            &|e, p, _| e.line(p, z), 0., 2.)),
-        ("a revolution of a line along its axis", drum(&round(2.), &|e| { let l = e.line([2., 0., 0.], z); e.revolution(l) },
-            &|e, p, _| e.line(p, z), 0., 3.)),
+            &|e, p, _| e.line(p, z, 1.), 0., 2.)),
+        ("a revolution of a line along its axis", drum(&round(2.), &|e| { let l = e.line([2., 0., 0.], z, 1.); e.revolution(l) },
+            &|e, p, _| e.line(p, z, 1.), 0., 3.)),
         ("a revolution of a line meeting its axis", drum(&|e, h| round(2. - h / 2.)(e, h),
-            &|e| { let l = e.line([2., 0., 0.], unit([-1., 0., 2.])); e.revolution(l) },
-            &|e, p, q| e.line(p, unit([q[0] - p[0], q[1] - p[1], q[2] - p[2]])), 0., 2.)),
+            &|e| { let l = e.line([2., 0., 0.], unit([-1., 0., 2.]), 1.); e.revolution(l) },
+            &|e, p, q| e.line(p, unit([q[0] - p[0], q[1] - p[1], q[2] - p[2]]), 1.), 0., 2.)),
         ("a revolution of a circle", drum(&round(3. + c30), &|e| { let c = e.circle([3., 0., 0.], [0., -1., 0.], [1., 0., 0.], 1.); e.revolution(c) },
             &|e, _, _| e.circle([3., 0., 0.], [0., -1., 0.], [1., 0., 0.], 1.), conic(3., 1., 1., -t30)[2], conic(3., 1., 1., t30)[2])),
         ("a revolution of an ellipse", drum(&round(3. + c30), &|e| { let c = e.ellipse([3., 0., 0.], [0., -1., 0.], [1., 0., 0.], 1., 1.5); e.revolution(c) },

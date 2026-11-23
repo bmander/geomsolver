@@ -924,22 +924,23 @@ pub fn write(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<String,String> { w
 /// each vertex's own tolerance. A loft's net and rails are fitted within `FIT`, a micron, and a
 /// solid's own edges may stand off their faces farther than any fit (`solid_sweeps/creased.sv`'s,
 /// 2e-5 off its net): a file of either asked at 1e-7 states what it holds, and the caller is told
-/// it here.
-pub fn write_stating(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<(String,f64),String> {
+/// it here; and the lumps written (`lumps`), which a check of the file reads its faces by
+/// (`step_check::Solid::of_lumps`).
+pub fn write_stating(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<(String,f64,Vec<Lump>),String> {
     let mut o = Out {text:String::new(),next:1};
     let context = application(&mut o);
     let pctx = o.add(format!("PRODUCT_CONTEXT('',#{context},'mechanical')"));
     let name = name.replace('\'',"''");
     let (_,shape) = product(&mut o,&name,context,pctx,&mut None);
     let gctx = geometric(&mut o);
-    let (solids,held) = solid(&mut o,b,tol,fit)?;
+    let (solids,held,lumps) = solid(&mut o,b,tol,fit)?;
     let origin = o.placement(&Frame::WORLD);
     let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}),#{gctx})",items(origin,&solids)));
     o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
     if !held.is_finite() { return Err("the solid's geometry is not finite: no uncertainty covers it".into()) }
     let stated = statement(tol,held);
     gctx.state(&mut o,stated);
-    Ok((file(&name,&o.text),stated))
+    Ok((file(&name,&o.text),stated,lumps))
 }
 
 /// **The uncertainty a file states** for a tolerance asked, `tol`, over solids whose written
@@ -1032,7 +1033,7 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64,fit: Fit) -> Result<Strin
         let origin = o.placement(&Frame::WORLD);
         let rep = match &p.solid {
             Some(b) => {
-                let (solids,most) = solid(&mut o,b,tol,fit)?;
+                let (solids,most,_) = solid(&mut o,b,tol,fit)?;
                 held = held.max(most);
                 if let Some(c) = p.colour { coloured.extend(solids.iter().map(|&s| (s,c))); }
                 o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}),#{gctx})",items(origin,&solids)))
@@ -1151,16 +1152,13 @@ pub struct Lump { pub outer: Vec<usize>,pub voids: Vec<Vec<usize>> }
 /// A `Brep` of one shell is one lump whatever it faces (nothing is decided that a reader does not
 /// decide itself). Refused, never written as one shell, where its shells nest as no solid's do.
 pub fn lumps(b: &Brep) -> Result<Vec<Lump>,String> {
-    let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
-    let mut user = vec![usize::MAX;b.edges.len()];
-    for (fi,f) in b.faces.iter().enumerate() {
-        for c in f.loops.iter().flatten() {
-            let Some(u) = user.get_mut(c.edge as usize) else { return Err(format!("face {fi} uses no edge of the solid")) };
-            if *u == usize::MAX { *u = fi } else { joined.union(*u,fi) }
-        }
+    let ne = b.edges.len();
+    if let Some(fi) = b.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize >= ne)) {
+        return Err(format!("face {fi} uses no edge of the solid"))
     }
-    if joined.labels().1 <= 1 { return Ok(vec![Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}]) }
-    let n = super::step_read::sound::nesting(b).map_err(|u| format!("its shells nest as no solid's do: {}",u.msg))?;
+    let shells = super::step_read::sound::shells_of(b);
+    if shells.len() <= 1 { return Ok(vec![Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}]) }
+    let n = super::step_read::sound::nesting(b,shells).map_err(|u| format!("its shells nest as no solid's do: {}",u.msg))?;
     Ok((0..n.shells.len()).filter(|&x| n.outward[x]).map(|x| Lump {outer:n.shells[x].clone(),
         voids:(0..n.shells.len()).filter(|&y| !n.outward[y] && n.about[y] == Some(x)).map(|y| n.shells[y].clone()).collect()}).collect())
 }
@@ -1170,17 +1168,27 @@ impl Lump {
     pub fn faces(&self) -> impl Iterator<Item = usize> + '_ { self.outer.iter().chain(self.voids.iter().flatten()).copied() }
 }
 
+/// **The lumps a check reads a file of `b` by** (`lumps`): or, for a solid the writer refuses,
+/// whose file is never read, one lump of every face in its own order.
+pub fn written_lumps(b: &Brep) -> Vec<Lump> {
+    lumps(b).unwrap_or_else(|_| vec![Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}])
+}
+
+/// **`b`'s faces in the order the writer writes them** (`written_lumps`): each lump's outer
+/// shell's, then its voids'.
+pub fn written_order(b: &Brep) -> Vec<usize> {
+    written_lumps(b).iter().flat_map(Lump::faces).collect()
+}
+
 /// The solid's topology and geometry, bottom up, to its manifold solids (one a lump, `lumps`, its
-/// voids a `BREP_WITH_VOIDS`'s): their ids, and the most anything written stands off what it
-/// stands for (`held`).
-fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64),String> {
+/// voids a `BREP_WITH_VOIDS`'s): their ids, the most anything written stands off what it stands
+/// for (`held`), and the lumps.
+fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<Lump>),String> {
     // (every index in range: a `Brep` handed in from outside the kernel's own construction — read
     // from a file, from JSON — is refused, not followed past its arrays)
-    let (nv,ne) = (b.vertices.len(),b.edges.len());
+    let nv = b.vertices.len();
     if let Some(ei) = b.edges.iter().position(|e| e.v.iter().any(|&v| v as usize >= nv)) { return Err(format!("edge {ei} ends on no vertex of the solid")) }
-    if let Some(fi) = b.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize >= ne)) {
-        return Err(format!("face {fi} uses no edge of the solid"))
-    }
+    // (and a face's edges, by `lumps`)
     let lumps = lumps(b)?;
     // the topology, bottom up
     // only the vertices a written edge ends at (a pole's degenerate edge is not written)
@@ -1327,5 +1335,5 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64),Stri
         let voids: Vec<String> = l.voids.iter().map(|v| { let s = shell(o,v); format!("#{}",o.add(format!("ORIENTED_CLOSED_SHELL('',*,#{s},.F.)"))) }).collect();
         o.add(format!("BREP_WITH_VOIDS('',#{outer},({}))",voids.join(",")))
     }).collect();
-    Ok((solids,held))
+    Ok((solids,held,lumps))
 }
