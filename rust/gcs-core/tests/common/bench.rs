@@ -1,5 +1,6 @@
 //! brep-bench's swept cases as the kernel takes them, written once for `swept_rings` and
-//! `swept_depth`: the tumbling torus of tube 0.16 over a half or a whole turn, the thin one, and
+//! `swept_depth`: the tumbling torus of tube 0.16 over a half or a whole turn, the thin one, the
+//! bench's own tumbling torus of tube 0.5, and
 //! the bench runner's frame along its cubic. Each is the computation it was where it was first
 //! written, to the bit — the gates pin volumes to 1e-7 and read inputs moved by an ulp — so a
 //! change here is a change to every gate that reads it.
@@ -32,6 +33,19 @@ pub fn thin() -> (Brep,Trajectory,[f64;2],f64) {
         axis:[1.,0.,0.],ratio:1.,advance:0.});
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
     (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.015/50_000.)
+}
+
+/// brep-bench's `tumbling-torus`: the thin's motion (a quarter of a radian about the vertical line
+/// through (2, 0, 0), back a radian about the line through (0, ½, ½) along `x`) carrying a torus of
+/// tube 0.5 over ±75°, at the bench's tolerance, a 50 000th of the tube.
+pub fn tumbling_torus() -> (Brep,Trajectory,[f64;2],f64) {
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],
+        axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.5/50_000.)
 }
 
 /// brep-bench's crossed tumbling tori (`tumbling-torus-crossed-forward` at `observer` 1,

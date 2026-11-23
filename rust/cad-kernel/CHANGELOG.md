@@ -8,6 +8,26 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The tube road builds every ring case the old road builds** (#880 T1f): the full turn (14
+  faces, volume 23.6738858153 against the old road's 23.6738852531), the thin (10 faces,
+  0.6963027945 against 0.6963027896) and the bench's tumbling torus (8 faces, 25.2750727786
+  against the volume made apart, 25.2750727653; the old road's 25.2750392926 at that spelling
+  carries surface covered by other instants, 3.4e-3 deep), each `check`ed with no misfit at the
+  size's tolerance. `tube::Depth::along` ends a far cover whose least falls at its stretch's cut
+  toward the point's own instant (its own contact's slope, no basin: the double curve's instants
+  meeting), where each corrector's pass slid it into the own contact, a phantom branch. A switch
+  of what covers a run whose sheet-covered side is the run kept has its rim crossing solved on its
+  partner's rim (`faces::switched`). The two end poses' meeting is read: the start pose's seams
+  covered by the end pose are trims between the poses, each end a rim crossing standing on both
+  (`faces::met`). The cut from a swallowtail point ends at the first trim it meets, that trim split
+  there; a window's island is a hole of the face about it; each chart has its own windows' cuts,
+  in order within the turn. **`zero_set`**: a point is read as traced where a traced chord is
+  within the radius in space *and*, by the metric there, in the parameters (a surface meeting itself
+  brings another place of the chart to the same point: a preimage of a double curve seeded across a
+  cut was never traced); a piece every point of which lies on the one side it started on is that
+  side's crossing read twice, no piece; and a march that can step no farther and finds the field
+  undefined within a tolerance of it ends there, `End::Undefined` (a curve run to the edge of its
+  field's own domain), where it was refused as stalled.
 - **The tube road's own certified cover, and its charts' sides proved over cells** (#880 T1f):
   `Tube::cover` reads how a point stands under the sweep with the torus's depth in closed form and
   a bound on its second rate along the roll (`swept::tube::cover`: `|d''| ≤ A + V² max(1/g, 1/ρ)`),
