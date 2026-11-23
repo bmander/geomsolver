@@ -697,6 +697,55 @@ fn a_face_takes_the_index_of_a_surface_given_it_is_the_same_as_in_any_frame() {
     for (got,want) in v.iter().zip(want) { close(*got,want,1e-6) }
 }
 
+/// EXPERIMENT (#880 T1f): **a face trimmed on a net that covers its rim twice meets a plane once**
+/// (a kernel gate with no sweep in it): the net `(s², v, 0.3 s⁴ + 0.1 v)`, `s = 2u − 1` over
+/// [−1, 1], folds along `s = 0` back onto itself, each point of the graph `z = 0.3 x² + 0.1 y`
+/// covered twice; its face is trimmed to `u` in [0.65, 1] (`x ≥ 0.09`) on the whole net, its rim
+/// `u = 0.65` with the layer `s < 0` running on through it and past it. The block `y ≤ 0.5`, a
+/// corner of it at `x = 0.05` off the face over the net, meets the face in one curve, `y = 0.5` from
+/// the rim to the face's far edge `x = 1`: one edge on the face there, ending on the rim.
+#[test]
+fn a_face_trimmed_on_a_net_covering_its_rim_twice_meets_a_plane_once() {
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    use std::sync::Arc;
+    let f = |u: f64,v: f64| { let s = 2.*u-1.; [s*s,v,0.3*s.powi(4)+0.1*v] };
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,4,1,2,1,1e-12).unwrap();
+    let (u0,u1) = (0.65,1.);
+    let part = net.segment([u0,u1],[0.,1.]);
+    let mut sheet = Brep::default();
+    let curve = |b: gcs_core::brep::nurbs::BSpline| EdgeCurve::Curve(Curve::BSpline(Arc::new(b)));
+    let (last_u,last_v) = (part.poles.len()-1,part.poles[0].len()-1);
+    let low = [sheet.vertex(f(u0,0.)),sheet.vertex(f(u0,1.))];
+    let high = [sheet.vertex(f(u1,0.)),sheet.vertex(f(u1,1.))];
+    let e0 = sheet.edge(curve(part.column(0)),[u0,u1],[low[0],high[0]]);
+    let e1 = sheet.edge(curve(part.row(last_u)),[0.,1.],high);
+    let e2 = sheet.edge(curve(part.column(last_v)),[u0,u1],[low[1],high[1]]);
+    let rim = sheet.edge(curve(part.row(0)),[0.,1.],low);
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    let lp = vec![
+        Coedge {edge:e0,reversed:false,pcurve:line([u0,0.],[u1,0.])},
+        Coedge {edge:e1,reversed:false,pcurve:line([u1,0.],[u1,1.])},
+        Coedge {edge:e2,reversed:true,pcurve:line([u0,1.],[u1,1.])},
+        Coedge {edge:rim,reversed:true,pcurve:line([u0,0.],[u0,1.])},
+    ];
+    // (the face's surface the whole net, folded, not its part)
+    sheet.faces.push(Face {surface:Surface::BSpline(Frame::WORLD,Arc::new(net)),reversed:false,loops:vec![lp],name:"sheet".into()});
+    let below = block([0.05,-2.,-2.],[2.,0.5,2.]);
+    let complex = arrangement(&[&below,&sheet],1e-7).expect("arranged");
+    // the edges of the complex along the meeting, `y = 0.5` on the graph
+    let on_meeting = |p: [f64;3]| (p[1]-0.5).abs() <= 1e-6 && (p[2]-0.3*p[0]*p[0]-0.05).abs() <= 1e-6;
+    let along: Vec<([f64;3],[f64;3])> = complex.b.edges.iter().filter_map(|e| match &e.curve {
+        EdgeCurve::Curve(c) if on_meeting(c.point(0.5*(e.t[0]+e.t[1]))) =>
+            Some((complex.b.vertices[e.v[0] as usize].p,complex.b.vertices[e.v[1] as usize].p)),
+        _ => None,
+    }).collect();
+    assert_eq!(along.len(),1,"the meeting laid as {along:?}");
+    let (a,z) = along[0];
+    let xs = if a[0] < z[0] { [a[0],z[0]] } else { [z[0],a[0]] };
+    assert!((xs[0]-0.09).abs() <= 1e-6 && (xs[1]-1.).abs() <= 1e-6,"the meeting's edge from x = {} to {}",xs[0],xs[1]);
+}
+
 /// **A sheet tangent to a face at the tolerance is ordered round its rim by a step in** (#942, a
 /// kernel gate with no sweep in it): the sheet `z = a x + x²/2` over `x` in `[0, 1.6]`, a quadratic
 /// B-spline, its rim `x = 0` on the plane `z = 0`, the top of a block below it, and that line given

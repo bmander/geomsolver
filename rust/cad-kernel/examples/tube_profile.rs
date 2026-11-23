@@ -359,8 +359,19 @@ fn main() {
             let (lo,hi) = a.bounds();
             let clock = Instant::now();
             let seeds: Vec<[f64;3]> = v[2..].chunks(3).map(|c| [c[0],c[1],c[2]]).collect();
+            let (la,lb) = (cad_kernel::query::Located::new(&a,tol),cad_kernel::query::Located::new(&b,tol));
+            let (ia,ib) = (v[0] as usize,v[1] as usize);
+            for &p in &seeds {
+                println!("seed {p:?}: A{ia} {:?} foot {:?}, B{ib} {:?} foot {:?}",la.face_place(ia,p),fa.inverse(p),lb.face_place(ib,p),fb.inverse(p));
+            }
             match cad_kernel::ssi::trace(fa,fb,&seeds,lo,hi,tol) {
-                Ok(cs) => for c in &cs { println!("a {} curve",c.kind()) },
+                Ok(cs) => for c in &cs {
+                    let [t0,t1] = match c { cad_kernel::geom::Curve::BSpline(b) => b.domain(),_ => [0.,1.] };
+                    let ends = [c.point(t0),c.point(t1)];
+                    let places: String = (0..=32).map(|k| { let q = c.point(t0+(t1-t0)*k as f64/32.);
+                        match (la.face_place(ia,q),lb.face_place(ib,q)) { (cad_kernel::query::Place::Out,_) | (_,cad_kernel::query::Place::Out) => '.', _ => '#' } }).collect();
+                    println!("a {} curve from {:?} to {:?}, in both faces: {places}",c.kind(),ends[0],ends[1]);
+                },
                 Err(e) => println!("refused: {e}"),
             }
             println!("traced in {:?}",clock.elapsed());

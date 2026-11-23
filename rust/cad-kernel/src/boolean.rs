@@ -2228,6 +2228,16 @@ impl<'a> Arrangement<'a> {
         // (only where both faces may be: a seed beyond their shared box traces nothing on them)
         seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad))
             .filter(|&p| !touches.touching(p) && !on_known(p)));
+        // EXPERIMENT (#880 T1f): **a seed off a fitted sheet's face traces nothing of it.** A sheet
+        // face is trimmed on a net that may run on past it, folded back or covering its rim twice
+        // (a swept tube's road): a seed whose foot lies outside the face, on another layer of its
+        // net, traced a second copy of a meeting the face holds once (the crossed tori's face 8,
+        // the copy crossing its rim 3.5e-4 from the other). Every stretch of the meeting inside
+        // both faces crosses a boundary of one, where it is seeded on that boundary (`On`, within
+        // the tolerance), or lies closed inside both (a grid seed `In` both, or `unseen`), so only
+        // seeds a B-spline face reads `Out` are dropped
+        seeds.retain(|&p| (0..2).all(|k| !matches!(surfaces[k],Surface::BSpline(..))
+            || self.located[faces.s[k]].face_place(faces.f[k],p) != Place::Out));
         self.say.tracing(faces,surfaces,&seeds);
         let started = crate::util::clock::Instant::now();
         // beside a ridge's branch, or one marched in both surfaces' parameters, is beside a known meeting
