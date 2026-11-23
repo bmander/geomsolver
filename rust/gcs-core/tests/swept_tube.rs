@@ -122,12 +122,19 @@ fn the_half_turn_builds_by_the_tube_road() {
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the half turn by the tube road: {} faces, volume {v:.10}",solid.faces.len());
     assert!((v/12.2377154283-1.).abs() <= 1e-7,"the volume {v}, the old road's 12.2377154283");
+    held(&solid,&tube,&path,roll,v);
+}
+
+/// A tube road's solid held to its mesh's volume and to membership by the depth: twenty thousand
+/// seeded points over its box, each read where the solid or the depth stands clear of the
+/// boundary (`the_half_turn_builds_by_the_tube_road`'s reading).
+fn held(solid: &gcs_core::brep::topo::Brep,tube: &Tube,path: &gcs_core::brep::trajectory::Trajectory,roll: [f64;2],v: f64) {
     let bar = 1e-3;
-    let m = gcs_core::brep::mesh::mesh(&solid,bar,0.2).unwrap();
+    let m = gcs_core::brep::mesh::mesh(solid,bar,0.2).unwrap();
     let w = crate::brep::mesh_volume(&m);
     assert!((w-v).abs() <= 4.*bar*v.powf(2./3.)*6.,"the mesh's volume {w}, the solid's {v}");
     // membership by the solid and by the depth
-    let body = gcs_core::brep::swept::member::Solid::new(&solid,bar,1.).unwrap();
+    let body = gcs_core::brep::swept::member::Solid::new(solid,bar,1.).unwrap();
     let (lo,hi) = solid.bounds();
     let [a,b] = roll;
     let n = 256;
@@ -158,4 +165,24 @@ fn the_half_turn_builds_by_the_tube_road() {
     }
     eprintln!("{read} of 20000 points read clear of the boundary, {members} members");
     assert!(read >= 15_000 && members >= 1_000,"{read} read, {members} members");
+}
+
+/// **The crossed reverse member, its roll's end at 5°, built by the tube road** (#880 T1f): no pinch
+/// and no cuspidal edge reaching a seam; the old road misclassifies a cell and refuses it (`Wrong`).
+/// No volume is known apart, so it is held to its mesh and to membership by the depth: a closed
+/// solid passing `check`, of 8 faces.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, membership read at twenty thousand points, ~20 s")]
+fn the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,_,tol) = crate::common::bench::crossed(-1.);
+    let roll = [-5f64.to_radians(),5f64.to_radians()];
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the crossed reverse member at 5° by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert_eq!(solid.faces.len(),8);
+    held(&solid,&tube,&path,roll,v);
 }

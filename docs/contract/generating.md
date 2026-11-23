@@ -2696,7 +2696,16 @@ at the call's tolerance, volume 12.2377154879 against the old road's 12.23771542
 itself), its mesh's volume within its bar, and 19 119 of 20 000 seeded points read clear of the
 boundary each a member of the solid exactly where the depth is below nought, in some 40 s, nearly
 all of it the sheet `−`'s trace (`swept_tube::the_half_turn_builds_by_the_tube_road`, slow tier).
-The old road stays what `closed::ring` calls.
+The old road stays what `closed::ring` calls. **The next cases, as checks:** the crossed reverse
+member with its roll's end at 5° (no pinch; the old road misclassifies a cell and refuses `Wrong`)
+builds in 0.4 s — 8 faces, `check`, volume 1.5608532821, no volume known apart, held to its mesh and
+to membership by the depth at 18 988 of 20 000 points
+(`swept_tube::the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road`). The 80° torus,
+the thin and the full turn are not yet built in a time worth a road: the 80° torus's sheet `−` has
+fold pairs running the whole roll and no swallowtail point, and its depth's trace had not ended in
+twenty minutes; the full turn's sheet `+` alone asked 57 000 sampled cells of its edges' search
+(8 s) before its depth's; the thin's edges had not ended — each the cover's creeping march
+and the march's least at every step (above).
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
