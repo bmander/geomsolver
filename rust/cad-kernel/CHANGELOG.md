@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The crossed tumbling tori built by the tube road** (#880 T1f): the reverse member (15 faces,
+  13.7898469012 against cadrs's 13.7898472784) and the forward (14 faces, 16.6116290673 against
+  16.6109997999, 3.8e-5 apart, under audit). `zero_set`'s search answers a cell beside a traced
+  piece only on the side of it its sign says (a piece's ends excepted): a closed cuspidal edge
+  folded within the feature of another in space, beside a near-pinch, was never sought.
+  `tube::round` takes one side per inner edge, so an exit across a fold is not solved on the
+  pinch's rim where the march began. `tube::beside_edges` reads a point held by its neighbours as
+  below nought. The faces' runs: a crossing shallow to a cut read on its two sides is one where the
+  cut between stands in the depth's tolerance band, and a run in that band of one kept before it is
+  dropped. Each sheet's net over a window is fitted once.
+
 - **The collar about the pinch as the tube road's third chart** (#880 T1f): `Tube::pinched` reads
   the tool as a tube and, where an instant inside the roll touches a meridian whole, charts the
   pinch by `rings::Collar` over `(ψ, ρ)` (`Chart::Collar`, `tube::Pinch`): its point and rates in

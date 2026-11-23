@@ -31,8 +31,12 @@ fn main() {
         Some("tumble") => (bench::tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.5),
         Some("eighty") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),80.,0.16),
         Some("thin") => (bench::tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.015),
-        Some("crossed-forward") => (bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.),100.,0.22),
-        Some("crossed-reverse") => (bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,-1.),100.,0.22),
+        // (`NUDGE=ulp` or a length: the observer's origin moved by one ulp, or by that, in each coordinate)
+        Some(m @ ("crossed-forward"|"crossed-reverse")) => {
+            let nudge = std::env::var("NUDGE").ok();
+            let moved = move |o: [f64;3]| o.map(|x| match nudge.as_deref() { Some("ulp") => x.next_up(),Some(d) => x+d.parse::<f64>().unwrap(),None => x });
+            (bench::tumbling_moved([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,if m == "crossed-forward" { 1. } else { -1. },moved),100.,0.22)
+        }
         _ => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.,0.16),
     };
     let nth = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(128usize);
