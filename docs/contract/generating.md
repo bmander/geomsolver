@@ -2736,6 +2736,91 @@ carrying the boundary before and after stand that side apart. Held
 1e-7 of the area the definition sweeps in the plane, read on lines turned 0.3 rad off every end
 pose's side (1.3e-9 off).
 
+**An upright tool of revolution under a motion that keeps its plane, swept closed (#880 T1f,
+`brep::swept::upright`):** a convex tool of revolution with flat ends (`patches::Revolved`) whose axis
+stands along the normal of a plane every pose keeps (`region::keeps`) has, at each height, a disc
+for its section, which a turn about the axis leaves where it is: the section at height `h` sweeps the
+points within `ρ(h)` of the path `c` its axis's foot runs, and the swept solid is `{(p, h) : d(p) ≤
+ρ(h)}` — no contact read under the motion's twist, so a face touched whole is no trouble (under a
+translation the flat bottom has `n · v ≡ 0`, and K2's pencil, one sign change a half-plane, read the
+bull nose's contact to 1.92 and no closer: brep-bench's `bull-nose-along-a-looping-spline`, refused
+`Failed` before; K2 now refuses such a face by name before any fit, `patches::touched_whole`: a flat
+end square to the tool's axis whose `n · v` is nought all over it, the twist turning about nothing
+but the axis and the face's middle moving in its plane, each read within half the rounding's digits
+of the instant's speeds — `Curved` at the face, gated on the mill and a flat-ended cylinder,
+`swept_upright::k2_refuses_by_name_a_flat_end_its_translation_touches_whole`). Asked before K2
+wherever `planar_solid` reads no prism; K2 is asked where it
+refuses, its refusal standing where K2 refuses too. **The sheets**: each piece of the meridian a slab
+over `σ ∈ [0, 1]`; at each `σ` the region (`region::SweptRegion`, the disc its section) runs along the
+path's offsets `c(t) ± ρ N(t)` (the **sides**, by the roll) and the discs at the end poses (the
+**ends**, by the angle, each over the half its sweep leaves behind it, between its two **joins** where
+a side meets it); a sheet is boundary where no other instant comes nearer than `ρ` less the
+tolerance (the **cover**: the path's nearest point, its feet sampled and every stretch whose bound —
+the nearer foot less half the farthest the path moves between two — does not clear the best read by
+a golden section). **Double curves**: the region's corners at the stations (16 over a curved slab)
+lifted through the slab by continuation in `(p₁, p₂, σ)` (a step settled on the plane square to the
+way, halved past a tenth of a radian's turn), a seed on a curve traced already skipped; a pair on one
+side is read in its chart `(m, h, σ)`, the residual divided by `2h` — every place of a sheet is its
+own double point at `h = 0`, a plane of roots Newton's method fell onto beside a birth. A curve ends on
+a rim, on a join, where a third instant covers it — **the triple point**, its pair and the third foot
+settled together (`|q − c(t₃)| = ρ`, `(q − c(t₃)) · c'(t₃) = 0`), its third foot read where the cover is
+plain (at the bracket's end the three tie to the rounding), each other curve reaching it snapped to
+its feet — or where its two instants on a side merge: **a swallowtail's birth**, its stretch into the
+birth read in its normal form, `m` and `σ` quadratics in `h²` by least squares through the divided
+form settled at halvings of the parting while its part along the normal reads to half its digits
+(`h³` past `√ε` of the roll's: that part is `O(h²)`, read with the rounding's `ε|P|/h`, and at a
+smaller parting `m` was noise, its interpolant through 0.42 reading 3.8), the birth its limit, and
+held where its points are the double points they stand for within the fit. A curve turning back in
+`σ` (an island's apex) is traced through its turn. **The parts**: on each sheet the curves, its rims
+and joins, and from each birth a cut straight across to the rim the swallowtail opens away from (so
+no face meets itself along its double curve) are walked as a planar graph; a curve ending meeting
+nothing, a curve closing inside the domain, or a curve whose two sides are not one kept and one
+dropped (a cut's both kept) is refused by name. A side's part is a net fitted over its box grown by a
+trace's step (the apex lies between traced points: read off them, the box stopped short of it, an
+edge 2.1e-6 off), each edge on it with its own pcurve — a double curve's place on it fitted on the
+same parameter, any other edge a line in `(p, σ)` — since an inverse seeded across a swallowtail's
+folded tongue landed on its inner leaf (6.5e-6 off); an end's part the tool's own face posed, its
+frame turned about its axis so its seam stands opposite the half's middle, its loop unwrapped in
+every parameter the surface repeats in through each edge's middle (its rims span half a turn; the
+torus's `v` read its bottom rim at 3π/2 and the join's middle at −π/4, and the mesher, asked such a
+loop, refused at a coarse sag and ran on past fifteen minutes at a fine one) and turned by its
+places' area. A net grows each way by its own misses (a wall, linear along `σ`, keeps 8 rows). A double curve is laid in pieces, each where one coordinate of `(p₁, p₂, σ)` the curve leans
+at least 30° off its plane, read with that coordinate its parameter — settled on the plane where it
+has its value, the implicit function's own smooth chart; projected across a polyline's chords the
+curve's rate jumped at each, and across a spline the read was only as smooth as the spline. A
+piece is fitted whole where 64 spans hold it, else halved at its middle traced point: a piece whose
+coordinate's chart turns just past its end (the island's apex) took 2048 spans whole, and each face it
+bounds read its area in 6.9 s (`props::area`; 0.55 s halved — brep-bench's runner, its build, area,
+volume, check, mesh and STEP, 17.3 s then and 4.9 s now). Every curve and sheet is fitted within a
+tenth of the tolerance, as K2's and `planar_solid`'s are: a shared edge then stands within a fifth of
+it of both faces it bounds. Caps
+are the regions at their height; the faces sewn (`sew::sewn`), the solid judged (`closed::judge`)
+and cut from the blank. **Built**: brep-bench's bull nose along a looping spline through the bench's
+own call (`swept_upright::the_bull_nose_along_a_looping_spline_is_its_bench_volume`: 24 faces,
+10956.986456, 2.5 s, most of it the corner slab's curves and the judge; its corner slab's six double curves, one
+triple point at `σ` 0.47039, births at `t` 0.42333 and 0.57667, `σ` 0.39746, where the path's radius
+of curvature passes the corner's), its volume within 2e-6 of the regions' areas integrated apart
+over the corner (`bull_probe`) and 4.0e-6 of cadrs's 10956.9424 (whose reading is that much low),
+its mesh's volume within a tenth of its sag over its area (+0.036 at a sag of 1e-3, +0.003 at
+1e-4), its points agreeing with the definition read with no kernel and its groove counted to it
+(`…_agrees_with_its_definition`: 20 000 points), its closed sweep with membership
+(`the_bull_nose_s_closed_sweep_agrees_with_membership`), and built again with a pole moved by an
+ulp (the same volume to the digit) and by 1e-6 (within 3e-9), the births then parted
+(`the_bull_nose_builds_with_its_poles_moved`, slow tier). **Its edges, under the same path**: a
+motion turning about the plane's normal is read (the mill carried by `trajectory::Along`, the frame
+along a cubic turning with its tangent: 10 faces, 1036.41 for the closed sweep), but a path that
+encloses nothing — read only by evaluating, as brep-bench's runner frame is — is refused by the
+region's reading itself (`region::Keep::outside`: a point is kept outside the section between two
+grid poses by the point's speed bound, `Trajectory::inverse_point_speed_bound`, which only a path's
+own enclosure, `Path::stretch`, gives; with none, no stretch is kept and the loop is the box's, "reaches
+past the box held about it", as `planar_solid` refuses a disc prism under the same frame). A meridian
+meeting its axis other than in a flat end (a ball end, a pointed taper) is not read: the region of a
+disc of no radius is the path, no region, and the end's sheet closes to a point. Under the looping
+path the ball end then goes to K2 and is refused `Curved` at its flat top (touched whole); the pointed
+taper is read by `planar_solid` and refused by its own judge (`Wrong`, nothing returned); a concave
+meridian is refused `Curved` by K2's reading of the tool; a flat step is a prism's slabs, built by
+`planar_solid`.
+
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
 a turn, or a turn seen from a turn, a sinusoid in the roll; a slide seen from a turn, a rack, a

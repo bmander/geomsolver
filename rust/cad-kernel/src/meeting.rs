@@ -1136,12 +1136,18 @@ impl Shared {
     /// **The index of a class of faces one surface**, drawn by the caller face by face (#994,
     /// `boolean`'s `Arrangement::classed`): `rep`, the surface standing for the class, over
     /// `region`, the box its faces fill — the index of a surface given before (`give`) that one of
-    /// `members` (the class's surfaces, `rep` among them) is exactly, else a new one — never an
-    /// index another surface is read the same as over a region, which would join what the caller
-    /// parted.
-    pub fn class(&mut self,rep: &Surface,members: &[&Surface],region: super::geom::Box3) -> usize {
+    /// `members` (the class's surfaces, `rep` among them) is the same surface as to `tol`
+    /// (`ssi::same`, as `index` reads a face's surface against one given: a pose of a ring
+    /// turned about its own axis, its seam stood elsewhere, is the torus its meetings were given
+    /// on, #880), else a new one — never an index another surface is read the same as over a
+    /// region alone, which would join what the caller parted, nor one another class has taken
+    /// unless a member is exactly its surface.
+    pub fn class(&mut self,rep: &Surface,members: &[&Surface],region: super::geom::Box3,tol: f64) -> usize {
         let mine = self.of_kind.entry(rep.kind()).or_default();
-        let i = match mine.iter().copied().find(|&i| members.iter().any(|m| self.surfaces[i] == **m)) {
+        let (surfaces,classed,given) = (&self.surfaces,&self.classed,&self.was_given);
+        let is_given = |i: usize| given.iter().any(|&(a,b)| a == i || b == i);
+        let i = match mine.iter().copied().find(|&i| members.iter().any(|m| surfaces[i] == **m
+            || (is_given(i) && !classed.contains(&i) && super::ssi::same(&surfaces[i],m,tol)))) {
             Some(i) => { super::geom::widen(&mut self.regions[i],region); i }
             None => self.push(rep,region),
         };

@@ -130,6 +130,38 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
   the ball grown, and its partials there carried from beside it.
 
+- **An upright tool of revolution under a motion keeping its plane, swept closed** (#880 T1f,
+  `swept::upright`, new): a convex tool of revolution with flat ends whose axis stands along the
+  normal of a plane every pose keeps sweeps, at each height, the region within the radius there
+  of the path its axis's foot runs (`{(p, h) : d(p) ≤ ρ(h)}`). Each piece of the meridian is a
+  slab; the region's offsets and end discs are its sheets, their double curves traced exactly by
+  continuation in `(p₁, p₂, σ)` from the region's corners (`region::SweptRegion`), ended on rims,
+  joins, triple points (solved with the third foot) and swallowtail births (a pair on one side in
+  its divided chart, its stretch into the birth read in its normal form); each sheet parted as a
+  planar graph, cut from each birth to the rim, each part kept by the path's certified distance;
+  sides fitted as nets with their pcurves, ends the tool's own faces posed, caps the regions; the
+  faces sewn and judged. The closed class asks it before K2, whose pencil reads no contact
+  touched whole (a flat bottom under a translation). brep-bench's bull nose along a looping
+  spline builds through `closed::cut_from` (10956.98646, 2.3 s; with its area, volume, check, mesh
+  and STEP 4.9 s — a double curve's run is halved where 64 spans do not hold it, where one fitted
+  whole on 2048 spans read its faces' area in 6.9 s each). `region::SweptRegion::held`
+  (new) says which candidates are edges held at an end pose; `planar_solid::holding` is
+  `pub(super)`.
+
+- **K2 refuses a flat end its instant touches whole, by name** (#880 T1f, `patches::touched_whole`):
+  a face square to the tool's axis with `n · v` nought all over it (the twist turning about the
+  axis alone, the face's middle moving in its plane) is `Curved` at that face before any fit; its
+  pencil's sign test on the noughts had put the root at whichever corner the rounding favoured,
+  and the bull nose's sheet was reported fitting to 1.9.
+
+- **A class of faces takes the index of a surface given it is the same as, in any frame** (#880):
+  `meeting::Shared::class` takes the tolerance (breaking) and takes a given surface's index where
+  one of the class's surfaces is `ssi::same` to it, as `Shared::index` reads a face against it —
+  not only where it is that surface exactly — and only an index no other class has taken.  Since
+  0.21.0's phase 0 (`Arrangement::classed`) a ring's pose turned about its own axis lost the
+  meetings given it: the ring road's 80° tumbling torus was judged wrong with its start pose's
+  seam at −2.78, and its full turn refused at every end pose's seam but its own; both build again.
+
 ## [0.21.0] - 2026-11-22
 
 - **An edge is read against what its faces are known to meet, by one rule** (#990): an edge lies in

@@ -415,6 +415,7 @@ const ROUND: usize = 96;
 /// angle to rounding. `Err` with a point of the tool where a half-plane holds no one root, or where
 /// the contact crosses a sharp edge with no fan between its faces.
 fn instant(tool: &Revolved,twist: Twist,across: V) -> Result<Instant,V> {
+    if let Some(at) = touched_whole(tool,&twist) { return Err(at) }
     let pencil = Pencil::at(tool,&twist,across).ok_or(tool.origin())?;
     let label = |phi: f64| contact(tool,&twist,&pencil,phi,false).map(|(_,on)| on).ok_or_else(|| tool.cast(pencil.f1).0);
     let phis: Vec<f64> = (0..ROUND).map(|i| TAU*i as f64/ROUND as f64).collect();
@@ -441,6 +442,30 @@ fn instant(tool: &Revolved,twist: Twist,across: V) -> Result<Instant,V> {
     // a loop on one face all round: one piece, from the pencil's first angle
     if joins.is_empty() { joins.push(0.); on.push(labels[0]) }
     Ok(Instant {twist,pencil,joins,on})
+}
+
+/// **A flat end the instant touches whole** (#880 T1f): a face square to the tool's axis whose
+/// `n · v` is nought all over it — the twist turning about nothing but the axis, and the face's
+/// middle moving in its plane (a translation square to the axis) — read where each stands within
+/// half the rounding's digits of the instant's speeds (`HALF_READ`, a value read by cancellation).
+/// No half-plane of the pencil holds one root on such a face: its sign test on the noughts put the
+/// root at whichever corner the rounding favoured, and the bull nose's sheet fitted to 1.9 and no
+/// closer. A point of the face, where there is one: refused by name (`Curved`) before any fit.
+fn touched_whole(tool: &Revolved,twist: &Twist) -> Option<V> {
+    let g = tool.frame;
+    let n = g.z;
+    for e in &tool.elements {
+        let Element::Line {a,b} = *e else { continue };
+        if a[1] != b[1] { continue }
+        let x = g.at([0.5*(a[0]+b[0]),0.,a[1]]);
+        let v = twist.velocity(x);
+        let reach = a[0].abs().max(b[0].abs());
+        let speeds = norm(v)+norm(twist.omega)*reach;
+        if !(speeds > 0.) { continue }
+        let spin = norm(cross(n,twist.omega))*reach;
+        if dot(n,v).abs() <= crate::util::fmath::HALF_READ*speeds && spin <= crate::util::fmath::HALF_READ*speeds { return Some(x) }
+    }
+    None
 }
 
 /// The instant at the roll `t` (`instant`) and the pose there.

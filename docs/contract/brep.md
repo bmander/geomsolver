@@ -939,7 +939,19 @@ the reach of over its own box, the lowest operand's first. Joined one face at a 
 index whose surface was the same over the box the faces before it filled, a class took whichever
 face was asked first for its surface: a foot's pad leaning `1e-7` rad about its own length, read
 first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
-the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
+the plate's other face on that very plane was a surface of its own. **A class takes the index of a surface
+given the arrangement (`give`) that one of its faces' surfaces is the same as, in any frame** (#880,
+`Shared::class`): `ssi::same` to the tolerance, the rule `Shared::index` reads a face against a
+surface given by, so a meeting given on a surface is found from a face on it however either is
+written — and only an index no other class has taken, never one read the same over a region alone,
+which would join what the classes parted. Taken where a face was the given surface exactly, a pose
+of the ring road turned about its own axis — its seam stood elsewhere, the same torus in another
+frame — was given an index of its own and lost the meetings given it: the 80° tumbling torus judged
+wrong at one seam position, the full turn refused at every one but its own.
+`arrangement::a_face_takes_the_index_of_a_surface_given_it_is_the_same_as_in_any_frame` (a torus's
+meeting with a plane given on the torus with its seam turned, laid as given) and
+`swept_rings::the_tumbling_torus_is_built_wherever_its_start_poses_seam_stands` and
+`the_full_turn_is_built_wherever_its_end_poses_seams_stand` are the gates. **The rules an arrangement reads
 two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
 come within `ON_CURVE` tolerances, inside both stretches by as much (`query::crossings_in`:
 `curve_curve`'s closed forms read at that reach in every test they make, each a test of two curves
