@@ -1033,8 +1033,24 @@ before ports 0.9 s to 0.4 s.
   its name is still known to the flattener and nothing is declared for
   it, and whatever else a statement reading it says — or a statement reading a name one of those
   declares, transitively, or a word's body reading it — follows only from the refusal and is left
-  unsaid (`program::words::given_unsaid`, applied as `elaborate` returns): one diagnostic.  `tests/given_bodies.rs` is the gate, the stage's own
-  (`a_document_naming_a_file_exports_the_same_solid`) among it.
+  unsaid (`program::words::given_unsaid`, applied as `elaborate` returns): one diagnostic.  A file
+  of several solids is that E072, `` `two`: the file gives 2 solids, and a given body is one solid
+  `` (`a_file_of_several_solids_is_refused_saying_how_many`, over a fixture written by hand).
+  Every read that would place it is refused or right
+  (`a_given_body_is_refused_wherever_it_would_have_to_be_placed`): in a `ring`, a mirrored
+  instance, closed instances of one binding (said once), a joint's frame, a claim or a formal
+  under a posed frame, E106; a body over a body made of it, written under a posed frame, stands
+  where a body over any root solid does, `part at(under: std.z) 90deg` is it turned, and the
+  solid it sweeps about a line is swept.  **Edits**: it has no statement of its own, so a gesture
+  over it is refused in words, the document untouched — deleting it names the statements reading
+  it and the `use` (`edit::remove`, which counts it kept), rounding it names the body to make
+  (`edit::add_rounds`), resizing, turning or drawing on it finds no statement or face to write —
+  while the body made of it is rounded whole, cut or deleted, an edge picked between faces with
+  no name to write refused rather than taken as the whole body; `retext` and `adopt` hold, and the
+  outline has one row, the body (`edits_over_a_given_body_are_made_or_refused_in_words`).  The
+  library's case is `rust/examples/given/bought_block.sv`, its file beside it, held by
+  `every_example` and `the_librarys_case_drills_a_bought_block`.  `tests/given_bodies.rs` is the
+  gate, the stage's own (`a_document_naming_a_file_exports_the_same_solid`) among it.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
   (`Decl::computed`), refused on the sheet by the flattener and compiled to two tapes when traced.
