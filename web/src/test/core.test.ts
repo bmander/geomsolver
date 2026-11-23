@@ -2871,3 +2871,37 @@ test('a sketch on a face is written by name through the edit API, and a plane al
   assert.equal(on.facePlane(b0.index, 'b0.far'), 'v0');
   assert.ok(d.sketchOnFace(b0.index, 'b0.nothing').refused);
 });
+
+test('a file found as NAME.step that is no exchange file is refused at the use, once', () => {
+  const doc = 'unit mm\nuse bracket\npart := solid(bracket)\n';
+  for (const text of ['', 'component Rung(a: point) {\n}\nhello world\n']) {
+    modules.provideProject('doc.sv', { 'doc.sv': doc, 'bracket.step': text });
+    const d = Document.read(doc);
+    try {
+      const said = d.diagnostics.map((x) => `${x.code} ${x.message}`);
+      assert.equal(said.length, 1, said.join('\n'));
+      assert.match(said[0], /^E072 `bracket`: .*the file does not start `ISO-10303-21;`/);
+    } finally {
+      d.dispose();
+      modules.forget();
+    }
+  }
+});
+
+test('a document named like the file it reads reads the file, never itself', async () => {
+  const { readFileSync } = await import('node:fs');
+  const step = readFileSync(new URL('../../../rust/gcs-core/tests/step_file/drilled_ap214.step',
+                                    import.meta.url), 'utf8');
+  const doc = 'unit mm\nuse foo\npart := solid(foo)\n';
+  assert.deepEqual(modules.searchPaths('foo', 'parts/foo.sv').slice(0, 3),
+    ['parts/foo.step', 'parts/foo.stp', 'foo.sv']);
+  modules.provideProject('parts/foo.sv', { 'parts/foo.sv': doc, 'parts/foo.step': step });
+  const d = Document.read(doc);
+  try {
+    assert.ok(d.ok, d.diagnostics.map((x) => x.message).join('\n'));
+    assert.equal(modules.source('foo'), step);
+  } finally {
+    d.dispose();
+    modules.forget();
+  }
+});

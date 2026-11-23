@@ -63,27 +63,30 @@ pub unsafe extern "C" fn gcs_module_provided(ptr: *const u8, len: usize) -> i32 
     guard(0, move || HOST_MODULES.with(|m| m.borrow().contains_key(as_str(ptr, len))) as i32)
 }
 
-/// Hand the core a module's text under the name a `use` asks for (`engine.parts`).  Kept until
-/// `gcs_module_forget`; a second `set` under one name replaces the first.  Nothing already
-/// elaborated changes: an edit relinks from the texts it has (`program::reparse`), so the table
-/// is read only when a program is read whole.
+/// Hand the core a module's text under the name a `use` asks for (`engine.parts`), found at
+/// `path` in the host's project (`parts/engine.step`; empty where the host has no path, a worker
+/// handed the page's texts).  Kept until `gcs_module_forget`; a second `set` under one name
+/// replaces the first.  Nothing already elaborated changes: an edit relinks from the texts it has
+/// (`program::reparse`), so the table is read only when a program is read whole.
 ///
 /// The text is a Solvent document or an ISO 10303-21 exchange file (#993 stage 2), its bytes read
-/// as `modules::decode` reads a file's: an exchange file's few bytes that are not UTF-8 (Latin-1
-/// in its strings) are taken lossily, as `solventc` takes them.  Any other text that is not UTF-8
-/// is refused, never stored as an empty module: 0, with why in `gcs_last_error`, and whatever was
-/// under the name is forgotten, so a `use` of it is unresolved rather than an older text's.  1
-/// when the text is kept.
+/// as `modules::decode` reads a file's where it was found: an exchange file's few bytes that are
+/// not UTF-8 (Latin-1 in its strings) are taken lossily, as `solventc` takes them, and a file
+/// found by an exchange file's name is one whatever its text, refused by the kernel's reader at
+/// the `use` where it is none.  Any other text that is not UTF-8 is refused, never stored as an
+/// empty module: 0, with why in `gcs_last_error`, and whatever was under the name is forgotten,
+/// so a `use` of it is unresolved rather than an older text's.  1 when the text is kept.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, tp: *const u8, tn: usize)
-    -> i32 {
+pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, pp: *const u8, pn: usize,
+                                        tp: *const u8, tn: usize) -> i32 {
     guard(0, move || {
         let name = as_str(np, nn).to_string();
+        let path = as_str(pp, pn);
         let bytes = match tp.is_null() || tn == 0 {
             true => Vec::new(),
             false => std::slice::from_raw_parts(tp, tn).to_vec(),
         };
-        match gcs_core::modules::decode(bytes) {
+        match gcs_core::modules::decode(path, bytes) {
             Ok(text) => {
                 HOST_MODULES.with(|m| m.borrow_mut().insert(name, text));
                 1

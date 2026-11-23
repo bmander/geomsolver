@@ -35,7 +35,9 @@ fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
         assert_eq!(take(gcs_program_uses(doc.as_ptr(), doc.len())), "[\"std\",\"demo.parts\"]");
         // nothing handed over, nothing in the library: E070 at the `use`
         assert!(report_of(doc).contains("E070"), "an unknown module is E070");
-        gcs_module_set(name.as_ptr(), name.len(), module.as_ptr(), module.len());
+        let path = "demo/parts.sv";
+        gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
+                       module.as_ptr(), module.len());
         assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), module);
         assert!(take(gcs_module_source(b"std".as_ptr(), 3)).contains("component StandardDatums"));
         let r = report_of(doc);
@@ -61,8 +63,10 @@ fn an_exchange_file_is_kept_lossily_and_uses_nothing() {
     assert!(std::str::from_utf8(&latin1).is_err());
     let name = "vendor.bracket";
     unsafe {
-        for text in [&file, &latin1] {
-            assert_eq!(gcs_module_set(name.as_ptr(), name.len(), text.as_ptr(), text.len()), 1);
+        // where the host found it, or no path at all (a worker handed the page's texts)
+        for (text, path) in [(&file, "vendor/bracket.step"), (&latin1, ""), (&latin1, "vendor/bracket.stp")] {
+            assert_eq!(gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
+                                      text.as_ptr(), text.len()), 1);
             assert_eq!(gcs_module_provided(name.as_ptr(), name.len()), 1);
             let kept = take(gcs_module_source(name.as_ptr(), name.len()));
             assert!(kept.starts_with("ISO-10303-21;") && kept.len() + 2 >= text.len(), "{}", kept.len());
@@ -71,11 +75,38 @@ fn an_exchange_file_is_kept_lossily_and_uses_nothing() {
         assert!(take(gcs_module_source(name.as_ptr(), name.len())).contains("('M\u{fffd}ller')"));
         // Solvent that is not UTF-8 is refused, and the older text under the name goes with it
         let bad = b"component Rung(a: point) {\n  // M\xfcller\n}\n";
-        assert_eq!(gcs_module_set(name.as_ptr(), name.len(), bad.as_ptr(), bad.len()), 0);
+        let path = "vendor/bracket.sv";
+        assert_eq!(gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
+                                  bad.as_ptr(), bad.len()), 0);
         let why = take(gcs_last_error());
         assert!(why.contains("vendor.bracket") && why.contains("UTF-8"), "{why}");
         assert_eq!(gcs_module_provided(name.as_ptr(), name.len()), 0);
         assert!(gcs_module_source(name.as_ptr(), name.len()).is_null());
         gcs_module_forget();
+    }
+}
+
+/// A file the host found as `NAME.step` whose text is no exchange file — empty, or Solvent-looking
+/// text — is handed over as one and refused by the kernel's reader at the `use` (E072), once and in
+/// its words: never linked as an empty Solvent module (only E101 at the read), never parsed as
+/// Solvent (a flood of E100).
+#[test]
+fn a_file_found_as_an_exchange_file_that_is_none_is_refused_at_the_use() {
+    let doc = "unit mm\nuse bracket\npart := solid(bracket)\n";
+    let name = "bracket";
+    for text in ["", "hello world\nthis is no step\n"] {
+        unsafe {
+            let path = "bracket.step";
+            assert_eq!(gcs_module_set(name.as_ptr(), name.len(), path.as_ptr(), path.len(),
+                                      text.as_ptr(), text.len()), 1);
+            // it uses nothing: it is not Solvent
+            let kept = take(gcs_module_source(name.as_ptr(), name.len()));
+            assert_eq!(take(gcs_program_uses(kept.as_ptr(), kept.len())), "[]");
+            let r = report_of(doc);
+            assert!(r.contains("E072") && r.contains("`bracket`: ")
+                    && r.contains("the file does not start `ISO-10303-21;`"), "{text:?}: {r}");
+            assert!(!r.contains("E100") && !r.contains("E101"), "said once: {r}");
+            gcs_module_forget();
+        }
     }
 }

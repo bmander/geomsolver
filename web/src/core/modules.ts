@@ -55,9 +55,13 @@ export function isStep(text: string): boolean {
   return withStr(text.slice(0, HEAD), (p, n) => core().gcs_text_is_step(p, n)) === 1;
 }
 
-/** Hand the core a module's text under its `use` name; it outranks the library's copy. */
-export function provide(name: string, text: string): void {
-  withStr(name, (np, nn) => withStr(text, (tp, tn) => core().gcs_module_set(np, nn, tp, tn)));
+/** Hand the core a module's text under its `use` name; it outranks the library's copy.  `path` is
+ *  where the host found it (`parts/bracket.step`), or none for a text handed on (a worker given
+ *  the page's): a file found by an exchange file's name is one to the core whatever its text, so
+ *  one that is none is refused by the kernel's reader at the `use` (`modules::decode`). */
+export function provide(name: string, text: string, path = ''): void {
+  withStr(name, (np, nn) => withStr(path, (pp, pn) => withStr(text, (tp, tn) =>
+    core().gcs_module_set(np, nn, pp, pn, tp, tn))));
 }
 
 /** Whether the host handed module `name` over, rather than a `use` of it reading the library. */
@@ -100,19 +104,19 @@ export function searchPaths(name: string, root: string): string[] {
 /** Provide current project texts when opening a model or an individual component. */
 export function provideProject(root: string, files: Record<string, string>): void {
   forget();
-  const list: [string, string][] = [];
+  const found: [string, string, string][] = [];
   const seen = new Set<string>(), queue = uses(files[root] ?? '');
   for (let i = 0; i < queue.length; i++) {
     const name = queue[i];
     if (seen.has(name)) continue;
     seen.add(name);
     const path = searchPaths(name, root).find((candidate) => candidate in files);
-    if (path !== undefined) list.push([name, files[path]]);
+    if (path !== undefined) found.push([name, files[path], path]);
     // what a `use` of it will read: the project's copy, or (nothing handed over yet) the library's
     const text = path !== undefined ? files[path] : source(name);
     if (text !== null) queue.push(...uses(text));
   }
-  install(list);
+  for (const [name, text, path] of found) provide(name, text, path);
 }
 
 /** Fetch and hand over every module `text` reaches, through `fetchText(path)` — `null` for one
@@ -130,10 +134,10 @@ export async function link(
     const name = queue.shift()!;
     if (asked.has(name)) continue;
     asked.add(name);
-    let t: string | null = null;
-    for (const path of searchPaths(name, '')) if ((t = await fetchText(path)) !== null) break;
+    let t: string | null = null, at = '';
+    for (const path of searchPaths(name, '')) if ((t = await fetchText((at = path))) !== null) break;
     if (t === null) continue;
-    provide(name, t);
+    provide(name, t, at);
     got.push(name);
     queue.push(...uses(t));
   }

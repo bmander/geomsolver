@@ -53,11 +53,11 @@ pub fn module(base: &Path,name: &str) -> Option<String> {
         .or_else(|| gcs_core::library::resolve(name))
 }
 
-/// A module file's text as every host reads it (`modules::decode`): one that is there and does
+/// A module file's text as every host reads it where it found it (`modules::decode`): one that is there and does
 /// not read fails the test, rather than reading as no module.
 pub fn file(p: &Path) -> String {
     let bytes = std::fs::read(p).unwrap_or_else(|e| panic!("{}: {e}",p.display()));
-    gcs_core::modules::decode(bytes).unwrap_or_else(|e| panic!("{}: {e}",p.display()))
+    gcs_core::modules::decode(&p.to_string_lossy(),bytes).unwrap_or_else(|e| panic!("{}: {e}",p.display()))
 }
 
 /// The module `name` a document `source` (a path relative to `dir`, the directory it is in)
