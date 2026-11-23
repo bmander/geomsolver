@@ -144,6 +144,76 @@ fn a_box_screwed_inside_a_rod_is_a_sealed_tunnel_of_its_volume() {
     assert!((volume(&cut)-expected).abs() <= 10.*tol,"{} against {expected}",volume(&cut));
 }
 
+/// brep-bench's `swept/fine-thread-with-sharp-crests` (#1004): the rod of radius 5 about z from
+/// z = 0 to `length`, threaded by a bar 0.9 thick screwed about z at a lead of 1 from half a turn
+/// below it to half a turn above, so the groove's turns meet and leave sharp crests: its volume,
+/// and the tolerance it is cut to.
+fn fine_thread(length: f64) -> (f64,f64) {
+    let up = [0.,0.,1.];
+    let rod = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([0.;3],up,5.),0.,length).unwrap();
+    let bar = gcs_core::brep::build::block([4.5,-8.,-0.45],[12.,8.,0.45]).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:up,ratio:1.,advance:1.});
+    let tol = gcs_core::brep::geom::tolerance(rod.size().max(bar.size()));
+    let roll = [-std::f64::consts::PI,(2.*length+1.)*std::f64::consts::PI];
+    let cut = gcs_core::brep::swept::closed::cut_from(&rod,&bar,&path,roll,bar.size(),tol)
+        .unwrap_or_else(|e| panic!("the thread {length} long not cut: {e:?}"));
+    (volume(&cut),tol)
+}
+
+/// The bench's thread, 20 long: its volume as the bench holds it (`step_corpus/brep_bench_cases.tsv`;
+/// OCCT's and next.BREP's own builds of it are within a part in 10⁹ of it).
+const FINE_THREAD: f64 = 1276.7029992078067;
+
+/// **A thread with sharp crests is cut, a twentieth of the bench's** (#1004's gate): the bench's
+/// `swept/fine-thread-with-sharp-crests` a unit long, two turns of the bar. The groove repeats a
+/// lead along the rod, so its volume is a twentieth of the bench's thread 20 long, within ten
+/// tolerances. It was refused (`Wrong`) once a blend's foot was read near by its section's size:
+/// the screw's domain, each edge 116 long screwed thirty turns at a lead of 1, kept a stationary
+/// foot a tenth of the lead off a point of its own rim (`Blend::reach`).
+#[test]
+fn a_thread_with_sharp_crests_is_cut() {
+    let (v,tol) = fine_thread(1.);
+    assert!((v-FINE_THREAD/20.).abs() <= 10.*tol,"{v} against {}",FINE_THREAD/20.);
+}
+
+/// **The bench's thread with sharp crests is cut** (#1004): `swept/fine-thread-with-sharp-crests`
+/// itself, 20 long over 21 turns, to the bench's volume within ten tolerances; refused at #1003.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, #1004: the bench's thread, 20 s")]
+fn the_benchs_thread_with_sharp_crests_is_cut() {
+    let (v,tol) = fine_thread(20.);
+    assert!((v-FINE_THREAD).abs() <= 10.*tol,"{v} against {FINE_THREAD}");
+}
+
+/// **A point of a long section screwed a fine lead is its own foot** (#1004, `Blend::reach`): a
+/// line 116 long passing 8 from the axis at its middle, screwed thirty turns at a lead of 1 — the
+/// screw's domain in the fine thread — and points of it asked in no order, a third on each rim,
+/// each from the last one's foot. Each is its own foot within the tolerance of the sheet's size.
+/// Read near by the section's size, a foot Newton's method settled on from the last one within a
+/// thousandth of it (0.116) was kept: a stationary point a tenth of the lead off, where the sheet
+/// twists about the axis. And a point of the rim where the sheet starts, whose level start is on
+/// it, was refused that start for Newton's foot reading a unit in the last place farther, and
+/// searched onto the next turn 0.63 off (`Blend::from_level`).
+#[test]
+fn a_point_of_a_long_section_screwed_a_fine_lead_is_its_own_foot() {
+    use gcs_core::brep::geom::{tolerance,Blend,Carry,Curve};
+    // (slanting across the axes, so its points are read with rounding)
+    let (s,c) = 0.5f64.sin_cos();
+    let line = Curve::Line {p:[8.*s-58.*c,-8.*c-58.*s,-5.],d:[c,s,0.]};
+    let turns = 30.;
+    let sheet = Blend {a:line.clone(),ta:[0.,116.],b:line,tb:[0.,116.],closed:false,
+        carry:Carry::Screw {center:[0.;3],axis:[0.,0.,1.],angle:turns*std::f64::consts::TAU,advance:turns}};
+    let mut rng = gcs_core::rng::Rng::new(1004);
+    for i in 0..20000 {
+        let u = rng.uniform(0.,1.);
+        let uv = [u,match i%3 { 0 => 0.,1 => 1.,_ => rng.uniform(0.,1.) }];
+        let p = sheet.d1(uv).0;
+        let foot = sheet.inverse(p);
+        let d = gcs_core::space::distance(sheet.d1(foot).0,p);
+        assert!(d <= tolerance(116.),"{uv:?}'s foot {foot:?} stands {d:e} off it");
+    }
+}
+
 /// **A block leaning to a screw's axis closes into its helical sweep** (#777 M5's gate: the leaning
 /// block under a screw, docs/swept-solid-design.md's "tried and set aside, for a leaning edge under
 /// a screw"): its leaning edges, and its leaning faces' contact lines (where a face's normal is
