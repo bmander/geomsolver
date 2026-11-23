@@ -2589,6 +2589,17 @@ impl std::fmt::Display for Shallow {
 
 impl From<Shallow> for String { fn from(s: Shallow) -> String { s.to_string() } }
 
+/// EXPERIMENT (#880 T1f): whether a B-spline sheet's parametrization folds between the feet of `p`
+/// and `q`, their `S_u × S_v` facing apart (it vanishes between them: a fold row). Read with the
+/// sheet's warm starts kept as they were.
+fn folds_between(s: &Surface,p: V,q: V) -> bool {
+    if !matches!(s,Surface::BSpline(..)) { return false }
+    crate::util::warm::kept(|| {
+        let n = |x: V| { let (_,su,sv) = s.d1(s.inverse(x)); cross(su,sv) };
+        dot(n(p),n(q)) < 0.
+    })
+}
+
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
@@ -2770,6 +2781,17 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                 let turned = (dot(tq,t) > 0.) != facing;
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
+                // EXPERIMENT (#880 T1f): **a march at its least step still turning sharply across a
+                // fold of a sheet's parameters ends there.** A fitted net may run on past a cuspidal
+                // edge and fold back (`S_u × S_v` vanishing along a row of its parameters): the
+                // nearest foot then leaps between the layers, each step at the least lands back
+                // beside where it began, turned, and the march creeps to its cap. Where the feet of
+                // `p` and `q` on either sheet have their `S_u × S_v` facing apart, a fold row lies
+                // between them: the end of that sheet's regular part, where the march ends
+                if dot(tq,t) < 0.996 && (folds_between(a,p,q) || folds_between(b,p,q)) {
+                    if super::debug() { eprintln!("brep:   a march ended at a sheet's fold after {} points at {p:?}",pts.len()) }
+                    break
+                }
                 // **a step across a touch** (two vaults' groins crossing at their crown, where the
                 // two are tangent): `∇a × ∇b` turned about between its ends, so it vanished between
                 // them, where it shrinks to nothing; a touch there along this march's branch ends the

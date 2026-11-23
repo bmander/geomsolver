@@ -1066,6 +1066,39 @@ fn span(c: &gcs_core::brep::geom::Curve) -> [f64;2] {
 }
 
 #[test]
+fn a_trace_ends_at_a_fold_of_its_sheet() {
+    // EXPERIMENT (#880 T1f): a cuspidal sheet `(s², v, s³)`, `s` over [−1, 1] — its parametrization
+    // folding along `s = 0`, the net running on past its cuspidal edge into a second layer — cut by
+    // the plane `z = 0.2 (y − 0.5)`, which meets it in `y = 0.5 + 5 s³` through the cusp. At a
+    // tolerance whose landing slack (16 tolerances) is over the march's least step, the march read
+    // its way on through the cusp onto the layer `s < 0` (531 points, from `y = 1` to `y = 0`); it
+    // ends at the fold, the end of the sheet's regular part
+    use gcs_core::brep::geom::Surface;
+    let f = |u: f64,v: f64| { let s = 2.*u-1.; [s*s,v,s*s*s] };
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,8,4,1e-12).unwrap();
+    let sheet = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let n = [0.,-0.2/1.04f64.sqrt(),1./1.04f64.sqrt()];
+    let plane = Surface::Plane(Frame::about([0.,0.5,0.],n));
+    let tol = 1e-5;
+    let s = 0.3f64;
+    let seed = [s*s,0.5+5.*s*s*s,s*s*s];
+    let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&[seed],[-1.,-1.,-2.],[2.,2.,2.],tol).unwrap();
+    assert_eq!(curves.len(),1);
+    let c = &curves[0];
+    let span = span(c);
+    let (a,z) = (c.point(span[0]),c.point(span[1]));
+    let (cusp,edge) = if a[1] < z[1] { (a,z) } else { (z,a) };
+    let at = |p: V,q: V| (0..3).map(|k| (p[k]-q[k]).abs()).fold(0.,f64::max);
+    assert!(at(cusp,[0.,0.5,0.]) <= 16.*tol,"the march ends at {cusp:?}, not the cusp");
+    assert!((edge[1]-1.).abs() <= 16.*tol,"the march ends at {edge:?}, not the sheet's edge");
+    // nowhere on the second layer
+    for k in 0..=1000 {
+        let p = c.point(span[0]+(span[1]-span[0])*k as f64/1000.);
+        assert!(p[2] >= -16.*tol,"{k}: {p:?} on the layer past the fold");
+    }
+}
+
+#[test]
 fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
     use gcs_core::brep::geom::Surface;
     // a curved sheet over [0, 10] × [0, 10], cut by the plane x = 4: the meeting runs from the sheet's
