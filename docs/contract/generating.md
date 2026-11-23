@@ -2612,6 +2612,38 @@ outside the hole in that stretch — its fold is the one through the instant —
 unborn toward the cut. Not yet: that, `ρ₀`'s rule, the rim as a chord and the hole's piece dropped
 by construction, the collar's net and its trim.
 
+**The tube road: a torus's sweep as the offset of its core circle's sweep** (#880 T1f,
+`swept::tube`; its charts and depth, not yet a road that builds): a torus is the set of points
+within its tube `r` of its core circle, so its sweep's boundary lies on the offset at `r` of the
+surface `S(θ, t)` the circle sweeps, its two sheets `X± = S ± r N` (`Tube::point`, `S`'s rates in
+closed form but `S_tt`, one central difference) each one map over the whole rectangle wherever `S`
+is regular, plus the end poses' tori (`Chart::End`, over `(θ, ψ)`). A sheet's fold is a cuspidal
+edge of the map, the zero set of its Jacobian against the spine's `J = 1 − 2rH + r²K`
+(`tube::edges`, its metric the spine's), and `J`'s sign is the far cover's: `J ≤ 0` is `Near`
+(the half turn, every point of a 32 × 15 grid on both sheets,
+`swept_tube::the_half_turns_sheets_are_maps_with_one_cuspidal_edge_and_the_ring_roads_swallowtail_point`).
+An end pose's own edge is its contact circles, where `n · v` passes nought (`Tube::side`). The
+swallowtail points are where the sheet's kernel runs along its cuspidal edge (`tube::swallowtails`,
+Newton on `(J, ∇J · k)`): the half turn's one, on the sheet `−`, is the ring road's apex to 1e-6.
+**Measured on the half turn** (`tube_profile half-turn`): each sheet fitted as a map by
+`nurbs::fit_net` (quintic, no fold check) to 6.3e-8 against a bar of 3.2e-7, 257 × 65 poles, in
+0.15 s; the sheet `+` has no cuspidal edge, the sheet `−` one, a sliver from the roll's end across
+`θ ≡ 0` (from `θ` 6.2518 to 0.1386 at `t = b`, down to 1.4839 at the swallowtail point
+(0.0656162, 1.4839292)); each end pose's contact circles traced in 0.3 s. The far cover's depth
+over a chart (`tube::Depth`, `tube::seams`) is traced by `zero_set::trace` over the rectangle cut in
+two across each whole turn (`tube::round`: the search halves a cell across its longer way read
+between its sides' ends, and over a whole turn those are one point, so it halved one way only and
+never settled). Its bound is sampled evidence, not proof: the least far cover of the cell's nine
+points less their spread, a cell whose nine nothing else covers read clear — a Lipschitz bound from
+the middle alone clears nothing along the rims, where a sheet touches its end pose and the end's
+depth goes as the square of the distance. `Depth::along`, continuing a cover held at an end of the
+roll, reads that end too: past the point's own contact `d` is no single basin over the stretch, and
+the golden section settled on the climb, 7e-6 off. Measured: no seam on the sheet `+` nor on the
+start pose; on the end pose one, the double curve's continuation, covered from 1.4626 to 1.4830;
+on the sheet `−` the double curve traced from the end pose's cover down to 5e-4 of the swallowtail
+point, where the march stalls — it ends there tangent to the cuspidal edge, where the sheet's metric
+is singular (not yet joined to the point).
+
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
 `depth::cover`'s certified march is the reading): the sweep is the union of

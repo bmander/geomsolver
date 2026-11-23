@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The tube road's charts and depth** (#880 T1f, `swept::tube`; not yet a road that builds): a
+  torus's sweep read as the offset of the surface `S` its core circle sweeps — its two sheets
+  `X± = S ± r N` in closed form (`Tube::point`), each one map over the whole `(θ, t)` rectangle
+  fitted as a net with no fold check; the sheet's Jacobian `J` (`Tube::jacobian`), whose zero set is
+  its cuspidal edge (`tube::edges`) and whose sign is the far cover's `Near`; swallowtail points
+  where the sheet's kernel runs along that edge (`tube::swallowtails`); the end poses as charts
+  over `(θ, ψ)` with their contact circles; the far cover's depth over any chart as a
+  `zero_set::Field` with a bound (`tube::Depth`, `tube::seams`), each rectangle traced in parts
+  across a whole turn (`tube::round`). Probe: `tube_profile`.
+
 - **The crossed tori's tubes fitted through a meridian touched whole for an instant, with a hole**
   (#880 T1f, `swept::rings::Hole`, `closed::ring_fitted_holed`, `rings::pairs_over`; not yet the
   road's): the roll cut at the instant, each tube read inside `|(A, B)| < ρ₀` as a smooth stand-in

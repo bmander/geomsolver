@@ -30,6 +30,7 @@ pub mod instant;
 pub mod patches;
 pub mod rings;
 pub mod depth;
+pub mod tube;
 mod touched;
 pub mod dump;
 pub mod read;

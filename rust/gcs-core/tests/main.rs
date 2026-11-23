@@ -364,6 +364,7 @@ mod swept_member;
 mod swept_patches;
 mod swept_rings;
 mod swept_depth;
+mod swept_tube;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
