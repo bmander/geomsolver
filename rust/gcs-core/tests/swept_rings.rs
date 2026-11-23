@@ -1214,7 +1214,8 @@ fn a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it() {
 /// its halves, the sheet over the angle and the roll blowing its point up into the whole meridian.
 /// Each member has one such instant inside its roll (the forward 1.3264280599, the reverse
 /// 0.9003349192), and the road refuses there, `Curved` at the meridian's outer point, before
-/// anything is fitted (it had refined its fit toward the instant without end). Its half that
+/// anything is fitted (it had refined its fit toward the instant without end); `closed::ring` then
+/// builds the tube road's solid (`swept_tube::the_crossed_forward_member_builds_by_the_tube_road`). Its half that
 /// touches is the sweep's boundary: no other instant covers it. The cases already built touch no
 /// meridian whole. And each instant's contact is read over the whole roll — followed from angle
 /// to angle by its label (`Ring::instant`): read by its place round the meridian alone, the
@@ -1244,9 +1245,10 @@ fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name(
             }
         }
         assert!(round.iter().any(|r| r.3 > 0.1) && round.iter().any(|r| r.3 < -0.1));
-        match gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.22/250.,tol) {
+        // (the road refuses there; `closed::ring` then builds by the tube road, gated in `swept_tube`)
+        match gcs_core::brep::swept::closed::ring_entered(&tool,&path,roll,tol) {
             Err(Unbuilt::Curved {at}) => assert!(gcs_core::brep::util::space::distance(at,point) < 1e-9,"{observer}: {at:?}"),
-            other => panic!("{observer}: {:?}",other.map(|b| b.faces.len())),
+            other => panic!("{observer}: {:?}",other.map(|e| e.sheets.len())),
         }
         assert!(matches!(admits(&tool,&path,roll),Err(Unbuilt::Curved {..})));
     }

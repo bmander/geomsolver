@@ -578,17 +578,17 @@ fn the_crossed_reverse_sheets_lobe_beside_its_fold_loop_is_traced() {
 }
 
 /// **A crossed member built by the tube road, held** (#880 T1f): the bench's exact call
-/// (`Tube::pinched` over the bench's roll, its tolerance the tube's 50 000th), `check`, its volume
-/// within 1e-5 of the peer kernel cadrs's (`want`), held to its mesh and to membership by the depth,
-/// no misfit at the size's tolerance; and built again with the observer's origin moved by one ulp
+/// (`closed::ring` over the bench's roll, its bar the tube's 250th and its tolerance the 50 000th,
+/// which the old road's refusal at the pinch sends to the tube road), `check`, its volume within
+/// 1e-5 of the peer kernel cadrs's (`want`), held to its mesh and to membership by the depth, none
+/// of its mesh's points covered, its boundary audited by the depth (`audited`), no misfit at the
+/// size's tolerance; and built again with the observer's origin moved by one ulp
 /// and by 1e-6, each to the same volume within 1e-5. The faces' count and the volume returned.
 fn crossed_held(observer: f64,want: f64) -> (usize,f64) {
-    use gcs_core::brep::swept::tube::faces;
     let build = |moved: &dyn Fn(f64) -> f64| {
         let (tool,path,roll,tol) = crate::common::bench::crossed_moved(observer,|o| o.map(moved));
-        let ring = Ring::read(&tool).unwrap();
-        let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
-        let solid = faces::solid(&tube,tol).unwrap();
+        // (through `closed::ring`, which the old road's refusal at the pinch sends to the tube road)
+        let solid = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.22/250.,tol).unwrap();
         solid.check(tol).unwrap();
         (gcs_core::brep::props::volume(&solid),solid,tool,path,roll,tol)
     };
