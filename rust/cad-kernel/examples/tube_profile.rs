@@ -4,9 +4,13 @@
 //! sign against `depth::cover`'s reading: kept, covered, held by its neighbours), the kept regions
 //! counted on that map, and the depth's zero set on each sheet traced (`zero_set::trace`).
 //!
-//! `TUBE_AT=side,θ,t,dθ,dt` reads the depth and `J` on a 9 × 9 grid about a sheet's point instead.
+//! `TUBE_AT=side,θ,t,dθ,dt` reads the depth and `J` on a 9 × 9 grid about a sheet's point instead;
+//! `build` builds the solid by the tube road (`faces::solid`: faces, volume, time, covers read),
+//! `old` by the old ring road (`closed::ring`), `compare` reads the tube's certified cover against
+//! `depth::cover` on the grid, and `bound` the Jacobian's proved sign over cells against `J` read in
+//! them, and the sheets' edges' time. `TUBE_HALF` (degrees) sets the roll's half instead.
 //!
-//! `cargo run --release -p cad-kernel --example tube_profile -- half-turn|full-turn|thin|eighty|crossed-forward|crossed-reverse [grid θ] [grid t] [trace]`
+//! `cargo run --release -p cad-kernel --example tube_profile -- half-turn|full-turn|thin|eighty|tumble|crossed-forward|crossed-reverse [grid θ] [grid t] [trace]`
 use cad_kernel::swept::depth::Reading;
 use cad_kernel::swept::rings::Ring;
 use cad_kernel::swept::tube::{self,Chart,Tube};
@@ -19,6 +23,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let ((tool,path),half,tube_r) = match args.first().map(String::as_str) {
         Some("full-turn") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.,0.16),
+        Some("tumble") => (bench::tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.5),
         Some("eighty") => (bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),80.,0.16),
         Some("thin") => (bench::tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.,0.015),
         Some("crossed-forward") => (bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,1.),100.,0.22),
@@ -28,11 +33,95 @@ fn main() {
     let nth = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(128usize);
     let nt = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(64usize);
     let tracing = args.iter().any(|a| a == "trace");
+    let half = std::env::var("TUBE_HALF").ok().and_then(|h| h.parse().ok()).unwrap_or(half);
     let tol = tube_r/50_000.;
     let roll = [-(half as f64).to_radians(),(half as f64).to_radians()];
     let ring = Ring::read(&tool).unwrap();
     let tb = Tube::new(&ring,&path,roll).unwrap();
     println!("tube: radius {} height {} r {} roll {:?} tol {:e}",tb.radius,tb.height,tb.r,roll,tol);
+    // `bound`: the Jacobian's proved sign over cells against `J` read inside them
+    if args.iter().any(|a| a == "bound") {
+        println!("rates {:?}",tb.rates);
+        for side in [1.,-1.] {
+            let (mut proved,mut cells,mut wrong) = (0,0,0);
+            for &(nu,nv) in &[(16usize,8usize),(64,32),(256,128)] {
+                for i in 0..nu { for j in 0..nv {
+                    let c = [[TAU*i as f64/nu as f64,TAU*(i+1) as f64/nu as f64],[roll[0]+(roll[1]-roll[0])*j as f64/nv as f64,roll[0]+(roll[1]-roll[0])*(j+1) as f64/nv as f64]];
+                    cells += 1;
+                    let Some(b) = tb.jacobian_bound(side,c) else { continue };
+                    proved += 1;
+                    let [lo,hi] = b.value.bounds().unwrap();
+                    for p in 0..=4 { for q in 0..=4 {
+                        let (th,t) = (c[0][0]+(c[0][1]-c[0][0])*p as f64/4.,c[1][0]+(c[1][1]-c[1][0])*q as f64/4.);
+                        let jv = tb.jacobian(side,th,t).unwrap();
+                        if jv < lo || jv > hi { wrong += 1; if wrong < 5 { println!("  J {jv} outside [{lo}, {hi}] at ({th},{t})") } }
+                    } }
+                } }
+                println!("side {side:+} {nu}×{nv}: {proved} of {cells} proved so far, {wrong} wrong");
+            }
+            let clock = Instant::now();
+            let e = tube::edges(&tb,Chart::Sheet(side),tol,0.25*ring.thickness);
+            println!("side {side:+}: edges in {:?}: {:?}",clock.elapsed(),e.as_ref().map(|(p,s)| (p.len(),s.iter().map(|s| (s.free,s.monotone,s.beside,s.sampled,s.unresolved.len())).collect::<Vec<_>>())));
+        }
+        return
+    }
+    // `compare`: the tube's certified cover against `depth::cover` on a grid over each sheet
+    if args.iter().any(|a| a == "compare") {
+        for side in [1.,-1.] {
+            let (mut worst,mut apart,mut n) = (0f64,0usize,0usize);
+            let (mut t_new,mut t_old) = (std::time::Duration::ZERO,std::time::Duration::ZERO);
+            for j in 0..=nt { for i in 0..nth {
+                let (th,t) = (TAU*(i as f64+0.5)/nth as f64,roll[0]+(roll[1]-roll[0])*j as f64/nt as f64);
+                let Some(p) = tb.point(side,th,t) else { continue };
+                let c = Instant::now();
+                let new = tb.cover(p.x,t,tol);
+                t_new += c.elapsed();
+                let c = Instant::now();
+                let old = cad_kernel::swept::depth::cover(&ring,&path,roll,p.x,t,0.,tol).ok();
+                t_old += c.elapsed();
+                n += 1;
+                match (new,old) {
+                    (Some(Reading::Far(a)),Some(Reading::Far(b))) => { if (a.depth-b.depth).abs() > tol { apart += 1; if apart <= 8 { println!("  ({th:.4},{t:.4}) new {:.3e} at {:.5}, old {:.3e} at {:.5}",a.depth,a.at,b.depth,b.at) } } worst = worst.max((a.depth-b.depth).abs()) }
+                    (Some(Reading::Near),Some(Reading::Near)) | (Some(Reading::Alone),Some(Reading::Alone)) => {}
+                    (a,b) => { apart += 1; if apart <= 8 { println!("  ({th:.4},{t:.4}) new {a:?} old {b:?}") } }
+                }
+            } }
+            let c = Instant::now();
+            let dom = cad_kernel::util::interval::Interval::new(roll[0],roll[1]).unwrap();
+            let mut acc = 0.;
+            for _ in 0..1000 { acc += path.inverse_point_speed_bound([1.,2.,3.],dom).unwrap()+path.inverse_point_acceleration_bound([1.,2.,3.],dom).unwrap() }
+            println!("bounds {:?} each ({acc})",c.elapsed()/1000);
+            let c = Instant::now();
+            for k in 0..1000 { acc += path.at(k as f64*1e-3).unwrap().inverse().point([1.,2.,3.])[0] }
+            println!("at {:?} each ({acc})",c.elapsed()/1000);
+            let c = Instant::now();
+            for k in 0..1000 { acc += path.pose(k as f64*1e-3).unwrap().inverse().point([1.,2.,3.])[0] }
+            println!("pose {:?} each ({acc})",c.elapsed()/1000);
+            println!("side {side:+}: {n} points, {apart} apart, worst depth apart {worst:e}; new {:?} a cover, old {:?}",t_new/n as u32,t_old/n as u32);
+        }
+        return
+    }
+    // `old`: the solid by the old ring road (`closed::ring`), its volume and time
+    if args.iter().any(|a| a == "old") {
+        let clock = Instant::now();
+        match cad_kernel::swept::closed::ring(&tool,&path,roll,tube_r/250.,tol) {
+            Ok(s) => println!("the old road: {} faces, volume {:.10}, in {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed()),
+            Err(e) => println!("the old road refused in {:?}: {e:?}",clock.elapsed()),
+        }
+        return
+    }
+    // `build`: the solid by the tube road, its faces, volume and time, and the certified covers it asked
+    if args.iter().any(|a| a == "build") {
+        let clock = Instant::now();
+        let solid = tube::faces::solid(&tb,tol);
+        let covers = tube::covers_read();
+        match solid {
+            Ok(s) => println!("built: {} faces, volume {:.10}, check {:?}, in {:?}; {covers} covers, {:?} a cover",s.faces.len(),
+                cad_kernel::props::volume(&s),s.check(tol).err(),clock.elapsed(),clock.elapsed()/covers.max(1) as u32),
+            Err(e) => println!("refused in {:?} ({covers} covers): {e:?}",clock.elapsed()),
+        }
+        return
+    }
     if let Some(at) = std::env::var_os("TUBE_AT") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
         let (side,th0,t0,dth,dt) = (v[0],v[1],v[2],v[3],v[4]);

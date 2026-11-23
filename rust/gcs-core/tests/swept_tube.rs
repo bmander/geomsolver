@@ -49,6 +49,132 @@ fn the_half_turns_sheets_are_maps_with_one_cuspidal_edge_and_the_ring_roads_swal
     assert!((tail[0]-th).abs() < 1e-6 && (tail[1]-t).abs() < 1e-6,"the swallowtail point at {tail:?}, the ring road's at ({th}, {t})");
 }
 
+/// **The motion's rate bounds hold** (#880 T1f, `Trajectory::point_jet_bound_over`): for the half
+/// turn's motion (a turn seen from a turn), at points about the tool the acceleration of
+/// `M(t)⁻¹ x` read by second differences over the roll never passes its bound, and the bound is
+/// within a few times what is read (no bound so loose the cover's steps stall); at the core
+/// circle's points the acceleration, jerk and fourth rate of `M(t) x` read by differences never pass
+/// the circle's (`Tube::rates`); a path evaluated gives no bound.
+#[test]
+fn the_motions_rate_bounds_hold() {
+    use gcs_core::brep::util::interval::Interval;
+    let (tool,path,[a,b],_) = tumbling(90.);
+    let domain = Interval::new(a,b).unwrap();
+    let mut rng = gcs_core::rng::Rng::new(880);
+    for _ in 0..32 {
+        let x: [f64;3] = std::array::from_fn(|_| rng.uniform(-5.,5.));
+        let bound = path.inverse_point_acceleration_bound(x,domain).unwrap();
+        let h = 1e-4;
+        let q = |t: f64| path.pose(t).unwrap().inverse().point(x);
+        let mut most = 0f64;
+        for k in 1..400 {
+            let t = a+(b-a)*k as f64/400.;
+            let (l,m,r) = (q(t-h),q(t),q(t+h));
+            let acc = (0..3).map(|i| ((l[i]-2.*m[i]+r[i])/(h*h)).powi(2)).sum::<f64>().sqrt();
+            most = most.max(acc);
+        }
+        assert!(most <= bound*(1.+1e-5),"at {x:?}: an acceleration of {most} read, the bound {bound}");
+        assert!(bound <= 4.*most,"at {x:?}: the bound {bound}, the most read {most}");
+    }
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,[a,b]).unwrap();
+    let rates = tube.rates.unwrap();
+    let f = &ring.frame;
+    let h = 1e-2;
+    let mut most = [0f64;3];
+    for i in 0..16 {
+        let (s,c) = (TAU*i as f64/16.).sin_cos();
+        let x = f.at([tube.radius*c,tube.radius*s,tube.height]);
+        let p = |t: f64| path.pose(t).unwrap().point(x);
+        for k in 2..198 {
+            let t = a+(b-a)*k as f64/200.;
+            let v: Vec<[f64;3]> = (-2..=2).map(|j| p(t+h*j as f64)).collect();
+            let n = |w: [f64;3]| (w[0]*w[0]+w[1]*w[1]+w[2]*w[2]).sqrt();
+            let d2 = n(std::array::from_fn(|i| (v[1][i]-2.*v[2][i]+v[3][i])/(h*h)));
+            let d3 = n(std::array::from_fn(|i| (v[4][i]-2.*v[3][i]+2.*v[1][i]-v[0][i])/(2.*h*h*h)));
+            let d4 = n(std::array::from_fn(|i| (v[4][i]-4.*v[3][i]+6.*v[2][i]-4.*v[1][i]+v[0][i])/(h*h*h*h)));
+            for (m,d) in most.iter_mut().zip([d2,d3,d4]) { *m = m.max(d) }
+        }
+    }
+    for k in 0..3 { assert!(most[k] <= rates.jet[k+1]*1.01,"the circle's rate {}: {} read, the bound {}",k+2,most[k],rates.jet[k+1]) }
+    let evaluated = gcs_core::brep::trajectory::Trajectory::General(std::sync::Arc::new(Evaluated(path.clone())));
+    assert!(evaluated.inverse_point_acceleration_bound([1.,2.,3.],domain).is_err());
+}
+
+/// A motion read only by evaluating it.
+#[derive(Debug)]
+struct Evaluated(gcs_core::brep::trajectory::Trajectory);
+impl gcs_core::brep::trajectory::Path for Evaluated {
+    fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> { self.0.at(t) }
+}
+
+/// **The tube's certified cover reads as `depth::cover` does** (#880 T1f, `Tube::cover`): on a grid
+/// over both sheets of the half turn, a point held by its neighbours is held by both readings; where
+/// both read a far cover its depth agrees to the tolerance; and where `depth::cover`'s march reads
+/// the point alone the tube's reads it alone or a far cover not below nought — its march, finer
+/// about the top of the point's own contact, finds a fall past it the sampled march stepped over.
+#[test]
+fn the_tubes_cover_reads_as_the_depths() {
+    use gcs_core::brep::swept::depth::cover;
+    let (tool,path,roll,tol) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let [a,b] = roll;
+    let (mut far,mut alone) = (0,0);
+    for side in [1.,-1.] {
+        for j in 0..=12 { for i in 0..24 {
+            let (th,t) = (TAU*(i as f64+0.5)/24.,a+(b-a)*j as f64/12.);
+            let Some(p) = tube.point(side,th,t) else { continue };
+            let new = tube.cover(p.x,t,tol).unwrap();
+            let old = cover(&ring,&path,roll,p.x,t,0.,tol).unwrap();
+            match (new,old) {
+                (Reading::Far(n),Reading::Far(o)) => {
+                    assert!((n.depth-o.depth).abs() <= tol,"({th}, {t}) on {side}: {} against {}",n.depth,o.depth);
+                    far += 1;
+                }
+                (Reading::Near,Reading::Near) => {}
+                (Reading::Alone,Reading::Alone) => alone += 1,
+                (Reading::Far(n),Reading::Alone) => assert!(n.depth >= 0.,"({th}, {t}) on {side}: a cover {} the march read alone",n.depth),
+                (n,o) => panic!("({th}, {t}) on {side}: {n:?} against {o:?}"),
+            }
+        } }
+    }
+    assert!(far >= 100 && alone >= 10,"{far} far covers, {alone} alone");
+}
+
+/// **The charts' sides are proved over cells** (#880 T1f, `Tube::jacobian_bound` and
+/// `Tube::contact_bound`, the bounds of `tube::edges`'s search): over the half turn's two sheets cut
+/// into 256 × 128 cells and its end poses into 64 × 64, every enclosure a bound gives holds the side
+/// (`Tube::side`) read at nine points of its cell and proves its sign, and most cells are proved —
+/// on the sheets all but those about the sheet `−`'s cuspidal edge and where the spine's two rates
+/// stand near parallel, on the end poses all but those about the contact circles.
+#[test]
+fn the_charts_sides_are_bounded_over_cells() {
+    let (tool,path,roll,_) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    for (chart,(nu,nv),least) in [(Chart::Sheet(1.),(256,128),0.8),(Chart::Sheet(-1.),(256,128),0.7),
+        (Chart::End(0),(64,64),0.8),(Chart::End(1),(64,64),0.8)] {
+        let r = tube.rect(chart);
+        let mut proved = 0;
+        for i in 0..nu { for j in 0..nv {
+            let at = |k: usize,f: f64| r[k][0]+(r[k][1]-r[k][0])*f;
+            let c = [[at(0,i as f64/nu as f64),at(0,(i+1) as f64/nu as f64)],[at(1,j as f64/nv as f64),at(1,(j+1) as f64/nv as f64)]];
+            let bound = match chart { Chart::Sheet(side) => tube.jacobian_bound(side,c),Chart::End(k) => tube.contact_bound(k,c) };
+            let Some(bound) = bound else { continue };
+            proved += 1;
+            let [lo,hi] = bound.value.bounds().unwrap();
+            assert!(lo > 0. || hi < 0.,"{chart:?} over {c:?}: [{lo}, {hi}] proves no sign");
+            for p in 0..3 { for q in 0..3 {
+                let uv = [c[0][0]+(c[0][1]-c[0][0])*p as f64/2.,c[1][0]+(c[1][1]-c[1][0])*q as f64/2.];
+                let side = tube.side(chart,uv).unwrap();
+                assert!(side >= lo && side <= hi,"{chart:?} at {uv:?}: its side {side} outside [{lo}, {hi}]");
+            } }
+        } }
+        assert!(proved as f64 >= least*(nu*nv) as f64,"{chart:?}: {proved} of {} cells proved",nu*nv);
+    }
+}
+
 /// **The half turn's seams traced from the depth on every chart** (#880 T1f, `tube::seams`): on the
 /// sheet `−`, about its swallowtail point, a disc of radius 0.01 (halved from the feature until every
 /// far cover on its rim is within the tolerance) cut from the depth's domain; its double curve's two
@@ -122,6 +248,26 @@ fn the_half_turn_builds_by_the_tube_road() {
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the half turn by the tube road: {} faces, volume {v:.10}",solid.faces.len());
     assert!((v/12.2377154283-1.).abs() <= 1e-7,"the volume {v}, the old road's 12.2377154283");
+    held(&solid,&tube,&path,roll,v);
+}
+
+/// **The 80° torus built by the tube road** (#880 T1f): the sheet `−`'s cuspidal edges run the whole
+/// roll with no swallowtail point, each meeting the roll's ends at corners. 8 faces, `check`, its
+/// volume the old road's 10.9393141414 within 1e-7 of itself (10.9393141712 read), held to its mesh
+/// and to membership by the depth.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, membership read at twenty thousand points, ~30 s")]
+fn the_eighty_degree_torus_builds_by_the_tube_road() {
+    use gcs_core::brep::swept::tube::faces;
+    let (tool,path,roll,tol) = tumbling(80.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let solid = faces::solid(&tube,tol).unwrap();
+    solid.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&solid);
+    eprintln!("the 80° torus by the tube road: {} faces, volume {v:.10}",solid.faces.len());
+    assert_eq!(solid.faces.len(),8);
+    assert!((v/10.9393141414-1.).abs() <= 1e-7,"the volume {v}, the old road's 10.9393141414");
     held(&solid,&tube,&path,roll,v);
 }
 

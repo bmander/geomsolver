@@ -26,6 +26,7 @@
 //! Its idea is taken, none of its code: its trims are marching squares on fixed grids; here every
 //! curve is traced to the tolerance from events found exactly.)
 
+pub mod cover;
 pub mod faces;
 
 use super::closed::Unbuilt;
@@ -37,13 +38,28 @@ use crate::util::fmath::{Det,HALF_READ,THIRD_READ};
 use crate::util::space::{add,cross,dot,norm,scale,sub};
 use crate::zero_set::{Field,Value};
 use std::f64::consts::TAU;
+use std::sync::atomic::{AtomicUsize,Ordering};
 
 type V = [f64;3];
+
+/// The certified covers the road has read (`Tube::cover`), counted for its profile.
+static COVERS: AtomicUsize = AtomicUsize::new(0);
+
+/// How many certified covers the road has read in this process.
+pub fn covers_read() -> usize { COVERS.load(Ordering::Relaxed) }
 
 /// **A torus under a motion, read as its core circle's sweep and its tube**: the ring (its frame,
 /// for depth), the motion and its roll, the core circle's radius and height in the ring's frame,
 /// and the tube.
-pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub radius: f64,pub height: f64,pub r: f64 }
+pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub radius: f64,pub height: f64,pub r: f64,
+    pub rates: Option<Rates> }
+
+/// **How fast the motion carries the core circle over the roll**, bounded: its rotation's spin
+/// (`Trajectory::spin_bound`) and the first four rates of the circle's points
+/// (`Trajectory::point_jet_bound_over`, forward over the circle's box). None where the motion
+/// gives no such bound.
+#[derive(Clone,Copy,Debug)]
+pub struct Rates { pub spin: f64,pub jet: [f64;4] }
 
 /// **The spine's point and its rates at `(θ, t)`**: `S`, `S_θ`, `S_t`, `S_θθ`, `S_θt`, `S_tt`.
 #[derive(Clone,Copy,Debug)]
@@ -66,7 +82,19 @@ impl<'a> Tube<'a> {
             return Err(Unbuilt::Failed("the tube road: a tool whose meridian is not one circle clear of its axis".into()))
         }
         let [a,b] = roll;
-        Ok(Tube {ring,path,roll:[a.min(b),a.max(b)],radius:c[0],height:c[1],r})
+        let roll = [a.min(b),a.max(b)];
+        // (the circle's box: its centre and, along each axis, its radius times its plane's reach)
+        let f = &ring.frame;
+        let centre = f.at([0.,0.,c[1]]);
+        let rates = (|| {
+            let domain = crate::util::interval::Interval::new(roll[0],roll[1]).ok()?;
+            let boxed: [crate::util::interval::Interval;3] = std::array::from_fn(|k| {
+                let reach = c[0]*f.x[k].dhypot(f.y[k]);
+                crate::util::interval::Interval::new(centre[k]-reach,centre[k]+reach)
+            }).map(|i| i.ok()).map(|i| i.unwrap_or(crate::util::interval::Interval::ZERO));
+            Some(Rates {spin:path.spin_bound().ok()?,jet:path.point_jet_bound_over(boxed,domain,true).ok()?})
+        })();
+        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates})
     }
 
     /// The core circle's point at `θ` in the tool's coordinates, and its first and second rates.
@@ -154,7 +182,14 @@ impl<'a> Tube<'a> {
     /// march, to `within`).
     pub fn reading(&self,side: f64,theta: f64,t: f64,within: f64) -> Option<Reading> {
         let p = self.point(side,theta,t)?;
-        super::depth::cover(self.ring,self.path,self.roll,p.x,t,0.,within).ok()
+        self.cover(p.x,t,within)
+    }
+
+    /// **How the point `x`, its own instant `own`, stands under the sweep**, to `within`.
+    pub fn cover(&self,x: V,own: f64,within: f64) -> Option<Reading> {
+        COVERS.fetch_add(1,Ordering::Relaxed);
+        if let Some(r) = self.certified(x,own,within) { return Some(r) }
+        super::depth::cover(self.ring,self.path,self.roll,x,own,0.,within).ok()
     }
 }
 
@@ -240,7 +275,7 @@ impl Depth<'_> {
     /// How the chart's point at `uv` stands under the sweep (`depth::cover`).
     pub fn reading(&self,uv: [f64;2]) -> Option<(Point,Reading)> {
         let p = self.kept(uv)?;
-        let r = super::depth::cover(self.tube.ring,self.tube.path,self.tube.roll,p.x,self.tube.own(self.chart,uv),0.,self.within).ok()?;
+        let r = self.tube.cover(p.x,self.tube.own(self.chart,uv),self.within)?;
         Some((p,r))
     }
 }
@@ -330,12 +365,121 @@ impl Field for Edge<'_> {
         Some(Value {f:self.tube.side(self.chart,uv)?,grad,at:()})
     }
     fn along(&self,uv: [f64;2],_: &()) -> Option<Value<()>> { self.least(uv) }
+    fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        match self.chart { Chart::Sheet(side) => self.tube.jacobian_bound(side,c),Chart::End(k) => self.tube.contact_bound(k,c) }
+    }
     fn surface(&self,uv: [f64;2]) -> (V,V,V) {
         let s = match self.chart {
             Chart::Sheet(_) => self.tube.spine(uv[0],uv[1]).map(|s| (s.s,s.s_th,s.s_t)),
             Chart::End(_) => self.tube.at(self.chart,uv).map(|p| (p.x,p.x_th,p.x_t)),
         };
         s.unwrap_or(([f64::NAN;3],[f64::NAN;3],[f64::NAN;3]))
+    }
+}
+
+impl Tube<'_> {
+    /// **The sign of a sheet's Jacobian over a cell of its parameters, proved** (the cuspidal edges'
+    /// bound, `Edge::bound`): `J = det(I − s r II)/det I` (`I`, `II` the spine's fundamental forms,
+    /// `s` the side), so with `n = S_θ × S_t`, `w = |n|`, and `II'` the second form read against `n`
+    /// (`S_θθ · n`, `S_θt · n`, `S_tt · n`), `J = det Q / w⁴` for the symmetric
+    /// `Q = w I − s r II'`. At the cell's middle `Q` is read, and each entry's rates over the cell are
+    /// bounded by the core circle's (`R` its radius; `Ω`, `V`, `A`, `J₃` the motion's spin and the
+    /// circle's speed, acceleration and jerk, `Rates`): `|S_θ| = |S_θθ| = |S_θθθ| = R`,
+    /// `|S_θt|, |S_θθt| ≤ ΩR`, `|S_θtt| ≤ Ω²R`, `|S_t| ≤ V`, `|S_tt| ≤ A`, `|S_ttt| ≤ J₃`, and so
+    /// `|n| ≤ RV`, `|n_θ| ≤ RV + ΩR²`, `|n_t| ≤ ΩRV + RA`, each product's rate by the product rule.
+    /// Each entry then moves over the cell by at most its rates times the cell's half widths, and
+    /// `Q`'s eigenvalues by at most that change's Frobenius norm `δ` (Weyl): where the middle's
+    /// least eigenvalue stands above `δ`, `Q` is definite over the cell and `J > 0`; where its least
+    /// stands below `−δ` and its greatest above `δ`, `Q` is indefinite and `J < 0` — each with `J`'s
+    /// enclosure from `w`'s over the cell. (The middle's `S_tt`, a central difference, is off by at
+    /// most its truncation `h² J₄/6` and its rounding: both added to `δ`.) None where neither is
+    /// proved, the spine may be singular over the cell, or the motion gives no bound.
+    pub fn jacobian_bound(&self,side: f64,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        let Rates {spin:o,jet:[v,a,j3,j4]} = self.rates?;
+        let (rr,r) = (self.radius,self.r);
+        let mid = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
+        let (dth,dt) = (0.5*(c[0][1]-c[0][0]),0.5*(c[1][1]-c[1][0]));
+        let sp = self.spine(mid[0],mid[1])?;
+        let n = cross(sp.s_th,sp.s_t);
+        let w = norm(n);
+        let (e,f,g) = (dot(sp.s_th,sp.s_th),dot(sp.s_th,sp.s_t),dot(sp.s_t,sp.s_t));
+        let k = side*r;
+        let q = [w*e-k*dot(sp.s_thth,n),w*f-k*dot(sp.s_tht,n),w*g-k*dot(sp.s_tt,n)];
+        // (the middle's `S_tt`'s difference: `spine`'s step, its truncation and its rounding)
+        let h = THIRD_READ*(self.roll[1]-self.roll[0]);
+        let off = h*h*j4/6.+16.*f64::EPSILON*v/h;
+        // the rates over the cell, each bounded from the middle's value by its own rates
+        let st = norm(sp.s_t);
+        let vs = (st+o*rr*dth+a*dt).min(v);
+        let acc = (norm(sp.s_tt)+off+o*o*rr*dth+j3*dt).min(a);
+        let (nth,nt) = (rr*vs+o*rr*rr,o*rr*vs+rr*acc);
+        let (wlo,whi) = (w-nth*dth-nt*dt,(w+nth*dth+nt*dt).min(rr*vs));
+        if !(wlo > 0. && st > 0.) { return None }
+        let nb = whi;
+        let (fth,ft) = (rr*vs+o*rr*rr,o*rr*vs+rr*acc);
+        let (gth,gt) = (2.*o*rr*vs,2.*acc*vs);
+        let d11 = (nth*rr*rr+r*(rr*nb+rr*nth))*dth+(nt*rr*rr+r*(o*rr*nb+rr*nt))*dt;
+        let d12 = (nth*rr*vs+nb*fth+r*(o*rr*nb+o*rr*nth))*dth+(nt*rr*vs+nb*ft+r*(o*o*rr*nb+o*rr*nt))*dt;
+        let d22 = (nth*vs*vs+nb*gth+r*(o*o*rr*nb+acc*nth))*dth+(nt*vs*vs+nb*gt+r*(j3*nb+acc*nt))*dt+r*off*nb;
+        // where the tube is thin beside the spine's bending, the plainer test: `I ⪰ λ Id` with
+        // `λ ≥ W/(E + G)` (`λ λ' = W`, `λ' ≤ E + G`), so `P = I − (s r/w) II'` is definite where
+        // `λ > r |II'|/w` over the cell, `|II'|` its Frobenius norm, each entry bounded from the
+        // middle's by its rates (`Q`'s own less the first form's); and `J = det P / W ≥ m²/w²`
+        if r > 0. {
+            let (l,m,nn) = (dot(sp.s_thth,n).abs(),dot(sp.s_tht,n).abs(),dot(sp.s_tt,n).abs());
+            let dl = (rr*nb+rr*nth)*dth+(o*rr*nb+rr*nt)*dt;
+            let dm = (o*rr*nb+o*rr*nth)*dth+(o*o*rr*nb+o*rr*nt)*dt;
+            let dn = (o*o*rr*nb+acc*nth)*dth+(j3*nb+acc*nt)*dt+off*nb;
+            let second = ((l+dl).powi(2)+2.*(m+dm).powi(2)+(nn+dn).powi(2)).sqrt();
+            let margin = wlo*wlo/(rr*rr+vs*vs)-r*second/wlo;
+            if margin > 0. {
+                return Some(crate::zero_set::Bound {value:crate::util::interval::Iv::new(margin*margin/(whi*whi),f64::MAX),grad:None})
+            }
+        }
+        // (read in the parameters scaled by the middle's rates, `diag(1/R, 1/|S_t|)`: a congruence,
+        // so definiteness is kept, and `Q`'s two ways weighed alike)
+        let (u1,u2) = (1./rr,1./st);
+        let q = [q[0]*u1*u1,q[1]*u1*u2,q[2]*u2*u2];
+        let (d11,d12,d22) = (d11*u1*u1,d12*u1*u2,d22*u2*u2);
+        let delta = (d11*d11+2.*d12*d12+d22*d22).sqrt();
+        let half = 0.5*(q[0]+q[2]);
+        let spread = (0.5*(q[0]-q[2])).dhypot(q[1]);
+        let (least,most) = (half-spread,half+spread);
+        // (`J = det Q / w⁴`, `det Q` the scaled one's times `R² |S_t|²`)
+        let scale = rr*rr*st*st/whi.powi(4);
+        let value = if least > delta {
+            let l = least-delta;
+            crate::util::interval::Iv::new(l*l*scale,f64::MAX)
+        } else if least < -delta && most > delta {
+            crate::util::interval::Iv::new(-f64::MAX,(least+delta)*(most-delta)*scale)
+        } else { return None };
+        Some(crate::zero_set::Bound {value,grad:None})
+    }
+}
+
+impl Tube<'_> {
+    /// **The sign of an end pose's `Tube::side` over a cell of its `(θ, ψ)`, proved** (its contact
+    /// circles' bound): the side is `± n · v / |v|`, `n` the posed tool's unit normal and `v` the
+    /// motion's velocity at its point, so its sign is `g = ± n · v`'s. Over the cell `g` moves from
+    /// the middle's by at most its rates times the half widths: `|n_θ| ≤ 1`, `|n_ψ| = 1`,
+    /// `|x_θ| ≤ R + r`, `|x_ψ| = r`, and `v`, affine in the point, turns with it by the motion's spin
+    /// `Ω` at most (`|v_θ| ≤ Ω (R + r)`, `|v_ψ| ≤ Ω r`), `|v|` over the cell at most the middle's
+    /// plus those. Where `g` keeps its sign the side is enclosed (`g` over the greatest `|v|`). None
+    /// where it is not proved or the motion gives no bound.
+    pub fn contact_bound(&self,k: usize,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        let o = self.rates?.spin;
+        let mid = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
+        let (dth,dps) = (0.5*(c[0][1]-c[0][0]),0.5*(c[1][1]-c[1][0]));
+        let m = self.path.at(self.roll[k]).ok()?;
+        let p = self.at(Chart::End(k),mid)?;
+        let v = m.velocity(m.inverse().point(p.x));
+        let g = if k == 0 { -1. } else { 1. }*dot(p.n,v);
+        let (big,r) = (self.radius+self.r,self.r);
+        let vmax = norm(v)+o*big*dth+o*r*dps;
+        let spread = (vmax+o*big)*dth+(vmax+o*r)*dps;
+        let value = if g > spread { crate::util::interval::Iv::new((g-spread)/vmax,f64::MAX) }
+            else if g < -spread { crate::util::interval::Iv::new(-f64::MAX,(g+spread)/vmax) } else { return None };
+        Some(crate::zero_set::Bound {value,grad:None})
     }
 }
 

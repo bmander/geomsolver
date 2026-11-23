@@ -8,6 +8,21 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The tube road's own certified cover, and its charts' sides proved over cells** (#880 T1f):
+  `Tube::cover` reads how a point stands under the sweep with the torus's depth in closed form and
+  a bound on its second rate along the roll (`swept::tube::cover`: `|d''| ≤ A + V² max(1/g, 1/ρ)`),
+  marching the point's own contact to its top by steps the bound keeps within the tolerance of it
+  and finding the least past it best-first over halved stretches, settled by the secant on its rate
+  — some 40 µs a cover where `depth::cover`'s first-order march took 0.5 ms (and 2.7 ms along a
+  seam), `depth::cover` still read where the motion gives no bound. `Trajectory::point_jet_bound_over`
+  bounds the first four rates of a point under a motion of constant twists, forward or inverse
+  (`inverse_point_acceleration_bound` its second, inverse), and `Trajectory::spin_bound` its
+  rotation's speed; `Tube::rates` holds the core circle's. `Tube::jacobian_bound` proves a sheet's
+  Jacobian's sign over a cell (`Q = w I − s r II'` definite or indefinite, its entries' moves over the
+  cell bounded by the circle's rates, Weyl), and `Tube::contact_bound` an end pose's side: the
+  search of `tube::edges` clears cells by them where it sampled every cell of the feature's size.
+  The half turn builds in 3.9 s where it took 28 s, its volume 12.2377154879 to the digit.
+
 - **`zero_set` halves a cell spanning a whole turn across it** (#880 T1f): a cell's longer way is
   read along its path through its middle, not between its sides' ends, which over a whole turn are
   one point (the search halved such a cell one way only and never settled). And `tube::Depth`'s

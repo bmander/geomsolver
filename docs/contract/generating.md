@@ -2723,6 +2723,38 @@ fold pairs running the whole roll and no swallowtail point, and its depth's trac
 twenty minutes; the full turn's sheet `+` alone asked 57 000 sampled cells of its edges' search
 (8 s) before its depth's; the thin's edges had not ended — each the cover's creeping march
 and the march's least at every step (above).
+**The tube's own cover** (#880 T1f, `swept::tube::cover`, `Tube::cover`): at the roll `τ` a
+point stands at `q(τ) = M(τ)⁻¹ x` in the tool's frame and the torus's depth there is
+`d = g(q) − r`, `g` the distance from the core circle, so `d'' = ∇g · q'' + q'ᵀ H q'` and, `H`'s
+eigenvalues in the ring's cylindrical frame being `0`, `1/g` and `g_ρ/ρ`,
+`|d''| ≤ A + V² max(1/g, 1/ρ)` — `V` and `A` the motion's bounds on `q`'s speed and acceleration
+(`Trajectory::point_jet_bound_over`: a constant twist's `|ratio|ᵏ ρ`, a relative motion's by
+Leibniz's rule through its second node's spin, `spin_bound`; gated by
+`swept_tube::the_motions_rate_bounds_hold`), `g` and `ρ` their least over the stretch read, the
+speed local (`|q'| + A w`). The point's own contact is marched to its top by steps over which the
+bound keeps `d` above the greatest read less the tolerance (the steps no feature size caps), the
+least past each top found best-first over halved stretches, each floored by
+`d(m) − |d'(m)| w − M w²/2` or the Lipschitz floor, until every floor stands within the tolerance
+of the least read, then settled by the secant (Illinois) on `d'` in closed form. It reads as
+`depth::cover` does to the tolerance (`swept_tube::the_tubes_cover_reads_as_the_depths`), but where
+the sampled march stepped over a fall past the own contact's top it reads the far cover (above
+nought) the march read `Alone`; some 80 reads and 40 µs a cover against 0.5 ms (2.7 ms along a
+seam). Where the motion gives no bound (a pace, a path evaluated) `depth::cover` is read.
+**The charts' sides proved over cells** (`Tube::jacobian_bound`, `Tube::contact_bound`, the bounds
+of `tube::edges`'s search, gated by `swept_tube::the_charts_sides_are_bounded_over_cells`): on a
+sheet `J = det Q / w⁴`, `Q = w I − s r II'` (`n = S_θ × S_t`, `w = |n|`, `II'` read against `n`),
+read at the cell's middle in the parameters scaled by `diag(1/R, 1/|S_t|)`; each entry's move over
+the cell is bounded by its rates from the circle's (`Tube::rates`: `|S_θ…| = R`, `|S_θt| ≤ ΩR`,
+`|S_θtt| ≤ Ω²R`, `|S_t|, |S_tt|, |S_ttt|` the circle's speed, acceleration and jerk, each from the
+middle's own), and `Q`'s eigenvalues by that move's Frobenius norm (Weyl): definite proves `J > 0`,
+indefinite `J < 0`; or, where the tube is thin beside the spine's bending, `λ_min(I) ≥ W/(E + G)`
+standing above `r |II'|/w`. The middle's `S_tt`, a central difference, is off by its truncation
+`h² J₄/6` and its rounding, both counted. An end pose's side `± n · v` moves by at most
+`(|v| + Ω(R + r)) Δθ + (|v| + Ω r) Δψ`. What no bound proves is sampled as before. **Measured**
+(`tube_profile … build`): the half turn builds in 3.9 s where it took 28 s (on this machine; 19 s
+on the last), 9 faces, volume 12.2377154879 to the digit, its edges' search 0.7 and 1.9 s where it
+sampled 29 000 cells a sheet for 3 and 4.5 s; the 80° torus (`tumbling(80)`) builds in 2.2 s,
+8 faces, volume 10.9393141712 against the old road's 10.9393141414 (2.7e-9 of itself).
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
