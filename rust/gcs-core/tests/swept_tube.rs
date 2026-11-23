@@ -518,6 +518,48 @@ fn the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road() {
     held(&solid,&tube,&path,roll,v);
 }
 
+/// **No depth decision reads the stand-in** (#880 T1f, `Tube::net_point`, `Pinch::deep`): inside
+/// the pinch's rim a sheet's net is fitted through a made-up surface where `|(A, B)|` is under
+/// `ρ₀/2`, smooth through the pinch, and the tracer's metric is read off it there; what the depth
+/// decides is read off the sheet itself. On each crossed member's sheets, at places of the collar
+/// inside the rim: deep in the hole the sheet has no side and no reading (`Tube::side`,
+/// `Depth::reading`, the field's least: none — the collar's); between there and the rim the
+/// stand-in is the sheet to the bit, and the reading's point is the sheet's own. The faces' side:
+/// no point of either member's mesh lies under another instant (`crossed_held`'s `covered`), as
+/// the stand-in's would, inside the tube at its own instant by `r (1 − |(A, B)|/h)`.
+#[test]
+fn no_depth_decision_reads_the_stand_in() {
+    use gcs_core::brep::swept::tube::Depth;
+    use gcs_core::brep::zero_set::Field;
+    for observer in [1.,-1.] {
+        let (tool,path,roll,tol) = crate::common::bench::crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+        let pinch = tube.pinch.as_ref().expect("a pinch");
+        let (mut deep,mut rimmed) = (0,0);
+        for i in 0..48 {
+            let psi = TAU*i as f64/48.;
+            for f in [0.1,0.3,0.45,0.55,0.7,0.9] {
+                for side in [1.,-1.] {
+                    let uv = pinch.collar.place(psi,side*f*pinch.rho).unwrap();
+                    let field = Depth {tube:&tube,chart:Chart::Sheet(side),within:tol,holes:&[]};
+                    if pinch.deep(uv) {
+                        deep += 1;
+                        assert!(tube.side(Chart::Sheet(side),uv).is_none(),"a side deep in the hole at ψ {psi}, {f} ρ₀");
+                        assert!(field.reading(uv).is_none() && field.least(uv).is_none(),"a reading deep in the hole at ψ {psi}, {f} ρ₀");
+                    } else {
+                        rimmed += 1;
+                        let own = tube.point(side,uv[0],uv[1]).unwrap().x;
+                        assert_eq!(tube.net_point(side,uv[0],uv[1]).unwrap(),own,"the stand-in off the sheet at ψ {psi}, {f} ρ₀");
+                        if let Some((p,_)) = field.reading(uv) { assert_eq!(p.x,own,"a reading off the sheet at ψ {psi}, {f} ρ₀") }
+                    }
+                }
+            }
+        }
+        assert!(deep > 0 && rimmed > 0,"deep {deep}, inside the rim {rimmed}");
+    }
+}
+
 /// **The collar charts the pinch of each crossed member** (#880 T1f, `Tube::pinched`,
 /// `Chart::Collar`): where an instant touches a meridian whole the core circle's sweep is singular
 /// and the collar `(ψ, ρ)` charts both sheets about it. `ρ₀` by its rule — half the least of the

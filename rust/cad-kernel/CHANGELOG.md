@@ -24,7 +24,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   now cut there as at its own breaks (`props::crossings`, each settled by bisection to the
   rounding). A graded net crowds hundreds of knot lines across one stretch of a trim: the crossed
   forward member read 16.6116290673 (its face holding the pinch's hole 6.6e-4 off), now
-  16.6109998153 against cadrs's 16.6109997999.
+  16.6109998153 against cadrs's 16.6109997999. The area takes the same cut (it is keyed on the
+  surface and the pcurve, not on what is read); a traced use, read along its chord in space, needs
+  none. Gated with no sweep: a plane through a net of 300 graded knots, a triangle's diagonal
+  across them all, area and flux the closed form's to 4e-16 (uncut, 1.2e-10 off in 25 s).
 - **The crossed tumbling tori built by `closed::ring`** (#880 T1f): where the old ring road refuses a
   meridian touched whole for an instant by name (`Curved`, `Ring::touched_once`) and no two instants
   touch one, `closed::ring` builds the tube road's solid (`Tube::pinched`, `tube::faces::solid`);

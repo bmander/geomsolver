@@ -2972,7 +2972,26 @@ rim: of a run's points on the rim at an end only the end is kept. **The pair's B
 difference and intersection of the two members, the ordinary `boolean::boolean`; probe:
 `tube_profile crossed-forward pair`) **are not yet built**: each refuses after about 13 minutes,
 "a bspline has a hole in no piece" (`boolean.rs`, a face's hole held by no outer cycle once split
-— most likely the pinch's hole, an island on a sheet's graded net).
+— most likely the pinch's hole, an island on a sheet's graded net). **Read**: the union refuses
+after 941 s on the forward member's face 1 (its net graded about the pinch), where the split leaves
+slivers near (3.16, 0.909, 1.744) and an edge of a meeting walked out and back, its end on the
+window's edge 6.7e-5 off the surface (within the march's landing, 16 tolerances); the arrangement's
+reads are 41 s, the rest marches held at the least step (a ten-thousandth of the first): the forward
+sheet's meeting with the reverse's end pose made 149 986 points and its fit 2.2 million, 239 s
+alone, stalled at a seed where its step lands back 6e-6 from where it began. There, within 2.5e-3,
+the net has two feet with opposite normals: **each face's surface is its window's whole net**,
+fitted as a map over `(θ, t)`, so it runs on past the face's cuspidal edges and folds back (and
+inside the pinch's rim carries the stand-in), and the Boolean reads a B-spline face's surface as its
+whole net — implicit and gradient by the nearest foot — so beside a fold its projections leap
+between the layers. Either the road fits each face on a net that does not fold (over its kept part,
+cut at its cuspidal edges: a reparametrisation, since the fold is a curve in `(θ, t)`), or the
+Boolean reads a trimmed net as its face (T4, the meetings); neither is built. **The reverse's near
+miss** (`|(A, B)|` 6.3e-4 at (1.0764, 0.4611), most of its build's minute in two nets graded to
+944 × 849 poles) is not buried: the sheet `−` reads there with nothing but its own instant on it
+(`Alone`, `J` ≈ 4e5), the sheet `+` held by its neighbours (`Near`), so the sheet `−` is the solid's
+own boundary and no window may stop short of it; and `|(A, B)|` runs low along a valley, not to a
+point — `(A, B)` folds over `(θ, t)` there — so no collar `(ψ, ρ)` offset from its least is regular
+either: a chart regular across that fold is what it asks.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
