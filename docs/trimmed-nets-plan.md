@@ -4,7 +4,7 @@ The three crossed Booleans of brep-bench's tumbling tori (`swept/tumbling-torus-
 `-difference`, `-intersection`) refuse. Their operands build and are valid. This file is steps 1–3
 of [#1013](https://github.com/bmander/geomsolver/issues/1013): what the kernel cannot do, each thing
 pinned by the smallest case that shows it, and those cases added to brep-bench. Step 4, building
-them, has begun: T1 is built (see *Step 4* below).
+them, has begun: T1 and T2 are built, and T3 and T4 are bounded (see *Step 4* below).
 
 ## The capabilities missing
 
@@ -130,11 +130,32 @@ search nothing to contract. Both now search the face's own stretch of the net
 (`Located::read_surface`, the net cut down to the face's parameter box). The slowest is now 0.02 s
 and the mean 0.02 s, the same as on the net cut down (on `main`, the same seeds' slowest is 3.1 s).
 
-**T2 since.** With faces read on their own stretch of the net, each upright edge of T2's hole finds
-one crossing, not a touch or two. But an edge where two of B's walls meet is read against those
-walls' meetings with the patch, known in closed form over the whole net, and at `x = 0.4` the
-crossing found is the folded layer's. So T2 is next: the known meetings an edge is read against
-cut to the face's parameters, T1's rule applied there.
+**T2 is built.** Three readings of a sheet's face still went through its whole net, and each had
+to be moved onto the face's own stretch (an ablation showed that every one of the three was
+needed):
+
+- The march (`Arrangement::traced_on`) now runs on the surface class's net cut to the union of its
+  faces' grown boxes. Before, the wall `x = 2/5` was traced along the layer beneath the face.
+- An edge's root is settled with `on_surface` on `read_surface`. Before, a root found on the face
+  was polished onto the folded layer 5e-4 below.
+- `kept`'s on-patch test reads the cut net. Before, the middle of the face's own span inverted onto
+  the folded layer and read off the patch, so no edge was laid on the face at all.
+
+Cutting the known meetings an edge is read against was tried and proved unnecessary, so it was
+dropped. On the T2 family (layer gaps from 1e-4 to 3e-2, three hole placements) all 18 builds
+reach their closed forms. `patch_fuzz` draws half its patches with the layer: on three seeds
+`main` fails 669 of 1,800 Booleans, T1 alone 420, and with T2 none, the slowest in 0.12 s.
+
+**T3 and T4 are bounded, not built.** With every reading of a face confined to its own stretch of
+the net, a march no longer reaches a cusp or a pinch more than a sixteenth of the face's parameters
+past it. The T3 and T4 gates as placed pass, and T4's family of 48 planes all build (it was 1 in 3).
+With the face trimmed within that sixteenth (u ≥ 0.51 to 0.53), they fail still: T3 for a steep
+plane (9 of 30 placements), T4 for 3 of 32. Two new ignored gates pin this,
+`a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp` and
+`a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch`, each with a control on the cut-down
+net. This is the capability itself: a face whose own stretch of net holds the singularity. The
+experiment branch's fold and self-meeting rules, or the carried parameters below, are the
+candidates.
 
 **The deeper change** (from the review of T1). Both rules read a face through the part of its net
 it uses, each at the one place it is needed. The general form: carry each meeting's parameters on

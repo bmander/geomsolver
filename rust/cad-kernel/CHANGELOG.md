@@ -17,6 +17,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   by `solid_place`'s rays and the Boolean's edges against faces): the net cut down to the face's
   parameter box (grown by a sixteenth), once a face. A net folded back past its face left the
   interval search nothing to contract at the fold: such a Boolean fell from 2.2 s to 0.02 s.
+- **A sheet's face is traced and settled on its own stretch of the net** (`boolean`, #1013): a
+  meeting is traced on its surface class's net cut down to the union of its faces' parameter
+  boxes, an edge's crossing is settled on the face's, and a span's on-patch test reads it. A net
+  folded back past its face, its layer a few ten-thousandths beneath it, had meetings, crossings and
+  spans read on that layer; a block under such a patch pierced by a hole was refused and builds.
 - **A slide through a blank, by its shadow** (`swept::through`): a tool the closed class refuses
   (`Curved`, `Folded`) slid from wholly before a blank to wholly past it is cut as the blank less
   the prism over the tool's shadow along the slide — each face's contact and each sharp edge carried

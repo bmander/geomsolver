@@ -4,14 +4,18 @@
 //! singular only outside the face: folded back over the face's rim, a second layer just beside
 //! the face, a cusp, a pinch to a point. Each is brep-bench's `nurbs/` case of the same name.
 //!
+//! Since T1 and T2 are built, every face is read on the part of its net it uses (a sixteenth
+//! past its parameters), which keeps the cusp and the pinch of T3 and T4 out of reach as these
+//! cases place them: their gates pass, and two more (`…_trimmed_nearer_…`) trim the face within a
+//! sixteenth of the singularity, where T3 and T4 themselves are still wanted.
+//!
 //! Each case comes twice. Its **control** is the block with its top face on the patch cut down to
 //! the face's own part (`Net::segment`: the same surface at the same parameters, nothing of the
 //! patch past the face), which builds to the closed form today; that it does is the evidence that
-//! the gate's case and answer are right. Its **gate** is the same block on the whole patch, which
-//! the Boolean refuses today, and is ignored until the capability is built; the reason it fails
-//! today is in its `ignore`. Both are read by all three Booleans, each `check`ed and its volume
-//! held to the closed form and to inclusion–exclusion (|A ∪ B| + |A ∩ B| = |A| + |B|,
-//! |A − B| = |A| − |A ∩ B|).
+//! the gate's case and answer are right. Its **gate** is the same block on the whole patch; one the
+//! Boolean still refuses is ignored, its `ignore` saying how it fails. Each is read by all three
+//! Booleans (or, cut by a plane, on both sides of it), each `check`ed and its volume held to the
+//! closed form and to inclusion–exclusion (|A ∪ B| + |A ∩ B| = |A| + |B|, |A − B| = |A| − |A ∩ B|).
 use gcs_core::brep::boolean::{boolean,Op};
 use gcs_core::brep::build::{block,kept,sheet};
 use gcs_core::brep::geom::{Surface,V};
@@ -151,27 +155,58 @@ fn a_patch_folded_over_its_rim_is_notched_across_the_rim() { folded(true) }
 fn a_patch_over_a_near_layer_cut_down_to_its_face_is_pierced() { layered(false) }
 
 #[test]
-#[ignore = "#1013, fails today: each upright edge of B, the line two of its walls meet in, is read \
-    against those walls' meetings with the patch, known in closed form over the whole net: at \
-    x = 0.4 the crossing found is the other layer's, just beneath the face, read outside it, and the \
-    face's own is lost (a shell kept on one side and dropped on another)"]
 fn a_patch_over_a_near_layer_is_pierced() { layered(true) }
+
+/// The cuspidal patch's face trimmed nearer its cusp, `u ≥ 13/25` (`x ≥ 0.0016`), within a
+/// sixteenth of its parameters of it, and cut by the steep plane `z = 51y/10 − 2` through the cusp:
+/// the meeting traced on the net cut to the face's grown box reaches the cusp still (T3 itself, not
+/// the bound T2's reading gives it).
+fn cuspidal_nearer(whole: bool) {
+    let patch = rising(&[1.,-1./3.,-1./3.,1.],&[-0.5,1.5,-0.5,1.5]);
+    let l = 27.01f64.sqrt();
+    // |A| = (1 − 0.0016)(11/20) + (2/5)(1 − 0.0016^{5/2}); |A ∩ B| the column
+    // ∫_{20/51}^{y*} (51y/10 − 2) + ∫_{y*}^1 (1/2 + x^{3/2} + y/10), y* = 1/2 + x^{3/2}/5, over x,
+    // by quadrature
+    sliced(&under(&patch,[0.52,1.],[0.,1.],whole),[0.5,0.5,0.55],[0.,5.1/l,-1./l],0.94911995904,0.49164939128486972,1e-8);
+}
+
+/// The pinched patch's face trimmed nearer its pinch, `u, v ≥ 51/100` (`x, y ≥ 8·10⁻⁶`), cut by the
+/// plane `−3x + y + z/10 = 0.0502`, 2e-4 beside the pinch: as `cuspidal_nearer`, T4 itself.
+fn pinched_nearer(whole: bool) {
+    let (x,s) = ([-1.,1.,-1.,1.],[-1.,-1./3.,1./3.,1.]);
+    let row = |i: usize| (0..4).map(|j| [x[i],x[j],0.5+s[i]*s[j]]).collect();
+    let patch = bezier((0..4).map(row).collect());
+    let l = 10.01f64.sqrt();
+    // |A| = (1 − 8·10⁻⁶)²/2 + (3/4 (1 − (8·10⁻⁶)^{4/3}))²; |A ∩ B| by quadrature
+    sliced(&under(&patch,[0.51,1.],[0.51,1.],whole),[0.,0.0002,0.5],[3./l,-1./l,-0.1/l],1.0624918200320144,0.91479074469600325,1e-8);
+}
 
 #[test]
 fn a_cuspidal_patch_cut_down_to_its_face_is_sliced() { cuspidal(false) }
 
 #[test]
-#[ignore = "#1013, fails today: the meeting is marched on past the face's rim into the cusp, \
-    where it turns back to where it began (224 points from the face's far edge and back), and the \
-    face's stretch loses its end on the rim (a shell kept on one side and dropped on another)"]
 fn a_cuspidal_patch_is_sliced_through_its_cusp() { cuspidal(true) }
 
 #[test]
 fn a_pinched_patch_cut_down_to_its_face_is_sliced() { pinched(false) }
 
 #[test]
-#[ignore = "#1013, fails today: the meeting is marched on past the face's rim through the \
-    patch's singular point into the far quadrant, its fit ten rounds long, and from the rim to the \
-    point and back as a closed curve (a shell kept on one side and dropped on another); about one \
-    plane in three placed within 0.002 of the pinch fails"]
 fn a_pinched_patch_is_sliced_beside_its_pinch() { pinched(true) }
+
+#[test]
+fn a_cuspidal_patch_trimmed_nearer_cut_down_to_its_face_is_sliced() { cuspidal_nearer(false) }
+
+#[test]
+#[ignore = "#1013 T3, fails today: the face's grown parameter box (u ≥ 0.49) reaches past the cusp \
+    at u = 1/2, so the face is read on a net holding the cusp and the layer beyond it, 1.3e-4 from \
+    the face's rim (a shell kept on one side and dropped on another)"]
+fn a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp() { cuspidal_nearer(true) }
+
+#[test]
+fn a_pinched_patch_trimmed_nearer_cut_down_to_its_face_is_sliced() { pinched_nearer(false) }
+
+#[test]
+#[ignore = "#1013 T4, fails today: the face's grown parameter box (u, v ≥ 0.48) reaches past the \
+    pinch at u = v = 1/2, so the face is read on a net holding the singular point (a shell kept on one \
+    side and dropped on another); 3 of 32 planes so near the pinch fail"]
+fn a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch() { pinched_nearer(true) }

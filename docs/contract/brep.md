@@ -885,6 +885,21 @@ past its face and folded back over it left the interval search nothing to contra
 block under a folded patch took 2.2 s a Boolean, against 0.02 s with the net cut down, and now
 takes 0.02 s either way. `rust/cad-kernel/examples/patch_fuzz.rs` reads the folded patch at
 random (patch, trim, box), every Boolean against its closed form, whole net and cut down.
+**A sheet's face is traced and settled on its own stretch of the net** (#1013 T2). A meeting is
+traced (`Arrangement::traced_on`) on its surface class's net cut down to the union of its faces'
+grown parameter boxes. It is the union, and not each face's box, because a meeting is traced once
+for every face of the class, and cut at one face's edge it would stop there and the next face would
+never be traced. A class whose faces lie on more than one net is left whole. An edge's crossing is
+settled onto the face's own stretch (`on_surface` on `read_surface`), and a span's on-patch test
+reads it too. A net folded back past its face, its other layer a few ten-thousandths beneath the
+face, had the meeting traced along that layer, the edge's root settled onto it, and the span's
+middle inverted onto it and read off the patch. Each was needed alone: without any one, a block
+under such a patch pierced by a square hole was refused. `patch_layers::a_patch_over_a_near_layer_is_pierced`
+is the gate (brep-bench's `nurbs/patch-over-a-near-layer-pierced`). `patch_fuzz` draws half its
+patches so (`c s³`, `c` from 1e-5 to 3e-2): on three seeds `main` fails 669 of 1,800 Booleans, T1
+alone 420, with T2 none. The same reading keeps a march clear of a cusp or a pinch of the net more
+than a sixteenth of the face's parameters past it, so T3's and T4's gates pass as placed. Their
+`…_trimmed_nearer_…` gates, a face within that sixteenth, are still ignored.
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
 along it through where the spline crosses or touches that surface, exactly; a plane across it (square

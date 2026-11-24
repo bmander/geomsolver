@@ -1238,6 +1238,9 @@ struct Arrangement<'a> {
     /// and each face's surface's index there, given the first time the face meets another
     shared: super::meeting::Shared,
     surface_of: BTreeMap<(Side,usize),usize>,
+    /// Each surface class's sheet cut down to the part its faces use (`traced_on`), cut the first
+    /// time a meeting on it is traced; none where it is no sheet's or the part is the whole net.
+    traced_on: std::sync::Mutex<BTreeMap<usize,Option<Surface>>>,
     say: Narration,
     /// Which two faces are met (a trim's, `trimmed`): every two whose boxes meet where none.
     meet: Option<Meet<'a>>,
@@ -1312,7 +1315,7 @@ impl<'a> Arrangement<'a> {
         let reach = Sides::new(n,|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
         let clear = Sides::new(n,|s| boxes[s].iter().map(|bx| solids.all().all(|o| o == s || !overlap(bx,&reach[o],pad))).collect::<Vec<_>>());
         Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,
-            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new(),meet:None}
+            shared:Default::default(),surface_of:BTreeMap::new(),traced_on:Default::default(),say:Narration::new(),meet:None}
     }
 
     /// **The index of operand `s`'s face `fi`'s surface among the arrangement's** (`meeting::Shared`,
@@ -1407,6 +1410,34 @@ impl<'a> Arrangement<'a> {
             }
         }
         any.then_some(Met::On(curves,touches))
+    }
+
+    /// **The surface a meeting with face `fi` of solid `s` is traced on** (#1013 T2): a sheet's net
+    /// cut down to the part of it the faces of its surface class on that net use — the union of
+    /// their grown parameter boxes (`Located::grown_parameters`) — else the face's own surface. A net
+    /// may run on past its faces and fold back over them, its other layer within a few
+    /// ten-thousandths of a face: a march over the whole net traced the meeting there (a wall
+    /// `x = 2/5` across a folded patch, traced along the layer beneath the face), and the edges
+    /// read against it crossed the other layer. The class's part, not the face's: a meeting is
+    /// traced once for every face of the class, and cut at one face's edge it would stop there,
+    /// the next face never traced. A class whose faces lie on more than one net is left whole.
+    fn traced_on(&self,s: Side,fi: usize) -> Surface {
+        let surface = &self.solids[s].faces[fi].surface;
+        let Surface::BSpline(frame,net) = surface else { return surface.clone() };
+        let Some(&class) = self.surface_of.get(&(s,fi)) else { return surface.clone() };
+        let mut cut = self.traced_on.lock().unwrap_or_else(|e| e.into_inner());
+        cut.entry(class).or_insert_with(|| {
+            let members: Vec<(Side,usize)> = self.surface_of.iter().filter(|&(_,&i)| i == class).map(|(&k,_)| k).collect();
+            if members.iter().any(|&(t,g)| self.solids[t].faces[g].surface != *surface) { return None }
+            let mut bx = [[f64::INFINITY,f64::NEG_INFINITY];2];
+            for &(t,g) in &members {
+                let b = self.located[t].grown_parameters(g);
+                for k in 0..2 { bx[k] = [bx[k][0].min(b[k][0]),bx[k][1].max(b[k][1])] }
+            }
+            let [u,v] = bx;
+            if !(u[1] > u[0] && v[1] > v[0]) || bx == net.domain() { return None }
+            Some(Surface::BSpline(*frame,std::sync::Arc::new(net.segment(u,v))))
+        }).clone().unwrap_or_else(|| surface.clone())
     }
 
     /// Edge `i` of solid `s`'s index among the working edges.
@@ -1578,8 +1609,11 @@ impl<'a> Arrangement<'a> {
                 // (a touch is a double root, placed only to the square root of the tolerance:
                 // where a face of the edge's own touches the surface along a curve, its crossing
                 // with that curve, which `known` read it at)
+                // (each settled onto the face's own stretch of a sheet, `Located::read_surface`, as it
+                // was searched: on the whole net, a layer folded back a few ten-thousandths beneath
+                // the face drew a root there, #1013 T2)
                 Meets::At(roots) => for (t,touch) in roots {
-                    let t = if touch { t } else { on_surface(c,e.t,&f.surface,t,tol).unwrap_or(t) };
+                    let t = if touch { t } else { on_surface(c,e.t,self.located[other].read_surface(fi),t,tol).unwrap_or(t) };
                     let q = c.point(t);
                     let place = self.located[other].face_place(fi,q);
                     self.say.meets(s,i,c,fi,f,q,touch,place);
@@ -1798,7 +1832,7 @@ impl<'a> Arrangement<'a> {
                 self.say.points_on(&c,&ts,&self.pool);
                 for (t,v) in spans {
                     if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
-                    if !self.kept(&c,t,v,faces,surfaces,crossings) { continue }
+                    if !self.kept(&c,t,v,faces,crossings) { continue }
                     // **a span of a traced meeting lying along edges either face has already is
                     // those edges** (#735 A2, over a span and a chain of edges): a trace runs on past
                     // the faces, so the whole curve lies along no edge, and a face may hold its stretch
@@ -2143,7 +2177,7 @@ impl<'a> Arrangement<'a> {
     /// slit: a lip's foot turned `1e-3` rad across its pad, its end within the foot's pad by half a
     /// micrometre, crossing the side of a strip abutting it a tolerance and a half under that
     /// strip's foot, is cut along that side, its two sides two shells.
-    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2],
+    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,
         crossings: &Crossings) -> bool {
         let m = c.point((t[0]+t[1])/2.);
         let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
@@ -2169,7 +2203,11 @@ impl<'a> Arrangement<'a> {
         // rim, which a face's place reads as on its boundary (a hyperboloid's rulings run on past
         // the heights it is built over, where a plane holding one meets it)
         // (planes, cylinders, cones, spheres and tori run on without end, and need no reading)
-        if surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
+        // (each read on its face's own stretch of a sheet, `Located::read_surface`: on the whole net,
+        // the inverse of a point of the face found a layer folded back a few ten-thousandths beneath
+        // it, and the span was read off the patch, #1013 T2)
+        let on = [0,1].map(|k| self.located[faces.s[k]].read_surface(faces.f[k]));
+        if on.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one side to the
         // other, and the span is laid all the same: a touch represented (#735)
         true
@@ -2209,7 +2247,9 @@ impl<'a> Arrangement<'a> {
         let (tol,pad) = (self.tol,self.pad);
         let ([oa,ob],[fa,fb]) = (faces.s,faces.f);
         let (a,b) = (self.solids[oa],self.solids[ob]);
-        let surfaces = [&a.faces[fa].surface,&b.faces[fb].surface];
+        // (each sheet traced on the part of its net its faces use, `traced_on`)
+        let read = [self.traced_on(oa,fa),self.traced_on(ob,fb)];
+        let surfaces = [&read[0],&read[1]];
         let (sa,sb) = (surfaces[0],surfaces[1]);
         let on = &crossings.on_face;
         let mut seeds: Vec<V> = on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize])

@@ -1,6 +1,8 @@
-//! **The folded patch fuzzed** (#1013 T1): a block under a patch folded back over its own rim,
-//! cut by a box, at random. The patch is `(s², v, h + a s⁴ + b v)`, `s = 2u − 1`, given exactly (its
-//! layers `u ≥ 1/2` and `u ≤ 1/2` one graph, `z = h + a x² + b y`); the face is `[u0, 1] × [v0, v1]`
+//! **The folded patch fuzzed** (#1013 T1, T2): a block under a patch folded back over its own rim,
+//! cut by a box, at random. The patch is `(s², v, h + a s⁴ + c s³ + b v)`, `s = 2u − 1`, given
+//! exactly: half the cases `c = 0`, its layers `u ≥ 1/2` and `u ≤ 1/2` one graph, `z = h + a x² + b y`
+//! (T1's); half `c` from 1e-5 to 3e-2, the layer `u ≤ 1/2` standing `2c x^{3/2}` beneath the face
+//! (T2's); the face is `[u0, 1] × [v0, v1]`
 //! of it, on the whole patch; the box `[x0, x1] × [y0, y1] × [−1, 3]`, its walls placed anywhere
 //! across the face, its rim and the fold. Each of the three Booleans is held to the closed form
 //! (`|A ∩ B|` the polynomial's integral over the rectangles' common part) and `check`ed, and
@@ -30,6 +32,9 @@ fn main() {
     let (mut failed,mut slowest,mut total) = (0usize,(0.,0usize),0.);
     for case in 0..cases {
         let (h,a,b) = (rng.uniform(0.3,0.7),rng.uniform(0.1,0.5),rng.uniform(-0.2,0.2));
+        // (half the patches covered twice exactly, half with their folded layer `2c x^{3/2}` beneath
+        // the face, `c` from 1e-5 to 3e-2: T2's)
+        let c = if rng.next() < 0.5 { 0. } else { 10f64.powf(rng.uniform(-5.,-1.5)) };
         let u0 = rng.uniform(0.53,0.85);
         let (v0,v1) = { let p = rng.uniform(0.,0.3); (p,rng.uniform(p+0.4,1.)) };
         let xr = (2.*u0-1.).powi(2);
@@ -40,17 +45,17 @@ fn main() {
         let y0 = rng.uniform(v0-0.4,v1-0.1);
         let y1 = rng.uniform(y0+0.05,v1+0.4);
         if only_case.is_some_and(|c| c != case) { continue }
-        let zs: Vec<f64> = [1.,-1.,1.,-1.,1.].iter().map(|k| h+a*k).collect();
+        let zs: Vec<f64> = (0..5).map(|i| h+a*[1.,-1.,1.,-1.,1.][i]+c*[-1.,0.5,0.,-0.5,1.][i]).collect();
         let patch = Net {du:4,dv:1,uknots:vec![0.,0.,0.,0.,0.,1.,1.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
             poles:(0..5).map(|i| { let x = [1.,0.,-1./3.,0.,1.][i]; vec![[x,0.,zs[i]],[x,1.,zs[i]+b]] }).collect()};
-        // the block's volume over a rectangle of the plane: ∫∫ (h + a x² + b y)
+        // the block's volume over a rectangle of the plane: ∫∫ (h + a x² + c x^{3/2} + b y)
         let over = |xa: f64,xb: f64,ya: f64,yb: f64| if xb <= xa || yb <= ya { 0. } else {
-            (yb-ya)*(h*(xb-xa)+a*(xb.powi(3)-xa.powi(3))/3.)+b*(xb-xa)*(yb*yb-ya*ya)/2. };
+            (yb-ya)*(h*(xb-xa)+a*(xb.powi(3)-xa.powi(3))/3.+0.4*c*(xb.powf(2.5)-xa.powf(2.5)))+b*(xb-xa)*(yb*yb-ya*ya)/2. };
         let va = over(xr,1.,v0,v1);
         let common = over(xr.max(x0),x1.min(1.),v0.max(y0),v1.min(y1));
         let vb = (x1-x0)*(y1-y0)*4.;
         let blk = cad_kernel::build::block([x0,y0,-1.],[x1,y1,3.]).unwrap();
-        let said = format!("case {case}: h {h:.4} a {a:.4} b {b:.4} u0 {u0:.4} v [{v0:.4}, {v1:.4}] box x [{x0:.4}, {x1:.4}] y [{y0:.4}, {y1:.4}]");
+        let said = format!("case {case}: h {h:.4} a {a:.4} b {b:.4} c {c:.2e} u0 {u0:.4} v [{v0:.4}, {v1:.4}] box x [{x0:.4}, {x1:.4}] y [{y0:.4}, {y1:.4}]");
         for whole in [true,false] {
             if !whole && whole_only { continue }
             let s = under(&patch,[u0,1.],[v0,v1],whole);

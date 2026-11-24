@@ -55,7 +55,9 @@ fn main() {
                 vec![[x,0.,z],[x,1.,z+0.1]] }).collect()},
             Box::new(move |x: f64,y: f64| 0.3*x*x+0.1*y+c*x.powf(1.5)+0.5)),
         "layers" => (bezier(&|u,v| { let s = 2.*u-1.; [s*s,v,0.5+0.1*v+c*s.powi(3)] },3,1),Box::new(move |x: f64,y: f64| 0.5+0.1*y+c*x.powf(1.5))),
-        "cusp" => (bezier(&|u,v| { let s = 2.*u-1.; [s*s,v,s.powi(3)+0.1*v+0.5] },3,1),Box::new(|x: f64,y: f64| x.powf(1.5)+0.1*y+0.5)),
+        "cusp" => (Net {du:3,dv:1,uknots:vec![0.,0.,0.,0.,1.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
+            poles:[(1.,-0.5),(-1./3.,1.5),(-1./3.,-0.5),(1.,1.5)].iter().map(|&(x,z)| vec![[x,0.,z],[x,1.,z+0.1]]).collect()},
+            Box::new(|x: f64,y: f64| x.powf(1.5)+0.1*y+0.5)),
         "point" => { let lift: f64 = std::env::var("LIFT").ok().map_or(0.5,|l| l.parse().unwrap());
             (bezier(&|u,v| { let (s,t) = (2.*u-1.,2.*v-1.); [s.powi(3),t.powi(3),s*t+lift] },3,3),
             Box::new(move |x: f64,y: f64| x.cbrt()*y.cbrt()+lift)) }
