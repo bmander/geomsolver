@@ -446,7 +446,10 @@ fn main() {
         for (name,op) in [("union",cad_kernel::boolean::Op::Union),("difference",cad_kernel::boolean::Op::Cut),("intersection",cad_kernel::boolean::Op::Common)] {
             if only.as_deref().is_some_and(|o| o != name) { vs.push(f64::NAN); continue }
             let clock = Instant::now();
-            match cad_kernel::boolean::boolean(&a,&b,op,tol) {
+            // (`BENCH`: as brep-bench's runner asks it, `combined` at the kernel's own tolerance)
+            let made = if std::env::var_os("BENCH").is_some() { cad_kernel::boolean::combined(&a,&b,op,std::env::var("BENCH_FLOOR").ok().and_then(|f| f.parse().ok()).unwrap_or(0.)).map_err(|e| format!("{e:?}")) }
+                else { cad_kernel::boolean::boolean(&a,&b,op,tol) };
+            match made {
                 Ok(s) => { let v = cad_kernel::props::volume(&s); vs.push(v);
                     // (the mesh's volume beside it, at the bench's bar: a ten-thousandth of the size)
                     let bar = (1e-4*s.size()).min(1e-3);
