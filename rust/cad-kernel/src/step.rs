@@ -444,7 +444,23 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
         OnNet {surface:Surface::BSpline(frame,net.clone()),net,arcs,fit}
     });
     let m = match &f.surface {
-        Surface::BSpline(_,n) => return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.})),
+        // **a sheet's face written on its own stretch of the net** (#1013): the net cut to the face's
+        // parameter box grown by a sixteenth (`Net::segment`, which keeps the parameters, so its
+        // pcurves are the face's still): a surface of its own, a fraction of the net. Every face on
+        // one sheet wrote the whole net: a swept sheet's is some 55 MB, and the crossed tori's
+        // union was a 2.4 GB file no reader could measure. Not one surface shared by the faces on
+        // a net: an edge between two of them on two layers of it (a sheet's double curve) has a
+        // pcurve on each, and only their surfaces tell a reader which is whose
+        Surface::BSpline(g,n) => {
+            let [u,v] = super::boolean::parameters(b,fi,true);
+            let [du,dv] = n.domain();
+            let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
+            if !(u[1] > u[0] && v[1] > v[0]) || !(within(u,du) || within(v,dv)) {
+                return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.}))
+            }
+            let net = Arc::new(n.segment(u,v));
+            return Some(Ok(OnNet {surface:Surface::BSpline(*g,net.clone()),net,arcs:[None,None],fit:0.}))
+        }
         Surface::Blend(g,bl) => return Some(net(blend_net(bl),[None,None],*g)),
         Surface::Family(g,w) => return Some(net(family_net(w),[None,None],*g)),
         Surface::Affine(m) => m,

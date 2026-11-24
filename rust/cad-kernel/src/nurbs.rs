@@ -281,7 +281,11 @@ impl BSpline {
         t
     }
     /// The foot of `p` on the curve found by Newton on (C − p)·C' from `t` alone (a local search:
-    /// the nearest where `t` is nearest it).
+    /// the nearest where `t` is nearest it). **Where Newton's curvature `|C'|² + (C − p)·C''` is no
+    /// longer positive, the step is Gauss–Newton's (`|C'|²` alone), which still descends** (#1013):
+    /// a curve that barely moves with its parameter and bends hard there — a sheet's iso line beside
+    /// the fold of its net, `x = s²` — has it negative a step from its end, where the search was left
+    /// standing, the foot of a point inside the curve read at the end, 3e-3 off.
     pub fn refined(&self,p: V,t: f64) -> f64 {
         let [a,z] = self.domain();
         let mut t = t.clamp(a,z);
@@ -289,7 +293,9 @@ impl BSpline {
             let (x,d,dd) = self.d2(t);
             let e = crate::util::space::sub(x,p);
             let g = crate::util::space::dot(e,d);
-            let h = crate::util::space::dot(d,d)+crate::util::space::dot(e,dd);
+            let speed = crate::util::space::dot(d,d);
+            let h = speed+crate::util::space::dot(e,dd);
+            let h = if h > 0. { h } else { speed };
             if !(h > 0.) { break }
             let next = (t-g/h).clamp(a,z);
             if (next-t).abs() <= 1e-15*(z-a) { t = next; break }

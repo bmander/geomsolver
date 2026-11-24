@@ -1134,22 +1134,18 @@ impl Brep {
         ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
     }
 
-    /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
-    /// (sampled along it, its knots and ends included), and between its curve's ends and its
-    /// vertices; and each vertex's, the largest gap between it and the ends of the curves there.
+    /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image, read
+    /// as a reader reads it (`standing`: 64 places, its knots and ends, and halfway between each
+    /// two), and between its curve's ends and its vertices; and each vertex's, the largest gap
+    /// between it and the ends of the curves there. Read at 33 places, a swept sheet's rim stated a
+    /// gap of 1.1e-5 where its pcurve stood 1.5e-5 off between two of them (#1013), and a piece of
+    /// it in a Boolean's result failed `check`.
     pub fn measure_tolerances(&mut self) {
         let mut gaps = vec![0_f64;self.edges.len()];
-        for f in &self.faces {
+        for (fi,f) in self.faces.iter().enumerate() {
             for c in f.loops.iter().flatten() {
-                let e = &self.edges[c.edge as usize];
                 let gap = &mut gaps[c.edge as usize];
-                let mut ts: Vec<f64> = (0..=32).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/32.).collect();
-                if let EdgeCurve::Curve(curve) = &e.curve { ts.extend(curve.breaks(e.t)); }
-                if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
-                for t in ts {
-                    let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
-                    *gap = gap.max(d);
-                }
+                *gap = gap.max(self.standing(fi,c));
             }
         }
         let mut at_vertex = vec![0_f64;self.vertices.len()];

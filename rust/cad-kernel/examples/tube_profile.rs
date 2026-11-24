@@ -119,6 +119,21 @@ fn main() {
     }
     // (`WHERE=x,y,z`: a point in space read on each chart — each sheet's nearest places on a grid,
     // settled, and each end pose's — with the side there and the depth's reading)
+    // (`SHEET_AT=side,θ,t,dθ,dt`: a 13 × 7 grid about (θ, t) on the sheet `side`, each place read as
+    // the faces are kept by: `+` kept, `.` dropped, `?` unread)
+    if let Some(at) = std::env::var_os("SHEET_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let (side,th,t,dth,dt) = (v[0],v[1],v[2],v[3],v[4]);
+        let field = tube::Depth {tube:&tb,chart:Chart::Sheet(side),within:tol,holes:&[]};
+        for j in (-3..=3).rev() {
+            let row: String = (-6..=6).map(|i| {
+                let uv = [th+dth*i as f64,t+dt*j as f64];
+                match field.reading(uv) { Some((_,Reading::Alone)) => '+',Some((_,Reading::Far(c))) => if c.depth >= 0. { '+' } else { '.' },_ => '?' }
+            }).collect();
+            println!("t {:+.4}: {row}",t+dt*j as f64);
+        }
+        return
+    }
     if let Some(at) = std::env::var_os("WHERE") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
         let x = [v[0],v[1],v[2]];
@@ -328,17 +343,134 @@ fn main() {
             let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,obs);
             let clock = Instant::now();
             let s = cad_kernel::swept::closed::ring(&tool,&path,roll,tube_r/250.,tol).unwrap();
-            println!("member {obs:+}: {} faces, volume {:.10}, in {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed());
+            println!("member {obs:+}: {} faces, volume {:.10}, in {:?}, check {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed(),s.check(tol).err());
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`PCURVES`: each member's uses read at 64 places along their edges, each one farther
+        // than the tolerance off its edge said with the edge's own gap)
+        if std::env::var_os("PCURVES").is_some() {
+            for (name,m) in [("A",&a),("B",&b)] {
+                for (fi,f) in m.faces.iter().enumerate() {
+                    for c in f.loops.iter().flatten() {
+                        let e = &m.edges[c.edge as usize];
+                        let cad_kernel::topo::EdgeCurve::Curve(cv) = &e.curve else { continue };
+                        let worst = (0..=64).map(|j| {
+                            let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/64.;
+                            (cad_kernel::util::space::distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&m.vertices)),cv.point(t)),t)
+                        }).fold((0.,0.),|x: (f64,f64),y| if y.0 > x.0 { y } else { x });
+                        if worst.0 > tol { println!("  {name}{fi} ({}) edge {} over {:?}: {:.2e} off at t {:.4}, its gap {:.1e}",f.name,c.edge,e.t,worst.0,worst.1,e.tol) }
+                    }
+                }
+            }
+            return
+        }
+        // (`DIST_AT=x,y,z;…`: each point's distance to each face's surface of each member, its
+        // foot's parameters, and where it stands against the face)
+        if let Ok(at) = std::env::var("DIST_AT") {
+            for s in at.split(';') {
+                let x: Vec<f64> = s.split(',').map(|x| x.trim().parse().unwrap()).collect();
+                let p = [x[0],x[1],x[2]];
+                for (name,m) in [("A",&a),("B",&b)] {
+                    let l = cad_kernel::query::Located::new(m,tol);
+                    for (fi,f) in m.faces.iter().enumerate() {
+                        let uv = f.surface.inverse(p);
+                        let d = cad_kernel::util::space::distance(f.surface.point(uv),p);
+                        if d < 1e-2 { println!("  {p:?}: {name}{fi} ({}) {d:.2e} off at {uv:?}, {:?}",f.name,l.face_place(fi,f.surface.point(uv))) }
+                    }
+                }
+            }
+            return
+        }
+        // (`PLACES=n`: n points drawn at random in each member's box, each placed by
+        // `Located::solid_place` and by the winding number of the member's mesh, each disagreement
+        // said with how deep the point stands from the mesh)
+        if let Some(n) = std::env::var("PLACES").ok().and_then(|n| n.parse::<usize>().ok()) {
+            use cad_kernel::util::space::{cross,dot,norm,sub};
+            let mut rng = cad_kernel::util::rng::Rng::new(7);
+            for (name,s) in [("A",&a),("B",&b)] {
+                let m = cad_kernel::mesh::mesh(s,1e-4*s.size(),0.1).unwrap();
+                let tris: Vec<[[f64;3];3]> = m.tris.iter().map(|t| t.map(|i| m.pts[i as usize])).collect();
+                // the generalised winding number (van Oosterom–Strackee), and the distance to the mesh
+                let winding = |p: [f64;3]| tris.iter().map(|t| {
+                    let [a,b,c] = t.map(|x| sub(x,p));
+                    let (la,lb,lc) = (norm(a),norm(b),norm(c));
+                    2.*dot(a,cross(b,c)).atan2(la*lb*lc+dot(a,b)*lc+dot(b,c)*la+dot(c,a)*lb)
+                }).sum::<f64>()/(4.*std::f64::consts::PI);
+                let near = |p: [f64;3]| m.pts.iter().map(|&q| cad_kernel::util::space::distance(p,q)).fold(f64::INFINITY,f64::min);
+                let located = cad_kernel::query::Located::new(s,tol);
+                let (lo,hi) = s.bounds();
+                let mut wrong = 0;
+                for _ in 0..n {
+                    let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
+                    let w = winding(p);
+                    let place = located.solid_place(p);
+                    let mesh_in = w > 0.5;
+                    let ok = match place { cad_kernel::query::Place::In => mesh_in,cad_kernel::query::Place::Out => !mesh_in,_ => true };
+                    if !ok && near(p) > 1e-3 { wrong += 1; println!("  {name}: {p:?} placed {place:?}, winding {w:.3}, {:.1e} from the mesh",near(p)) }
+                }
+                println!("{name}: {wrong} of {n} placed against the mesh");
+            }
+            return
+        }
+        // (`PAIR_FACES=i,j SEEDS3=x,y,z;…`: face i of A traced against face j of B from those
+        // seeds alone, over the box both faces fill, each curve's sine between the normals along it)
+        if let Ok(fs) = std::env::var("PAIR_FACES") {
+            use cad_kernel::util::space::{cross,norm};
+            let ij: Vec<usize> = fs.split(',').map(|x| x.parse().unwrap()).collect();
+            let (la,lb) = (cad_kernel::query::Located::new(&a,tol),cad_kernel::query::Located::new(&b,tol));
+            let raw = std::env::var_os("RAW").is_some();
+            let sa = if raw { a.faces[ij[0]].surface.clone() } else { la.read_surface(ij[0]).clone() };
+            let sb = if raw { b.faces[ij[1]].surface.clone() } else { lb.read_surface(ij[1]).clone() };
+            let ((alo,ahi),(blo,bhi)) = (la.face_box(ij[0]),lb.face_box(ij[1]));
+            let lo: [f64;3] = std::array::from_fn(|k| alo[k].max(blo[k])-tol);
+            let hi: [f64;3] = std::array::from_fn(|k| ahi[k].min(bhi[k])+tol);
+            let seeds: Vec<[f64;3]> = std::env::var("SEEDS3").unwrap().split(';').map(|s| {
+                let x: Vec<f64> = s.split(',').map(|x| x.trim().parse().unwrap()).collect(); [x[0],x[1],x[2]] }).collect();
+            println!("A{} {} × B{} {}: box {lo:?}–{hi:?}",ij[0],sa.kind(),ij[1],sb.kind());
+            // (`PLACE_ONLY`: where each seed stands against the two faces, and whether each face is
+            // clear of it within a ten-thousandth, nothing traced)
+            if std::env::var_os("PLACE_ONLY").is_some() {
+                for &p in &seeds {
+                    println!("  {p:?}: A{} {:?} clear {}, B{} {:?} clear {}",ij[0],la.face_place(ij[0],p),la.face_clear(ij[0],p,1e-4),
+                        ij[1],lb.face_place(ij[1],p),lb.face_clear(ij[1],p,1e-4));
+                }
+                return
+            }
+            let clock = Instant::now();
+            let r = cad_kernel::ssi::trace(&sa,&sb,&seeds,lo,hi,tol);
+            println!("traced in {:?}",clock.elapsed());
+            for c in r.unwrap_or_default() {
+                let [t0,t1] = match &c { cad_kernel::geom::Curve::BSpline(s) => s.domain(),
+                    cad_kernel::geom::Curve::Traced(t) => [0.,(t.pts.len()-1) as f64], _ => [0.,1.] };
+                println!(" a {} over {t0}–{t1}",c.kind());
+                for k in 0..=40 {
+                    let p = c.point(t0+(t1-t0)*k as f64/40.);
+                    let (ga,gb) = (sa.gradient(p),sb.gradient(p));
+                    let raw = |s: &cad_kernel::geom::Surface| cad_kernel::util::space::distance(s.point(s.inverse(p)),p);
+                    println!("  {p:?}: sine {:.2e}, off {:.1e} {:.1e}, off the whole nets {:.1e} {:.1e}",norm(cross(ga,gb))/(norm(ga)*norm(gb)),
+                        sa.implicit(p),sb.implicit(p),raw(&a.faces[ij[0]].surface),raw(&b.faces[ij[1]].surface));
+                }
+            }
+            return
+        }
         let (va,vb) = (cad_kernel::props::volume(&a),cad_kernel::props::volume(&b));
         let mut vs = Vec::new();
+        // (`OP=union|difference|intersection`: that one alone)
+        let only = std::env::var("OP").ok();
         for (name,op) in [("union",cad_kernel::boolean::Op::Union),("difference",cad_kernel::boolean::Op::Cut),("intersection",cad_kernel::boolean::Op::Common)] {
+            if only.as_deref().is_some_and(|o| o != name) { vs.push(f64::NAN); continue }
             let clock = Instant::now();
-            match cad_kernel::boolean::boolean(&a,&b,op,tol) {
+            // (`BENCH`: as brep-bench's runner asks it, `combined` at the kernel's own tolerance)
+            let made = if std::env::var_os("BENCH").is_some() { cad_kernel::boolean::combined(&a,&b,op,std::env::var("BENCH_FLOOR").ok().and_then(|f| f.parse().ok()).unwrap_or(0.)).map_err(|e| format!("{e:?}")) }
+                else { cad_kernel::boolean::boolean(&a,&b,op,tol) };
+            match made {
                 Ok(s) => { let v = cad_kernel::props::volume(&s); vs.push(v);
-                    println!("{name}: {} faces, volume {v:.10}, check {:?}, in {:?}",s.faces.len(),s.check(tol).err(),clock.elapsed()) }
+                    // (the mesh's volume beside it, at the bench's bar: a ten-thousandth of the size)
+                    let bar = (1e-4*s.size()).min(1e-3);
+                    let m = cad_kernel::mesh::mesh(&s,bar,0.1).map(|m| m.tris.iter().map(|t| { let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                        (a[0]*(b[1]*c[2]-b[2]*c[1])+a[1]*(b[2]*c[0]-b[0]*c[2])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6. }).sum::<f64>());
+                    println!("{name}: {} faces, volume {v:.10}, check {:?}, in {:?}; mesh at {bar:e}: volume {m:?}",s.faces.len(),s.check(tol).err(),clock.elapsed()) }
                 Err(e) => { vs.push(f64::NAN); println!("{name}: refused in {:?}: {e}",clock.elapsed()) }
             }
         }
@@ -357,6 +489,13 @@ fn main() {
                     cad_kernel::props::volume(&s),s.check(tol).err(),took,took/covers.max(1) as u32);
                 // (`READS`: the bench's four reads after the build, each timed — the area face by
                 // face, `check` at the size's tolerance, the volume, the mesh at its bar)
+                // (`FLUXES`: each face's share of the volume, its flux over three, in the order the
+                // STEP writer writes them)
+                if std::env::var_os("FLUXES").is_some() {
+                    let fl = cad_kernel::props::fluxes(&s);
+                    for lump in cad_kernel::step::written_lumps(&s) { for fi in lump.faces() {
+                        println!("  face {fi} ({}): volume {:.10}",s.faces[fi].name,fl[fi]/3.) } }
+                }
                 if std::env::var_os("READS").is_some() {
                     let c = Instant::now();
                     let mut area = 0.;
