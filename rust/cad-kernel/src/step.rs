@@ -444,7 +444,23 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
         OnNet {surface:Surface::BSpline(frame,net.clone()),net,arcs,fit}
     });
     let m = match &f.surface {
-        Surface::BSpline(_,n) => return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.})),
+        // **a sheet's face written on its own stretch of the net** (#1013): the net cut to the face's
+        // parameter box grown by a sixteenth (`Net::segment`, which keeps the parameters, so its
+        // pcurves are the face's still): a surface of its own, a fraction of the net. Every face on
+        // one sheet wrote the whole net: a swept sheet's is some 55 MB, and the crossed tori's
+        // union was a 2.4 GB file no reader could measure. Not one surface shared by the faces on
+        // a net: an edge between two of them on two layers of it (a sheet's double curve) has a
+        // pcurve on each, and only their surfaces tell a reader which is whose
+        Surface::BSpline(g,n) => {
+            let [u,v] = super::boolean::parameters(b,fi,true);
+            let [du,dv] = n.domain();
+            let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
+            if !(u[1] > u[0] && v[1] > v[0]) || !(within(u,du) || within(v,dv)) {
+                return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.}))
+            }
+            let net = Arc::new(n.segment(u,v));
+            return Some(Ok(OnNet {surface:Surface::BSpline(*g,net.clone()),net,arcs:[None,None],fit:0.}))
+        }
         Surface::Blend(g,bl) => return Some(net(blend_net(bl),[None,None],*g)),
         Surface::Family(g,w) => return Some(net(family_net(w),[None,None],*g)),
         Surface::Affine(m) => m,
@@ -1201,17 +1217,8 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
     // where the edge's does)
     let mut held = b.vertices.iter().zip(&wanted).filter(|(_,&w)| w).map(|(v,_)| v.tol).fold(0.,f64::max);
     let nets: Vec<Option<OnNet>> = (0..b.faces.len()).map(|fi| face_net(b,fi).transpose()).collect::<Result<_,_>>()?;
-    // **one net, one surface** (#1013): faces on one net (a sheet's faces, a Boolean's pieces of one
-    // operand's face) name one surface entity, written once. Each wrote the net again: a swept
-    // sheet's is some 55 MB, and the crossed tori's union, 62 faces on a few such, was a 2.4 GB
-    // file no reader could measure
-    let mut written: std::collections::BTreeMap<*const super::nurbs::Net,usize> = Default::default();
     let (surfaces,sheets): (Vec<usize>,Vec<f64>) = b.faces.iter().zip(&nets).map(|(f,n)| match n {
-        Some(n) => {
-            let id = match written.get(&Arc::as_ptr(&n.net)) { Some(&id) => id,None => {
-                let id = o.net(&n.net); written.insert(Arc::as_ptr(&n.net),id); id } };
-            Ok((id,n.fit))
-        }
+        Some(n) => Ok((o.net(&n.net),n.fit)),
         None => o.surface(&f.surface),
     }).collect::<Result<Vec<_>,String>>()?.into_iter().unzip();
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());

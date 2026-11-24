@@ -474,6 +474,13 @@ fn main() {
                     cad_kernel::props::volume(&s),s.check(tol).err(),took,took/covers.max(1) as u32);
                 // (`READS`: the bench's four reads after the build, each timed — the area face by
                 // face, `check` at the size's tolerance, the volume, the mesh at its bar)
+                // (`FLUXES`: each face's share of the volume, its flux over three, in the order the
+                // STEP writer writes them)
+                if std::env::var_os("FLUXES").is_some() {
+                    let fl = cad_kernel::props::fluxes(&s);
+                    for lump in cad_kernel::step::written_lumps(&s) { for fi in lump.faces() {
+                        println!("  face {fi} ({}): volume {:.10}",s.faces[fi].name,fl[fi]/3.) } }
+                }
                 if std::env::var_os("READS").is_some() {
                     let c = Instant::now();
                     let mut area = 0.;
