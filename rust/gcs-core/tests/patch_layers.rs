@@ -64,7 +64,6 @@ fn under(patch: &Net,us: [f64;2],vs: [f64;2],whole: bool) -> Brep {
     b
 }
 
-
 /// `got` within `rel` of `want`, said as `name`.
 fn close(name: &str,got: f64,want: f64,rel: f64) {
     assert!((got-want).abs() <= rel*want,"{name}: {got} against {want} ({:e})",(got-want)/want);
@@ -98,37 +97,39 @@ fn held(a: &Brep,b: &Brep,va: f64,vb: f64,common: f64,rel: f64) {
 /// `u ≥ 1/2` the graph of `z = 1/2 + 3x²/10 + y/10` and over `u ≤ 1/2` the same graph again, the
 /// patch folding back along `u = 1/2` (`x = 0`). The face is `u ≥ 13/20` (`x ≥ 9/100`); the block B
 /// notches its corner, its side `y = 1/2` crossing the face's rim `u = 13/20`.
-fn folded() -> (Net,Brep,f64,f64,f64) {
+fn folded(whole: bool) {
     let patch = rising(&[1.,0.,-1./3.,0.,1.],&[0.8,0.2,0.8,0.2,0.8]);
     // |A| = ∫∫ (1/2 + 3x²/10 + y/10) over 9/100 ≤ x ≤ 1, 0 ≤ y ≤ 1; |A ∩ B| over x ≤ 1/2, y ≤ 1/2
-    (patch,block([0.05,-1.,-1.],[0.5,0.5,3.]).unwrap(),0.6004271,0.45*1.5*4.,0.11383855)
+    held(&under(&patch,[0.65,1.],[0.,1.],whole),&block([0.05,-1.,-1.],[0.5,0.5,3.]).unwrap(),0.6004271,0.45*1.5*4.,
+        0.11383855,1e-10);
 }
 
 /// The patch with its folded-back layer just beneath the face: `(s², v, 1/2 + 3s⁴/10 + s³/1000 +
 /// v/10)`, the layer `u ≤ 1/2` standing `x^{3/2}/500` below the face's (1.8e-4 to 5.7e-4 across the
 /// hole, as the crossed tori's layers stand 3.5e-4 apart); B a square hole through it.
-fn layered() -> (Net,Brep,f64,f64,f64) {
+fn layered(whole: bool) {
     let patch = rising(&[1.,0.,-1./3.,0.,1.],&[0.799,0.2005,0.8,0.1995,0.801]);
     // |A| = 0.6004271 + ∫∫ x^{3/2}/1000 = 0.6004271 + (1 − 0.09^{5/2})/2500; |A ∩ B| by quadrature
-    (patch,block([0.4,0.3,-1.],[0.7,0.6,3.]).unwrap(),0.600826128,0.3*0.3*4.,0.057457052463345157)
+    held(&under(&patch,[0.65,1.],[0.,1.],whole),&block([0.4,0.3,-1.],[0.7,0.6,3.]).unwrap(),0.600826128,0.3*0.3*4.,
+        0.057457052463345157,1e-10);
 }
 
 /// The cuspidal patch: `(s², v, 1/2 + s³ + v/10)`, its two layers meeting in a cusp along
 /// `u = 1/2`; the face `u ≥ 11/20` (`x ≥ 1/100`), cut by the plane `z = 11y/10`, which meets the
 /// face in `y = 1/2 + x^{3/2}` and runs on through the cusp a hundredth past the face's rim.
-fn cuspidal() -> (Net,V,V,f64,f64) {
+fn cuspidal(whole: bool) {
     let patch = rising(&[1.,-1./3.,-1./3.,1.],&[-0.5,1.5,-0.5,1.5]);
     let l = 2.21f64.sqrt();
     // kept below the plane: |A| = (99/100)(11/20) + (2/5)(1 − 10⁻⁵); |A ∩ B| the column
     // ∫₀^{y*} 11y/10 + ∫_{y*}^1 (1/2 + x^{3/2} + y/10), y* = min(1, 1/2 + x^{3/2}), over x
-    (patch,[0.5,0.5,0.55],[0.,1.1/l,-1./l],0.944496,0.51031272172170669)
+    sliced(&under(&patch,[0.55,1.],[0.,1.],whole),[0.5,0.5,0.55],[0.,1.1/l,-1./l],0.944496,0.51031272172170669,1e-8);
 }
 
 /// The patch pinched to a point: `(s³, t³, 1/2 + st)`, `t = 2v − 1`, the graph of
 /// `z = 1/2 + ∛(xy)`, its parametrization singular at `u = v = 1/2` alone; the face
 /// `u, v ≥ 11/20` (`x, y ≥ 1/1000`), cut by the plane `−x + y + z/10 = 13/250`, which passes 0.002
 /// beside the pinch.
-fn pinched() -> (Net,V,V,f64,f64) {
+fn pinched(whole: bool) {
     let (x,s) = ([-1.,1.,-1.,1.],[-1.,-1./3.,1./3.,1.]);
     let row = |i: usize| (0..4).map(|j| [x[i],x[j],0.5+s[i]*s[j]]).collect();
     let patch = bezier((0..4).map(row).collect());
@@ -136,64 +137,41 @@ fn pinched() -> (Net,V,V,f64,f64) {
     let a = 0.75*(1.-0.001f64.powf(4./3.));
     // kept where −x + y + z/10 ≤ 13/250: |A| = (999/1000)²/2 + (3/4 (1 − 10^{−4}))²; |A ∩ B| by
     // quadrature
-    (patch,[0.5,0.5+0.052,0.],[1./l,-1./l,-0.1/l],0.5*0.999*0.999+a*a,0.5244906492156999)
+    sliced(&under(&patch,[0.55,1.],[0.55,1.],whole),[0.5,0.5+0.052,0.],[1./l,-1./l,-0.1/l],0.5*0.999*0.999+a*a,
+        0.5244906492156999,1e-8);
 }
 
 #[test]
-fn a_patch_folded_over_its_rim_cut_down_to_its_face_is_notched() {
-    let (patch,b,va,vb,common) = folded();
-    held(&under(&patch,[0.65,1.],[0.,1.],false),&b,va,vb,common,1e-10);
-}
+fn a_patch_folded_over_its_rim_cut_down_to_its_face_is_notched() { folded(false) }
 
 #[test]
-fn a_patch_folded_over_its_rim_is_notched_across_the_rim() {
-    let (patch,b,va,vb,common) = folded();
-    held(&under(&patch,[0.65,1.],[0.,1.],true),&b,va,vb,common,1e-10);
-}
+fn a_patch_folded_over_its_rim_is_notched_across_the_rim() { folded(true) }
 
 #[test]
-fn a_patch_over_a_near_layer_cut_down_to_its_face_is_pierced() {
-    let (patch,b,va,vb,common) = layered();
-    held(&under(&patch,[0.65,1.],[0.,1.],false),&b,va,vb,common,1e-10);
-}
+fn a_patch_over_a_near_layer_cut_down_to_its_face_is_pierced() { layered(false) }
 
 #[test]
-#[ignore = "#1013, fails today: the upright edges of B each cross the face once and the patch's \
-    other layer just beneath it, and their crossings are read wrong: at x = 0.4, y = 0.3 the two as \
-    one touch; at x = 0.7, y = 0.3 the other layer's alone, the face's lost; at x = 0.4, y = 0.6 the \
-    other layer's twice (a shell kept on one side and dropped on another)"]
-fn a_patch_over_a_near_layer_is_pierced() {
-    let (patch,b,va,vb,common) = layered();
-    held(&under(&patch,[0.65,1.],[0.,1.],true),&b,va,vb,common,1e-10);
-}
+#[ignore = "#1013, fails today: each upright edge of B, the line two of its walls meet in, is read \
+    against those walls' meetings with the patch, known in closed form over the whole net: at \
+    x = 0.4 the crossing found is the other layer's, just beneath the face, read outside it, and the \
+    face's own is lost (a shell kept on one side and dropped on another)"]
+fn a_patch_over_a_near_layer_is_pierced() { layered(true) }
 
 #[test]
-fn a_cuspidal_patch_cut_down_to_its_face_is_sliced() {
-    let (patch,o,keep,va,common) = cuspidal();
-    sliced(&under(&patch,[0.55,1.],[0.,1.],false),o,keep,va,common,1e-8);
-}
+fn a_cuspidal_patch_cut_down_to_its_face_is_sliced() { cuspidal(false) }
 
 #[test]
 #[ignore = "#1013, fails today: the meeting is marched on past the face's rim into the cusp, \
     where it turns back to where it began (224 points from the face's far edge and back), and the \
     face's stretch loses its end on the rim (a shell kept on one side and dropped on another)"]
-fn a_cuspidal_patch_is_sliced_through_its_cusp() {
-    let (patch,o,keep,va,common) = cuspidal();
-    sliced(&under(&patch,[0.55,1.],[0.,1.],true),o,keep,va,common,1e-8);
-}
+fn a_cuspidal_patch_is_sliced_through_its_cusp() { cuspidal(true) }
 
 #[test]
-fn a_pinched_patch_cut_down_to_its_face_is_sliced() {
-    let (patch,o,keep,va,common) = pinched();
-    sliced(&under(&patch,[0.55,1.],[0.55,1.],false),o,keep,va,common,1e-8);
-}
+fn a_pinched_patch_cut_down_to_its_face_is_sliced() { pinched(false) }
 
 #[test]
 #[ignore = "#1013, fails today: the meeting is marched on past the face's rim through the \
     patch's singular point into the far quadrant, its fit ten rounds long, and from the rim to the \
     point and back as a closed curve (a shell kept on one side and dropped on another); about one \
     plane in three placed within 0.002 of the pinch fails"]
-fn a_pinched_patch_is_sliced_beside_its_pinch() {
-    let (patch,o,keep,va,common) = pinched();
-    sliced(&under(&patch,[0.55,1.],[0.55,1.],true),o,keep,va,common,1e-8);
-}
+fn a_pinched_patch_is_sliced_beside_its_pinch() { pinched(true) }

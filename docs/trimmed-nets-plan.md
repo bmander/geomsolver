@@ -108,7 +108,7 @@ only if the sweep's faces are given nets of their own.
 
 ## Step 4
 
-**T1 is built** (`boolean::on_face_parameters`, the rule in `contract/brep.md`). A closed-form
+**T1 is built** (`boolean::iso_parameter`, the rule in `contract/brep.md`). A closed-form
 meeting that is an iso line of a face's net, with the net's own parameter, is cut to the face's
 parameter box before its spans are read. The folded-back stretch is then never on the curve to be
 misplaced. The gate passes. With the box widened to cross the fold, with two walls crossing the rim,
@@ -120,15 +120,31 @@ face's far edge, and a reading continued from there stays on the face's layer. I
 **Fuzzed** (`examples/patch_fuzz.rs`). The fuzzer draws a random exactly doubled patch
 `(s², v, h + a s⁴ + b v)`, a random trim `[u0, 1] × [v0, v1]`, and a random box whose walls fall
 anywhere across the face, its rim and the fold. It runs all three Booleans, each against the closed
-form and `check`. On seed 1, `main` fails 18 of 120 Booleans; with T1, none of 120, nor of 1,200
-on two more seeds.
+form and `check`. On seeds 1, 7 and 11 (the kernel's `rng::Rng`), `main` fails 15 of 120, 57 of
+600 and 54 of 600 Booleans; with T1, none of the 1,320.
 
 **Its time.** The slowest whole-patch Boolean took 2.2 s, against 0.03 s on the net cut down. Of
 that, 99% went to a line's crossings with the face isolated over the whole net (the solid's rays,
 then the arrangement's edges against faces), where the fold, `S_u` vanishing, leaves the interval
 search nothing to contract. Both now search the face's own stretch of the net
 (`Located::read_surface`, the net cut down to the face's parameter box). The slowest is now 0.02 s
-and the mean 0.02 s, the same as on the net cut down.
+and the mean 0.02 s, the same as on the net cut down (on `main`, the same seeds' slowest is 3.1 s).
+
+**T2 since.** With faces read on their own stretch of the net, each upright edge of T2's hole finds
+one crossing, not a touch or two. But an edge where two of B's walls meet is read against those
+walls' meetings with the patch, known in closed form over the whole net, and at `x = 0.4` the
+crossing found is the folded layer's. So T2 is next: the known meetings an edge is read against
+cut to the face's parameters, T1's rule applied there.
+
+**The deeper change** (from the review of T1). Both rules read a face through the part of its net
+it uses, each at the one place it is needed. The general form: carry each meeting's parameters on
+the sheets it was built from out of `ssi` (the plane cut knows them exactly), and place spans by
+them, not by recognising an iso line afterwards. That also covers a plane tilted across the patch,
+whose cut is no iso line. Then give each surface class of the arrangement one read surface, its
+net cut to the union of its faces' boxes, used by every reading. That is the union and not each
+face's box, or a march stops at one face's edge and the next face of its class is never traced
+(T5). A class whose faces lie either side of a fold still needs the carried parameters. This is
+the road for traced meetings too (T4: "a march that carries its feet").
 
 What T1 does not reach: a **traced** meeting on a folded net (the crossed tori's, laid twice
 2.1e-6 apart on `main`) carries no parameters of its own, so it needs T4's reading of where a

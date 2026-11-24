@@ -14,11 +14,13 @@
 //! place of the box; with `KEPT`, the block kept below the plane by `build::kept` instead, on the
 //! whole patch and on its part (a unit `n`). `SOLVENT_BREP_DEBUG` says the Boolean's work.
 use cad_kernel::boolean::{boolean,Op};
-use cad_kernel::geom::{Frame,Surface,V};
+use cad_kernel::geom::V;
 use cad_kernel::nurbs::Net;
-use cad_kernel::topo::Brep;
-use std::sync::Arc;
+use cad_kernel::util::quadrature::GAUSS8;
 use std::time::Instant;
+#[path = "support/patch.rs"]
+mod patch;
+use patch::under;
 
 /// The Bézier net of degree (du, dv) over [0, 1]² interpolating `f` (a polynomial map of those
 /// degrees, so exactly).
@@ -40,37 +42,6 @@ fn bezier(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize) -> Net {
     let poles = (0..=du).map(|i| (0..=dv).map(|j| { let r = i*(dv+1)+j; [a[r][n]/a[r][r],a[r][n+1]/a[r][r],a[r][n+2]/a[r][r]] }).collect()).collect();
     let clamped = |d: usize| [vec![0.;d+1],vec![1.;d+1]].concat();
     Net {du,dv,uknots:clamped(du),vknots:clamped(dv),poles,weights:None}
-}
-
-/// The solid between the floor z = 0 and the part `[u0, u1] × [v0, v1]` of `full` (a graph over the
-/// plane), its walls upright, sewn; its top face then put back on the whole of `full`.
-fn under(full: &Net,[u0,u1]: [f64;2],[v0,v1]: [f64;2],whole: bool) -> Brep {
-    let top = full.segment([u0,u1],[v0,v1]);
-    let floor = |n: &Net| Net {poles:n.poles.iter().map(|r| r.iter().map(|p| [p[0],p[1],0.]).collect()).collect(),..n.clone()};
-    let bottom = floor(&top);
-    // a wall under a row (i fixed) or column of the top: degree 1 up
-    let wall = |pts: Vec<V>,knots: Vec<f64>,d: usize| Net {du:d,dv:1,uknots:knots,vknots:vec![0.,0.,1.,1.],
-        poles:pts.iter().map(|p| vec![[p[0],p[1],0.],*p]).collect(),weights:None};
-    let last = top.poles.len()-1;
-    let lastv = top.poles[0].len()-1;
-    let walls = [
-        wall(top.poles[0].clone(),top.vknots.clone(),top.dv),
-        wall(top.poles[last].clone(),top.vknots.clone(),top.dv),
-        wall(top.poles.iter().map(|r| r[0]).collect(),top.uknots.clone(),top.du),
-        wall(top.poles.iter().map(|r| r[lastv]).collect(),top.uknots.clone(),top.du),
-    ];
-    let mut pieces = vec![cad_kernel::build::sheet(top.clone()).unwrap()];
-    pieces[0].faces[0].name = "top".into();
-    pieces.push(cad_kernel::build::sheet(bottom).unwrap());
-    for w in walls { pieces.push(cad_kernel::build::sheet(w).unwrap()) }
-    let mut s = cad_kernel::sew::sewn(&pieces,1e-9).unwrap();
-    if whole {
-        for f in &mut s.faces {
-            if f.name == "top" { if let Surface::BSpline(fr,_) = &f.surface { f.surface = Surface::BSpline(*fr,Arc::new(full.clone())) } }
-        }
-    }
-    let _ = Frame::WORLD;
-    s
 }
 
 fn main() {
@@ -112,7 +83,7 @@ fn main() {
         None => if xx >= x(5) && xx <= x(6) && yy >= x(7) && yy <= x(8) { 3. } else { f64::NEG_INFINITY },
     } };
     // Gauss–Legendre on the rectangle of A ∩ B in plan
-    let g = [(-0.906179845938664,0.236926885056189),(-0.538469310105683,0.478628670499366),(0.,0.568888888888889),(0.538469310105683,0.478628670499366),(0.906179845938664,0.236926885056189)];
+    let g = GAUSS8;
     // ∫ over [y0, y1] of h(y), split where h's two parts cross (found on 64 cells, bisected)
     let line = |y0: f64,y1: f64,h: &dyn Fn(f64) -> f64,d: &dyn Fn(f64) -> f64| -> f64 {
         let mut cuts = vec![y0];
@@ -146,7 +117,7 @@ fn main() {
     };
     let va = integral(xa,xb,ya,yb,false);
     let (vab,vb) = match &plane {
-        Some(q) => (integral(xa,xb,ya,yb,true),{ let _ = q; 144.*8. }),
+        Some(_) => (integral(xa,xb,ya,yb,true),144.*8.),
         None => (integral(xa.max(x(5)),xb.min(x(6)),ya.max(x(7)),yb.min(x(8)),false),(x(6)-x(5))*(x(8)-x(7))*4.),
     };
     println!("A closed {va:.12}; A∩B {vab:.12}");

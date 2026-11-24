@@ -1497,8 +1497,7 @@ impl<'a> Arrangement<'a> {
             // (searched on the face's own stretch of a sheet, `Located::read_surface`: none past
             // its parameters is a crossing of the face, and a net running on past it, folded, can
             // leave the search nothing to contract, #1013)
-            let on = located[other].read_surface(fi);
-            let search = |t: [f64;2]| curve_surface_within(c,t,on,tol,boxes[other][fi],pad);
+            let search = |t: [f64;2]| curve_surface_within(c,t,located[other].read_surface(fi),tol,boxes[other][fi],pad);
             let meets = match known {
                 None => search(e.t),
                 Some(Met::Same) => Meets::Along,
@@ -1508,7 +1507,7 @@ impl<'a> Arrangement<'a> {
             let meets = match meets {
                 Meets::Refused(r) => {
                     let own: Vec<&Surface> = bounded[s][i].iter().map(|&h| &solids[s].faces[h].surface).collect();
-                    resting_on(c,e.t,&own,surface,tol,&|t| curve_surface_within(c,t,on,tol,boxes[other][fi],pad))
+                    resting_on(c,e.t,&own,surface,tol,&search)
                         .unwrap_or(Meets::Refused(r))
                 }
                 meets => meets,
@@ -1766,19 +1765,22 @@ impl<'a> Arrangement<'a> {
             // line), so the stretch on the face is the curve's over the face's parameter box. A net
             // may fold back over its face, its other layer the face's points again: there the
             // curve's other stretch is the face's in space, and only its parameters put it off
-            let (curves,crossed) = if traced { (curves,crossed) } else {
+            let sheet = surfaces.iter().any(|s| matches!(s,Surface::BSpline(..)));
+            let (curves,crossed) = if traced || !sheet { (curves,crossed) } else {
                 curves.into_iter().zip(crossed).filter_map(|(c,x)| {
-                    let mut c = c;
-                    let mut cut = false;
+                    let Curve::BSpline(b) = &c else { return Some((c,x)) };
+                    let mut span = b.domain();
                     for k in 0..2 {
-                        let (s,f) = (faces.s[k],faces.f[k]);
-                        if let Some(part) = on_face_parameters(&c,&self.solids[s].faces[f].surface,parameters(self.solids[s],f,true),self.tol) {
-                            c = part?;
-                            cut = true;
+                        if let Some(i) = iso_parameter(b,surfaces[k],self.tol) {
+                            let bx = self.located[faces.s[k]].grown_parameters(faces.f[k])[i];
+                            span = [span[0].max(bx[0]),span[1].min(bx[1])];
                         }
                     }
+                    if !(span[1] > span[0]) { return None }
+                    if span == b.domain() { return Some((c,x)) }
+                    let c = Curve::BSpline(std::sync::Arc::new(b.segment(span)));
                     // (its crossings with the meeting's other curves, those on the stretch kept)
-                    let x = if cut { x.into_iter().filter(|&q| distance(c.point(c.inverse(q)),q) <= ON_CURVE*self.tol).collect() } else { x };
+                    let x = x.into_iter().filter(|&q| distance(c.point(c.inverse(q)),q) <= ON_CURVE*self.tol).collect();
                     Some((c,x))
                 }).unzip()
             };
@@ -4195,42 +4197,32 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
 /// The box of parameters face `fi` of `b` reaches, sampled along its edges (`parameters`).
 pub fn face_parameters(b: &Brep,fi: usize) -> [[f64;2];2] { parameters(b,fi,false) }
 
+/// **Which of a sheet's parameters curve `c`'s own is, where `c` is an iso line of the sheet**
+/// (#1013 T1): `k` where `c`'s point at `t` is the net's at its `k`th parameter `t` and one value
+/// of the other, over a stretch of that parameter's domain, read at nine parameters to `tol`. A
+/// plane's cut along a row carried or along a level iso line (`ssi`) is exactly so. The other
+/// parameter is read by Newton at the first of the curve's inner points where it holds the curve's
+/// own parameter, not where the net folds (its `S_u × S_v` vanishing: a fold row may pass the
+/// curve's middle). None where `c` is no such line of `surface`.
+fn iso_parameter(c: &super::nurbs::BSpline,surface: &Surface,tol: f64) -> Option<usize> {
+    let Surface::BSpline(_,net) = surface else { return None };
+    let [lo,hi] = c.domain();
+    let dom = net.domain();
+    let ts: Vec<(f64,V)> = (0..=8).map(|k| { let t = lo+(hi-lo)*k as f64/8.; (t,c.point(t)) }).collect();
+    (0..2).find(|&k| {
+        if lo < dom[k][0]-1e-12 || hi > dom[k][1]+1e-12 { return false }
+        let middle = |t: f64| if k == 0 { [t,0.5*(dom[1][0]+dom[1][1])] } else { [0.5*(dom[0][0]+dom[0][1]),t] };
+        let Some(w) = ts[1..8].iter().find_map(|&(t,p)| {
+            let uv = surface.inverse_near(p,middle(t));
+            ((uv[k]-t).abs() <= 1e-9*(1.+t.abs())).then_some(uv[1-k])
+        }) else { return false };
+        ts.iter().all(|&(t,p)| distance(if k == 0 { net.point(t,w) } else { net.point(w,t) },p) <= tol)
+    })
+}
+
 /// The box of face `fi`'s parameters its loops reach, sampled along each edge. `whole`: grown
 /// to hold the face though a pcurve bulges between samples — by a sixteenth of each side, or to a
 /// whole period where that comes near one.
-/// **The stretch of curve `c` over a face's parameters `bx`, where `c` is an iso line of the face's
-/// sheet with the sheet's own parameter** (#1013 T1): `c` a B-spline over a stretch of the net's
-/// `u` (or `v`) domain whose point at `t` is the net's at `u = t` and one `v` (or at `v = t` and
-/// one `u`), read at nine parameters to `tol` — a plane's cut along a row carried or along a level
-/// iso line (`ssi`) is exactly so. `None` where `c` is no such line of `surface`; `Some(None)` where
-/// it is and no stretch of it lies over `bx`; else that stretch (`BSpline::segment`, the same
-/// parameters).
-fn on_face_parameters(c: &Curve,surface: &Surface,bx: [[f64;2];2],tol: f64) -> Option<Option<Curve>> {
-    let (Curve::BSpline(b),Surface::BSpline(_,net)) = (c,surface) else { return None };
-    let [lo,hi] = b.domain();
-    let dom = net.domain();
-    let ts: Vec<f64> = (0..=8).map(|k| lo+(hi-lo)*k as f64/8.).collect();
-    for k in 0..2 {
-        // the curve's parameter the net's `k`th, within its domain
-        if lo < dom[k][0]-1e-12 || hi > dom[k][1]+1e-12 { continue }
-        let at = |t: f64,w: f64| if k == 0 { net.point(t,w) } else { net.point(w,t) };
-        // the other parameter, by Newton from the middle of its domain at the first of the curve's
-        // inner points where it holds the curve's own parameter (not where the net folds, its
-        // `S_u × S_v` vanishing: a fold row may pass the curve's middle)
-        let Some(w) = ts[1..8].iter().find_map(|&t| {
-            let hint = if k == 0 { [t,0.5*(dom[1][0]+dom[1][1])] } else { [0.5*(dom[0][0]+dom[0][1]),t] };
-            let uv = surface.inverse_near(c.point(t),hint);
-            ((uv[k]-t).abs() <= 1e-9*(1.+t.abs())).then_some(uv[1-k])
-        }) else { continue };
-        if ts.iter().any(|&t| distance(at(t,w),c.point(t)) > tol) { continue }
-        let (a,z) = (lo.max(bx[k][0]),hi.min(bx[k][1]));
-        if !(z > a) { return Some(None) }
-        if a <= lo && z >= hi { return Some(Some(c.clone())) }
-        return Some(Some(Curve::BSpline(std::sync::Arc::new(b.segment([a,z])))))
-    }
-    None
-}
-
 pub(crate) fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     let f = &b.faces[fi];
     let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
