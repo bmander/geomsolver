@@ -1201,8 +1201,17 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
     // where the edge's does)
     let mut held = b.vertices.iter().zip(&wanted).filter(|(_,&w)| w).map(|(v,_)| v.tol).fold(0.,f64::max);
     let nets: Vec<Option<OnNet>> = (0..b.faces.len()).map(|fi| face_net(b,fi).transpose()).collect::<Result<_,_>>()?;
+    // **one net, one surface** (#1013): faces on one net (a sheet's faces, a Boolean's pieces of one
+    // operand's face) name one surface entity, written once. Each wrote the net again: a swept
+    // sheet's is some 55 MB, and the crossed tori's union, 62 faces on a few such, was a 2.4 GB
+    // file no reader could measure
+    let mut written: std::collections::BTreeMap<*const super::nurbs::Net,usize> = Default::default();
     let (surfaces,sheets): (Vec<usize>,Vec<f64>) = b.faces.iter().zip(&nets).map(|(f,n)| match n {
-        Some(n) => Ok((o.net(&n.net),n.fit)),
+        Some(n) => {
+            let id = match written.get(&Arc::as_ptr(&n.net)) { Some(&id) => id,None => {
+                let id = o.net(&n.net); written.insert(Arc::as_ptr(&n.net),id); id } };
+            Ok((id,n.fit))
+        }
         None => o.surface(&f.surface),
     }).collect::<Result<Vec<_>,String>>()?.into_iter().unzip();
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
