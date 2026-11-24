@@ -2608,19 +2608,16 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
 /// `trace`, ending where it comes `beside` a known meeting.
 pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
     -> Result<Vec<Curve>,Shallow> {
-    trace_landing(a,b,seeds,beside,&mut |_| None,&mut |_| false,lo,hi,tol)
+    trace_landing(a,b,seeds,beside,&mut |_| None,lo,hi,tol)
 }
 
 /// `trace_beside`, a march that ends beside a known meeting carried on to it where `land` says how:
 /// given the last point it landed, the points of the meeting from there to where it joins the
 /// known one (#880 Q1b: a branch arriving at a touch along an edge, where the two
 /// surfaces part too slowly for a step to land, joins the edge where they pass through each other).
-/// A march whose step has fallen far below its first ends at a point `clear` reads as clear of
-/// either face asked of (#1013): what it would trace from there is none of theirs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,
-    land: &mut dyn FnMut(V) -> Option<Vec<V>>,clear: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
-    -> Result<Vec<Curve>,Shallow> {
+    land: &mut dyn FnMut(V) -> Option<Vec<V>>,lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,Shallow> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
@@ -2706,10 +2703,10 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
             // the way `∇a × ∇b` faces the march: it turns about only through a point where the two
             // are parallel, a touch a step may cross without landing where they nearly are
             let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
-            // how many steps running have landed back where they stood (`stalled` below), and how
-            // many have been taken far shorter than the first since it was last asked whether it
-            // stands clear of either face (`cramped` below)
-            let (mut stalled,mut cramped) = (0,0);
+            // how many steps running have landed back where they stood (`stalled` below), and the
+            // path's boxes, each over 32 of its steps (`on_path`)
+            let mut stalled = 0;
+            let mut boxes: Vec<(V,V)> = Vec::new();
             for _ in 0..100_000 {
                 // each step counted against the build's budget (#777 V3): a stopped build ends here
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (p,format!("{} × {}",a.kind(),b.kind()))) { break }
@@ -2804,6 +2801,30 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                         break
                     }
                 }
+                // **a march that runs back onto its own path has gone round a loop** (#1013): the
+                // meeting of two surfaces crosses itself only where one is singular or the two
+                // touch, so a march come back onto its path anywhere but its start entered a loop
+                // there, and goes round it again (the crossed tori's march on a cap's torus round a
+                // swallowtail of a swept sheet, 2.5e-4 across, lapped until its hundred thousand
+                // steps ran out, in 780 s). Asked every sixteenth step, of the path but its last
+                // four points: back by its start, a closed curve; else it ends where the second lap
+                // began, the loop traced once
+                if pts.len() > 8 && pts.len() % 16 == 0 {
+                    let near = 0.25*h;
+                    while 32*(boxes.len()+1) < pts.len()-4 {
+                        let k = 32*boxes.len();
+                        boxes.push(pts[k..=k+32].iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),x|
+                            (std::array::from_fn(|i| lo[i].min(x[i])),std::array::from_fn(|i| hi[i].max(x[i])))));
+                    }
+                    if let Some(j) = on_path(&pts,&boxes,q,pts.len()-4,near) {
+                        if j < 2 { closed = true; pts.push(p0); break }
+                        let mut m = pts.len()-1;
+                        while m > 8 && on_path(&pts,&boxes,pts[m],m-4,near).is_some() { m -= 1 }
+                        pts.truncate(m+2);
+                        if super::debug() { eprintln!("brep:   a march ran back onto its path at {:?}, after {} points",pts[pts.len()-1],pts.len()) }
+                        break
+                    }
+                }
                 // **a march whose steps land back where they stood has ended** (#1013): a step that
                 // carries it on less than a thousandth of its length, eight running, stands where the
                 // projection onto both surfaces can take it no farther (a fitted sheet's foot held
@@ -2817,21 +2838,6 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                         break
                     }
                 } else { stalled = 0 }
-                // **a march cramped outside a face has ended** (#1013): where the steps have fallen
-                // below a sixty-fourth of the first, the meeting turns hard or barely lands, as it
-                // does running round a swallowtail of a swept sheet past its face (the crossed tori's
-                // march round one on a cap's torus, 1.6e-6 steps over 75,000 points). Asked once in
-                // 64 such steps: a point clear of either face ends it there. What lies within both
-                // faces is reached from a seed where an edge crosses, or is a loop the search for
-                // unseen meetings finds, so nothing of theirs is lost
-                if h < h0/64. {
-                    if cramped % 64 == 0 && clear(q) {
-                        if super::debug() { eprintln!("brep:   a cramped march ended clear of a face after {} points at {q:?}, h {h:.1e}",pts.len()) }
-                        pts.push(q);
-                        break
-                    }
-                    cramped += 1;
-                }
                 pts.push(q);
                 if !inside(q,h) { break }
                 p = q;
@@ -2882,6 +2888,23 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)
+}
+
+/// The first step of the path `pts[..upto]` that passes within `near` of `x`, its steps read 32 at
+/// a time where `boxes` holds their box.
+fn on_path(pts: &[V],boxes: &[(V,V)],x: V,upto: usize,near: f64) -> Option<usize> {
+    let step = |j: usize| {
+        let (a,d) = (pts[j],sub(pts[j+1],pts[j]));
+        let s = (dot(sub(x,a),d)/dot(d,d).max(f64::MIN_POSITIVE)).clamp(0.,1.);
+        crate::util::space::distance(x,add(a,scale(d,s))) <= near
+    };
+    let last = upto.saturating_sub(1);
+    for (c,&(lo,hi)) in boxes.iter().enumerate() {
+        if 32*c >= last { return None }
+        if (0..3).any(|i| x[i] < lo[i]-near || x[i] > hi[i]+near) { continue }
+        if let Some(j) = (32*c..(32*c+32).min(last)).find(|&j| step(j)) { return Some(j) }
+    }
+    (32*boxes.len()..last).find(|&j| step(j))
 }
 
 /// **One curve a meeting**: of two traces, one whose points all lie within `8 tol` of the other
