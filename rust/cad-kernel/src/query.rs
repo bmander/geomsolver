@@ -2493,14 +2493,17 @@ pub struct Located<'a> {
     size: f64,
     /// The box its faces' boxes fill: past it no face stands.
     whole: ([f64;3],[f64;3]),
+    /// Each sheet's face's surface cut down to the face's parameter box (`read_surface`), cut the
+    /// first time it is asked for; none where it is no sheet's or the box is the whole net.
+    cut: Vec<std::sync::OnceLock<Option<Surface>>>,
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,drawn,space,seams,edge_space,size,whole) = { let l = Located::new(&b,tol);
-            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
+        let (tol,coarse,drawn,space,seams,edge_space,size,whole,cut) = { let l = Located::new(&b,tol);
+            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole,l.cut) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole,cut}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> { Located::boxed(b,tol,&|_| None) }
 
@@ -2515,7 +2518,8 @@ impl<'a> Located<'a> {
         for &bx in &space { super::geom::widen(&mut whole,bx) }
         let seams = b.faces.iter().map(Face::seams).collect();
         let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e,size)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
+        let cut = (0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect();
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole,cut}
     }
 
     /// Face `fi`'s outline and its parameter box, drawn once.
@@ -2542,6 +2546,30 @@ impl<'a> Located<'a> {
         let bx = self.drawn(fi).1;
         let mid = [(bx[0][0]+bx[1][0])/2.,(bx[0][1]+bx[1][1])/2.];
         unwrap(f.surface.inverse_near(p,mid),mid,f.surface.periods())
+    }
+
+    /// **The surface face `fi`'s crossings are read on** (#1013): a sheet's net cut down to the
+    /// face's parameter box, grown by a sixteenth each way (`Net::segment`: the same surface at the
+    /// same parameters), else the face's own surface. A net may run on well past its face, folded
+    /// back past a cuspidal edge: a line's crossings were isolated over the whole of it, where the
+    /// fold leaves the search nothing to contract (a ray reading a block under a folded patch,
+    /// 2.2 s a Boolean against 0.03 s on the net cut down), and none past the face's parameters
+    /// is a crossing of the face.
+    pub fn read_surface(&self,fi: usize) -> &Surface {
+        let f = &self.b.faces[fi];
+        let cut = self.cut[fi].get_or_init(|| {
+            let Surface::BSpline(frame,net) = &f.surface else { return None };
+            let [lo,hi] = self.parameter_box(fi);
+            let dom = net.domain();
+            let range = |k: usize| {
+                let grow = (hi[k]-lo[k])/16.+1e-9*(1.+lo[k].abs().max(hi[k].abs()));
+                [(lo[k]-grow).max(dom[k][0]),(hi[k]+grow).min(dom[k][1])]
+            };
+            let (u,v) = (range(0),range(1));
+            if !(u[1] > u[0] && v[1] > v[0]) || (u == dom[0] && v == dom[1]) { return None }
+            Some(Surface::BSpline(*frame,std::sync::Arc::new(net.segment(u,v))))
+        });
+        cut.as_ref().unwrap_or(&f.surface)
     }
 
     /// Face `fi`'s box in space (`face_box`).
@@ -2688,8 +2716,8 @@ impl<'a> Located<'a> {
             let reach = exit+self.tol+1e-9*self.size;
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
-            for (fi,f) in self.b.faces.iter().enumerate() {
-                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol) {
+            for fi in 0..self.b.faces.len() {
+                match within(&ray,[0.,reach],self.read_surface(fi),self.tol*1e-3,self.space[fi],self.tol) {
                     // lying along a face, or a reading not proved (#814 P3): another direction
                     Meets::Along | Meets::Refused(_) => continue 'dirs,
                     Meets::At(roots) => for (t,touch) in roots {

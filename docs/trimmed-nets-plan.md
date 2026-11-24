@@ -117,6 +117,19 @@ A first attempt placed each span by its parameters continued along it from an en
 boundary. That fixed the gate alone: on an exactly doubled patch both layers also pass through the
 face's far edge, and a reading continued from there stays on the face's layer. It was dropped.
 
+**Fuzzed** (`examples/patch_fuzz.rs`). The fuzzer draws a random exactly doubled patch
+`(s², v, h + a s⁴ + b v)`, a random trim `[u0, 1] × [v0, v1]`, and a random box whose walls fall
+anywhere across the face, its rim and the fold. It runs all three Booleans, each against the closed
+form and `check`. On seed 1, `main` fails 18 of 120 Booleans; with T1, none of 120, nor of 1,200
+on two more seeds.
+
+**Its time.** The slowest whole-patch Boolean took 2.2 s, against 0.03 s on the net cut down. Of
+that, 99% went to a line's crossings with the face isolated over the whole net (the solid's rays,
+then the arrangement's edges against faces), where the fold, `S_u` vanishing, leaves the interval
+search nothing to contract. Both now search the face's own stretch of the net
+(`Located::read_surface`, the net cut down to the face's parameter box). The slowest is now 0.02 s
+and the mean 0.02 s, the same as on the net cut down.
+
 What T1 does not reach: a **traced** meeting on a folded net (the crossed tori's, laid twice
 2.1e-6 apart on `main`) carries no parameters of its own, so it needs T4's reading of where a
 march ends, or a march that carries its feet, before T1's rule can apply to it.

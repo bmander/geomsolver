@@ -875,6 +875,15 @@ points again: read by its middle's nearest foot, it was put on the face and laid
 Only its parameters put it off the face. `patch_layers::a_patch_folded_over_its_rim_is_notched_across_the_rim`
 is the gate (brep-bench's `nurbs/folded-patch-notched-at-its-rim`, which also has a control on
 the net cut down to the face).
+**A line's or an edge's crossings with a sheet's face are searched on the face's own stretch of
+the net** (#1013, `Located::read_surface`). For the solid's rays and for the arrangement's edges
+against faces, a face whose surface is a B-spline net is read on that net cut down to its parameter
+box, grown by a sixteenth each way (`Net::segment`, the same surface at the same parameters, cut
+once a face). No crossing past the face's parameters is a crossing of the face. A net running on
+past its face and folded back over it left the interval search nothing to contract at the fold: a
+block under a folded patch took 2.2 s a Boolean, against 0.02 s with the net cut down, and now
+takes 0.02 s either way. `rust/cad-kernel/examples/patch_fuzz.rs` reads the folded patch at
+random (patch, trim, box), every Boolean against its closed form, whole net and cut down.
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
 along it through where the spline crosses or touches that surface, exactly; a plane across it (square

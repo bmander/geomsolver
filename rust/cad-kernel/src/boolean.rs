@@ -1485,7 +1485,7 @@ impl<'a> Arrangement<'a> {
         // it. Where those meetings are known — given (#880 Q1b), or found in closed form (#962's 7)
         // — the edge is read against them by one rule (`known`, `on_known`).
         let known: Vec<Option<Met>> = asked.iter().map(|&(s,other,i,fi,..)| self.known(s,&bounded[s][i],other,fi)).collect();
-        let (solids,boxes) = (&self.solids,&self.boxes);
+        let (solids,boxes,located) = (&self.solids,&self.boxes,&self.located);
         let bounded = &bounded;
         let read = crate::util::par::map_in_order(&asked.iter().zip(&known).collect::<Vec<_>>(),|&(&(s,other,i,fi,e,c),known)| {
             let started = crate::util::clock::Instant::now();
@@ -1494,7 +1494,11 @@ impl<'a> Arrangement<'a> {
             // that near
             let surface = &solids[other].faces[fi].surface;
             let tol = tol.max(e.tol);
-            let search = |t: [f64;2]| curve_surface_within(c,t,surface,tol,boxes[other][fi],pad);
+            // (searched on the face's own stretch of a sheet, `Located::read_surface`: none past
+            // its parameters is a crossing of the face, and a net running on past it, folded, can
+            // leave the search nothing to contract, #1013)
+            let on = located[other].read_surface(fi);
+            let search = |t: [f64;2]| curve_surface_within(c,t,on,tol,boxes[other][fi],pad);
             let meets = match known {
                 None => search(e.t),
                 Some(Met::Same) => Meets::Along,
@@ -1504,7 +1508,7 @@ impl<'a> Arrangement<'a> {
             let meets = match meets {
                 Meets::Refused(r) => {
                     let own: Vec<&Surface> = bounded[s][i].iter().map(|&h| &solids[s].faces[h].surface).collect();
-                    resting_on(c,e.t,&own,surface,tol,&|t| curve_surface_within(c,t,surface,tol,boxes[other][fi],pad))
+                    resting_on(c,e.t,&own,surface,tol,&|t| curve_surface_within(c,t,on,tol,boxes[other][fi],pad))
                         .unwrap_or(Meets::Refused(r))
                 }
                 meets => meets,
