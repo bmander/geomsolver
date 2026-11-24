@@ -32,10 +32,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A march ends where it can go no farther on a pair of sheets** (`ssi`, #1013): where its steps
   land back where they stood, where it runs back onto its own path (a loop entered at a singular
   point, lapped to its step budget), where a sheet's normal turns about across one step (a fold),
-  and at a touch it arrives at, at the point the touch is known by, or short of one ahead of it.
+  and at a touch it arrives at, at the point the touch is known by; a curve ended a little short of
+  a touch the trace leaves branches from is carried on to it.
   `touch_near` takes sixteen Newton steps, not thirty-two. With them brep-bench's crossed
   tumbling tori combine: union, difference and intersection each `check` and mesh, and agree with
-  the members' volumes to 3e-9, about a minute each at the members' tolerance (refused in 1008 s).
+  the members' volumes to 3e-9, 47 s each at the members' tolerance (refused in 1008 s).
 - **A sheet's grid seeds by false position** (`boolean`, #1013): each sign change of the other's
   distance settled by Illinois, and dropped at once where the distance changes by more than twice
   its ends stand apart, not halved forty times: the crossed tori's seeding from 29.5 s to 10.6 s.

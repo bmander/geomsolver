@@ -2779,12 +2779,7 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                     }
                     let touched = touch_at(q).filter(|u| aligned(u,t));
                     let crossed = touched.as_ref().is_some_and(|u| dot(sub(q,u.at),t) > 0.);
-                    // **short of a touch, a march ends at it** (#1013): beside a known meeting with a
-                    // touch ahead along its branch, the march ends at the touch, where the branches
-                    // leaving it start; ended at the step, the crossed tori's fourth branch stopped
-                    // 4.8e-3 short of the touch its three others leave from, and the face's cut through
-                    // it did not close
-                    if beside(q) && !crossed && touched.is_none() { pts.push(q); break }
+                    if beside(q) && !crossed { pts.push(q); break }
                     // into a point where the two touch, along one of its branches: ending there
                     let Some(touched) = touched else { return Err(shallow(q)) };
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
@@ -2894,6 +2889,33 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
     // (1e-8 of a step), two such were placed apart and interpolated a hair apart in space, and the
     // cubic magnified their rounding into a swing out along the curve and back, on both surfaces
     // all the way (a ring groove's floor ran 0.17 mm past its corner)
+    // **a curve ended short of a touch this trace knows ends at it** (#1013): a march stopped
+    // beside a known meeting a little short of a touch along its branch, one whose other branches
+    // this trace leaves from (found, perhaps, after the march ran), is carried on to the point the
+    // touch is known by — its end within the touch's reach and heading for it. Left a step short,
+    // the crossed tori's fourth branch stopped 4.8e-3 short of the touch its three others leave,
+    // and the face's cut through it did not close. A touch this trace never met is left to the
+    // meeting known beside it (a round's torus touching the plane its boss stands on, at the
+    // plane's edge: the march ends at its step)
+    let traced_so_far: Vec<Curve> = traced_so_far.into_iter().map(|c| {
+        let Curve::Traced(t) = &c else { return c };
+        if t.closed || t.pts.len() < 2 { return c }
+        let mut pts = t.pts.clone();
+        let mut moved = false;
+        for end in [0,1] {
+            let n = pts.len();
+            let (e,before) = if end == 0 { (pts[0],pts[1]) } else { (pts[n-1],pts[n-2]) };
+            let out = sub(e,before);
+            let Some(u) = touches.iter().filter(|u| {
+                let d = distance(u.at,e);
+                d > tol && d <= 2.*u.radius.max(h0) && dot(sub(u.at,e),out) > 0.7*d*norm(out)
+            }).min_by(|x,y| distance(x.at,e).total_cmp(&distance(y.at,e))) else { continue };
+            if end == 0 { pts.insert(0,u.at) } else { pts.push(u.at) }
+            moved = true;
+        }
+        if !moved { return c }
+        Curve::Traced(std::sync::Arc::new(Traced {a:t.a.clone(),b:t.b.clone(),pts,closed:false}))
+    }).collect();
     for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
         let mut through: Vec<(f64,V)> = Vec::new();

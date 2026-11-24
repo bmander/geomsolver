@@ -936,9 +936,12 @@ Five ends, each read where the march stands, none needing the faces:
   is known by (`end_at_touch`), where its other branches leave from; settled again from the
   arriving march, the sheets' touch at the crossed tori's shared pose stood 8.4e-6 off itself,
   two vertices twice the tolerance apart, and the face's cut through it did not close;
-- **short of a touch, at it**: a march whose tangent fails beside a known meeting with an aligned
-  touch ahead it has not crossed ends at the touch, not at its step (the fourth branch ended 4.8e-3
-  short of the touch its three others leave).
+- **short of a touch this trace knows, at it**: once every march has run, an open curve whose end
+  stopped within a touch's reach and heading for it, a touch this trace leaves branches from, is
+  carried on to the point the touch is known by (the fourth branch ended 4.8e-3 short of the touch
+  its three others leave). Asked as the march stops, the touch was not yet known; and a touch the
+  trace never met is left to the meeting known beside it (`round_onto_round`'s boss, its torus
+  touching the plane at the plane's edge, where the march ends at its step).
 `touch_near` takes sixteen Newton steps (`TOUCH_STEPS`): a touch it finds it settles in a dozen,
 and the crossed tori asked it a hundred times beside their folds, most running all of thirty-two
 to nothing. A sheet's grid seeds settle each sign change by false position (Illinois) and drop a

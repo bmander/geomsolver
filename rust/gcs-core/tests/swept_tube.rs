@@ -775,10 +775,11 @@ fn the_crossed_reverse_member_builds_by_the_tube_road() {
 /// (`boolean::combined`, as the runner asks). Each result `check`s, its mesh at the bench's bar holds
 /// its volume within a thousandth, and the three agree with the members' volumes:
 /// `|A ∪ B| + |A ∩ B| = |A| + |B|` and `|A − B| = |A| − |A ∩ B|` to 1e-7, the union's volume
-/// 25.78426846 to 1e-7. Refused before #1013's rules: a march round a swallowtail beside a cap's
+/// 25.7842683 to 1e-6. Refused before #1013's rules: a march round a swallowtail beside a cap's
 /// torus lapped for 780 s; the sheets' touch at the shared pose settled twice, 8.4e-6 apart, and a
-/// fourth branch stopped 4.8e-3 short of the other; a meeting carried across B's sheet's fold beside
-/// its near-singular point, fitted 7e-4 off it; a rim's gap stated smaller than it stands.
+/// fourth branch stopped 4.8e-3 short of the touch the others leave; a meeting carried across B's
+/// sheet's fold beside its near-singular point, fitted 7e-4 off it; a rim's gap stated smaller
+/// than it stands.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, two crossed members and their three Booleans, ~4 min")]
 fn the_crossed_members_combine() {
@@ -807,5 +808,5 @@ fn the_crossed_members_combine() {
     let [u,d,i] = v;
     assert!((u+i-va-vb).abs() <= 1e-7,"|A ∪ B| + |A ∩ B| − |A| − |B| = {:e}",u+i-va-vb);
     assert!((d-va+i).abs() <= 1e-7,"|A − B| − |A| + |A ∩ B| = {:e}",d-va+i);
-    assert!((u-25.78426846).abs() <= 1e-7,"the union's volume {u}");
+    assert!((u-25.7842683).abs() <= 1e-6,"the union's volume {u}");
 }

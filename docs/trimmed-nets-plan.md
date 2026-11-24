@@ -210,7 +210,7 @@ it could not, or a point found twice:
 | 1 | a march beside the sheets' touch landed each 1e-4 step 1e-8 on, 100,000 steps each asking for a touch: 111 s | a march whose steps land back where they stood has ended |
 | 2 | A5 × B9 ran round a swallowtail of A's sheet beside B's cap torus, a loop 2.5e-4 across, lapped until its step budget ran out: 780 s of the 1008 | a march run back onto its own path has gone round a loop |
 | 3 | the sheets' touch at the shared pose settled twice, 8.4e-6 apart: four branches ended two at each, A1's cut did not close | one touch, one point |
-| 4 | the second touch's fourth branch stopped 4.8e-3 short of it: A6's and B1's cuts did not close | short of a touch, a march ends at it |
+| 4 | the second touch's fourth branch stopped 4.8e-3 short of it: A6's and B1's cuts did not close | a curve ended short of a touch the trace leaves branches from is carried on to it (asked as the march stopped, it broke `round_onto_round`'s boss, whose touch is the plane's edge's) |
 | 5 | beside B's sheet's near-singular point the meeting with A1 crossed the fold, turned back along itself and was fitted 7e-4 off both sheets: check refused | a march across a sheet's fold has ended |
 | 6 | B's rim stated a gap of 1.1e-5 read at 33 places, its pcurve 1.5e-5 off between two: the union's check refused | an edge's gap measured as a reader measures it |
 
@@ -222,12 +222,11 @@ With them the three build, check and mesh, and agree, at the members' own tolera
 
 | | faces | volume | its mesh's | time |
 |---|---|---|---|---|
-| union | 81 | 25.7842684588 | 25.7695297 | 56 s |
-| difference | 71 | 11.9944212716 | 11.9877233 | 69 s* |
-| intersection | 56 | 4.6165785440 | 4.6144403 | 69 s* |
+| union | 81 | 25.7842683051 | 25.7695282 | 47.7 s |
+| difference | 71 | 11.9944211178 | 11.9877081 | 46.7 s |
+| intersection | 56 | 4.6165786980 | 4.6144377 | 46.6 s |
 
-(* before `touch_near`'s sixteen steps, which took the union from 69 s to 56 s.)
-`|A ∪ B| + |A ∩ B| − |A| − |B|` is 2.6e-9 and `|A − B| − |A| + |A ∩ B|` 3.5e-10. At the kernel's
+`|A ∪ B| + |A ∩ B| − |A| − |B|` is 3.4e-9 and `|A − B| − |A| + |A ∩ B|` 5.0e-10. At the kernel's
 own tolerance (`combined`'s floor 0, a billionth of the size, 8e-9) all three are refused: the
 arrangement resolves the sheets five hundred times finer than they are fitted (r/50000), and a
 dozen pieces are left spanning both sides. brep-bench's runner now asks them at the sweep's
@@ -236,9 +235,10 @@ tolerance (`Tumble::tolerance`), as `ring-pushed-in-at-a-lean` asks its cut at i
 **Their time.** Each Boolean took 80 s at first: the arrangement's edges against faces 8 s, face
 pairs 57 s (sheets' grid seeds 29.5 s, traces 21 s). Grid seeds now settle each sign change by false
 position and drop a jump at once (10.6 s); `touch_near`, asked a hundred times beside the folds and
-mostly running all thirty-two steps to nothing, now takes sixteen. Each Boolean is now about 56 s;
-with its members (18 s and 71 s) a case runs some two and a half minutes, past the bench's 60 s.
-The reverse member's own 71 s is the larger share left.
+mostly running all thirty-two steps to nothing, now takes sixteen. Each Boolean is now about 47 s
+(edges against faces 6–7 s, face pairs 27 s: grid seeds 9.5 s, traces 13.5 s); with its members
+(16 s and 62 s) a case runs some two minutes, past the bench's 60 s. The reverse member's own
+62 s is the larger share left, and it is #942's, not this issue's.
 
 **The experiment branch's three rules** (per-face nets, and its fold and met-itself reports) are
 dropped: none fixed a minimal case, and the per-face nets are what made T5. (5) and (2) above are
