@@ -43,6 +43,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **An edge's gap is measured as a reader measures it** (`topo::Brep::measure_tolerances`): each use
   read as `standing` reads it (64 places, the knots and ends, halfway between each two), not at 33.
   A swept sheet's rim stated 1.1e-5 where its pcurve stood 1.5e-5 off.
+
+## [0.23.1] - 2026-11-24
+
 - **A slide through a blank, by its shadow** (`swept::through`): a tool the closed class refuses
   (`Curved`, `Folded`) slid from wholly before a blank to wholly past it is cut as the blank less
   the prism over the tool's shadow along the slide — each face's contact and each sharp edge carried
