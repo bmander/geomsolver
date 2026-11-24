@@ -673,17 +673,21 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                 // cells the operation tells apart, round an edge whose faces it ordered wrongly
                 Some(w) if w != v => {
                     if super::debug() {
-                        // (each edge used other than twice: where it lies and the operands' faces
-                        // using it, each with what the operation makes of its two sides)
-                        for (e,us) in c.b.uses().iter().enumerate() {
-                            if us.len() == 2 || us.is_empty() { continue }
+                        // (each join of a kept and a dropped side round an edge: where it lies,
+                        // and the operands' faces the two sides belong to)
+                        let joins = super::complex::JOINS.with(|j| j.borrow().clone());
+                        let side = |x: usize| value(member[x/2][x%2]);
+                        let name = |x: usize| format!("{}{}{}",["A","B"][c.origins[x/2][0].operand],c.origins[x/2][0].face,["-","+"][x%2]);
+                        for (e,x,y) in joins {
+                            if side(x) == side(y) { continue }
                             let mid = match &c.b.edges[e].curve {
                                 EdgeCurve::Curve(cv) => cv.point(0.5*(c.b.edges[e].t[0]+c.b.edges[e].t[1])),
-                                EdgeCurve::Degenerate => continue,
+                                EdgeCurve::Degenerate => [f64::NAN;3],
                             };
-                            let by: Vec<String> = us.iter().map(|&(g,..)| format!("{}{} {:?}",
-                                ["A","B"][c.origins[g][0].operand],c.origins[g][0].face,member[g].map(value))).collect();
-                            eprintln!("brep: edge {e} used {} times, middle {mid:?}, met {}: {}",us.len(),c.met[e],by.join(", "));
+                            let round: Vec<String> = c.radial[e].iter().map(|u| format!("{}{}:{:?}",["A","B"][c.origins[u.face][0].operand],
+                                c.origins[u.face][0].face,member[u.face].map(value))).collect();
+                            eprintln!("brep: edge {e} ({} uses, met {}) joins {} (face {}, kept {}) to {} (face {}, kept {}), middle {mid:?}; round it {}",
+                                c.radial[e].len(),c.met[e],name(x),x/2,side(x),name(y),y/2,side(y),round.join(" "));
                         }
                     }
                     let f = &c.b.faces[f];
@@ -2316,14 +2320,23 @@ impl<'a> Arrangement<'a> {
         let (surfaces,stretches,spread) = (touches.surfaces,touches.stretches,touches.spread.max(8.*tol));
         let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
         let land = &mut |p: V| landing(surfaces,stretches,spread,tol,p);
+        // a point of `sa` or `sb` within `r` of `p` stands beyond one face by more than the
+        // face's boundary comes (`Located::face_clear`, #961): what lies there is none of theirs
+        let (located,fs) = ([&self.located[oa],&self.located[ob]],[fa,fb]);
+        let clear = |p: V,r: f64| (0..2).any(|k| {
+            let s = [sa,sb][k];
+            let foot = s.point(s.inverse(p));
+            // the ball about the foot holding the one about `p`
+            located[k].face_clear(fs[k],foot,r+distance(foot,p)+tol)
+        });
         let mut traced = known.to_vec();
         traced.extend(ridged.branches().iter().map(|br| br.curve.clone()));
         if past {
             // read from its ridges and marched in both surfaces' parameters (#778, #942 F1): each seed
             // left traced alone
-            super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_landing(sa,sb,&[p],beside,land,lo,hi,tol),tol);
+            super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_landing(sa,sb,&[p],beside,land,&mut |q| clear(q,tol),lo,hi,tol),tol);
         } else {
-            traced.extend(super::ssi::trace_landing(sa,sb,&seeds,beside,land,lo,hi,tol)?);
+            traced.extend(super::ssi::trace_landing(sa,sb,&seeds,beside,land,&mut |q| clear(q,tol),lo,hi,tol)?);
         }
         // a closed curve inside both faces crosses no edge and has no seed
         if super::ssi::searchable(sa) && super::ssi::searchable(sb) {
@@ -2340,22 +2353,15 @@ impl<'a> Arrangement<'a> {
             // within `r` of `p` on `mine`, stands beyond one face by more than the face's
             // boundary comes (`Located::face_clear`) holds no point of what is built. One beside
             // both faces, or whose reach along a surface is not shown, is refused as before
-            let (located,fs) = ([&self.located[oa],&self.located[ob]],[fa,fb]);
-            let clear = &mut |p: V,r: f64| (0..2).any(|k| {
-                let s = [sa,sb][k];
-                let foot = s.point(s.inverse(p));
-                // the ball about the foot holding the one about `p`
-                located[k].face_clear(fs[k],foot,r+distance(foot,p)+tol)
-            });
             // the edges they touch along are meetings already known, over their own stretch
-            while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&traced,&stretches,beside,clear,lo,hi,tol)? {
+            while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&traced,&stretches,beside,&mut |p,r| clear(p,r),lo,hi,tol)? {
                 self.say.unseen(faces,surfaces,p);
                 found += 1;
                 if found > LOOPS {
                     return Err(format!("a {} and a {} meet in more than {LOOPS} curves no edge crosses, not built yet",
                         sa.kind(),sb.kind()).into())
                 }
-                let more = match super::ssi::trace_landing(sa,sb,&[p],beside,land,lo,hi,tol) {
+                let more = match super::ssi::trace_landing(sa,sb,&[p],beside,land,&mut |q| clear(q,tol),lo,hi,tol) {
                     // past a refusal, one refused again stands where the branches read it
                     Err(_) if past => break,
                     other => other?,

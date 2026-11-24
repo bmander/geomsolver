@@ -347,6 +347,15 @@ fn main() {
             let seeds: Vec<[f64;3]> = std::env::var("SEEDS3").unwrap().split(';').map(|s| {
                 let x: Vec<f64> = s.split(',').map(|x| x.trim().parse().unwrap()).collect(); [x[0],x[1],x[2]] }).collect();
             println!("A{} {} × B{} {}: box {lo:?}–{hi:?}",ij[0],sa.kind(),ij[1],sb.kind());
+            // (`PLACE_ONLY`: where each seed stands against the two faces, and whether each face is
+            // clear of it within a ten-thousandth, nothing traced)
+            if std::env::var_os("PLACE_ONLY").is_some() {
+                for &p in &seeds {
+                    println!("  {p:?}: A{} {:?} clear {}, B{} {:?} clear {}",ij[0],la.face_place(ij[0],p),la.face_clear(ij[0],p,1e-4),
+                        ij[1],lb.face_place(ij[1],p),lb.face_clear(ij[1],p,1e-4));
+                }
+                return
+            }
             let clock = Instant::now();
             let r = cad_kernel::ssi::trace(&sa,&sb,&seeds,lo,hi,tol);
             println!("traced in {:?}",clock.elapsed());

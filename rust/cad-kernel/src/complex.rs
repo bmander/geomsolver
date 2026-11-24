@@ -187,6 +187,12 @@ fn in_parameters(s: &Surface,uv: super::geom::Uv,d: V) -> Option<super::geom::Uv
     Some(super::topo::in_parameters(s,uv,d)).filter(|x| x.iter().all(|v| v.is_finite()))
 }
 
+thread_local! {
+    /// Under `SOLVENT_BREP_DEBUG`, every join of two sides the last complex built made, with its
+    /// edge (#1013): read by a refusal that finds a shell kept and dropped at once.
+    pub static JOINS: std::cell::RefCell<Vec<(usize,usize,usize)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// `a` wrapped into `(-π, π]`.
 fn wrapped(a: f64) -> f64 {
     let mut a = a%TAU;
@@ -216,6 +222,7 @@ impl Complex {
         let mut step = None;
         let uses = b.uses();
         let mut sides_joined = crate::util::union_find::UnionFind::new(2*nf);
+        JOINS.with(|j| j.borrow_mut().clear());
         let mut radial: Vec<Vec<Use>> = vec![Vec::new();b.edges.len()];
         // each sorted use's side facing the wedge ahead of it
         let mut wedges: Vec<Vec<usize>> = vec![Vec::new();b.edges.len()];
@@ -232,7 +239,7 @@ impl Complex {
                 let opposite = uses[e].len() == 1 || r(u) != r(w);
                 let pairs = if uses[e].len() == 1 { vec![(2*u.0,2*u.0+1)] }
                     else if opposite { vec![(2*u.0,2*w.0),(2*u.0+1,2*w.0+1)] } else { vec![(2*u.0,2*w.0+1),(2*u.0+1,2*w.0)] };
-                for (x,y) in pairs { sides_joined.union(x,y); }
+                for (x,y) in pairs { sides_joined.union(x,y); if super::debug() { JOINS.with(|j| j.borrow_mut().push((e,x,y))); } }
                 // the wedge ahead of the first is behind one of its sides; which, no order says, so
                 // the first's back is taken to face it (a selection asks only where kept faces
                 // meet more than twice)
@@ -377,6 +384,7 @@ impl Complex {
                 let side_i = 2*fi+usize::from(dot(n,r) > 0.);
                 let side_j = 2*fj+usize::from(dot(nj,rj) < 0.);
                 sides_joined.union(side_i,side_j);
+                if super::debug() { JOINS.with(|j| j.borrow_mut().push((e,side_i,side_j))); }
                 sides.push(side_i);
             }
             radial[e] = round.iter().map(|&(angle,_,u,_,_,_)| {
