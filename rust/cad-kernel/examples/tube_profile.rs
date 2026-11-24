@@ -332,6 +332,23 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`DIST_AT=x,y,z;…`: each point's distance to each face's surface of each member, its
+        // foot's parameters, and where it stands against the face)
+        if let Ok(at) = std::env::var("DIST_AT") {
+            for s in at.split(';') {
+                let x: Vec<f64> = s.split(',').map(|x| x.trim().parse().unwrap()).collect();
+                let p = [x[0],x[1],x[2]];
+                for (name,m) in [("A",&a),("B",&b)] {
+                    let l = cad_kernel::query::Located::new(m,tol);
+                    for (fi,f) in m.faces.iter().enumerate() {
+                        let uv = f.surface.inverse(p);
+                        let d = cad_kernel::util::space::distance(f.surface.point(uv),p);
+                        if d < 1e-2 { println!("  {p:?}: {name}{fi} ({}) {d:.2e} off at {uv:?}, {:?}",f.name,l.face_place(fi,f.surface.point(uv))) }
+                    }
+                }
+            }
+            return
+        }
         // (`PLACES=n`: n points drawn at random in each member's box, each placed by
         // `Located::solid_place` and by the winding number of the member's mesh, each disagreement
         // said with how deep the point stands from the mesh)
@@ -397,7 +414,9 @@ fn main() {
                 for k in 0..=40 {
                     let p = c.point(t0+(t1-t0)*k as f64/40.);
                     let (ga,gb) = (sa.gradient(p),sb.gradient(p));
-                    println!("  {p:?}: sine {:.2e}, off {:.1e} {:.1e}",norm(cross(ga,gb))/(norm(ga)*norm(gb)),sa.implicit(p),sb.implicit(p));
+                    let raw = |s: &cad_kernel::geom::Surface| cad_kernel::util::space::distance(s.point(s.inverse(p)),p);
+                    println!("  {p:?}: sine {:.2e}, off {:.1e} {:.1e}, off the whole nets {:.1e} {:.1e}",norm(cross(ga,gb))/(norm(ga)*norm(gb)),
+                        sa.implicit(p),sb.implicit(p),raw(&a.faces[ij[0]].surface),raw(&b.faces[ij[1]].surface));
                 }
             }
             return

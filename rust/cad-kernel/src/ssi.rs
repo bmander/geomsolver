@@ -2780,6 +2780,17 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
                     break
                 };
+                // **a march across a sheet's fold has ended** (#1013): a surface's normal turns
+                // through no more than a step's few degrees along a regular march, so one that turns
+                // about between `p` and `q` has crossed where a sheet's net folds back on itself, its
+                // parameters' rates parallel; past it the meeting runs on the net's other layer,
+                // which no face on one layer holds. Carried on, the crossed tori's meeting beside a
+                // fold of B's sheet turned back along itself, looped and was fitted through its loop
+                // 7e-4 off both sheets. It ends at its last point before the fold
+                if [a,b].iter().any(|s| s.sheet() && dot(s.gradient(p),s.gradient(q)) < 0.) {
+                    if super::debug() { eprintln!("brep:   a march crossed a sheet's fold after {} points at {p:?}",pts.len()) }
+                    break
+                }
                 let turned = (dot(tq,t) > 0.) != facing;
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
