@@ -119,6 +119,21 @@ fn main() {
     }
     // (`WHERE=x,y,z`: a point in space read on each chart — each sheet's nearest places on a grid,
     // settled, and each end pose's — with the side there and the depth's reading)
+    // (`SHEET_AT=side,θ,t,dθ,dt`: a 13 × 7 grid about (θ, t) on the sheet `side`, each place read as
+    // the faces are kept by: `+` kept, `.` dropped, `?` unread)
+    if let Some(at) = std::env::var_os("SHEET_AT") {
+        let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
+        let (side,th,t,dth,dt) = (v[0],v[1],v[2],v[3],v[4]);
+        let field = tube::Depth {tube:&tb,chart:Chart::Sheet(side),within:tol,holes:&[]};
+        for j in (-3..=3).rev() {
+            let row: String = (-6..=6).map(|i| {
+                let uv = [th+dth*i as f64,t+dt*j as f64];
+                match field.reading(uv) { Some((_,Reading::Alone)) => '+',Some((_,Reading::Far(c))) => if c.depth >= 0. { '+' } else { '.' },_ => '?' }
+            }).collect();
+            println!("t {:+.4}: {row}",t+dt*j as f64);
+        }
+        return
+    }
     if let Some(at) = std::env::var_os("WHERE") {
         let v: Vec<f64> = at.to_str().unwrap().split(',').map(|x| x.parse().unwrap()).collect();
         let x = [v[0],v[1],v[2]];
