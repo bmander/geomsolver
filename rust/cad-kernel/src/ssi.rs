@@ -2769,7 +2769,12 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                     }
                     let touched = touch_at(q).filter(|u| aligned(u,t));
                     let crossed = touched.as_ref().is_some_and(|u| dot(sub(q,u.at),t) > 0.);
-                    if beside(q) && !crossed { pts.push(q); break }
+                    // **short of a touch, a march ends at it** (#1013): beside a known meeting with a
+                    // touch ahead along its branch, the march ends at the touch, where the branches
+                    // leaving it start; ended at the step, the crossed tori's fourth branch stopped
+                    // 4.8e-3 short of the touch its three others leave from, and the face's cut through
+                    // it did not close
+                    if beside(q) && !crossed && touched.is_none() { pts.push(q); break }
                     // into a point where the two touch, along one of its branches: ending there
                     let Some(touched) = touched else { return Err(shallow(q)) };
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
