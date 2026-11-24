@@ -104,12 +104,13 @@ fn folded() -> (Net,Brep,f64,f64,f64) {
     (patch,block([0.05,-1.,-1.],[0.5,0.5,3.]).unwrap(),0.6004271,0.45*1.5*4.,0.11383855)
 }
 
-/// The patch with its folded-back layer just beneath the face: `(s², v, 1/2 + 3s⁴/10 + s³/100 +
-/// v/10)`, the layer `u ≤ 1/2` standing `x^{3/2}/50` below the face's; B a square hole through it.
+/// The patch with its folded-back layer just beneath the face: `(s², v, 1/2 + 3s⁴/10 + s³/1000 +
+/// v/10)`, the layer `u ≤ 1/2` standing `x^{3/2}/500` below the face's (1.8e-4 to 5.7e-4 across the
+/// hole, as the crossed tori's layers stand 3.5e-4 apart); B a square hole through it.
 fn layered() -> (Net,Brep,f64,f64,f64) {
-    let patch = rising(&[1.,0.,-1./3.,0.,1.],&[0.79,0.205,0.8,0.195,0.81]);
-    // |A| = 0.6004271 + ∫∫ x^{3/2}/100 = 0.6004271 + (1 − 0.09^{5/2})/250; |A ∩ B| by quadrature
-    (patch,block([0.4,0.3,-1.],[0.7,0.6,3.]).unwrap(),0.60441738,0.3*0.3*4.,0.057790524633451571)
+    let patch = rising(&[1.,0.,-1./3.,0.,1.],&[0.799,0.2005,0.8,0.1995,0.801]);
+    // |A| = 0.6004271 + ∫∫ x^{3/2}/1000 = 0.6004271 + (1 − 0.09^{5/2})/2500; |A ∩ B| by quadrature
+    (patch,block([0.4,0.3,-1.],[0.7,0.6,3.]).unwrap(),0.600826128,0.3*0.3*4.,0.057457052463345157)
 }
 
 /// The cuspidal patch: `(s², v, 1/2 + s³ + v/10)`, its two layers meeting in a cusp along
@@ -145,9 +146,6 @@ fn a_patch_folded_over_its_rim_cut_down_to_its_face_is_notched() {
 }
 
 #[test]
-#[ignore = "#1013, fails today: B's side y = 1/2 meets the patch in one iso-curve over the whole \
-    net, and its stretch on the folded-back layer is read on the face by its foot and laid twice \
-    (a bspline's pieces do not close)"]
 fn a_patch_folded_over_its_rim_is_notched_across_the_rim() {
     let (patch,b,va,vb,common) = folded();
     held(&under(&patch,[0.65,1.],[0.,1.],true),&b,va,vb,common,1e-10);
@@ -160,10 +158,10 @@ fn a_patch_over_a_near_layer_cut_down_to_its_face_is_pierced() {
 }
 
 #[test]
-#[ignore = "#1013, fails today: an edge of B crossing the face once finds the patch's other \
-    layer, beneath it, and not the face (the crossing at x = 0.7 lost, at x = 0.4 kept), or the \
-    two as a touch; the hole's walls are cut short (a shell kept on one side and dropped on \
-    another)"]
+#[ignore = "#1013, fails today: the upright edges of B each cross the face once and the patch's \
+    other layer just beneath it, and their crossings are read wrong: at x = 0.4, y = 0.3 the two as \
+    one touch; at x = 0.7, y = 0.3 the other layer's alone, the face's lost; at x = 0.4, y = 0.6 the \
+    other layer's twice (a shell kept on one side and dropped on another)"]
 fn a_patch_over_a_near_layer_is_pierced() {
     let (patch,b,va,vb,common) = layered();
     held(&under(&patch,[0.65,1.],[0.,1.],true),&b,va,vb,common,1e-10);

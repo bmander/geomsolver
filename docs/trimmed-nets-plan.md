@@ -4,7 +4,7 @@ The three crossed Booleans of brep-bench's tumbling tori (`swept/tumbling-torus-
 `-difference`, `-intersection`) refuse. Their operands build and are valid. This file is steps 1–3
 of [#1013](https://github.com/bmander/geomsolver/issues/1013): what the kernel cannot do, each thing
 pinned by the smallest case that shows it, and those cases added to brep-bench. Step 4, building
-them, is not begun.
+them, has begun: T1 is built (see *Step 4* below).
 
 ## The capabilities missing
 
@@ -25,7 +25,7 @@ whose surfaces do run on, and the same nets reach the Boolean from STEP files.
 | # | capability | minimal case (gate, `tests/patch_layers.rs`) | fails on `main` with | how |
 |---|---|---|---|---|
 | T1 | **A meeting placed on a face by its own layer**: a stretch of a meeting on the net's other layer is not on the face, even where its foot on the nearest layer is | `nurbs/folded-patch-notched-at-its-rim`: patch `(s², v, 1/2 + 3s⁴/10 + v/10)`, covering itself exactly; the face `u ≥ 13/20`; a box whose side `y = 1/2` crosses the face's rim | "a bspline's pieces do not close" | the side meets the patch in one exact iso-curve over the whole net (`u` in [0, 1]). Its stretch on the folded-back layer (`u ≤ 7/20`) is given a pcurve by its foot, which lies on the face's layer. So the edge from the rim to `x = 1` is laid a second time on the face (edge 33, `u` from 0.65 to 1, over the true edge 32). The failure needs the side to cross the rim: a box that starts at `x = 0.2` builds. |
-| T2 | **An edge's crossings with a face found on the face's own layer**: every crossing of a line with the net, each placed by its own parameters | `nurbs/patch-over-a-near-layer-pierced`: the same patch plus `s³/100`, its folded layer `x^{3/2}/50` beneath the face; a square hole through it | "a shell of the arrangement is kept on one side of a bspline (`top`) and dropped on another" | each upright edge of the hole crosses the face once and the other layer just beneath it. At `x = 0.7` only the other layer's crossing is found (z 0.6594, read `Out`) and the face's (z 0.6946) is lost. At `x = 0.4` both are found. With layers 1.8e-4 apart (`s³/1000`) the pair is read as one touch, `touching: Out`. It fails for every layer gap tried from `s³/10⁴` to `3s³/100`. |
+| T2 | **An edge's crossings with a face found on the face's own layer**: every crossing of a line with the net, each placed by its own parameters | `nurbs/patch-over-a-near-layer-pierced`: the same patch plus `s³/1000`, its folded layer `x^{3/2}/500` (1.8e-4 to 5.7e-4) beneath the face; a square hole through it | "a shell of the arrangement is kept on one side of a plane (`near`) and dropped on another" | each upright edge of the hole crosses the face once and the other layer just beneath it, and the crossings are read wrong: at `x = 0.4, y = 0.3` the two as one touch, at `x = 0.7, y = 0.3` the other layer's alone (the face's lost), at `x = 0.4, y = 0.6` the other layer's twice. *Corrected*: the case first stood at `s³/100`, where, given exactly, every crossing is read right and the case failed only through T1 (the hole's walls `y = 3/10, 3/5` are iso lines); the lost crossing seen there was the probe's poles, interpolated to 1e-16. With T1 built, `s³/100` builds. |
 | T3 | **A meeting ended at the face, or at a fold of its net**: no march over the net past the trim into its cusp | `nurbs/cuspidal-patch-sliced-through-its-cusp`: patch `(s², v, 1/2 + s³ + v/10)`, face `u ≥ 11/20` (a hundredth from the cusp); cut by `z = 11y/10` through the cusp | "a shell of the arrangement is kept on one side of a bspline and dropped on another" (or "a bspline's pieces do not close", cut otherwise) | a march runs on past the rim to the cusp, outside the face, and comes back along itself. Cut by a slab under the plane, it is laid as a closed curve of 69 points, from the rim to the cusp and back. Cut by `build::kept`, as the gate and the bench cut it, the march from the face's far edge goes to the cusp and returns to its own start (224 points). Another march, through the cusp onto the other layer, ends the true stretch's curve without its end on the rim, so the stretch dangles. This is the issue's "a march creeping across a fold of its sheet". With the face trimmed at `u = 13/20`, or with a steeper plane, it builds. It also depends on where the cutting block's faces lie, because they seed the trace: cut by a block standing on the plane at another place, it builds. |
 | T4 | **A meeting ended short of a singular point of the net outside the face** | `nurbs/pinched-patch-sliced-beside-its-pinch`: patch `(s³, t³, 1/2 + st)`, singular at `u = v = 1/2` alone; face `u, v ≥ 11/20`; cut by `−x + y + z/10 = 13/250`, 0.002 from the singular point | "a shell of the arrangement is kept on one side of a bspline and dropped on another" (or "a bspline's pieces do not close", cut otherwise) | the march runs from the face's far edge, past the rim, through the singular point where the meeting turns sharply, and on into the opposite quadrant (170 points). Its fit takes five to ten rounds and leaves gaps, and from the rim point a second march goes to the singular point and back as a closed curve (79 points), so the face's stretch is laid off the meeting or twice. Another placement of the plane, `y ≈ 2x + 0.0005`, turns back at the point instead and lays the face's stretch twice (239 points, "closed"). This is the issue's "a march cycling through an isolated singular point". It is erratic: of 32 planes within 0.002 of the point, 10 fail; the net cut to the face builds all 32. |
 
@@ -106,6 +106,21 @@ So the crossed Booleans need T1 and T4 on `main`. T3 is the fold rule's subject 
 creeping march) and T2 is met wherever an edge crosses a face near its cuspidal edge. T5 is needed
 only if the sweep's faces are given nets of their own.
 
+## Step 4
+
+**T1 is built** (`boolean::on_face_parameters`, the rule in `contract/brep.md`). A closed-form
+meeting that is an iso line of a face's net, with the net's own parameter, is cut to the face's
+parameter box before its spans are read. The folded-back stretch is then never on the curve to be
+misplaced. The gate passes. With the box widened to cross the fold, with two walls crossing the rim,
+and with the face trimmed at `u ≥ 11/20`, all three Booleans build to their closed forms as well.
+A first attempt placed each span by its parameters continued along it from an end on the face's
+boundary. That fixed the gate alone: on an exactly doubled patch both layers also pass through the
+face's far edge, and a reading continued from there stays on the face's layer. It was dropped.
+
+What T1 does not reach: a **traced** meeting on a folded net (the crossed tori's, laid twice
+2.1e-6 apart on `main`) carries no parameters of its own, so it needs T4's reading of where a
+march ends, or a march that carries its feet, before T1's rule can apply to it.
+
 ## The cases
 
 Each capability is a case in brep-bench's `nurbs/` with closed-form answers (mpmath; the volume of
@@ -114,7 +129,7 @@ T1 is exact), implemented for cad-kernel (refused or wrong there, as `main` is) 
 | case | volume | area | OCCT |
 |---|---|---|---|
 | `nurbs/folded-patch-notched-at-its-rim` | 0.48658855 | 4.1267385566944163 | 0.48658855000000023, area 9.6e-8 high |
-| `nurbs/patch-over-a-near-layer-pierced` | 0.54662685536654843 | 5.0938677482524649 | agrees to 1e-11 |
+| `nurbs/patch-over-a-near-layer-pierced` (`s³/1000`) | 0.54336907553665484 | 5.070253321350833 | agrees to 4e-12 (harness/mass) |
 | `nurbs/cuspidal-patch-sliced-through-its-cusp` | 0.51031272172170669 | 4.2949491490074952 | 2.5e-8 low, area 4e-8 low |
 | `nurbs/pinched-patch-sliced-beside-its-pinch` | 0.5244906492156999 | 4.591931211856204 | agrees to 2e-10 |
 

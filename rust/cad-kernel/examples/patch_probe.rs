@@ -78,7 +78,10 @@ fn main() {
     let x = |i: usize| a[i].parse::<f64>().unwrap();
     let c = a.get(9).map_or(0.,|s| s.parse().unwrap());
     let (full,z): (Net,Box<dyn Fn(f64,f64) -> f64>) = match a[0].as_str() {
-        "twice" => (bezier(&|u,v| { let s = 2.*u-1.; [s*s,v,0.3*s.powi(4)+0.1*v+c*s.powi(3)+0.5] },4,1),
+        // (its poles exactly: x the Bernstein form of s², z of 1/2 + 3s⁴/10 + c s³, v/10 added at v = 1)
+        "twice" => (Net {du:4,dv:1,uknots:vec![0.,0.,0.,0.,0.,1.,1.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
+            poles:(0..5).map(|i| { let (x,z) = ([1.,0.,-1./3.,0.,1.][i],0.5+0.3*[1.,-1.,1.,-1.,1.][i]+c*[-1.,0.5,0.,-0.5,1.][i]);
+                vec![[x,0.,z],[x,1.,z+0.1]] }).collect()},
             Box::new(move |x: f64,y: f64| 0.3*x*x+0.1*y+c*x.powf(1.5)+0.5)),
         "layers" => (bezier(&|u,v| { let s = 2.*u-1.; [s*s,v,0.5+0.1*v+c*s.powi(3)] },3,1),Box::new(move |x: f64,y: f64| 0.5+0.1*y+c*x.powf(1.5))),
         "cusp" => (bezier(&|u,v| { let s = 2.*u-1.; [s*s,v,s.powi(3)+0.1*v+0.5] },3,1),Box::new(|x: f64,y: f64| x.powf(1.5)+0.1*y+0.5)),

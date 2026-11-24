@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A meeting along a sheet's iso line is read over the face's own parameters** (`boolean`, #1013):
+  a plane's cut of a sheet along a row carried or a level iso line is cut to the face's parameter
+  box before its spans are read. A sheet folded back over its face (past a cuspidal edge) had the
+  folded-back stretch, the face's own points again, laid on the face a second time; a block under
+  such a patch notched across its rim was refused ("a bspline's pieces do not close") and builds.
 - **A slide through a blank, by its shadow** (`swept::through`): a tool the closed class refuses
   (`Curved`, `Folded`) slid from wholly before a blank to wholly past it is cut as the blank less
   the prism over the tool's shadow along the slide — each face's contact and each sharp edge carried

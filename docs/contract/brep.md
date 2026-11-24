@@ -865,6 +865,16 @@ linear span across whose second row is its first moved by one step is met in the
 curve carried along the step onto it (`ssi::intersect`), exactly, not traced and fitted.
 `swept_speed::a_swept_gears_faces_mesh_along_their_rulings` and
 `a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
+**A meeting along a sheet's iso line is read over the face's own parameters** (#1013 T1,
+`boolean::on_face_parameters`). Where two faces meet in a closed-form curve that is an iso line of
+one face's net, its parameter the net's own (a plane's cut along a row carried, or along a level
+iso line), the curve is cut to the face's parameter box (grown by a sixteenth, `parameters`) before
+its spans are read. A net may run on past its face and fold back over it, as a swept tube's sheet
+does past its cuspidal edge. The curve's stretch on the folded-back layer is then the face's own
+points again: read by its middle's nearest foot, it was put on the face and laid a second time.
+Only its parameters put it off the face. `patch_layers::a_patch_folded_over_its_rim_is_notched_across_the_rim`
+is the gate (brep-bench's `nurbs/folded-patch-notched-at-its-rim`, which also has a control on
+the net cut down to the face).
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
 along it through where the spline crosses or touches that surface, exactly; a plane across it (square
