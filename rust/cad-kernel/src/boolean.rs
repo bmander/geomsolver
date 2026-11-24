@@ -689,6 +689,35 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                             eprintln!("brep: edge {e} ({} uses, met {}) joins {} (face {}, kept {}) to {} (face {}, kept {}), middle {mid:?}; round it {}",
                                 c.radial[e].len(),c.met[e],name(x),x/2,side(x),name(y),y/2,side(y),round.join(" "));
                         }
+                        // (each face a join names, read on a grid of its parameters: how many of its
+                        // points lie in the other operand and how many out, and one of each)
+                        let joined: std::collections::BTreeSet<usize> = super::complex::JOINS.with(|j| j.borrow().iter()
+                            .filter(|&&(_,x,y)| side(x) != side(y)).flat_map(|&(_,x,y)| [x/2,y/2]).collect());
+                        let cl = Located::new(&c.b,tol);
+                        for g in joined {
+                            let other = if c.origins[g][0].operand == 0 { Side::B } else { Side::A };
+                            let [[u0,v0],[u1,v1]] = cl.parameter_box(g);
+                            let (mut ins,mut outs): (Vec<V>,Vec<V>) = (Vec::new(),Vec::new());
+                            for i in 0..24 { for j in 0..24 {
+                                let uv = [u0+(u1-u0)*(i as f64+0.5)/24.,v0+(v1-v0)*(j as f64+0.5)/24.];
+                                let p = c.b.faces[g].surface.point(uv);
+                                if cl.face_place(g,p) != Place::In { continue }
+                                match located[other].solid_place(p) { Place::In => ins.push(p),Place::Out => outs.push(p),Place::On => {} }
+                            } }
+                            eprintln!("brep: face {g} ({}): {} of its points in the other, {} out; e.g. in {:?}, out {:?}",name(2*g),
+                                ins.len(),outs.len(),ins.first(),outs.first());
+                            // (where both: the in and out points nearest each other, a few of
+                            // them, apart over the stretch the missing cut runs)
+                            let mut pairs: Vec<(f64,V,V)> = ins.iter().flat_map(|&p| outs.iter().map(move |&q| (distance(p,q),p,q))).collect();
+                            pairs.sort_by(|x,y| x.0.total_cmp(&y.0));
+                            let mut said: Vec<V> = Vec::new();
+                            for (d,p,q) in pairs {
+                                if said.iter().any(|&s| distance(s,p) < 0.05) { continue }
+                                eprintln!("brep:   in {p:?} beside out {q:?}, {d:.1e} apart");
+                                said.push(p);
+                                if said.len() == 6 { break }
+                            }
+                        }
                     }
                     let f = &c.b.faces[f];
                     return Err(format!("a shell of the arrangement is kept on one side of a {}{} and dropped on another: \

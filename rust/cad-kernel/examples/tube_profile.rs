@@ -332,6 +332,37 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`PLACES=n`: n points drawn at random in each member's box, each placed by
+        // `Located::solid_place` and by the winding number of the member's mesh, each disagreement
+        // said with how deep the point stands from the mesh)
+        if let Some(n) = std::env::var("PLACES").ok().and_then(|n| n.parse::<usize>().ok()) {
+            use cad_kernel::util::space::{cross,dot,norm,sub};
+            let mut rng = cad_kernel::util::rng::Rng::new(7);
+            for (name,s) in [("A",&a),("B",&b)] {
+                let m = cad_kernel::mesh::mesh(s,1e-4*s.size(),0.1).unwrap();
+                let tris: Vec<[[f64;3];3]> = m.tris.iter().map(|t| t.map(|i| m.pts[i as usize])).collect();
+                // the generalised winding number (van Oosterom–Strackee), and the distance to the mesh
+                let winding = |p: [f64;3]| tris.iter().map(|t| {
+                    let [a,b,c] = t.map(|x| sub(x,p));
+                    let (la,lb,lc) = (norm(a),norm(b),norm(c));
+                    2.*dot(a,cross(b,c)).atan2(la*lb*lc+dot(a,b)*lc+dot(b,c)*la+dot(c,a)*lb)
+                }).sum::<f64>()/(4.*std::f64::consts::PI);
+                let near = |p: [f64;3]| m.pts.iter().map(|&q| cad_kernel::util::space::distance(p,q)).fold(f64::INFINITY,f64::min);
+                let located = cad_kernel::query::Located::new(s,tol);
+                let (lo,hi) = s.bounds();
+                let mut wrong = 0;
+                for _ in 0..n {
+                    let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
+                    let w = winding(p);
+                    let place = located.solid_place(p);
+                    let mesh_in = w > 0.5;
+                    let ok = match place { cad_kernel::query::Place::In => mesh_in,cad_kernel::query::Place::Out => !mesh_in,_ => true };
+                    if !ok && near(p) > 1e-3 { wrong += 1; println!("  {name}: {p:?} placed {place:?}, winding {w:.3}, {:.1e} from the mesh",near(p)) }
+                }
+                println!("{name}: {wrong} of {n} placed against the mesh");
+            }
+            return
+        }
         // (`PAIR_FACES=i,j SEEDS3=x,y,z;…`: face i of A traced against face j of B from those
         // seeds alone, over the box both faces fill, each curve's sine between the normals along it)
         if let Ok(fs) = std::env::var("PAIR_FACES") {

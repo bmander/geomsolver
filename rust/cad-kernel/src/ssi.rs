@@ -2943,11 +2943,19 @@ fn distinct(traced: Vec<Curve>,tol: f64) -> Vec<Curve> {
 }
 
 /// A march ended at a touch (`touched`): its points crowding the touch dropped, the touch its last,
-/// and the touch known, once, for the branches no curve arrives along to be traced from.
+/// and the touch known, once, for the branches no curve arrives along to be traced from. **One touch,
+/// one point** (#1013): a touch known already within `8 tol` is that touch, and the march ends at the
+/// point it is known by, the one its other branches leave from. Settled again from this march, a
+/// touch between two sheets (the crossed tori's, where both sweeps pass through one pose) stood
+/// 8.4e-6 from where it was first found, two vertices twice the tolerance apart: the four branches
+/// ended two at each, and the cut of the face through the touch did not close.
 fn end_at_touch(pts: &mut Vec<V>,touches: &mut Vec<Touch>,touched: Touch,h0: f64,tol: f64) {
-    drop_crowding(pts,touched.at,0.25*h0,tol);
-    pts.push(touched.at);
-    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
+    let at = match touches.iter().find(|u| distance(u.at,touched.at) <= 8.*tol) {
+        Some(u) => u.at,
+        None => { let at = touched.at; touches.push(touched); at }
+    };
+    drop_crowding(pts,at,0.25*h0,tol);
+    pts.push(at);
 }
 
 /// **The steps crowding a march's end dropped**, `end` about to be pushed: a fit through points a
