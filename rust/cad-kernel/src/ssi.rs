@@ -2703,6 +2703,8 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
             // the way `∇a × ∇b` faces the march: it turns about only through a point where the two
             // are parallel, a touch a step may cross without landing where they nearly are
             let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
+            // how many steps running have landed back where they stood (`stalled` below)
+            let mut stalled = 0;
             for _ in 0..100_000 {
                 // each step counted against the build's budget (#777 V3): a stopped build ends here
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (p,format!("{} × {}",a.kind(),b.kind()))) { break }
@@ -2797,6 +2799,19 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                         break
                     }
                 }
+                // **a march whose steps land back where they stood has ended** (#1013): a step that
+                // carries it on less than a thousandth of its length, eight running, stands where the
+                // projection onto both surfaces can take it no farther (a fitted sheet's foot held
+                // there, the crossed tori's sheets beside their touch, each step of 1e-4 landing 1e-8
+                // on, a march of a hundred thousand steps each asking whether it had crossed a touch).
+                // A regular meeting carries each step on about its length
+                if dot(sub(q,p),t) < 1e-3*h {
+                    stalled += 1;
+                    if stalled >= 8 {
+                        if super::debug() { eprintln!("brep:   a march stalled after {} points at {p:?}, h {h:.1e}",pts.len()) }
+                        break
+                    }
+                } else { stalled = 0 }
                 pts.push(q);
                 if !inside(q,h) { break }
                 p = q;
