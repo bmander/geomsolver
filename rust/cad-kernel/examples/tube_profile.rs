@@ -334,11 +334,18 @@ fn main() {
         let (a,b) = (built(1.),built(-1.));
         let (va,vb) = (cad_kernel::props::volume(&a),cad_kernel::props::volume(&b));
         let mut vs = Vec::new();
+        // (`OP=union|difference|intersection`: that one alone)
+        let only = std::env::var("OP").ok();
         for (name,op) in [("union",cad_kernel::boolean::Op::Union),("difference",cad_kernel::boolean::Op::Cut),("intersection",cad_kernel::boolean::Op::Common)] {
+            if only.as_deref().is_some_and(|o| o != name) { vs.push(f64::NAN); continue }
             let clock = Instant::now();
             match cad_kernel::boolean::boolean(&a,&b,op,tol) {
                 Ok(s) => { let v = cad_kernel::props::volume(&s); vs.push(v);
-                    println!("{name}: {} faces, volume {v:.10}, check {:?}, in {:?}",s.faces.len(),s.check(tol).err(),clock.elapsed()) }
+                    // (the mesh's volume beside it, at the bench's bar: a ten-thousandth of the size)
+                    let bar = (1e-4*s.size()).min(1e-3);
+                    let m = cad_kernel::mesh::mesh(&s,bar,0.1).map(|m| m.tris.iter().map(|t| { let [a,b,c] = t.map(|i| m.pts[i as usize]);
+                        (a[0]*(b[1]*c[2]-b[2]*c[1])+a[1]*(b[2]*c[0]-b[0]*c[2])+a[2]*(b[0]*c[1]-b[1]*c[0]))/6. }).sum::<f64>());
+                    println!("{name}: {} faces, volume {v:.10}, check {:?}, in {:?}; mesh at {bar:e}: volume {m:?}",s.faces.len(),s.check(tol).err(),clock.elapsed()) }
                 Err(e) => { vs.push(f64::NAN); println!("{name}: refused in {:?}: {e}",clock.elapsed()) }
             }
         }
