@@ -1942,16 +1942,16 @@ its volume, its faces by kind and every vertex ours.
 of its own surface, over its face and past it as far as the solid reaches and half as far again (a
 plane over the reach's extent, a cylinder or a cone over a whole turn and the reach along its axis
 — a cone stopped short of its apex by a twentieth of the solid unless a face reaches nearer — a
-sphere or a torus whole; any other surface refused by name), faces on one surface sharing one
-sheet.  The solid and the sheets part space into cells (`boolean::arrangement`); a **gap** is a
+sphere or a torus whole; any other surface refused by name), faces on one surface
+(`fillet::one_surface`, a Boolean's rule) sharing one sheet.  The solid and the sheets part space into cells (`boolean::arrangement`); a **gap** is a
 bounded cell bounded by a piece of a deleted face, a piece of a sheet run on past its face, and
 nothing else but pieces of the faces round the deleted ones — no face the solid keeps that is not
 round them.  The result is the solid's cells with every gap turned over, so a gap outside it (a
 round on a convex edge, a hole, a flat) is taken in and one inside it (a round in a concave
 corner, a boss) given up; nothing is classified by shape.  A deleted face left between a cell kept
 and one not closes no gap, and is refused naming it (a box's top: its sides run on and never meet).
-Each sheet's pieces are read as pieces of its first face, and the faces on its surface as one, so
-the selection's healing joins a face to its run-on piece (a top over a round's corner, a side over
+Each sheet's pieces are read as pieces of its first face, and the faces on its exact surface as
+one (`boolean::selection_by`, the complex left as it was), so the selection's healing joins a face to its run-on piece (a top over a round's corner, a side over
 a notch's mouth, a cone over a groove) and the result has the faces it had before the feature;
 where a hole's rim and the disc closing it are each a loop of that one edge, both go (`heal`).
 `tests/defeature.rs` (a convex round and a concave one, a hole, a boss, a ball's flat, an

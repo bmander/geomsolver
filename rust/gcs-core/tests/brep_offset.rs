@@ -26,7 +26,7 @@ fn l_block() -> Brep {
 }
 
 /// The faces of `b` the points `on` lie inside, one each.
-fn faces_through(b: &Brep,on: &[V]) -> Vec<usize> {
+pub(crate) fn faces_through(b: &Brep,on: &[V]) -> Vec<usize> {
     let located = Located::new(b,1e-9*b.size());
     on.iter().map(|&p| (0..b.faces.len()).find(|&fi| {
         let q = b.faces[fi].surface.point(located.uv(fi,p));

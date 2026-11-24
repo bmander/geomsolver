@@ -4,24 +4,18 @@
 //! a ball, an L-block's step, a notch whose side was two faces — each the solid it was cut or added
 //! from, its faces the plain ones it had, valid; and a face nothing closes over refused, saying so.
 use gcs_core::brep::boolean::{combined, Op};
-use gcs_core::brep::build::{block, disc, kept, prism, sphere, Profile, ProfileEdge};
+use gcs_core::brep::build::{block, kept, prism, sphere, Profile, ProfileEdge};
 use gcs_core::brep::defeature::deleted;
 use gcs_core::brep::fillet::roll;
 use gcs_core::brep::geom::{tolerance, Surface, V};
-use gcs_core::brep::props::{area, volume};
-use gcs_core::brep::query::{Located, Place};
+use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
 
-fn close(what: &str, a: f64, b: f64) { assert!((a - b).abs() <= 1e-9 * b.abs().max(1.), "{what}: {a} against {b}"); }
+use crate::brep::{rod, total_area};
+use crate::brep_offset::faces_through as through;
 
-/// The faces of `b` each point lies inside.
-fn through(b: &Brep, on: &[V]) -> Vec<usize> {
-    let tol = tolerance(b.size());
-    let l = Located::new(b, tol);
-    on.iter().map(|&p| (0..b.faces.len()).find(|&f| l.face_gap(f, p) <= tol && l.face_place(f, p) == Place::In)
-        .unwrap_or_else(|| panic!("no face through {p:?}"))).collect()
-}
+fn close(what: &str, a: f64, b: f64) { assert!((a - b).abs() <= 1e-9 * b.abs().max(1.), "{what}: {a} against {b}"); }
 
 /// `b` with `faces` deleted, valid, of volume `v`, area `a` and `n` faces.
 fn deletes_to(b: &Brep, faces: &[usize], v: f64, a: f64, n: usize) -> Brep {
@@ -29,7 +23,7 @@ fn deletes_to(b: &Brep, faces: &[usize], v: f64, a: f64, n: usize) -> Brep {
     let out = deleted(b, faces, tol).unwrap_or_else(|e| panic!("{e}"));
     out.check(tol).unwrap_or_else(|e| panic!("{e}"));
     close("volume", volume(&out), v);
-    close("area", out.faces.iter().map(|f| area(&out, f)).sum(), a);
+    close("area", total_area(&out), a);
     assert_eq!(out.faces.len(), n, "faces: {:?}", out.faces.iter().map(|f| f.surface.kind()).collect::<Vec<_>>());
     out
 }
@@ -43,7 +37,13 @@ fn rounded(b: &Brep, on: V, r: f64) -> Brep {
     combined(&b, &round.piece, if round.concave { Op::Union } else { Op::Cut }, 0.).unwrap()
 }
 
-fn cylinder(c: V, r: f64, h: f64) -> Brep { prism(&disc(c, [0., 0., 1.], r), 0., h).unwrap() }
+/// The plate of radius 8 from z = −4 to 0 with the boss of radius 3 from 0 to 8 on it.
+fn bossed() -> Brep { combined(&rod([0.; 3], 8., [-4., 0.]), &rod([0.; 3], 3., [0., 8.]), Op::Union, 0.).unwrap() }
+
+/// The block from the origin to (20, 10, 10) less the upright cylinder of radius `r` through `c`.
+fn cut_block(c: [f64; 2], r: f64) -> Brep {
+    combined(&block([0.; 3], [20., 10., 10.]).unwrap(), &rod([c[0], c[1], 0.], r, [-1., 11.]), Op::Cut, 0.).unwrap()
+}
 
 /// A block's convex edge rounded, the round deleted: the box again, its six planes, the top run on
 /// over the corner it had lost and joined to its own piece.
@@ -59,8 +59,7 @@ fn a_convex_rounds_gap_is_taken_in() {
 /// in and the boss's side run down until they meet at its foot.
 #[test]
 fn a_concave_rounds_gap_is_given_up() {
-    let b = combined(&cylinder([0., 0., -4.], 8., 4.), &cylinder([0.; 3], 3., 8.), Op::Union, 0.).unwrap();
-    let b = rounded(&b, [3., 0., 0.], 1.);
+    let b = rounded(&bossed(), [3., 0., 0.], 1.);
     let round: Vec<usize> = (0..b.faces.len()).filter(|&f| matches!(b.faces[f].surface, Surface::Torus(..))).collect();
     assert_eq!(round.len(), 1);
     deletes_to(&b, &round, 328. * PI, 240. * PI, 5);
@@ -70,10 +69,10 @@ fn a_concave_rounds_gap_is_given_up() {
 /// closes over its foot.
 #[test]
 fn a_hole_and_a_boss_close_over() {
-    let drilled = combined(&block([0.; 3], [20., 10., 10.]).unwrap(), &cylinder([10., 5., -1.], 3., 12.), Op::Cut, 0.).unwrap();
+    let drilled = cut_block([10., 5.], 3.);
     deletes_to(&drilled, &through(&drilled, &[[13., 5., 5.]]), 2000., 1000., 6);
-    let bossed = combined(&cylinder([0., 0., -4.], 8., 4.), &cylinder([0.; 3], 3., 8.), Op::Union, 0.).unwrap();
-    deletes_to(&bossed, &through(&bossed, &[[3., 0., 4.], [1., 0., 8.]]), 256. * PI, 192. * PI, 3);
+    let b = bossed();
+    deletes_to(&b, &through(&b, &[[3., 0., 4.], [1., 0., 8.]]), 256. * PI, 192. * PI, 3);
 }
 
 /// A ball's flat deleted: the ball whole, one face.
@@ -97,7 +96,7 @@ fn faces_that_never_met_run_on_to_meet() {
 /// pieces of the side, on one plane, one rectangle again.
 #[test]
 fn faces_a_gap_parted_are_one_again() {
-    let b = combined(&block([0.; 3], [20., 10., 10.]).unwrap(), &cylinder([10., 0., -1.], 3., 12.), Op::Cut, 0.).unwrap();
+    let b = cut_block([10., 0.], 3.);
     deletes_to(&b, &through(&b, &[[10., 3., 5.]]), 2000., 1000., 6);
 }
 

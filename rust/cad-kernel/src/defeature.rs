@@ -27,11 +27,12 @@
 //! is not one this module runs on (a plane, a cylinder, a cone, a sphere, a torus).
 use std::collections::{BTreeMap,BTreeSet};
 
-use super::boolean::{arrangement,face_parameters,members,selection};
-use super::complex::Origin;
-use super::geom::{Curve,Frame,Surface,Uv};
+use super::boolean::{arrangement,face_parameters,members,selection_by};
+use super::fillet::one_surface;
+use super::geom::{Curve,Frame,Surface,Uv,V};
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use super::{KernelError,Kind};
+use crate::util::fmath::Det;
 use crate::util::space::{add,cross,dot,scale,sub};
 use std::f64::consts::{FRAC_PI_2,TAU};
 
@@ -52,11 +53,12 @@ pub fn deleted(solid: &Brep,faces: &[usize],tol: f64) -> Result<Brep,KernelError
         round.extend(u.iter().map(|&(f,..)| f).filter(|f| !gone.contains(f)));
     }
     if round.is_empty() { return Err(failed("the faces deleted share no edge with a face kept: nothing runs on to close the gap".into())) }
-    // one sheet for each surface they lie on, the faces on it its class
+    // one sheet for each surface they lie on, the faces on it its class (one surface by the rule a
+    // Boolean's faces are, `fillet::one_surface`, and facing one way)
     let mut classes: Vec<Vec<usize>> = Vec::new();
     for &f in &round {
         let face = &solid.faces[f];
-        match classes.iter_mut().find(|c| { let g = &solid.faces[c[0]]; g.surface == face.surface && g.reversed == face.reversed }) {
+        match classes.iter_mut().find(|c| solid.faces[c[0]].reversed == face.reversed && one_surface(solid,c[0],f,tol)) {
             Some(c) => c.push(f),
             None => classes.push(vec![f]),
         }
@@ -64,7 +66,7 @@ pub fn deleted(solid: &Brep,faces: &[usize],tol: f64) -> Result<Brep,KernelError
     let size = solid.size();
     let (lo,hi) = solid.bounds();
     let grow = size/2.;
-    let reach: Vec<[f64;3]> = (0..8).map(|k| [0,1,2].map(|i| if k>>i & 1 == 1 { hi[i]+grow } else { lo[i]-grow })).collect();
+    let reach: Vec<V> = (0..8).map(|k| [0,1,2].map(|i| if k>>i & 1 == 1 { hi[i]+grow } else { lo[i]-grow })).collect();
     let mut sheets: Vec<Brep> = Vec::new();
     for class in &classes {
         let face = &solid.faces[class[0]];
@@ -74,63 +76,53 @@ pub fn deleted(solid: &Brep,faces: &[usize],tol: f64) -> Result<Brep,KernelError
     }
     let mut operands: Vec<&Brep> = vec![solid];
     operands.extend(sheets.iter());
-    let mut complex = arrangement(&operands,tol).map_err(failed)?;
+    let complex = arrangement(&operands,tol).map_err(failed)?;
     let inside = members(&complex,&[solid],tol).map_err(failed)?;
-    let cells = complex.cells().map_err(failed)?.to_vec();
-    // each face of the complex: a piece of a face kept, of a face deleted, or of a sheet alone
+    let cells = complex.cells().map_err(failed)?;
+    // each face of the complex: a piece of a face kept, of one round the deleted ones, of a deleted
+    // one, or of a sheet alone
     #[derive(Clone,Copy,PartialEq)]
-    enum Piece { Kept,Round,Deleted,Sheet }
+    enum Piece { Kept,Round,Deleted(usize),Sheet }
     let piece: Vec<Piece> = complex.origins.iter().map(|o| {
-        if o.iter().any(|o| o.operand == 0 && !gone.contains(&o.face) && !round.contains(&o.face)) { Piece::Kept }
-        else if o.iter().any(|o| o.operand == 0 && round.contains(&o.face)) { Piece::Round }
-        else if o.iter().any(|o| o.operand == 0) { Piece::Deleted }
-        else { Piece::Sheet }
+        let own = || o.iter().filter(|o| o.operand == 0).map(|o| o.face);
+        if own().any(|f| !gone.contains(&f) && !round.contains(&f)) { Piece::Kept }
+        else if own().any(|f| round.contains(&f)) { Piece::Round }
+        else { own().next().map_or(Piece::Sheet,Piece::Deleted) }
     }).collect();
-    let mut gap = vec![false;cells.len()];
-    for c in 1..cells.len() {
-        let sides: Vec<(usize,bool)> = cells[c].shells.iter().flat_map(|&k| complex.shells[k].iter().copied()).collect();
-        let fin = |f: usize| sides.contains(&(f,true)) && sides.contains(&(f,false));
-        let bounding: Vec<usize> = sides.iter().map(|&(f,_)| f).filter(|&f| !fin(f)).collect();
-        gap[c] = bounding.iter().any(|&f| piece[f] == Piece::Deleted) && bounding.iter().any(|&f| piece[f] == Piece::Sheet)
-            && bounding.iter().all(|&f| piece[f] != Piece::Kept);
-    }
-    if crate::debug() {
-        for c in 1..cells.len() { eprintln!("deleted: cell {c}, volume {}, inside {}, gap {}",cells[c].volume,inside[c][0],gap[c]) }
-    }
-    let keep: Vec<bool> = (0..cells.len()).map(|c| c != 0 && inside[c][0] != gap[c]).collect();
+    // a gap: bounded by a deleted face, a sheet run on, and nothing kept but faces round them (a fin,
+    // a face with the cell on both sides, bounds nothing)
+    let keep: Vec<bool> = (0..cells.len()).map(|c| {
+        if c == 0 { return false }
+        let sides = complex.cell_sides(cells,c);
+        let bounding: Vec<Piece> = sides.iter().filter(|&&(f,front)| !sides.contains(&(f,!front))).map(|&(f,_)| piece[f]).collect();
+        let gap = bounding.iter().any(|p| matches!(p,Piece::Deleted(_))) && bounding.contains(&Piece::Sheet) && !bounding.contains(&Piece::Kept);
+        if crate::debug() { eprintln!("deleted: cell {c}, volume {}, inside {}, gap {gap}",cells[c].volume,inside[c][0]) }
+        inside[c][0] != gap
+    }).collect();
     // a deleted face left between a cell kept and one not is one no gap closed
     for (f,p) in piece.iter().enumerate() {
-        if *p != Piece::Deleted { continue }
+        let Piece::Deleted(o) = *p else { continue };
         let [a,b] = complex.sides(f).map_err(failed)?;
         if keep[a] != keep[b] {
-            let o = complex.origins[f].iter().find(|o| o.operand == 0).map_or(0,|o| o.face);
             return Err(failed(format!("{} closes no gap: the faces round it, run on, do not meet past it",named(&solid.faces[o]))))
         }
     }
-    // each sheet's piece a piece of its class's first face, and each face of a class one with it:
-    // an edge between two pieces of one face, either a sheet's, is a meeting healed out where both
-    // are kept
-    let of_class: BTreeMap<usize,usize> = classes.iter().flat_map(|c| c.iter().map(move |&f| (f,c[0]))).collect();
-    let pre: Vec<Origin> = complex.origins.iter().map(|o| o[0]).collect();
-    for o in complex.origins.iter_mut() {
-        let first = o[0];
-        let host = if first.operand == 0 { of_class.get(&first.face).copied() } else { Some(classes[first.operand-1][0]) };
-        if let Some(h) = host { o[0] = Origin {operand:0,face:h,alike:true}; }
-    }
-    let mut by_edge: Vec<Vec<(usize,usize,usize)>> = vec![Vec::new();complex.b.edges.len()];
-    for (f,face) in complex.b.faces.iter().enumerate() {
-        for (l,lp) in face.loops.iter().enumerate() {
-            for (k,c) in lp.iter().enumerate() { by_edge[c.edge as usize].push((f,l,k)); }
-        }
-    }
-    if complex.met.len() < complex.b.edges.len() { complex.met.resize(complex.b.edges.len(),false); }
-    for (e,u) in by_edge.iter().enumerate() {
-        if complex.met[e] { continue }
+    // each sheet's piece a piece of its class's first face, and each face of a class on that face's
+    // own surface one with it: an edge between two pieces of one face, either a sheet's, is a
+    // meeting healed out where both are kept
+    let host_of: BTreeMap<usize,usize> = classes.iter()
+        .flat_map(|c| c.iter().filter(|&&f| solid.faces[f].surface == solid.faces[c[0]].surface).map(move |&f| (f,c[0]))).collect();
+    let first = |f: usize| (complex.origins[f][0].operand,complex.origins[f][0].face);
+    let origin = |f: usize| match first(f) {
+        (0,g) => (0,host_of.get(&g).copied().unwrap_or(g)),
+        (k,_) => (0,classes[k-1][0]),
+    };
+    let laid: Vec<bool> = complex.b.uses().iter().enumerate().map(|(e,u)| complex.met[e] || {
         let mut by_origin: BTreeMap<(usize,usize),Vec<(usize,usize,usize)>> = BTreeMap::new();
-        for &(f,l,k) in u { by_origin.entry((complex.origins[f][0].operand,complex.origins[f][0].face)).or_default().push((f,l,k)); }
-        complex.met[e] = by_origin.values().any(|w| {
+        for &(f,l,k) in u { by_origin.entry(origin(f)).or_default().push((f,l,k)); }
+        by_origin.values().any(|w| {
             let &[(fa,la,ka),(fb,lb,kb)] = &w[..] else { return false };
-            if fa == fb || pre[fa] == pre[fb] || complex.b.faces[fa].reversed != complex.b.faces[fb].reversed { return false }
+            if fa == fb || first(fa) == first(fb) || complex.b.faces[fa].reversed != complex.b.faces[fb].reversed { return false }
             // the two pieces read the edge at one place of their surface (a seam's two sides do not)
             let edge = &complex.b.edges[e];
             let t = (edge.t[0]+edge.t[1])/2.;
@@ -140,9 +132,9 @@ pub fn deleted(solid: &Brep,faces: &[usize],tol: f64) -> Result<Brep,KernelError
             };
             let (p,q) = (at(fa,la,ka),at(fb,lb,kb));
             (p[0]-q[0]).abs().max((p[1]-q[1]).abs()) <= 1e-9*(1.+p[0].abs().max(p[1].abs()))
-        });
-    }
-    let out = selection(&complex,&|c| keep[c]).map_err(failed)?;
+        })
+    }).collect();
+    let out = selection_by(&complex,&|c| keep[c],&origin,&|e| laid[e]).map_err(failed)?;
     out.check(tol).map_err(|e| e.saying(|m| format!("faces deleted: {m}")))?;
     Ok(out)
 }
@@ -157,7 +149,7 @@ fn named(f: &Face) -> String {
 /// a cylinder or a cone along their straight parameters over the reach's extent; a closed
 /// parameter (a turn, a sphere's latitude, a torus's tube) whole. A cone is run on toward its apex
 /// no nearer it than a twentieth of `size`, unless a face reaches nearer.
-fn run_on(s: &Surface,own: &[[[f64;2];2]],reach: &[[f64;3]],size: f64) -> Result<[[f64;2];2],String> {
+fn run_on(s: &Surface,own: &[[[f64;2];2]],reach: &[V],size: f64) -> Result<[[f64;2];2],String> {
     let mut u = [f64::INFINITY,f64::NEG_INFINITY];
     let mut v = [f64::INFINITY,f64::NEG_INFINITY];
     for b in own {
@@ -170,14 +162,10 @@ fn run_on(s: &Surface,own: &[[[f64;2];2]],reach: &[[f64;3]],size: f64) -> Result
         reach.iter().fold(lo,|r,&p| { let x = dot(sub(p,f.o),axis); [r[0].min(x),r[1].max(x)] })
     };
     Ok(match *s {
-        Surface::Plane(ref f) => {
-            let su = span(f,f.x,u);
-            let sv = span(f,f.y,v);
-            [su,sv]
-        }
+        Surface::Plane(ref f) => [span(f,f.x,u),span(f,f.y,v)],
         Surface::Cylinder(ref f,_) => [whole(u),span(f,f.z,v)],
         Surface::Cone(ref f,r,a) => {
-            let (sa,ca) = (a.sin(),a.cos());
+            let (sa,ca) = a.dsin_cos();
             let h = span(f,f.z,[v[0]*ca,v[1]*ca]);
             let mut sv = [h[0]/ca,h[1]/ca];
             // the apex's side: the faces' radius r + v sin α is positive
@@ -186,15 +174,13 @@ fn run_on(s: &Surface,own: &[[[f64;2];2]],reach: &[[f64;3]],size: f64) -> Result
                 let apex = -r/sa;
                 if sa > 0. { sv[0] = sv[0].max((apex+near/sa).min(v[0])) } else { sv[1] = sv[1].min((apex+near/sa).max(v[1])) }
             }
-            [whole(u),[sv[0].min(v[0]),sv[1].max(v[1])]]
+            [whole(u),sv]
         }
         Surface::Sphere(..) => [whole(u),[-FRAC_PI_2,FRAC_PI_2]],
         Surface::Torus(..) => [whole(u),whole(v)],
         _ => return Err(format!("a {} face is not run on past its edges",s.kind())),
     })
 }
-
-type V = [f64;3];
 
 /// **A sheet of `s`** over the box `u × v` of its parameters, its face `reversed` as given: one
 /// face bounded by its four parameter lines, a closed parameter's two (a whole turn's) one seam
@@ -204,7 +190,8 @@ type V = [f64;3];
 fn sheet(s: &Surface,reversed: bool,u: [f64;2],v: [f64;2]) -> Result<Brep,String> {
     if !(u[1] > u[0] && v[1] > v[0]) { return Err(format!("no sheet over {u:?} × {v:?}")) }
     let periods = s.periods();
-    let closed = [0,1].map(|k| periods[k].is_some_and(|p| ((if k == 0 { u[1]-u[0] } else { v[1]-v[0] })-p).abs() <= 1e-12*p));
+    let span = [u[1]-u[0],v[1]-v[0]];
+    let closed = [0,1].map(|k| periods[k].is_some_and(|p| (span[k]-p).abs() <= 1e-12*p));
     let pole = |v: f64| matches!(s,Surface::Sphere(..)) && (v.abs()-FRAC_PI_2).abs() <= 1e-12;
     let mut b = Brep::default();
     // the corners (u0, v0), (u1, v0), (u1, v1), (u0, v1), one where a closed parameter or a pole
@@ -240,7 +227,7 @@ fn sheet(s: &Surface,reversed: bool,u: [f64;2],v: [f64;2]) -> Result<Brep,String
 /// The line of `s`'s parameters at `at` — of constant `v` where `along_u`, read at `u`, else of
 /// constant `u`, read at `v` — as a curve whose parameter is that one.
 fn parameter_line(s: &Surface,along_u: bool,at: f64) -> Result<Curve,String> {
-    let round = |f: &Frame,u: f64| add(scale(f.x,u.cos()),scale(f.y,u.sin()));
+    let round = |f: &Frame,u: f64| add(scale(f.x,u.dcos()),scale(f.y,u.dsin()));
     let meridian = |o: V,e: V,z: V,r: f64| Curve::Circle(Frame {o,x:e,y:z,z:cross(e,z)},r);
     Ok(match (s,along_u) {
         (Surface::Plane(f),true) => Curve::Line {p:add(f.o,scale(f.y,at)),d:f.x},
@@ -248,17 +235,17 @@ fn parameter_line(s: &Surface,along_u: bool,at: f64) -> Result<Curve,String> {
         (Surface::Cylinder(f,r),true) => Curve::Circle(Frame {o:add(f.o,scale(f.z,at)),..*f},*r),
         (Surface::Cylinder(f,r),false) => Curve::Line {p:add(f.o,scale(round(f,at),*r)),d:f.z},
         (&Surface::Cone(ref f,r,a),true) => {
-            let rho = r+at*a.sin();
+            let rho = r+at*a.dsin();
             if !(rho > 0.) { return Err(format!("a cone's parallel at {at} has no radius")) }
-            Curve::Circle(Frame {o:add(f.o,scale(f.z,at*a.cos())),..*f},rho)
+            Curve::Circle(Frame {o:add(f.o,scale(f.z,at*a.dcos())),..*f},rho)
         }
         (&Surface::Cone(ref f,r,a),false) => {
             let e = round(f,at);
-            Curve::Line {p:add(f.o,scale(e,r)),d:add(scale(e,a.sin()),scale(f.z,a.cos()))}
+            Curve::Line {p:add(f.o,scale(e,r)),d:add(scale(e,a.dsin()),scale(f.z,a.dcos()))}
         }
-        (&Surface::Sphere(ref f,r),true) => Curve::Circle(Frame {o:add(f.o,scale(f.z,r*at.sin())),..*f},r*at.cos()),
+        (&Surface::Sphere(ref f,r),true) => Curve::Circle(Frame {o:add(f.o,scale(f.z,r*at.dsin())),..*f},r*at.dcos()),
         (&Surface::Sphere(ref f,r),false) => meridian(f.o,round(f,at),f.z,r),
-        (&Surface::Torus(ref f,big,r),true) => Curve::Circle(Frame {o:add(f.o,scale(f.z,r*at.sin())),..*f},big+r*at.cos()),
+        (&Surface::Torus(ref f,big,r),true) => Curve::Circle(Frame {o:add(f.o,scale(f.z,r*at.dsin())),..*f},big+r*at.dcos()),
         (&Surface::Torus(ref f,big,r),false) => { let e = round(f,at); meridian(add(f.o,scale(e,big)),e,f.z,r) }
         _ => return Err(format!("a {} surface's parameter lines are not drawn",s.kind())),
     })
