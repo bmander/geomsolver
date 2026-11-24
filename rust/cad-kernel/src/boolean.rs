@@ -756,14 +756,19 @@ fn heal(faces: &mut Vec<Face>,handed: &mut Known,origin: &[(usize,usize)],laid: 
         } else {
             let lb_loop = faces[fb].loops[lb].clone();
             let joined: Vec<Coedge> = la_loop[..ia].iter().chain(&lb_loop[ib+1..]).chain(&lb_loop[..ib]).chain(&la_loop[ia+1..]).cloned().collect();
+            // two loops of the edge alone (a hole's rim and the disc closing it) leave no loop:
+            // both go, and which loop is outer is read again
+            let empty = joined.is_empty();
             if fa == fb {
                 let face = &mut faces[fa];
                 face.loops[la] = joined;
                 face.loops.remove(lb);
+                if empty { face.loops.retain(|l| !l.is_empty()); parted[fa] = true; }
             } else {
                 let mut others: Vec<Vec<Coedge>> = std::mem::take(&mut faces[fb].loops);
                 others.remove(lb);
                 faces[fa].loops[la] = joined;
+                if empty { faces[fa].loops.remove(la); parted[fa] = true; }
                 faces[fa].loops.extend(others);
                 gone[fb] = true;
                 parted[fa] |= parted[fb];
