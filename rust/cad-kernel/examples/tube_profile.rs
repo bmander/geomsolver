@@ -332,6 +332,24 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`PCURVES`: each member's uses read at 64 places along their edges, each one farther
+        // than the tolerance off its edge said with the edge's own gap)
+        if std::env::var_os("PCURVES").is_some() {
+            for (name,m) in [("A",&a),("B",&b)] {
+                for (fi,f) in m.faces.iter().enumerate() {
+                    for c in f.loops.iter().flatten() {
+                        let e = &m.edges[c.edge as usize];
+                        let cad_kernel::topo::EdgeCurve::Curve(cv) = &e.curve else { continue };
+                        let worst = (0..=64).map(|j| {
+                            let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/64.;
+                            (cad_kernel::util::space::distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&m.vertices)),cv.point(t)),t)
+                        }).fold((0.,0.),|x: (f64,f64),y| if y.0 > x.0 { y } else { x });
+                        if worst.0 > tol { println!("  {name}{fi} ({}) edge {} over {:?}: {:.2e} off at t {:.4}, its gap {:.1e}",f.name,c.edge,e.t,worst.0,worst.1,e.tol) }
+                    }
+                }
+            }
+            return
+        }
         // (`DIST_AT=x,y,z;…`: each point's distance to each face's surface of each member, its
         // foot's parameters, and where it stands against the face)
         if let Ok(at) = std::env::var("DIST_AT") {
