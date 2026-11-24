@@ -240,6 +240,20 @@ mostly running all thirty-two steps to nothing, now takes sixteen. Each Boolean 
 (16 s and 62 s) a case runs some two minutes, past the bench's 60 s. The reverse member's own
 62 s is the larger share left, and it is #942's, not this issue's.
 
+**On the bench.** As brep-bench's runner builds and writes them (members, Boolean at the members'
+tolerance, STEP), the five crossed cases run in 13 s (forward), 35 s (reverse), 87 s (union), 87 s
+(difference) and 84 s (intersection), against CI's 120 s; the reverse member is now 35 s (its graded
+nets fitted on every core) and the STEP writer cuts each sheet face's net to the face (the union's
+file 126 MB, where it was 2.4 GB). The harness's measurer (`harness/mass`) could not read any file
+of the tube road: following a loop's feet one from another across a sheet's fold it crossed to the
+other layer. It now reads a loop's path on a spline surface from the file's own pcurves, and
+measures the five to the kernel's volumes. The reverse member's sheets are fitted to some
+900 × 850 poles about its pinch and a near-pinch inside a kept face at (θ, t) (7.816, 0.461), and
+measuring a face across them takes 34–70 s four at once; the harness's measuring budget is now
+CI's runner limit, 120 s. With those, all five are graded `built` by the bench's own harness. A net
+refined only about the pinch and the near-pinch (cuts across a sheet's faces through their trims)
+is #942's to make.
+
 **The experiment branch's three rules** (per-face nets, and its fold and met-itself reports) are
 dropped: none fixed a minimal case, and the per-face nets are what made T5. (5) and (2) above are
 the rules its fold and met-itself reports pointed at, here as rules of the march.
