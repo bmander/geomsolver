@@ -866,10 +866,12 @@ curve carried along the step onto it (`ssi::intersect`), exactly, not traced and
 `swept_speed::a_swept_gears_faces_mesh_along_their_rulings` and
 `a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
 **A meeting along a sheet's iso line is read over the face's own parameters** (#1013 T1,
-`boolean::iso_parameter`). Where two faces meet in a closed-form curve that is an iso line of
-one face's net, its parameter the net's own (a plane's cut along a row carried, or along a level
-iso line), the curve is cut to the face's parameter box (grown by a sixteenth,
-`Located::grown_parameters`) before its spans are read. A net may run on past its face and fold back over it, as a swept tube's sheet
+`boolean::iso_parameter`). Where two faces meet in a closed-form curve whose parameter is one of
+a face's net's own, the curve is cut to the face's parameter box (`Located::grown_parameters`)
+before its spans are read. That holds whether the net's other parameter is constant along the
+curve (a level iso line) or runs (a row carried onto a plane). The other parameter is found at
+each of nine samples by Gauss–Newton along it alone, so a fold the curve crosses reads as well as
+any other point. A net may run on past its face and fold back over it, as a swept tube's sheet
 does past its cuspidal edge. The curve's stretch on the folded-back layer is then the face's own
 points again: read by its middle's nearest foot, it was put on the face and laid a second time.
 Only its parameters put it off the face. `patch_layers::a_patch_folded_over_its_rim_is_notched_across_the_rim`
@@ -898,8 +900,24 @@ under such a patch pierced by a square hole was refused. `patch_layers::a_patch_
 is the gate (brep-bench's `nurbs/patch-over-a-near-layer-pierced`). `patch_fuzz` draws half its
 patches so (`c s³`, `c` from 1e-5 to 3e-2): on three seeds `main` fails 669 of 1,800 Booleans, T1
 alone 420, with T2 none. The same reading keeps a march clear of a cusp or a pinch of the net more
-than a sixteenth of the face's parameters past it, so T3's and T4's gates pass as placed. Their
-`…_trimmed_nearer_…` gates, a face within that sixteenth, are still ignored.
+than a sixteenth of the face's parameters past it.
+**A face's parameter box is grown only while its net stays regular** (#1013 T3, T4,
+`query::regular_growth`). The box `grown_parameters` returns, which every reading above uses, is
+grown a sixteenth each way. On each side the added strip is read on a 4 × 17 grid across the other
+parameter's grown range, corners included. That side's growth is halved, at most twelve times,
+while anywhere in the strip `S_u × S_v` falls below half its least along the face's own edge, or
+turns more than 60° from the normal at the face's edge beside it. A fold flips the normal, and a
+pinch `(s³, t³, st)` turns it about the point however narrow the region where `S_u × S_v` is small,
+so no sample need come near either. A face's own edge at a pole reads nought there and holds
+nothing back. **A spline's foot steps by Gauss–Newton where Newton's curvature is not positive**
+(`BSpline::refined`): an iso line beside a fold, `x = s²`, had `|C'|² + (C − p)·C''` negative a step
+from its end, and the search stopped there, the foot of the face's rim read 3e-3 off at the end.
+The gates are `patch_layers::a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp` and
+`a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch`, the face within a sixteenth of the
+singularity. `patch_fuzz … cusp` and `… pinch` draw faces trimmed as near as `0.505` to the cusp
+or the pinch, cut by planes through points within 0.003 (5e-4) of them, each side against the
+net cut down: on three seeds, `main` fails 213 of 900 cusp cuts and 555 of 900 pinch cuts, T2's
+commit 41 and 7, and this none, the slowest 0.06 s where `main`'s took 5 s.
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
 along it through where the spline crosses or touches that surface, exactly; a plane across it (square

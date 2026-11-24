@@ -4,7 +4,7 @@ The three crossed Booleans of brep-bench's tumbling tori (`swept/tumbling-torus-
 `-difference`, `-intersection`) refuse. Their operands build and are valid. This file is steps 1–3
 of [#1013](https://github.com/bmander/geomsolver/issues/1013): what the kernel cannot do, each thing
 pinned by the smallest case that shows it, and those cases added to brep-bench. Step 4, building
-them, has begun: T1 and T2 are built, and T3 and T4 are bounded (see *Step 4* below).
+them: T1, T2, T3 and T4 are built (see *Step 4* below). The crossed tori themselves are next.
 
 ## The capabilities missing
 
@@ -146,16 +146,41 @@ dropped. On the T2 family (layer gaps from 1e-4 to 3e-2, three hole placements) 
 reach their closed forms. `patch_fuzz` draws half its patches with the layer: on three seeds
 `main` fails 669 of 1,800 Booleans, T1 alone 420, and with T2 none, the slowest in 0.12 s.
 
-**T3 and T4 are bounded, not built.** With every reading of a face confined to its own stretch of
-the net, a march no longer reaches a cusp or a pinch more than a sixteenth of the face's parameters
-past it. The T3 and T4 gates as placed pass, and T4's family of 48 planes all build (it was 1 in 3).
-With the face trimmed within that sixteenth (u ≥ 0.51 to 0.53), they fail still: T3 for a steep
-plane (9 of 30 placements), T4 for 3 of 32. Two new ignored gates pin this,
-`a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp` and
-`a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch`, each with a control on the cut-down
-net. This is the capability itself: a face whose own stretch of net holds the singularity. The
-experiment branch's fold and self-meeting rules, or the carried parameters below, are the
-candidates.
+**T3 and T4 are built.** The cases that still failed had a face trimmed within a sixteenth of the
+cusp or the pinch. Three things were wrong there:
+
+- **The grown box reached past the singularity.** `Located::grown_parameters`
+  (`query::regular_growth`) now grows each side only while the net stays as regular as at the
+  face's own edge. The test is that `S_u × S_v` keeps half its least along the edge, and that the
+  normal turns less than 60° from the edge's. The strip is sampled across the other parameter's
+  grown range, so a singular point beside a face's corner is seen. The normal test is what finds
+  the pinch: there `S_u × S_v` shrinks as the cube of the distance, and no grid sample comes near
+  enough to see it.
+- **The plane's cut was not cut to the face.** It is the net's row carried, so its parameter is
+  the net's `u` while `v` runs along it, and `iso_parameter` only knew constant-`v` iso lines. Now
+  any curve whose parameter is one of the net's own is cut to the face's box, the other parameter
+  read at each sample by Gauss–Newton along it. Uncut, the curve ran through the cusp, and
+  inverting the face's rim point onto it stalled at the cusp.
+- **A spline's foot stopped at the curve's end.** Beside the fold the curve barely moves with its
+  parameter and bends hard (`x = s²`), so Newton's curvature `|C'|² + (C − p)·C''` went negative
+  and `BSpline::refined` gave up at the end. It now takes Gauss–Newton's step there. This one
+  showed up when the box stopped short of the fold: before, the curve's end lay past the fold.
+
+The two `…_trimmed_nearer_…` gates pass, with every patch gate.
+
+**Fuzzed** (`patch_fuzz … cusp`, `… pinch`). Each case draws a random patch, a trim as near as
+`0.505` to the cusp or the pinch (half the pinch's within 0.03 each way), and a plane through a
+point within 0.003 of the singularity (half the pinch's within 5e-4, and nearly upright). The
+plane is kept on each side, and each side is held to the same block on the net cut down, the two
+sides to `|A|`. On seeds 1, 7 and 11:
+
+| | cusp cuts failing | pinch cuts failing | slowest |
+|---|---|---|---|
+| `main` | 213 of 900 | 555 of 900 | 5.2 s |
+| T2's commit | 41 of 900 | 7 of 900 | 11.4 s |
+| now | 0 of 900 | 0 of 900 | 0.06 s |
+
+The fold fuzzer (T1, T2) on the same seeds: none of 1,800, the slowest 0.09 s.
 
 **The deeper change** (from the review of T1). Both rules read a face through the part of its net
 it uses, each at the one place it is needed. The general form: carry each meeting's parameters on

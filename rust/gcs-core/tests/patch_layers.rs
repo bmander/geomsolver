@@ -4,10 +4,10 @@
 //! singular only outside the face: folded back over the face's rim, a second layer just beside
 //! the face, a cusp, a pinch to a point. Each is brep-bench's `nurbs/` case of the same name.
 //!
-//! Since T1 and T2 are built, every face is read on the part of its net it uses (a sixteenth
-//! past its parameters), which keeps the cusp and the pinch of T3 and T4 out of reach as these
-//! cases place them: their gates pass, and two more (`…_trimmed_nearer_…`) trim the face within a
-//! sixteenth of the singularity, where T3 and T4 themselves are still wanted.
+//! Every face is read on the part of its net it uses: its parameter box grown a sixteenth each way
+//! only while the net stays regular (`Located::grown_parameters`), so a fold or a pinch just past
+//! the face is never in it. The `…_trimmed_nearer_…` cases trim the face within that sixteenth of
+//! the cusp or the pinch.
 //!
 //! Each case comes twice. Its **control** is the block with its top face on the patch cut down to
 //! the face's own part (`Net::segment`: the same surface at the same parameters, nothing of the
@@ -197,16 +197,10 @@ fn a_pinched_patch_is_sliced_beside_its_pinch() { pinched(true) }
 fn a_cuspidal_patch_trimmed_nearer_cut_down_to_its_face_is_sliced() { cuspidal_nearer(false) }
 
 #[test]
-#[ignore = "#1013 T3, fails today: the face's grown parameter box (u ≥ 0.49) reaches past the cusp \
-    at u = 1/2, so the face is read on a net holding the cusp and the layer beyond it, 1.3e-4 from \
-    the face's rim (a shell kept on one side and dropped on another)"]
 fn a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp() { cuspidal_nearer(true) }
 
 #[test]
 fn a_pinched_patch_trimmed_nearer_cut_down_to_its_face_is_sliced() { pinched_nearer(false) }
 
 #[test]
-#[ignore = "#1013 T4, fails today: the face's grown parameter box (u, v ≥ 0.48) reaches past the \
-    pinch at u = v = 1/2, so the face is read on a net holding the singular point (a shell kept on one \
-    side and dropped on another); 3 of 32 planes so near the pinch fail"]
 fn a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch() { pinched_nearer(true) }

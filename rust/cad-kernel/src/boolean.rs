@@ -4237,13 +4237,13 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
 /// The box of parameters face `fi` of `b` reaches, sampled along its edges (`parameters`).
 pub fn face_parameters(b: &Brep,fi: usize) -> [[f64;2];2] { parameters(b,fi,false) }
 
-/// **Which of a sheet's parameters curve `c`'s own is, where `c` is an iso line of the sheet**
-/// (#1013 T1): `k` where `c`'s point at `t` is the net's at its `k`th parameter `t` and one value
-/// of the other, over a stretch of that parameter's domain, read at nine parameters to `tol`. A
-/// plane's cut along a row carried or along a level iso line (`ssi`) is exactly so. The other
-/// parameter is read by Newton at the first of the curve's inner points where it holds the curve's
-/// own parameter, not where the net folds (its `S_u × S_v` vanishing: a fold row may pass the
-/// curve's middle). None where `c` is no such line of `surface`.
+/// **Which of a sheet's parameters curve `c`'s own is** (#1013 T1, T3): `k` where `c`'s point at
+/// each `t` is the net's at its `k`th parameter `t` (and some value of the other), over a stretch of
+/// that parameter's domain, read at nine parameters to `tol`. A plane's cut along a level iso line
+/// or along a row carried onto it (`ssi`) is exactly so, the other parameter constant or running.
+/// The other is found at each by Gauss–Newton along it alone (`S_v`, or `S_u`, kept nonzero at a
+/// fold of the net, where `S_u × S_v` vanishes with `S_u`, so a fold row the curve crosses is read
+/// as well as any). None where `c` is no such curve of `surface`.
 fn iso_parameter(c: &super::nurbs::BSpline,surface: &Surface,tol: f64) -> Option<usize> {
     let Surface::BSpline(_,net) = surface else { return None };
     let [lo,hi] = c.domain();
@@ -4251,12 +4251,22 @@ fn iso_parameter(c: &super::nurbs::BSpline,surface: &Surface,tol: f64) -> Option
     let ts: Vec<(f64,V)> = (0..=8).map(|k| { let t = lo+(hi-lo)*k as f64/8.; (t,c.point(t)) }).collect();
     (0..2).find(|&k| {
         if lo < dom[k][0]-1e-12 || hi > dom[k][1]+1e-12 { return false }
-        let middle = |t: f64| if k == 0 { [t,0.5*(dom[1][0]+dom[1][1])] } else { [0.5*(dom[0][0]+dom[0][1]),t] };
-        let Some(w) = ts[1..8].iter().find_map(|&(t,p)| {
-            let uv = surface.inverse_near(p,middle(t));
-            ((uv[k]-t).abs() <= 1e-9*(1.+t.abs())).then_some(uv[1-k])
-        }) else { return false };
-        ts.iter().all(|&(t,p)| distance(if k == 0 { net.point(t,w) } else { net.point(w,t) },p) <= tol)
+        let [w0,w1] = dom[1-k];
+        let mut w = 0.5*(w0+w1);
+        ts.iter().all(|&(t,p)| {
+            // the other parameter at `t`, from the last one's (the curve runs on, so it does too)
+            let at = |w: f64| { let (q,su,sv) = if k == 0 { net.d1(t,w) } else { net.d1(w,t) }; (q,if k == 0 { sv } else { su }) };
+            for _ in 0..32 {
+                let (q,d) = at(w);
+                let dd = crate::util::space::dot(d,d);
+                if !(dd > 0.) { break }
+                let step = crate::util::space::dot(crate::util::space::sub(p,q),d)/dd;
+                let next = (w+step).clamp(w0,w1);
+                if next == w { break }
+                w = next;
+            }
+            distance(at(w).0,p) <= tol
+        })
     })
 }
 

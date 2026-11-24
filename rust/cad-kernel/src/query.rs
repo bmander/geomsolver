@@ -2500,6 +2500,49 @@ pub struct Located<'a> {
     cut: Vec<std::sync::OnceLock<Option<Surface>>>,
 }
 
+/// **A face's parameter box `inner` grown toward `grown` only while its surface stays regular**
+/// (#1013 T3, T4). On each side, the strip the growth adds is read on a 4 × 17 grid, across the
+/// other parameter's grown range, its corners too. Where anywhere in it `S_u × S_v` falls below
+/// half its least along the face's own edge there, or turns more than 60° from it at the edge
+/// beside it, the growth that side is halved, until neither holds (twelve times at most).
+///
+/// A net may run on past its face into a fold (`S_u` vanishing along a row, a cuspidal edge), or
+/// into an isolated singular point beside a corner of the face, within a sixteenth of the face's
+/// parameters. Grown into either, the face was read on a stretch of net holding the singularity,
+/// and a meeting traced there ran into it. The normal flips across a fold and turns about a
+/// singular point however narrow the region where `S_u × S_v` is small (a pinch `(s³, t³, st)`, it
+/// shrinks as the cube of the distance, and no grid sample need come near it). An edge of the
+/// face's own at a pole reads nought there, and the face's growth is not held back by it.
+fn regular_growth(surface: &Surface,inner: [[f64;2];2],mut grown: [[f64;2];2]) -> [[f64;2];2] {
+    use crate::util::space::{cross,dot};
+    let normal = |uv: Uv| { let (_,su,sv) = surface.d1(uv); cross(su,sv) };
+    for k in 0..2 {
+        let uv = |x: f64,w: f64| if k == 0 { [x,w] } else { [w,x] };
+        for end in 0..2 {
+            let edge = inner[k][end];
+            let mut far = grown[k][end];
+            if far == edge { continue }
+            let [a,b] = grown[1-k];
+            let ws: Vec<f64> = (0..=16).map(|j| a+(b-a)*j as f64/16.).collect();
+            // the face's own edge, beside each sample: its normal, and its least size along the face
+            let beside: Vec<V> = ws.iter().map(|&w| normal(uv(edge,w.clamp(inner[1-k][0],inner[1-k][1])))).collect();
+            let reference = (0..=16).map(|j| { let [c,d] = inner[1-k]; norm(normal(uv(edge,c+(d-c)*j as f64/16.))) })
+                .fold(f64::INFINITY,f64::min);
+            for _ in 0..12 {
+                let irregular = (1..=4).any(|i| ws.iter().zip(&beside).any(|(&w,&n0)| {
+                    let n = normal(uv(edge+(far-edge)*i as f64/4.,w));
+                    let size = norm(n);
+                    size < 0.5*reference || dot(n,n0) < 0.5*size*norm(n0)
+                }));
+                if !irregular { break }
+                far = edge+0.5*(far-edge);
+            }
+            grown[k][end] = far;
+        }
+    }
+    grown
+}
+
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
@@ -2552,9 +2595,15 @@ impl<'a> Located<'a> {
 
     /// **Face `fi`'s parameter box, grown to hold it** (`boolean::parameters`, `whole`: by a
     /// sixteenth each way, or to a whole period), within its surface's domain
-    /// (`meeting::within_domain`), read once.
+    /// (`meeting::within_domain`), read once; a sheet's grown each way only while its net stays
+    /// regular (`regular_growth`).
     pub fn grown_parameters(&self,fi: usize) -> [[f64;2];2] {
-        *self.grown[fi].get_or_init(|| super::meeting::within_domain(&self.b.faces[fi].surface,super::boolean::parameters(&self.b,fi,true)))
+        *self.grown[fi].get_or_init(|| {
+            let f = &self.b.faces[fi];
+            let grown = super::meeting::within_domain(&f.surface,super::boolean::parameters(&self.b,fi,true));
+            if !matches!(f.surface,Surface::BSpline(..)) { return grown }
+            regular_growth(&f.surface,super::boolean::parameters(&self.b,fi,false),grown)
+        })
     }
 
     /// **The surface face `fi`'s crossings are read on** (#1013): a sheet's net cut down to the

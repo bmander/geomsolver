@@ -22,6 +22,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   boxes, an edge's crossing is settled on the face's, and a span's on-patch test reads it. A net
   folded back past its face, its layer a few ten-thousandths beneath it, had meetings, crossings and
   spans read on that layer; a block under such a patch pierced by a hole was refused and builds.
+- **A face's parameter box is grown only while its net stays regular** (`query::Located::grown_parameters`,
+  #1013): each side's growth halved while the added strip loses half the face's `|S_u × S_v|` or
+  turns its normal past 60°, so a fold or a pinch just outside a face is never in the stretch of net
+  the face is read on. A curve whose parameter is one of a net's own is cut to the face's box
+  whether the net's other parameter is constant along it or runs (a row carried onto a plane).
+  `BSpline::refined` steps by Gauss–Newton where Newton's curvature is not positive, where it
+  stopped at the curve's end (an iso line beside a fold).
 - **A slide through a blank, by its shadow** (`swept::through`): a tool the closed class refuses
   (`Curved`, `Folded`) slid from wholly before a blank to wholly past it is cut as the blank less
   the prism over the tool's shadow along the slide — each face's contact and each sharp edge carried
