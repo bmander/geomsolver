@@ -85,9 +85,26 @@ in 162 s.
   and 0.85, at `v = 1/2`, `y = 0`). Probably the sheets touch there, since both sweeps pass
   through the same pose at `t = 0`. The four branches are traced and end at `P`.
 
-On `main` (6836e76) the same report is being read: the union, under full debug, was still tracing
-face pairs (`A5`) after 40 minutes. The issue's account of it is a refusal after about 430 s with the
-same message, "a shell of the arrangement is kept on one side of a bspline (`Sheet(1.0)`)".
+On `main` (6836e76) with the same report the union refuses in 2383 s under full debug, with the
+same message, "a shell of the arrangement is kept on one side of a bspline (`Sheet(1.0)`)". It is
+the issue's refusal, and it is not the experiment branch's leak:
+
+- The complex has 125 faces and 3 shells. The leaking shell holds both sides of 86 faces, and 54
+  edges join a kept and a dropped side.
+- **Two edges are used three times**, 247 and 248. They are one stretch of the meeting of `A1`
+  with B's `Sheet(-1.0)`, from `(2.8997, 0.9035, 1.7515)` to `Q = (3.1627, 0.9089, 1.7440)`, laid
+  twice: their middles are 2.1e-6 apart. `A1`'s piece (face 8) takes one copy, and `B8`'s piece
+  (face 102) takes both. An edge used an odd number of times joins two cells, which is the leak.
+  This is **T1**, a stretch of a meeting laid a second time; it is the issue's "a meeting traced a
+  second time on the net's other layer, the two copies crossing a face's rim 3.5e-4 apart".
+- At `Q` the sheet of B is nearly singular: its net's area factor is 0.14 there and falls to 6.7e-3
+  a thousandth away (`tube_profile pair` `FEET`). On the experiment branch the march "met itself" at
+  `(3.1571, 0.9127, 1.7456)` and "ended at a sheet's fold" at `(3.2113, 0.8999, 1.7404)`, both
+  beside `Q`. So T4 (a march near a singular point of the net) is where the second copy comes from.
+
+So the crossed Booleans need T1 and T4 on `main`. T3 is the fold rule's subject (the issue's
+creeping march) and T2 is met wherever an edge crosses a face near its cuspidal edge. T5 is needed
+only if the sweep's faces are given nets of their own.
 
 ## The cases
 
