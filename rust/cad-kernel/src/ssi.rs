@@ -2541,11 +2541,16 @@ pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
 /// along the slope `g` changes by `½ |g · δ|`: settled once that is a thousandth of `tol`, or the
 /// step itself is. The slope is read from both exact gradients, not from `b`'s signed distance by
 /// differences, whose rounding it would carry over the step.
+///
+/// **Sixteen steps** (#1013): where it settles on a touch it does in a dozen; past that it has
+/// wandered off, steps of the surfaces' size, and settles if at all off both (the crossed tori's
+/// sheets asked it a hundred times beside their folds, two of three running all thirty-two steps
+/// to nothing, each step a dozen feet on two sheets).
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);
     let mut x = on_a(p);
-    for _ in 0..32 {
+    for _ in 0..TOUCH_STEPS {
         let f = Frame::about(x,a.gradient(x));
         // b's unit normal less a's (turned to agree with it) at a point of a near x, along a's
         // tangent plane at x: nothing where the two are parallel
@@ -2564,10 +2569,15 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
         let (step,rise) = (ds.dhypot(dt),0.5*(g[0]*ds+g[1]*dt).abs());
         if !step.is_finite() { return None }
-        if step <= 1e-3*tol || rise <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+        if step <= 1e-3*tol || rise <= 1e-3*tol {
+            return (b.implicit(x).abs() <= 8.*tol).then_some(x)
+        }
     }
     None
 }
+
+/// How many Newton steps `touch_near` takes before it gives a touch up.
+const TOUCH_STEPS: usize = 16;
 
 /// **A trace refused for two surfaces nearly touching where it marched** (`trace_beside`'s refusal
 /// below `SHALLOW`): the surfaces' kinds, the angle they meet at there in degrees, and the point.
@@ -2703,6 +2713,10 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
             // the way `∇a × ∇b` faces the march: it turns about only through a point where the two
             // are parallel, a touch a step may cross without landing where they nearly are
             let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
+            // how many steps running have landed back where they stood (`stalled` below), and the
+            // path's boxes, each over 32 of its steps (`on_path`)
+            let mut stalled = 0;
+            let mut boxes: Vec<(V,V)> = Vec::new();
             for _ in 0..100_000 {
                 // each step counted against the build's budget (#777 V3): a stopped build ends here
                 if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (p,format!("{} × {}",a.kind(),b.kind()))) { break }
@@ -2771,6 +2785,17 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                     end_at_touch(&mut pts,&mut touches,touched,h0,tol);
                     break
                 };
+                // **a march across a sheet's fold has ended** (#1013): a surface's normal turns
+                // through no more than a step's few degrees along a regular march, so one that turns
+                // about between `p` and `q` has crossed where a sheet's net folds back on itself, its
+                // parameters' rates parallel; past it the meeting runs on the net's other layer,
+                // which no face on one layer holds. Carried on, the crossed tori's meeting beside a
+                // fold of B's sheet turned back along itself, looped and was fitted through its loop
+                // 7e-4 off both sheets. It ends at its last point before the fold
+                if [a,b].iter().any(|s| s.sheet() && dot(s.gradient(p),s.gradient(q)) < 0.) {
+                    if super::debug() { eprintln!("brep:   a march crossed a sheet's fold after {} points at {p:?}",pts.len()) }
+                    break
+                }
                 let turned = (dot(tq,t) > 0.) != facing;
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
@@ -2797,6 +2822,43 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
                         break
                     }
                 }
+                // **a march that runs back onto its own path has gone round a loop** (#1013): the
+                // meeting of two surfaces crosses itself only where one is singular or the two
+                // touch, so a march come back onto its path anywhere but its start entered a loop
+                // there, and goes round it again (the crossed tori's march on a cap's torus round a
+                // swallowtail of a swept sheet, 2.5e-4 across, lapped until its hundred thousand
+                // steps ran out, in 780 s). Asked every sixteenth step, of the path but its last
+                // four points: back by its start, a closed curve; else it ends where the second lap
+                // began, the loop traced once
+                if pts.len() > 8 && pts.len() % 16 == 0 {
+                    let near = 0.25*h;
+                    while 32*(boxes.len()+1) < pts.len()-4 {
+                        let k = 32*boxes.len();
+                        boxes.push(pts[k..=k+32].iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),x|
+                            (std::array::from_fn(|i| lo[i].min(x[i])),std::array::from_fn(|i| hi[i].max(x[i])))));
+                    }
+                    if let Some(j) = on_path(&pts,&boxes,q,pts.len()-4,near) {
+                        if j < 2 { closed = true; pts.push(p0); break }
+                        let mut m = pts.len()-1;
+                        while m > 8 && on_path(&pts,&boxes,pts[m],m-4,near).is_some() { m -= 1 }
+                        pts.truncate(m+2);
+                        if super::debug() { eprintln!("brep:   a march ran back onto its path at {:?}, after {} points",pts[pts.len()-1],pts.len()) }
+                        break
+                    }
+                }
+                // **a march whose steps land back where they stood has ended** (#1013): a step that
+                // carries it on less than a thousandth of its length, eight running, stands where the
+                // projection onto both surfaces can take it no farther (a fitted sheet's foot held
+                // there, the crossed tori's sheets beside their touch, each step of 1e-4 landing 1e-8
+                // on, a march of a hundred thousand steps each asking whether it had crossed a touch).
+                // A regular meeting carries each step on about its length
+                if dot(sub(q,p),t) < 1e-3*h {
+                    stalled += 1;
+                    if stalled >= 8 {
+                        if super::debug() { eprintln!("brep:   a march stalled after {} points at {p:?}, h {h:.1e}",pts.len()) }
+                        break
+                    }
+                } else { stalled = 0 }
                 pts.push(q);
                 if !inside(q,h) { break }
                 p = q;
@@ -2827,6 +2889,33 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
     // (1e-8 of a step), two such were placed apart and interpolated a hair apart in space, and the
     // cubic magnified their rounding into a swing out along the curve and back, on both surfaces
     // all the way (a ring groove's floor ran 0.17 mm past its corner)
+    // **a curve ended short of a touch this trace knows ends at it** (#1013): a march stopped
+    // beside a known meeting a little short of a touch along its branch, one whose other branches
+    // this trace leaves from (found, perhaps, after the march ran), is carried on to the point the
+    // touch is known by — its end within the touch's reach and heading for it. Left a step short,
+    // the crossed tori's fourth branch stopped 4.8e-3 short of the touch its three others leave,
+    // and the face's cut through it did not close. A touch this trace never met is left to the
+    // meeting known beside it (a round's torus touching the plane its boss stands on, at the
+    // plane's edge: the march ends at its step)
+    let traced_so_far: Vec<Curve> = traced_so_far.into_iter().map(|c| {
+        let Curve::Traced(t) = &c else { return c };
+        if t.closed || t.pts.len() < 2 { return c }
+        let mut pts = t.pts.clone();
+        let mut moved = false;
+        for end in [0,1] {
+            let n = pts.len();
+            let (e,before) = if end == 0 { (pts[0],pts[1]) } else { (pts[n-1],pts[n-2]) };
+            let out = sub(e,before);
+            let Some(u) = touches.iter().filter(|u| {
+                let d = distance(u.at,e);
+                d > tol && d <= 2.*u.radius.max(h0) && dot(sub(u.at,e),out) > 0.7*d*norm(out)
+            }).min_by(|x,y| distance(x.at,e).total_cmp(&distance(y.at,e))) else { continue };
+            if end == 0 { pts.insert(0,u.at) } else { pts.push(u.at) }
+            moved = true;
+        }
+        if !moved { return c }
+        Curve::Traced(std::sync::Arc::new(Traced {a:t.a.clone(),b:t.b.clone(),pts,closed:false}))
+    }).collect();
     for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
         let mut through: Vec<(f64,V)> = Vec::new();
@@ -2847,6 +2936,23 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)
+}
+
+/// The first step of the path `pts[..upto]` that passes within `near` of `x`, its steps read 32 at
+/// a time where `boxes` holds their box.
+fn on_path(pts: &[V],boxes: &[(V,V)],x: V,upto: usize,near: f64) -> Option<usize> {
+    let step = |j: usize| {
+        let (a,d) = (pts[j],sub(pts[j+1],pts[j]));
+        let s = (dot(sub(x,a),d)/dot(d,d).max(f64::MIN_POSITIVE)).clamp(0.,1.);
+        crate::util::space::distance(x,add(a,scale(d,s))) <= near
+    };
+    let last = upto.saturating_sub(1);
+    for (c,&(lo,hi)) in boxes.iter().enumerate() {
+        if 32*c >= last { return None }
+        if (0..3).any(|i| x[i] < lo[i]-near || x[i] > hi[i]+near) { continue }
+        if let Some(j) = (32*c..(32*c+32).min(last)).find(|&j| step(j)) { return Some(j) }
+    }
+    (32*boxes.len()..last).find(|&j| step(j))
 }
 
 /// **One curve a meeting**: of two traces, one whose points all lie within `8 tol` of the other
@@ -2885,11 +2991,19 @@ fn distinct(traced: Vec<Curve>,tol: f64) -> Vec<Curve> {
 }
 
 /// A march ended at a touch (`touched`): its points crowding the touch dropped, the touch its last,
-/// and the touch known, once, for the branches no curve arrives along to be traced from.
+/// and the touch known, once, for the branches no curve arrives along to be traced from. **One touch,
+/// one point** (#1013): a touch known already within `8 tol` is that touch, and the march ends at the
+/// point it is known by, the one its other branches leave from. Settled again from this march, a
+/// touch between two sheets (the crossed tori's, where both sweeps pass through one pose) stood
+/// 8.4e-6 from where it was first found, two vertices twice the tolerance apart: the four branches
+/// ended two at each, and the cut of the face through the touch did not close.
 fn end_at_touch(pts: &mut Vec<V>,touches: &mut Vec<Touch>,touched: Touch,h0: f64,tol: f64) {
-    drop_crowding(pts,touched.at,0.25*h0,tol);
-    pts.push(touched.at);
-    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
+    let at = match touches.iter().find(|u| distance(u.at,touched.at) <= 8.*tol) {
+        Some(u) => u.at,
+        None => { let at = touched.at; touches.push(touched); at }
+    };
+    drop_crowding(pts,at,0.25*h0,tol);
+    pts.push(at);
 }
 
 /// **The steps crowding a march's end dropped**, `end` about to be pushed: a fit through points a

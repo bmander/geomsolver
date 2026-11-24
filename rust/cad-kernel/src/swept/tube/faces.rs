@@ -1422,20 +1422,23 @@ pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64) -> Result<cr
 /// `bar` along any row or column where `kept` — each neighbour halved too where it would stand more than twice
 /// as wide (the grading kept within a factor two, structural, so the interpolant does not ring) —
 /// until none does. None where `f` is not read or a way asks more than `MOST_GRADED` points.
-fn fit_graded(f: &dyn Fn(f64,f64) -> V,kept: &dyn Fn(f64,f64) -> bool,degree: usize,nu: usize,nv: usize,bar: f64) -> Option<(crate::nurbs::Net,f64)> {
+fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool + Sync),degree: usize,nu: usize,nv: usize,bar: f64) -> Option<(crate::nurbs::Net,f64)> {
     let even = |n: usize| (0..=n).map(|i| i as f64/n as f64).collect::<Vec<f64>>();
     let (mut us,mut vs) = (even(nu),even(nv));
     loop {
-        let grid: Vec<Vec<V>> = vs.iter().map(|&v| us.iter().map(|&u| f(u,v)).collect()).collect();
+        // (each row read, interpolated and its error read on every core, `util::par`, in order: a
+        // window about a pinch is graded to some 900 × 850, read a few times over, #1013)
+        use crate::util::par::indices;
+        let grid: Vec<Vec<V>> = indices(vs.len(),|j| us.iter().map(|&u| f(u,vs[j])).collect());
         if grid.iter().flatten().flatten().any(|x| !x.is_finite()) { return None }
-        let rows: Vec<BSpline> = grid.iter().map(|r| crate::nurbs::interpolate(r,&us,degree)).collect::<Option<_>>()?;
-        let cols: Vec<BSpline> = (0..rows[0].poles.len()).map(|i| crate::nurbs::interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&vs,degree))
-            .collect::<Option<_>>()?;
+        let rows: Vec<BSpline> = indices(grid.len(),|j| crate::nurbs::interpolate(&grid[j],&us,degree)).into_iter().collect::<Option<_>>()?;
+        let cols: Vec<BSpline> = indices(rows[0].poles.len(),|i| crate::nurbs::interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&vs,degree))
+            .into_iter().collect::<Option<_>>()?;
         let net = crate::nurbs::Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
             poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
         let off = |u: f64,v: f64| if kept(u,v) { distance(net.point(u,v),f(u,v)) } else { 0. };
-        let eu: Vec<f64> = us.windows(2).map(|w| vs.iter().map(|&v| off(0.5*(w[0]+w[1]),v)).fold(0.,f64::max)).collect();
-        let ev: Vec<f64> = vs.windows(2).map(|w| us.iter().map(|&u| off(u,0.5*(w[0]+w[1]))).fold(0.,f64::max)).collect();
+        let eu: Vec<f64> = indices(us.len()-1,|i| vs.iter().map(|&v| off(0.5*(us[i]+us[i+1]),v)).fold(0.,f64::max));
+        let ev: Vec<f64> = indices(vs.len()-1,|j| us.iter().map(|&u| off(u,0.5*(vs[j]+vs[j+1]))).fold(0.,f64::max));
         let worst = eu.iter().chain(&ev).fold(0f64,|m,&e| m.max(e));
         if debug() {
             let hist = |ts: &[f64]| (0..20).map(|k| ts.iter().filter(|&&t| t >= k as f64/20. && t < (k+1) as f64/20.).count()).collect::<Vec<_>>();

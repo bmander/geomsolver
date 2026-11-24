@@ -107,6 +107,7 @@ mod drawn_mesh;
 mod epicyclic;
 mod frame_cluster;
 mod part_colours;
+mod patch_layers;
 mod drift;
 mod driven;
 mod drives;

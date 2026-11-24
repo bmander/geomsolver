@@ -8,6 +8,41 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A meeting along a sheet's iso line is read over the face's own parameters** (`boolean`, #1013):
+  a plane's cut of a sheet along a row carried or a level iso line is cut to the face's parameter
+  box before its spans are read. A sheet folded back over its face (past a cuspidal edge) had the
+  folded-back stretch, the face's own points again, laid on the face a second time; a block under
+  such a patch notched across its rim was refused ("a bspline's pieces do not close") and builds.
+- **A sheet's face is crossed on its own stretch of the net** (`query::Located::read_surface`, used
+  by `solid_place`'s rays and the Boolean's edges against faces): the net cut down to the face's
+  parameter box (grown by a sixteenth), once a face. A net folded back past its face left the
+  interval search nothing to contract at the fold: such a Boolean fell from 2.2 s to 0.02 s.
+- **A sheet's face is traced and settled on its own stretch of the net** (`boolean`, #1013): a
+  meeting is traced on its surface class's net cut down to the union of its faces' parameter
+  boxes, an edge's crossing is settled on the face's, and a span's on-patch test reads it. A net
+  folded back past its face, its layer a few ten-thousandths beneath it, had meetings, crossings and
+  spans read on that layer; a block under such a patch pierced by a hole was refused and builds.
+- **A face's parameter box is grown only while its net stays regular** (`query::Located::grown_parameters`,
+  #1013): each side's growth halved while the added strip loses half the face's `|S_u × S_v|` or
+  turns its normal past 60°, so a fold or a pinch just outside a face is never in the stretch of net
+  the face is read on. A curve whose parameter is one of a net's own is cut to the face's box
+  whether the net's other parameter is constant along it or runs (a row carried onto a plane).
+  `BSpline::refined` steps by Gauss–Newton where Newton's curvature is not positive, where it
+  stopped at the curve's end (an iso line beside a fold).
+- **A march ends where it can go no farther on a pair of sheets** (`ssi`, #1013): where its steps
+  land back where they stood, where it runs back onto its own path (a loop entered at a singular
+  point, lapped to its step budget), where a sheet's normal turns about across one step (a fold),
+  and at a touch it arrives at, at the point the touch is known by; a curve ended a little short of
+  a touch the trace leaves branches from is carried on to it.
+  `touch_near` takes sixteen Newton steps, not thirty-two. With them brep-bench's crossed
+  tumbling tori combine: union, difference and intersection each `check` and mesh, and agree with
+  the members' volumes to 3e-9, 47 s each at the members' tolerance (refused in 1008 s).
+- **A sheet's grid seeds by false position** (`boolean`, #1013): each sign change of the other's
+  distance settled by Illinois, and dropped at once where the distance changes by more than twice
+  its ends stand apart, not halved forty times: the crossed tori's seeding from 29.5 s to 10.6 s.
+- **An edge's gap is measured as a reader measures it** (`topo::Brep::measure_tolerances`): each use
+  read as `standing` reads it (64 places, the knots and ends, halfway between each two), not at 33.
+  A swept sheet's rim stated 1.1e-5 where its pcurve stood 1.5e-5 off.
 - **Faces deleted** (`defeature::deleted`): faces taken out of a solid and the gap they leave
   closed by the faces round them, each run on along its own surface (a plane, a cylinder, a cone,
   a sphere or a torus) until they meet.  The solid and its neighbours' surfaces, run on as sheets,

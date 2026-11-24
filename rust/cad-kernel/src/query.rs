@@ -2493,14 +2493,62 @@ pub struct Located<'a> {
     size: f64,
     /// The box its faces' boxes fill: past it no face stands.
     whole: ([f64;3],[f64;3]),
+    /// Each face's parameter box, grown (`grown_parameters`), and each sheet's face's surface cut
+    /// down to it (`read_surface`), each read the first time it is asked for; no cut where the face
+    /// is no sheet's or the box is the whole net.
+    grown: Vec<std::sync::OnceLock<[[f64;2];2]>>,
+    cut: Vec<std::sync::OnceLock<Option<Surface>>>,
+}
+
+/// **A face's parameter box `inner` grown toward `grown` only while its surface stays regular**
+/// (#1013 T3, T4). On each side, the strip the growth adds is read on a 4 × 17 grid, across the
+/// other parameter's grown range, its corners too. Where anywhere in it `S_u × S_v` falls below
+/// half its least along the face's own edge there, or turns more than 60° from it at the edge
+/// beside it, the growth that side is halved, until neither holds (twelve times at most).
+///
+/// A net may run on past its face into a fold (`S_u` vanishing along a row, a cuspidal edge), or
+/// into an isolated singular point beside a corner of the face, within a sixteenth of the face's
+/// parameters. Grown into either, the face was read on a stretch of net holding the singularity,
+/// and a meeting traced there ran into it. The normal flips across a fold and turns about a
+/// singular point however narrow the region where `S_u × S_v` is small (a pinch `(s³, t³, st)`, it
+/// shrinks as the cube of the distance, and no grid sample need come near it). An edge of the
+/// face's own at a pole reads nought there, and the face's growth is not held back by it.
+fn regular_growth(surface: &Surface,inner: [[f64;2];2],mut grown: [[f64;2];2]) -> [[f64;2];2] {
+    use crate::util::space::{cross,dot};
+    let normal = |uv: Uv| { let (_,su,sv) = surface.d1(uv); cross(su,sv) };
+    for k in 0..2 {
+        let uv = |x: f64,w: f64| if k == 0 { [x,w] } else { [w,x] };
+        for end in 0..2 {
+            let edge = inner[k][end];
+            let mut far = grown[k][end];
+            if far == edge { continue }
+            let [a,b] = grown[1-k];
+            let ws: Vec<f64> = (0..=16).map(|j| a+(b-a)*j as f64/16.).collect();
+            // the face's own edge, beside each sample: its normal, and its least size along the face
+            let beside: Vec<V> = ws.iter().map(|&w| normal(uv(edge,w.clamp(inner[1-k][0],inner[1-k][1])))).collect();
+            let reference = (0..=16).map(|j| { let [c,d] = inner[1-k]; norm(normal(uv(edge,c+(d-c)*j as f64/16.))) })
+                .fold(f64::INFINITY,f64::min);
+            for _ in 0..12 {
+                let irregular = (1..=4).any(|i| ws.iter().zip(&beside).any(|(&w,&n0)| {
+                    let n = normal(uv(edge+(far-edge)*i as f64/4.,w));
+                    let size = norm(n);
+                    size < 0.5*reference || dot(n,n0) < 0.5*size*norm(n0)
+                }));
+                if !irregular { break }
+                far = edge+0.5*(far-edge);
+            }
+            grown[k][end] = far;
+        }
+    }
+    grown
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,drawn,space,seams,edge_space,size,whole) = { let l = Located::new(&b,tol);
-            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
+        let (tol,coarse,drawn,space,seams,edge_space,size,whole,grown,cut) = { let l = Located::new(&b,tol);
+            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size,l.whole,l.grown,l.cut) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size,whole,grown,cut}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> { Located::boxed(b,tol,&|_| None) }
 
@@ -2515,7 +2563,8 @@ impl<'a> Located<'a> {
         for &bx in &space { super::geom::widen(&mut whole,bx) }
         let seams = b.faces.iter().map(Face::seams).collect();
         let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e,size)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole}
+        let (grown,cut) = ((0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect(),(0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect());
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size,whole,grown,cut}
     }
 
     /// Face `fi`'s outline and its parameter box, drawn once.
@@ -2542,6 +2591,37 @@ impl<'a> Located<'a> {
         let bx = self.drawn(fi).1;
         let mid = [(bx[0][0]+bx[1][0])/2.,(bx[0][1]+bx[1][1])/2.];
         unwrap(f.surface.inverse_near(p,mid),mid,f.surface.periods())
+    }
+
+    /// **Face `fi`'s parameter box, grown to hold it** (`boolean::parameters`, `whole`: by a
+    /// sixteenth each way, or to a whole period), within its surface's domain
+    /// (`meeting::within_domain`), read once; a sheet's grown each way only while its net stays
+    /// regular (`regular_growth`).
+    pub fn grown_parameters(&self,fi: usize) -> [[f64;2];2] {
+        *self.grown[fi].get_or_init(|| {
+            let f = &self.b.faces[fi];
+            let grown = super::meeting::within_domain(&f.surface,super::boolean::parameters(&self.b,fi,true));
+            if !matches!(f.surface,Surface::BSpline(..)) { return grown }
+            regular_growth(&f.surface,super::boolean::parameters(&self.b,fi,false),grown)
+        })
+    }
+
+    /// **The surface face `fi`'s crossings are read on** (#1013): a sheet's net cut down to the
+    /// face's grown parameter box (`grown_parameters`; `Net::segment`: the same surface at the same
+    /// parameters), else the face's own surface. A net may run on well past its face, folded back
+    /// past a cuspidal edge: a line's crossings were isolated over the whole of it, where the fold
+    /// leaves the search nothing to contract (a ray reading a block under a folded patch, 2.2 s a
+    /// Boolean against 0.02 s on the net cut down), and none past the face's parameters is a
+    /// crossing of the face.
+    pub fn read_surface(&self,fi: usize) -> &Surface {
+        let f = &self.b.faces[fi];
+        let cut = self.cut[fi].get_or_init(|| {
+            let Surface::BSpline(frame,net) = &f.surface else { return None };
+            let [u,v] = self.grown_parameters(fi);
+            if !(u[1] > u[0] && v[1] > v[0]) || [u,v] == net.domain() { return None }
+            Some(Surface::BSpline(*frame,std::sync::Arc::new(net.segment(u,v))))
+        });
+        cut.as_ref().unwrap_or(&f.surface)
     }
 
     /// Face `fi`'s box in space (`face_box`).
@@ -2688,8 +2768,11 @@ impl<'a> Located<'a> {
             let reach = exit+self.tol+1e-9*self.size;
             let ray = Curve::Line {p,d};
             let mut crossings = 0;
-            for (fi,f) in self.b.faces.iter().enumerate() {
-                match within(&ray,[0.,reach],&f.surface,self.tol*1e-3,self.space[fi],self.tol) {
+            for fi in 0..self.b.faces.len() {
+                // (a face whose box the ray misses is crossed nowhere: its surface is not cut for it)
+                let (lo,hi) = self.space[fi];
+                if line_in_box(p,d,[0.,reach],(lo.map(|x| x-2.*self.tol),hi.map(|x| x+2.*self.tol))).is_none() { continue }
+                match within(&ray,[0.,reach],self.read_surface(fi),self.tol*1e-3,self.space[fi],self.tol) {
                     // lying along a face, or a reading not proved (#814 P3): another direction
                     Meets::Along | Meets::Refused(_) => continue 'dirs,
                     Meets::At(roots) => for (t,touch) in roots {

@@ -865,6 +865,98 @@ linear span across whose second row is its first moved by one step is met in the
 curve carried along the step onto it (`ssi::intersect`), exactly, not traced and fitted.
 `swept_speed::a_swept_gears_faces_mesh_along_their_rulings` and
 `a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
+**A meeting along a sheet's iso line is read over the face's own parameters** (#1013 T1,
+`boolean::iso_parameter`). Where two faces meet in a closed-form curve whose parameter is one of
+a face's net's own, the curve is cut to the face's parameter box (`Located::grown_parameters`)
+before its spans are read. That holds whether the net's other parameter is constant along the
+curve (a level iso line) or runs (a row carried onto a plane). The other parameter is found at
+each of nine samples by Gauss–Newton along it alone, so a fold the curve crosses reads as well as
+any other point. A net may run on past its face and fold back over it, as a swept tube's sheet
+does past its cuspidal edge. The curve's stretch on the folded-back layer is then the face's own
+points again: read by its middle's nearest foot, it was put on the face and laid a second time.
+Only its parameters put it off the face. `patch_layers::a_patch_folded_over_its_rim_is_notched_across_the_rim`
+is the gate (brep-bench's `nurbs/folded-patch-notched-at-its-rim`, which also has a control on
+the net cut down to the face).
+**A line's or an edge's crossings with a sheet's face are searched on the face's own stretch of
+the net** (#1013, `Located::read_surface`). For the solid's rays and for the arrangement's edges
+against faces, a face whose surface is a B-spline net is read on that net cut down to its parameter
+box, grown by a sixteenth each way (`Located::grown_parameters`, the box the rule above cuts to;
+`Net::segment`, the same surface at the same parameters, cut once a face, and only for a face a
+ray or an edge reaches). No crossing past the face's parameters is a crossing of the face. A net running on
+past its face and folded back over it left the interval search nothing to contract at the fold: a
+block under a folded patch took 2.2 s a Boolean, against 0.02 s with the net cut down, and now
+takes 0.02 s either way. `rust/cad-kernel/examples/patch_fuzz.rs` reads the folded patch at
+random (patch, trim, box), every Boolean against its closed form, whole net and cut down.
+**A sheet's face is traced and settled on its own stretch of the net** (#1013 T2). A meeting is
+traced (`Arrangement::traced_on`) on its surface class's net cut down to the union of its faces'
+grown parameter boxes. It is the union, and not each face's box, because a meeting is traced once
+for every face of the class, and cut at one face's edge it would stop there and the next face would
+never be traced. A class whose faces lie on more than one net is left whole. An edge's crossing is
+settled onto the face's own stretch (`on_surface` on `read_surface`), and a span's on-patch test
+reads it too. A net folded back past its face, its other layer a few ten-thousandths beneath the
+face, had the meeting traced along that layer, the edge's root settled onto it, and the span's
+middle inverted onto it and read off the patch. Each was needed alone: without any one, a block
+under such a patch pierced by a square hole was refused. `patch_layers::a_patch_over_a_near_layer_is_pierced`
+is the gate (brep-bench's `nurbs/patch-over-a-near-layer-pierced`). `patch_fuzz` draws half its
+patches so (`c s³`, `c` from 1e-5 to 3e-2): on three seeds `main` fails 669 of 1,800 Booleans, T1
+alone 420, with T2 none. The same reading keeps a march clear of a cusp or a pinch of the net more
+than a sixteenth of the face's parameters past it.
+**A face's parameter box is grown only while its net stays regular** (#1013 T3, T4,
+`query::regular_growth`). The box `grown_parameters` returns, which every reading above uses, is
+grown a sixteenth each way. On each side the added strip is read on a 4 × 17 grid across the other
+parameter's grown range, corners included. That side's growth is halved, at most twelve times,
+while anywhere in the strip `S_u × S_v` falls below half its least along the face's own edge, or
+turns more than 60° from the normal at the face's edge beside it. A fold flips the normal, and a
+pinch `(s³, t³, st)` turns it about the point however narrow the region where `S_u × S_v` is small,
+so no sample need come near either. A face's own edge at a pole reads nought there and holds
+nothing back. **A spline's foot steps by Gauss–Newton where Newton's curvature is not positive**
+(`BSpline::refined`): an iso line beside a fold, `x = s²`, had `|C'|² + (C − p)·C''` negative a step
+from its end, and the search stopped there, the foot of the face's rim read 3e-3 off at the end.
+The gates are `patch_layers::a_cuspidal_patch_trimmed_nearer_is_sliced_through_its_cusp` and
+`a_pinched_patch_trimmed_nearer_is_sliced_beside_its_pinch`, the face within a sixteenth of the
+singularity. `patch_fuzz … cusp` and `… pinch` draw faces trimmed as near as `0.505` to the cusp
+or the pinch, cut by planes through points within 0.003 (5e-4) of them, each side against the
+net cut down: on three seeds, `main` fails 213 of 900 cusp cuts and 555 of 900 pinch cuts, T2's
+commit 41 and 7, and this none, the slowest 0.06 s where `main`'s took 5 s.
+**A march ends where it can go no farther on a pair of sheets** (#1013, `ssi::trace_landing`).
+Five ends, each read where the march stands, none needing the faces:
+- **landed back where it stood**: eight steps running that each carry it on less than a
+  thousandth of their length (a fitted sheet's foot held, each 1e-4 step landing 1e-8 on);
+- **run back onto its own path**: asked every sixteenth step of the path but its last four
+  points (`on_path`), a point within a quarter step of it. A meeting crosses itself only where a
+  surface is singular or the two touch, so a march come back anywhere but by its start entered
+  a loop, and ends where its second lap began (by its start, a closed curve). The crossed tori's
+  march round a swallowtail of a swept sheet beside a cap's torus, 2.5e-4 across, lapped for its
+  hundred thousand steps: 780 s;
+- **across a sheet's fold**: a sheet's normal turned about between two points of a march, which a
+  regular march's few degrees a step never do. Past it the meeting runs on the net's other layer,
+  which no face on one layer holds; carried on, the crossed tori's meeting beside B's sheet's
+  near-singular point turned back along itself and was fitted 7e-4 off both sheets;
+- **at a touch, one point**: a march arriving at a touch known within `8 tol` ends at the point it
+  is known by (`end_at_touch`), where its other branches leave from; settled again from the
+  arriving march, the sheets' touch at the crossed tori's shared pose stood 8.4e-6 off itself,
+  two vertices twice the tolerance apart, and the face's cut through it did not close;
+- **short of a touch this trace knows, at it**: once every march has run, an open curve whose end
+  stopped within a touch's reach and heading for it, a touch this trace leaves branches from, is
+  carried on to the point the touch is known by (the fourth branch ended 4.8e-3 short of the touch
+  its three others leave). Asked as the march stops, the touch was not yet known; and a touch the
+  trace never met is left to the meeting known beside it (`round_onto_round`'s boss, its torus
+  touching the plane at the plane's edge, where the march ends at its step).
+`touch_near` takes sixteen Newton steps (`TOUCH_STEPS`): a touch it finds it settles in a dozen,
+and the crossed tori asked it a hundred times beside their folds, most running all of thirty-two
+to nothing. A sheet's grid seeds settle each sign change by false position (Illinois) and drop a
+side at once where the distance changes by more than twice its ends stand apart (a distance is
+1-Lipschitz, so the foot leapt; halving gave such a side up after forty readings).
+**An edge's gap is measured as a reader measures it** (`Brep::measure_tolerances`, read as
+`standing`: 64 places, the knots and the ends, and halfway between each two). Read at 33, the
+crossed reverse sheet stated a rim's gap of 1.1e-5 where its pcurve stood 1.5e-5 off between two of
+them, and a piece of it in the union failed `check`. The gate is
+`swept_tube::the_crossed_members_combine` (slow tier): brep-bench's crossed members combined as its
+runner asks, at their own tolerance, union, difference and intersection each `check`ed, meshed
+within a thousandth of its volume, and the three held to `|A ∪ B| + |A ∩ B| = |A| + |B|` and
+`|A − B| = |A| − |A ∩ B|` to 1e-7 (they agree to 3e-9). At the kernel's own tolerance, a billionth
+of the size, five hundred times finer than the sheets are fitted, they are refused: the runner
+asks at the sweep's (brep-bench's `Tumble::tolerance`).
 **A spline extruded meets a surface the same all along it in closed form** (#644,
 `ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
 along it through where the spline crosses or touches that surface, exactly; a plane across it (square
