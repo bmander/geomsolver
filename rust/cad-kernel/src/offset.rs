@@ -893,7 +893,7 @@ fn revolved_sweep(b: &Brep,f: &Face,([mut u0,u1],[mut v0,mut v1]): ([f64;2],[f64
 }
 
 /// The polygon `c` kept where `rho` is at least nothing (Sutherland–Hodgman against one line).
-fn clipped(c: &[V],rho: &dyn Fn(V) -> f64) -> Vec<V> {
+pub(crate) fn clipped(c: &[V],rho: &dyn Fn(V) -> f64) -> Vec<V> {
     let mut out = Vec::new();
     for k in 0..c.len() {
         let (p,q) = (c[k],c[(k+1)%c.len()]);

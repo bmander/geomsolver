@@ -187,7 +187,9 @@ and 9.7 MB traced, 32 155 and 2.7 MB screwed, its spur twin 17 901).
 `brep::swept::canal`, #721 F2c): a sweep whose tool's B-rep is one
 ball (`brep::swept::canal::ball`: every face on one sphere, however it was drawn, #721 F1c), under any motion, is the points within the radius of its centre's
 path — the ball's disc square to the path carried along it, united with the half ball beyond each
-end: exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
+end (sewn onto it where the end discs were, `build::canal`'s `ended`, nothing met in space: united by
+the Boolean, a coil's wall was traced against each disc's plane, which its later turns cross;
+`swept_through::a_canals_half_balls_are_sewn_onto_its_tube`, to Weyl's tube to 1e-9): exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
 stand alone. Under one turn, screw or slide (`Family::twist`) the path is closed form
 (`brep::build::canal`): a partial `revolve`, a whole torus past a whole turn, the disc carried to
 its screwed image by `build::ruled` along `Carry::Screw` (a `Blend` carried by a turn and a step),
@@ -1090,6 +1092,36 @@ the three are built alike, to their volumes and their STEP files, in about a min
 builds through its fan to the meridian's own reading within 1e-5 of the volume
 (`swept_slid::a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan`), its admission
 (`closed::reads`) still refusing it as `Curved` at the rim.
+
+**A slide through a blank, by its shadow** (`swept::through`): what the closed class refuses as
+`Curved` or `Folded` under a slide that carries the tool from wholly before the blank to wholly past
+it is cut by the tool's shadow along the slide, ahead of the contact's road. On every line along the
+slide meeting the tool the blank lies between the tool's start and its end, so the sweep holds it,
+and on a line missing the tool nothing does: the cut is the blank less a prism over the shadow. Each
+face's contact under the slide (`contacts::face_contact_within`, its points filled to a
+ten-thousandth of the tool chord by chord, each still settled within the tolerance; `piece_curve`
+fits it, the buried parts left out) and each sharp edge, and each edge of a face in contact all over
+(a line, a circle as its rational arc, or a B-spline; any other curve refuses the road), is carried
+along the slide onto the plane square to it — affine, so a B-spline's poles carried are its image's,
+exactly — and the images arranged as a turn's shadow is (`shadow::arranged`, shared with
+`shadow::turned` through `shadow::Candidate`: split where two cross or one crosses itself, a closed
+one at its middle too, kept where the shadow lies on one side alone, linked into regions and holes).
+A side is read by whether the line along the slide through it meets the tool's mesh
+(`member::Solid::line`: crossed through its triangles' boxes, inside where a stretch between two
+crossings stands deeper than the mesh's sag, `mesh_sag`, not rounding's where the tool is read
+exactly), and the loops' parity judged against it on a grid clear of the boundary. Each region is a
+profile in the plane, each piece its candidate's stretch with its end poles on the arrangement's
+vertices, extruded (`build::prism`, its walls `Surface::Extrusion`s) past the blank's heights within
+the prism over the tool's box seen along the slide (`span_within`), and cut from the blank; a plane
+of the blank the slide crosses meets a wall in its curve carried along the slide onto it, exactly
+(`ssi`: a B-spline's or a line's, the plane meeting each generator at `SHALLOW` or more). Whether the
+tool starts before the blank and ends past it is read on boxes, the blank's within that prism; a
+slide that does not, or a shadow refused or judged wrong, is left to the contact's road. The gate:
+`swept_through` — the coil spring through its plate at the kernel's tolerance (3541.9379700, two
+solids walled by extrusions, a STEP file that reads back; 51 s by the contact's road, 0.6 s by its
+shadow), a spheroid pushed aslant through a slab (its contact one closed curve; the slab less its
+thickness times `π abc √(dᵀAd)/|d_z|`), and a ring pushed into a block and stopping there left to
+the other roads.
 
 **Poles: a turn or a screw past the axis, and rings in contact all round (#880 Q1b S5).** Under a
 turn every point of a section runs round a circle about the axis, so **each sheet lies on the

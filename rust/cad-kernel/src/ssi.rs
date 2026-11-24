@@ -700,17 +700,21 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
                 .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:line(w)}).collect())
         }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
-            if norm(cross(f.z,g.z)) <= 1e-12 => {
-            // a plane square to the sweep: the swept curve itself, moved along the sweep onto it
-            let (pl,ex) = if matches!(a,Surface::Plane(_)) { (f,b) } else { (g,a) };
-            let Surface::Extrusion(e,c) = ex else { unreachable!() };
+            if let (pl,Surface::Extrusion(e,c)) = if matches!(a,Surface::Plane(_)) { (f,b) } else { (g,a) }
+            && (norm(cross(pl.z,e.z)) <= 1e-12
+                || matches!(**c,Curve::BSpline(_) | Curve::Line {..}) && dot(pl.z,e.z).abs() >= SHALLOW) => {
+            // a plane the sweep crosses — square to it, or at a slant meeting each generator at
+            // `SHALLOW` or more: the swept curve's points carried along the sweep onto it, which is
+            // affine (a translation where square), so a B-spline's poles carried are the meeting's,
+            // its knots and weights kept — a rational curve (an ellipse's rim) stays the curve the
+            // plane cuts — and a line's image a line; any other curve only where the plane is square
+            // (a circle's slanted image is an ellipse: traced)
+            let square = norm(cross(pl.z,e.z)) <= 1e-12;
             let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
             match &**c {
-                // carried along the sweep, a translation: its weights and knots kept, so a rational
-                // curve (an ellipse's rim) stays the curve the plane cuts
                 Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
-                    degree:sp.degree,knots:sp.knots.clone(),weights:sp.weights.clone(),poles:sp.poles.iter().map(|&p| lift(p)).collect()}))]),
-                Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
+                    poles:sp.poles.iter().map(|&p| lift(p)).collect(),..(**sp).clone()}))]),
+                Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:if square { *d } else { unit(sub(lift(add(*p,*d)),lift(*p))) }}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 // a slid torus's contour (#805) carried along the slide onto the plane
                 Curve::Slid(h) => Ssi::Curves(vec![Curve::Slid(std::sync::Arc::new(h.at(lift(h.frame.o),h.contour)))]),

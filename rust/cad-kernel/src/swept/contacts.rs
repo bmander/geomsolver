@@ -59,6 +59,14 @@ const GRID_OFF: f64 = 0.1180339887498949;
 /// **Face `fi`'s contact under `twist`** (the velocity field in the tool's own coordinates,
 /// `Screw::twist`), in pieces within `tol` of the curve: read on a grid of `cells` each way at least.
 pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f64,cells: usize) -> Contact {
+    face_contact_within(tool,located,fi,twist,tol,cells,tol)
+}
+
+/// **`face_contact`, its points filled only until every chord is within `chord` of the curve**,
+/// each point still settled on it within `tol`: what a piece is read for that fits its own curve
+/// through points it settles (`piece_curve`, a slide's shadow, `through`) need not hold the curve to
+/// the tolerance chord by chord — at the kernel's, tens of thousands of points along a coil.
+pub fn face_contact_within(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f64,cells: usize,chord: f64) -> Contact {
     let surface = &tool.faces[fi].surface;
     let [lo0,hi0] = located.parameter_box(fi);
     let span = [hi0[0]-lo0[0],hi0[1]-lo0[1]];
@@ -201,7 +209,7 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
     let mut pieces: Vec<Piece> = Vec::new();
     for (line,closed) in lines {
         let first = pieces.len();
-        let pts: Vec<Uv> = line.iter().map(|&k| if singular.contains(&k) { roots[k] } else { settle(roots[k]) }).collect();
+        let pts: Vec<Uv> = crate::util::par::indices(line.len(),|i| { let k = line[i]; if singular.contains(&k) { roots[k] } else { settle(roots[k]) } });
         let end_kind = |k: usize| if singular.contains(&k) || next[k].len() == 1 && !on_box(roots[k]) { End::Singular } else { End::Boundary };
         let inside: Vec<bool> = pts.iter().map(|&p| holds(p)).collect();
         // runs of points inside the face
@@ -322,10 +330,10 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
             if distance(surface.point(q),x) <= 1e-3*size { p.uv[k] = q }
         }
     }
-    // every chord within the tolerance of the curve: points added between, settled
+    // every chord within the tolerance of the curve: points added between, settled (each chord
+    // filled apart from the others, spread over the cores, and laid in order)
     for p in &mut pieces {
-        let mut out: Vec<Uv> = Vec::with_capacity(p.uv.len());
-        fn fill(a: Uv,b: Uv,depth: u32,out: &mut Vec<Uv>,surface: &Surface,settle: &dyn Fn(Uv) -> Uv,tol: f64) {
+        fn fill(a: Uv,b: Uv,depth: u32,out: &mut Vec<Uv>,surface: &Surface,settle: &(dyn Fn(Uv) -> Uv+Sync),tol: f64) {
             if depth == 0 { out.push(b); return }
             let m = settle([(a[0]+b[0])/2.,(a[1]+b[1])/2.]);
             let chord = scale(add(surface.point(a),surface.point(b)),0.5);
@@ -333,14 +341,16 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
             fill(a,m,depth-1,out,surface,settle,tol);
             fill(m,b,depth-1,out,surface,settle,tol);
         }
-        out.push(p.uv[0]);
-        for w in p.uv.windows(2) {
+        let filled: Vec<Vec<Uv>> = crate::util::par::indices(p.uv.len()-1,|i| {
+            let w = [p.uv[i],p.uv[i+1]];
+            let mut out = Vec::new();
             // a seam crossed between two points is no chord
-            if (w[0][0]-w[1][0]).abs() > 0.5*span[0] || (w[0][1]-w[1][1]).abs() > 0.5*span[1] { out.push(w[1]); continue }
-            fill(w[0],w[1],12,&mut out,surface,&settle,tol);
-        }
-        p.uv = out;
-        p.points = p.uv.iter().map(|&uv| surface.point(uv)).collect();
+            if (w[0][0]-w[1][0]).abs() > 0.5*span[0] || (w[0][1]-w[1][1]).abs() > 0.5*span[1] { out.push(w[1]) }
+            else { fill(w[0],w[1],12,&mut out,surface,&settle,chord) }
+            out
+        });
+        p.uv = std::iter::once(p.uv[0]).chain(filled.into_iter().flatten()).collect();
+        p.points = crate::util::par::indices(p.uv.len(),|i| surface.point(p.uv[i]));
     }
     // **a piece is cut at every double point it passes** (#880 Q1b; S1: each piece ends on the face's
     // boundary or where `∇g = 0`): where the grid has not seen one as a saddle — one standing on a
@@ -380,7 +390,7 @@ pub fn face_contact(tool: &Brep,located: &Located,fi: usize,twist: &Twist,tol: f
         // and the points a piece passes straight through a double point at: where `|∇g|` falls to a
         // least a tenth of its middling value along the piece and Newton holds a double point there
         // (the leaning torus's second, which the piece crossed twice without turning)
-        let steep: Vec<f64> = p.uv.iter().map(|&uv| grad(uv).map_or(f64::NAN,|d| (d[0]*span[0]).hypot(d[1]*span[1]))).collect();
+        let steep: Vec<f64> = crate::util::par::indices(p.uv.len(),|i| grad(p.uv[i]).map_or(f64::NAN,|d| (d[0]*span[0]).hypot(d[1]*span[1])));
         let middling = { let mut v: Vec<f64> = steep.iter().copied().filter(|x| x.is_finite()).collect(); v.sort_by(f64::total_cmp); v.get(v.len()/2).copied().unwrap_or(0.) };
         let wrap = |k: isize| if p.closed { k.rem_euclid(m as isize-1) as usize } else { k.clamp(0,m as isize-1) as usize };
         let least = |k: usize| steep[k] < 0.1*middling && steep[k] <= steep[wrap(k as isize-1)] && steep[k] <= steep[wrap(k as isize+1)];
@@ -1865,7 +1875,7 @@ fn split_at(p: &Piece,cuts: &[usize]) -> Vec<Piece> {
 /// coin turned about a line through its rim: its rim on the plane through the axis, in its side's
 /// contact all round, moves into the coin where it also stays within the side, on its far half,
 /// which sweeps only the inside). `size` is the tool's.
-fn buried_on(tool: &Brep,size: f64,points: &[V],on: &[usize],screw: &crate::trajectory::Screw) -> bool {
+pub(super) fn buried_on(tool: &Brep,size: f64,points: &[V],on: &[usize],screw: &crate::trajectory::Screw) -> bool {
     let m = points.len();
     // (read at its inner points: its ends are where it was cut, at a node of the contact where its
     // burial may change)
