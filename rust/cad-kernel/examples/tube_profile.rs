@@ -328,7 +328,7 @@ fn main() {
             let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,obs);
             let clock = Instant::now();
             let s = cad_kernel::swept::closed::ring(&tool,&path,roll,tube_r/250.,tol).unwrap();
-            println!("member {obs:+}: {} faces, volume {:.10}, in {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed());
+            println!("member {obs:+}: {} faces, volume {:.10}, in {:?}, check {:?}",s.faces.len(),cad_kernel::props::volume(&s),clock.elapsed(),s.check(tol).err());
             s
         };
         let (a,b) = (built(1.),built(-1.));
