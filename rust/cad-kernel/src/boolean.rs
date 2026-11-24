@@ -4363,10 +4363,23 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
     let value = |uv: Uv| other.implicit(f.surface.point(uv));
     let grid: Vec<Vec<f64>> = (0..=N).map(|i| (0..=N).map(|j| value(at(i,j))).collect()).collect();
     let mut seeds = Vec::new();
-    let mut root = |a: Uv,b: Uv,fa: f64| {
-        let (mut a,mut b,mut fa) = (a,b,fa);
+    // **each sign change settled by false position** (#1013): the root sought where the distance's
+    // chord across the bracket crosses nothing, its weight at an end kept twice halved (Illinois),
+    // a few readings where halving took a score — the crossed tori spent 20 s of their 30 s
+    // seeding in halvings
+    let mut root = |a: Uv,b: Uv,fa: f64,fb: f64| {
+        let (mut a,mut b,mut fa,mut fb) = (a,b,fa,fb);
+        // (the ends' weights, halved where one end is kept twice running)
+        let (mut wa,mut wb,mut kept) = (fa,fb,0i8);
         for _ in 0..40 {
-            let m = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
+            // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): a
+            // distance changes by no more than its points stand apart, so where it changes by more
+            // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
+            // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing);
+            // read at every bracket, which a crossing's always passes, and a jump's fails at once
+            if (fa-fb).abs() > 2.*distance(f.surface.point(a),f.surface.point(b))+tol { return }
+            let x = if wa != wb { (wa/(wa-wb)).clamp(1./64.,63./64.) } else { 0.5 };
+            let m = [a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x];
             let p = f.surface.point(m);
             let fm = other.implicit(p);
             // (only on the other's patch, not its continuation, #942 T1d-ring: `off_patch`)
@@ -4374,16 +4387,20 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
                 if !off_patch(other,p,tol) { seeds.push(p) }
                 return
             }
-            if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
+            if (fm < 0.) == (fa < 0.) {
+                (a,fa,wa) = (m,fm,fm);
+                if kept == 1 { wb *= 0.5 }
+                kept = 1;
+            } else {
+                (b,fb,wb) = (m,fm,fm);
+                if kept == -1 { wa *= 0.5 }
+                kept = -1;
+            }
         }
-        // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): halved
-        // forty times, a root stands within the tolerance; where the distance does not come to it
-        // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
-        // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing)
     };
     for i in 0..=N { for j in 0..=N {
-        if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }
-        if j < N && (grid[i][j] < 0.) != (grid[i][j+1] < 0.) { root(at(i,j),at(i,j+1),grid[i][j]); }
+        if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j],grid[i+1][j]); }
+        if j < N && (grid[i][j] < 0.) != (grid[i][j+1] < 0.) { root(at(i,j),at(i,j+1),grid[i][j],grid[i][j+1]); }
     } }
     seeds
 }
