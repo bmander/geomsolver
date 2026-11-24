@@ -196,6 +196,54 @@ What T1 does not reach: a **traced** meeting on a folded net (the crossed tori's
 2.1e-6 apart on `main`) carries no parameters of its own, so it needs T4's reading of where a
 march ends, or a march that carries its feet, before T1's rule can apply to it.
 
+### The crossed Booleans
+
+With T1–T4 in, the crossed union still refused, in 1008 s. Each fix below was found by a probe
+(`tube_profile … pair`: `PAIR_FACES` traces one face pair alone, `PLACE_ONLY`, `DIST_AT`,
+`PCURVES`, `PLACES`; under `SOLVENT_BREP_DEBUG` a refusal lists each join of a kept and a dropped
+side and reads every face it names against the other operand on a grid). None of them is a
+reading of a face on the wrong layer, the subject of T1–T4. Each is a march that went on where
+it could not, or a point found twice:
+
+| | what was wrong | rule |
+|---|---|---|
+| 1 | a march beside the sheets' touch landed each 1e-4 step 1e-8 on, 100,000 steps each asking for a touch: 111 s | a march whose steps land back where they stood has ended |
+| 2 | A5 × B9 ran round a swallowtail of A's sheet beside B's cap torus, a loop 2.5e-4 across, lapped until its step budget ran out: 780 s of the 1008 | a march run back onto its own path has gone round a loop |
+| 3 | the sheets' touch at the shared pose settled twice, 8.4e-6 apart: four branches ended two at each, A1's cut did not close | one touch, one point |
+| 4 | the second touch's fourth branch stopped 4.8e-3 short of it: A6's and B1's cuts did not close | short of a touch, a march ends at it |
+| 5 | beside B's sheet's near-singular point the meeting with A1 crossed the fold, turned back along itself and was fitted 7e-4 off both sheets: check refused | a march across a sheet's fold has ended |
+| 6 | B's rim stated a gap of 1.1e-5 read at 33 places, its pcurve 1.5e-5 off between two: the union's check refused | an edge's gap measured as a reader measures it |
+
+A first try at (2), ending a march with cramped steps once it stood clear of a face, read the cause
+wrong: the loop's steps were regular. It was replaced, and a second, walking pcurves that do not
+hold, was dropped when (5) showed the edge itself off the sheet.
+
+With them the three build, check and mesh, and agree, at the members' own tolerance:
+
+| | faces | volume | its mesh's | time |
+|---|---|---|---|---|
+| union | 81 | 25.7842684588 | 25.7695297 | 56 s |
+| difference | 71 | 11.9944212716 | 11.9877233 | 69 s* |
+| intersection | 56 | 4.6165785440 | 4.6144403 | 69 s* |
+
+(* before `touch_near`'s sixteen steps, which took the union from 69 s to 56 s.)
+`|A ∪ B| + |A ∩ B| − |A| − |B|` is 2.6e-9 and `|A − B| − |A| + |A ∩ B|` 3.5e-10. At the kernel's
+own tolerance (`combined`'s floor 0, a billionth of the size, 8e-9) all three are refused: the
+arrangement resolves the sheets five hundred times finer than they are fitted (r/50000), and a
+dozen pieces are left spanning both sides. brep-bench's runner now asks them at the sweep's
+tolerance (`Tumble::tolerance`), as `ring-pushed-in-at-a-lean` asks its cut at its sweep's.
+
+**Their time.** Each Boolean took 80 s at first: the arrangement's edges against faces 8 s, face
+pairs 57 s (sheets' grid seeds 29.5 s, traces 21 s). Grid seeds now settle each sign change by false
+position and drop a jump at once (10.6 s); `touch_near`, asked a hundred times beside the folds and
+mostly running all thirty-two steps to nothing, now takes sixteen. Each Boolean is now about 56 s;
+with its members (18 s and 71 s) a case runs some two and a half minutes, past the bench's 60 s.
+The reverse member's own 71 s is the larger share left.
+
+**The experiment branch's three rules** (per-face nets, and its fold and met-itself reports) are
+dropped: none fixed a minimal case, and the per-face nets are what made T5. (5) and (2) above are
+the rules its fold and met-itself reports pointed at, here as rules of the march.
+
 ## The cases
 
 Each capability is a case in brep-bench's `nurbs/` with closed-form answers (mpmath; the volume of

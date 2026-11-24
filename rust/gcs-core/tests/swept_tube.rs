@@ -768,3 +768,44 @@ fn the_crossed_reverse_member_builds_by_the_tube_road() {
     assert_eq!(faces,15);
     assert!((v-13.7898471844).abs() <= 1e-9,"the volume {v}, pinned 13.7898471844");
 }
+
+/// **The crossed members combine** (#1013): brep-bench's union, difference and intersection of the
+/// crossed tumbling tori, each member built as the bench's runner builds it (`closed::ring`, its
+/// bar the tube's 250th and its tolerance the 50 000th) and combined at that tolerance
+/// (`boolean::combined`, as the runner asks). Each result `check`s, its mesh at the bench's bar holds
+/// its volume within a thousandth, and the three agree with the members' volumes:
+/// `|A ∪ B| + |A ∩ B| = |A| + |B|` and `|A − B| = |A| − |A ∩ B|` to 1e-7, the union's volume
+/// 25.78426846 to 1e-7. Refused before #1013's rules: a march round a swallowtail beside a cap's
+/// torus lapped for 780 s; the sheets' touch at the shared pose settled twice, 8.4e-6 apart, and a
+/// fourth branch stopped 4.8e-3 short of the other; a meeting carried across B's sheet's fold beside
+/// its near-singular point, fitted 7e-4 off it; a rim's gap stated smaller than it stands.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, two crossed members and their three Booleans, ~4 min")]
+fn the_crossed_members_combine() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::props::volume;
+    let member = |observer: f64| {
+        let (tool,path,roll,tol) = crate::common::bench::crossed(observer);
+        (gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.22/250.,tol).unwrap(),tol)
+    };
+    let ((a,tol),(b,_)) = (member(1.),member(-1.));
+    let (va,vb) = (volume(&a),volume(&b));
+    assert!((va-16.6109998153).abs() <= 1e-9 && (vb-13.7898471844).abs() <= 1e-9,"the members' volumes {va}, {vb}");
+    let mut v = [0.;3];
+    for (k,op) in [Op::Union,Op::Cut,Op::Common].into_iter().enumerate() {
+        let clock = std::time::Instant::now();
+        let s = combined(&a,&b,op,tol).unwrap_or_else(|e| panic!("{op:?}: {e:?}"));
+        v[k] = volume(&s);
+        eprintln!("{op:?}: {} faces, volume {:.10} in {:?}",s.faces.len(),v[k],clock.elapsed());
+        s.check(tol).unwrap_or_else(|e| panic!("{op:?}: {e:?}"));
+        let bar = (1e-4*s.size()).min(1e-3);
+        let m = gcs_core::brep::mesh::mesh(&s,bar,0.1).unwrap();
+        let mv: f64 = m.tris.iter().map(|t| { let [p,q,r] = t.map(|i| m.pts[i as usize]);
+            (p[0]*(q[1]*r[2]-q[2]*r[1])+p[1]*(q[2]*r[0]-q[0]*r[2])+p[2]*(q[0]*r[1]-q[1]*r[0]))/6. }).sum();
+        assert!((mv/v[k]-1.).abs() <= 1e-3,"{op:?}: its mesh's volume {mv} against {}",v[k]);
+    }
+    let [u,d,i] = v;
+    assert!((u+i-va-vb).abs() <= 1e-7,"|A ∪ B| + |A ∩ B| − |A| − |B| = {:e}",u+i-va-vb);
+    assert!((d-va+i).abs() <= 1e-7,"|A − B| − |A| + |A ∩ B| = {:e}",d-va+i);
+    assert!((u-25.78426846).abs() <= 1e-7,"the union's volume {u}");
+}

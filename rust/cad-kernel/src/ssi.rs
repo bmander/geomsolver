@@ -2541,11 +2541,16 @@ pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
 /// along the slope `g` changes by `½ |g · δ|`: settled once that is a thousandth of `tol`, or the
 /// step itself is. The slope is read from both exact gradients, not from `b`'s signed distance by
 /// differences, whose rounding it would carry over the step.
+///
+/// **Sixteen steps** (#1013): where it settles on a touch it does in a dozen; past that it has
+/// wandered off, steps of the surfaces' size, and settles if at all off both (the crossed tori's
+/// sheets asked it a hundred times beside their folds, two of three running all thirty-two steps
+/// to nothing, each step a dozen feet on two sheets).
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);
     let mut x = on_a(p);
-    for _ in 0..32 {
+    for _ in 0..TOUCH_STEPS {
         let f = Frame::about(x,a.gradient(x));
         // b's unit normal less a's (turned to agree with it) at a point of a near x, along a's
         // tangent plane at x: nothing where the two are parallel
@@ -2564,10 +2569,15 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
         let (step,rise) = (ds.dhypot(dt),0.5*(g[0]*ds+g[1]*dt).abs());
         if !step.is_finite() { return None }
-        if step <= 1e-3*tol || rise <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+        if step <= 1e-3*tol || rise <= 1e-3*tol {
+            return (b.implicit(x).abs() <= 8.*tol).then_some(x)
+        }
     }
     None
 }
+
+/// How many Newton steps `touch_near` takes before it gives a touch up.
+const TOUCH_STEPS: usize = 16;
 
 /// **A trace refused for two surfaces nearly touching where it marched** (`trace_beside`'s refusal
 /// below `SHALLOW`): the surfaces' kinds, the angle they meet at there in degrees, and the point.
