@@ -45,6 +45,7 @@ pub mod contact;
 pub mod cubic;
 pub mod swept;
 pub mod offset;
+pub mod defeature;
 pub mod turned;
 pub mod slid;
 pub mod trochoid;

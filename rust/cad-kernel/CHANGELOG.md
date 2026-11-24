@@ -43,6 +43,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **An edge's gap is measured as a reader measures it** (`topo::Brep::measure_tolerances`): each use
   read as `standing` reads it (64 places, the knots and ends, halfway between each two), not at 33.
   A swept sheet's rim stated 1.1e-5 where its pcurve stood 1.5e-5 off.
+- **Faces deleted** (`defeature::deleted`): faces taken out of a solid and the gap they leave
+  closed by the faces round them, each run on along its own surface (a plane, a cylinder, a cone,
+  a sphere or a torus) until they meet.  The solid and its neighbours' surfaces, run on as sheets,
+  part space into cells; every cell a deleted face and a run-on sheet close off is turned over, so
+  a convex round, a hole or a flat is filled and a concave round or a boss taken away by one rule,
+  and the faces round the gap are joined to their run-on pieces, the solid's faces as they were
+  before the feature.  A face nothing closes over is refused by name.  brep-bench's 47 delete
+  cases (rounds, bevels, holes, bosses, grooves, keyways, flats, notches and steps on blocks and
+  turned parts), each to its closed form.
+- **Two loops of one edge healed leave none** (`boolean`'s `heal`): where a meeting healed out of
+  a face is a whole loop on either side (a hole's rim and the disc closing it), both loops go and
+  the face's outer loop is read again, where the splice left an empty loop behind.
 
 ## [0.23.1] - 2026-11-24
 

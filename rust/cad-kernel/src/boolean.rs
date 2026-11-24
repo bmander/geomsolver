@@ -803,6 +803,9 @@ fn heal(faces: &mut Vec<Face>,handed: &mut Known,origin: &[(usize,usize)],laid: 
         } else {
             let lb_loop = faces[fb].loops[lb].clone();
             let joined: Vec<Coedge> = la_loop[..ia].iter().chain(&lb_loop[ib+1..]).chain(&lb_loop[..ib]).chain(&la_loop[ia+1..]).cloned().collect();
+            // two loops of the edge alone (a hole's rim and the disc closing it) leave no loop:
+            // both go, and which loop is outer is read again
+            let empty = joined.is_empty();
             if fa == fb {
                 let face = &mut faces[fa];
                 face.loops[la] = joined;
@@ -815,6 +818,7 @@ fn heal(faces: &mut Vec<Face>,handed: &mut Known,origin: &[(usize,usize)],laid: 
                 gone[fb] = true;
                 parted[fa] |= parted[fb];
             }
+            if empty { faces[fa].loops.retain(|l| !l.is_empty()); parted[fa] = true; }
         }
         if let Some(b) = handed.boxes.get_mut(fa) { *b = None }
         if let Some(c) = handed.checked.get_mut(fa) { *c = false }
@@ -1022,11 +1026,21 @@ pub fn trimmed(operands: &[&Brep],given: &[Given],meet: Meet<'_>,side: &(dyn Fn(
 /// selection is wherever it is one — each face as whole as its operand's, crossed by no candidate
 /// that bounds nothing there. What a swept solid built or cut on one arrangement returns.
 pub fn selection(complex: &Complex,keep: &dyn Fn(usize) -> bool) -> Result<Brep,String> {
+    let origin = |f: usize| (complex.origins[f][0].operand,complex.origins[f][0].face);
+    selection_by(complex,keep,&origin,&|e| complex.met.get(e).copied().unwrap_or(false))
+}
+
+/// **`selection`, its healing read another way**: each complex face's piece is one of `origin(f)`
+/// (an operand and its face), and an edge is a meeting to heal out where `laid(e)` — what a caller
+/// reading pieces of several operands as one face's (`defeature`, a sheet run on past its face)
+/// says without rewriting the complex.
+pub(crate) fn selection_by(complex: &Complex,keep: &dyn Fn(usize) -> bool,origin: &dyn Fn(usize) -> (usize,usize),
+    laid: &dyn Fn(usize) -> bool) -> Result<Brep,String> {
     let parts = complex.select_cells(keep)?;
-    let mut laid: Vec<Option<u32>> = (0..complex.b.edges.len()).map(|e| complex.met.get(e).copied().unwrap_or(false).then_some(e as u32)).collect();
+    let mut laid: Vec<Option<u32>> = (0..complex.b.edges.len()).map(|e| laid(e).then_some(e as u32)).collect();
     let twins: Vec<Option<u32>> = parts.twin_of.iter().map(|&e| laid[e]).collect();
     laid.extend(twins);
-    let origin: Vec<(usize,usize)> = parts.faces.iter().map(|(f,_,_)| (complex.origins[*f][0].operand,complex.origins[*f][0].face)).collect();
+    let origin: Vec<(usize,usize)> = parts.faces.iter().map(|(f,_,_)| origin(*f)).collect();
     let mut faces: Vec<Face> = parts.faces.into_iter().map(|(_,face,_)| face).collect();
     let parted = heal(&mut faces,&mut Known::default(),&origin,&laid);
     let edges = complex.b.edges.iter().cloned().chain(parts.twins).collect();

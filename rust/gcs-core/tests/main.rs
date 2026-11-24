@@ -91,6 +91,7 @@ mod crossed_cylinders;
 mod cut_planes;
 mod cylinders_touching;
 mod decompose;
+mod defeature;
 mod definitions;
 mod delaunay;
 mod derived;
