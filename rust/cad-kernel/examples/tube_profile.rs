@@ -332,6 +332,36 @@ fn main() {
             s
         };
         let (a,b) = (built(1.),built(-1.));
+        // (`PAIR_FACES=i,j SEEDS3=x,y,z;…`: face i of A traced against face j of B from those
+        // seeds alone, over the box both faces fill, each curve's sine between the normals along it)
+        if let Ok(fs) = std::env::var("PAIR_FACES") {
+            use cad_kernel::util::space::{cross,norm};
+            let ij: Vec<usize> = fs.split(',').map(|x| x.parse().unwrap()).collect();
+            let (la,lb) = (cad_kernel::query::Located::new(&a,tol),cad_kernel::query::Located::new(&b,tol));
+            let raw = std::env::var_os("RAW").is_some();
+            let sa = if raw { a.faces[ij[0]].surface.clone() } else { la.read_surface(ij[0]).clone() };
+            let sb = if raw { b.faces[ij[1]].surface.clone() } else { lb.read_surface(ij[1]).clone() };
+            let ((alo,ahi),(blo,bhi)) = (la.face_box(ij[0]),lb.face_box(ij[1]));
+            let lo: [f64;3] = std::array::from_fn(|k| alo[k].max(blo[k])-tol);
+            let hi: [f64;3] = std::array::from_fn(|k| ahi[k].min(bhi[k])+tol);
+            let seeds: Vec<[f64;3]> = std::env::var("SEEDS3").unwrap().split(';').map(|s| {
+                let x: Vec<f64> = s.split(',').map(|x| x.trim().parse().unwrap()).collect(); [x[0],x[1],x[2]] }).collect();
+            println!("A{} {} × B{} {}: box {lo:?}–{hi:?}",ij[0],sa.kind(),ij[1],sb.kind());
+            let clock = Instant::now();
+            let r = cad_kernel::ssi::trace(&sa,&sb,&seeds,lo,hi,tol);
+            println!("traced in {:?}",clock.elapsed());
+            for c in r.unwrap_or_default() {
+                let [t0,t1] = match &c { cad_kernel::geom::Curve::BSpline(s) => s.domain(),
+                    cad_kernel::geom::Curve::Traced(t) => [0.,(t.pts.len()-1) as f64], _ => [0.,1.] };
+                println!(" a {} over {t0}–{t1}",c.kind());
+                for k in 0..=40 {
+                    let p = c.point(t0+(t1-t0)*k as f64/40.);
+                    let (ga,gb) = (sa.gradient(p),sb.gradient(p));
+                    println!("  {p:?}: sine {:.2e}, off {:.1e} {:.1e}",norm(cross(ga,gb))/(norm(ga)*norm(gb)),sa.implicit(p),sb.implicit(p));
+                }
+            }
+            return
+        }
         let (va,vb) = (cad_kernel::props::volume(&a),cad_kernel::props::volume(&b));
         let mut vs = Vec::new();
         // (`OP=union|difference|intersection`: that one alone)

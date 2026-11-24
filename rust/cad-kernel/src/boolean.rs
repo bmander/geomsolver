@@ -672,6 +672,20 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
                 // a shell is one cell's side: kept and dropped at once, the complex has joined two
                 // cells the operation tells apart, round an edge whose faces it ordered wrongly
                 Some(w) if w != v => {
+                    if super::debug() {
+                        // (each edge used other than twice: where it lies and the operands' faces
+                        // using it, each with what the operation makes of its two sides)
+                        for (e,us) in c.b.uses().iter().enumerate() {
+                            if us.len() == 2 || us.is_empty() { continue }
+                            let mid = match &c.b.edges[e].curve {
+                                EdgeCurve::Curve(cv) => cv.point(0.5*(c.b.edges[e].t[0]+c.b.edges[e].t[1])),
+                                EdgeCurve::Degenerate => continue,
+                            };
+                            let by: Vec<String> = us.iter().map(|&(g,..)| format!("{}{} {:?}",
+                                ["A","B"][c.origins[g][0].operand],c.origins[g][0].face,member[g].map(value))).collect();
+                            eprintln!("brep: edge {e} used {} times, middle {mid:?}, met {}: {}",us.len(),c.met[e],by.join(", "));
+                        }
+                    }
                     let f = &c.b.faces[f];
                     return Err(format!("a shell of the arrangement is kept on one side of a {}{} and dropped on another: \
                         two of its cells joined round an edge",f.surface.kind(),if f.name.is_empty() { String::new() } else { format!(" (`{}`)",f.name) }))
