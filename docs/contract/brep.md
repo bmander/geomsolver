@@ -1765,7 +1765,10 @@ their order, each knowing what its predecessors traced, from no warm start — t
 however they were shared out; a build under a budget traces them in order. A screw's pose is read in
 closed form, one twist seen from another with no level between (`Screw::at`,
 `brep::a_screws_pose_in_closed_form_is_its_composition`), and a STEP file's points written where they
-go: each reading the same numbers, and the same file, to the bit.
+go: each reading the same numbers, and the same file, to the bit. The tube road traces its two sheets
+side by side once the collar is traced (`faces::solid`): a sheet's runs leave seeds on the pinch's
+rim of its own side alone, so neither seeds the other, and what each leaves is read after in order,
+as before — the crossed reverse member 15.4 s to 10.0 s, its file the same.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it

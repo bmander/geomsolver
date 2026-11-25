@@ -311,6 +311,10 @@ fn band(tube: &Tube,k: usize,th: f64) -> Option<(f64,f64,f64)> {
     Some(if s > 0. { (plus,1.,up) } else { (plus,-1.,TAU-up) })
 }
 
+/// A chart traced (`solid`'s): its cuspidal edges, the discs about their swallowtail points,
+/// and its depth's seams' runs, each point with what covers it.
+struct Traced { folds: Vec<Vec<P>>,discs: Vec<super::Disc>,runs: Vec<(Vec<P>,Vec<Cover>)> }
+
 /// **The closed solid**, the tube road's (the module's method), sewn to `tol`.
 pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     let feature = 0.25*tube.ring.thickness;
@@ -323,12 +327,43 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     // (where there is a pinch the collar first: its runs' ends on the hole's rim seed the sheets')
     let charts = if tube.pinch.is_some() { vec![Chart::Collar,Chart::Sheet(1.),Chart::Sheet(-1.)] } else { vec![Chart::Sheet(1.),Chart::Sheet(-1.)] };
     let mut on_hole: Vec<(f64,f64)> = Vec::new();
-    for chart in charts {
+    // **each chart traced** — its cuspidal edges, their swallowtail points, its depth's seams and
+    // their runs — from the seeds the charts read before it left on the pinch's rim
+    let traced = |chart: Chart,seeds: Vec<P>| -> Result<Traced,Unbuilt> {
         let side = if let Chart::Sheet(s) = chart { s } else { 0. };
         let (folds,_) = edges(tube,chart,tol,feature)?;
         let folds: Vec<Vec<P>> = folds.into_iter().map(|p| p.uv).collect();
         let points: Vec<P> = folds.iter().flat_map(|f| if side != 0. { swallowtails(tube,side,f) } else { swallowtails_on(tube,chart,f) }).collect();
         if chart == Chart::Collar && !points.is_empty() { return Err(failed(format!("the collar holds swallowtail points {points:?}"))) }
+        if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
+        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
+        let field = Depth {tube,chart,within:tol,holes:&discs};
+        let runs = merged(tube,chart,&field,pieces,tol);
+        Ok(Traced {folds,discs,runs})
+    };
+    // (the seeds of a chart: what the charts before it left on the pinch's rim, on its side)
+    let seeds_of = |chart: Chart,on_hole: &[(f64,f64)]| -> Vec<P> {
+        let side = if let Chart::Sheet(s) = chart { s } else { 0. };
+        on_hole.iter().filter(|h| side == 0. || h.0 == side).filter_map(|&(sign,psi)| match chart {
+            Chart::Collar => tube.pinch.as_ref().map(|p| [psi,sign*p.rho]),_ => tube.pinch.as_ref().and_then(|p| p.rim(sign,psi)) }).collect()
+    };
+    // (the two sheets traced side by side once the collar is: a sheet's runs leave on the rim seeds
+    // of its own side alone, so neither seeds the other, and the tracing is most of the road's time
+    // — the crossed reverse member's two 3.7 and 3.4 s; what each leaves is read after in order, as
+    // before, so the vertices and trims are numbered as they were)
+    let mut sheets: Vec<Result<Traced,Unbuilt>> = Vec::new();
+    for chart in charts {
+        let side = if let Chart::Sheet(s) = chart { s } else { 0. };
+        let Traced {folds,discs,runs} = if chart == Chart::Collar { traced(chart,seeds_of(chart,&on_hole))? } else {
+            if sheets.is_empty() {
+                let both = [Chart::Sheet(1.),Chart::Sheet(-1.)];
+                let seeds: Vec<Vec<P>> = both.iter().map(|&c| seeds_of(c,&on_hole)).collect();
+                sheets = crate::util::par::map(&[0,1],|&k| traced(both[k],seeds[k].clone()));
+                sheets.reverse();
+            }
+            sheets.pop().expect("a sheet traced")?
+        };
+        let field = Depth {tube,chart,within:tol,holes:&discs};
         // the corners: each fold's end on a rim, settled there
         let mut corners: Vec<(usize,P)> = Vec::new();
         for f in &folds {
@@ -343,12 +378,6 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 corners.push((vertices.len()-1,c));
             }
         }
-        let seeds: Vec<P> = on_hole.iter().filter(|h| side == 0. || h.0 == side).filter_map(|&(sign,psi)| match chart {
-            Chart::Collar => tube.pinch.as_ref().map(|p| [psi,sign*p.rho]),_ => tube.pinch.as_ref().and_then(|p| p.rim(sign,psi)) }).collect();
-        if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
-        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
-        let field = Depth {tube,chart,within:tol,holes:&discs};
-        let runs = merged(tube,chart,&field,pieces,tol);
         // each piece cut into runs by what covers it, and the runs kept; each switch of what covers
         // it resolved once for both runs beside it (`switched`: its vertex, or none where it is the
         // partner run's rim crossing, read once every run's ends are — a switch between a sheet's
