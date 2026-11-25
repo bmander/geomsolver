@@ -8,8 +8,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-## [0.24.1] - 2026-11-25
-
 - **A swept tube's crossed members, and their Boolean, built in a quarter the time** (brep-bench's
   `swept/tumbling-torus-crossed-intersection`, 87 s to 20.6 s end to end, its STEP file byte for byte
   the same at every step):
@@ -31,6 +29,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A near pinch of a tube's sheets found and charted** (`swept::tube::band`, not yet the road's): the
   line through a near miss of the spine's two terms, its band chart `(τ, η)`, the seam the sheets' hole
   and their stand-in inside it, and the band's chart traced; `closed::ring` still builds pinched.
+  `swept::tube::Chart` gains `Band(k, side)`, and `Tube` its `bands`.  **Breaking** for code
+  matching `Chart` exhaustively or building `Tube` as a literal.
+- **Two lines nearly parallel cross where they cross** (`query::curve_curve`, #1024): their
+  nearest points were read over `1 − (d₁·d₂)²`, which loses half its digits to cancellation
+  where the lines lie near parallel; there they are read over `|d₁ × d₂|²`.  A cube's side and
+  its copy turned 0.001° crossed 3.7e-7 (37 tolerances) from where the planes cross, and the
+  union minted a sliver edge the complex refused (brep-bench `tangent/cube-turned-a-hair`:
+  "faces 1 and 22 coincide along it"); it now builds, its volume and area to 2e-16.  Two
+  stretches standing within the tolerance of each other all along cross nowhere.
 
 ## [0.24.0] - 2026-11-25
 
