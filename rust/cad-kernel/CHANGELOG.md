@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.24.0] - 2026-11-25
+
 - **A round offset past its radius in one step** (`offset`): a torus's or a sphere's sweep, as a
   distance set's piece, stops at the centre of its section's circle, where the moved face would
   turn inside out (a point past it is nearer the far side), so a concave fillet grown past its
