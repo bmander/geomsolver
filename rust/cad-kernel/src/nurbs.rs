@@ -937,7 +937,13 @@ impl Net {
 /// The surface of degree `du` × `dv` through `f` on a uniform `nu` × `nv` grid of `[0, 1]²`,
 /// the samples doubled in whichever direction a sample halfway between two grid points strays
 /// from it by more than `tol`, at most 1024 × 512 — the fit and the error it measured.
-pub fn fit_net(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,mut nv: usize,tol: f64) -> Option<(Net,f64)> {
+pub fn fit_net(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,nu: usize,nv: usize,tol: f64) -> Option<(Net,f64)> {
+    fit_net_each(f,du,dv,nu,nv,tol).map(|(net,eu,ev)| (net,eu.max(ev)))
+}
+
+/// `fit_net`, with how far the net misses between its columns (along `u`) and between its rows
+/// (along `v`) apart, so a caller refining it again grows only the way that misses.
+pub fn fit_net_each(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,mut nv: usize,tol: f64) -> Option<(Net,f64,f64)> {
     loop {
         let tu: Vec<f64> = (0..=nu).map(|i| i as f64/nu as f64).collect();
         let tv: Vec<f64> = (0..=nv).map(|j| j as f64/nv as f64).collect();
@@ -952,9 +958,8 @@ pub fn fit_net(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,mut nv
         let (mut eu,mut ev) = (0f64,0f64);
         for i in 0..nu { for &v in &tv { eu = eu.max(off((tu[i]+tu[i+1])/2.,v)); } }
         for j in 0..nv { for &u in &tu { ev = ev.max(off(u,(tv[j]+tv[j+1])/2.)); } }
-        let err = eu.max(ev);
         let (grow_u,grow_v) = (eu > tol && nu < 1024,ev > tol && nv < 512);
-        if !grow_u && !grow_v { return Some((net,err)) }
+        if !grow_u && !grow_v { return Some((net,eu,ev)) }
         if grow_u { nu *= 2; }
         if grow_v { nv *= 2; }
     }

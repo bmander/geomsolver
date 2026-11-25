@@ -8,7 +8,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-## [0.23.3] - 2026-11-25
+## [0.24.1] - 2026-11-25
 
 - **A swept tube's crossed members, and their Boolean, built in a quarter the time** (brep-bench's
   `swept/tumbling-torus-crossed-intersection`, 87 s to 20.6 s end to end, its STEP file byte for byte
@@ -31,6 +31,35 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A near pinch of a tube's sheets found and charted** (`swept::tube::band`, not yet the road's): the
   line through a near miss of the spine's two terms, its band chart `(τ, η)`, the seam the sheets' hole
   and their stand-in inside it, and the band's chart traced; `closed::ring` still builds pinched.
+
+## [0.24.0] - 2026-11-25
+
+- **A round offset past its radius in one step** (`offset`): a torus's or a sphere's sweep, as a
+  distance set's piece, stops at the centre of its section's circle, where the moved face would
+  turn inside out (a point past it is nearer the far side), so a concave fillet grown past its
+  radius or a convex round shrunk past it is one `grown`/`shrunk`, no longer refused ("swept past
+  the centre of its torus"). A crease's tube as wide as its circle (a horn torus) closes its
+  section's arc on the axis, so a plate grows by its hole's radius in one step.
+- **A crease turning tighter than the distance is joined by its faces' sector** (`offset::sectors`):
+  where the tube about it would fold, the sector of it the two faces' normals span — all a point
+  nearest the crease stands in, on the side away from the centre of curvature — a face family of
+  its arc and radii, widened into the faces' sweeps and its apex set back into the solid so it holds
+  the crease within it; a closed crease's a ring. A cylinder cut at 45° grown by 2.5 or 4 builds,
+  to Steiner's formula. A sheet's crease is joined so along any curve, not lines and circles only.
+- **An extrusion's face is swept along its normal** (`offset::extruded_sweep`): the face family of
+  the rectangle each line of it sweeps, closed round a closed curve; an elliptic or spline cylinder
+  grows and shrinks (within its least radius of curvature) to its closed form.
+- **A spline face lying on a sphere is offset as the sphere** (`offset::on_spheres`): proved on a
+  `(2du + 1) × (2dv + 1)` grid of every span, its pcurves read again on the sphere; a ball drawn as
+  one rational net grows to the ball.
+- **A face family closes on itself with any loop of walls** (`family::ring`, `recipe::family_solid`),
+  not one round wall only, its walls on a plane or a surface of revolution put on it.
+  `family::ring` takes the loop (`&[Wall]`), where it took one `&Wall`.  **Breaking.**
+- **A plane meets a ruled sheet one of whose rails lies in it in that rail and the rulings where the
+  other crosses it** (`ssi`), exactly; traced, the rail's ends missed its vertices and a plane's
+  pieces did not close.
+- **A face family's wall is written piece by piece on a grid doubled only the way it misses**
+  (`step::family_pieces`, `nurbs::fit_net_each`): a ball's ring along a spline ellipse was 381 MB.
 
 ## [0.23.2] - 2026-11-24
 

@@ -2094,14 +2094,51 @@ between its moved copies** (`offset::carried_sweep`): on a plane, a cylinder or 
 `q ↦ q + h n(q)` is one affine map of space, linear in `h` (a step, a stretch square to the axis, a
 scaling about the centre), so the face moved to `h` is its image — its edges' images on the offset
 surface, its pcurves its own — and the wall an edge sweeps is exactly the `Blend` of its two images
-(a plane where they lie in one); a cone's or a torus's move is no affine map, and such a face its own
-parameter lines do not bound is refused.  **A crease along a curve no closed form carries a tube
+(a plane where they lie in one) — which stands on the face's neighbouring plane along the edge and
+along each ruling where its far image crosses that plane, and **a plane meets a ruled sheet one of
+whose rails lies in it exactly in that rail and those rulings** (`ssi::rail_in_plane`:
+`(1 − v) α(u) + v β(u)`, the rail's height `α` nothing all along, is `v β(u)`; traced, the rail's
+ends missed its vertices by 4e-6 and the plane's pieces did not close); a cone's or a torus's move is no affine map, and such a face its own
+parameter lines do not bound is refused.  **An extrusion's face is the rectangle its line sweeps
+along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
+stands square to `z` and alike all along each line, so the face's sweep is the face family of four
+lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve
+(`family::ring`, a loop of any walls, its walls on a plane put on it) — the offset of an ellipse or
+a spline, which has no closed form, its moved face exactly `c(u) + s n(u)` swept along `z`; as a
+distance set's piece the rectangle reaches back past the face a quarter of the distance (or less,
+clear of the fold), every point of it within `d` of the solid, so no Boolean meets the face along
+its own surface; refused where the sweep would fold, past the curve's least radius of curvature
+(`brep_offset::an_elliptic_cylinder_grown_and_shrunk`).  **A spline face that lies on a sphere is
+put on it** (`offset::on_spheres`, every offset's first step): the sphere's equation on a span of a
+net of degrees `du`, `dv` is a polynomial of degrees `2 du`, `2 dv`, so vanishing on a grid of
+`(2 du + 1) × (2 dv + 1)` points of every span it vanishes on the sheet (`sphere_of`); the face
+keeps its edges, its pcurves read again on the sphere, its axis through a pole the net collapses
+to, and is held to its area (`recharted`) — a ball is the set, not the net that drew it
+(`a_spline_ball_grown_is_a_ball`).  **A crease along a curve no closed form carries a tube
 along is the ball carried along it** (`offset::swept_tube`, `swept::canal::tube`), its ends flat; a
 closed one's is a ring with no end (`swept::canal::ring`, `family::ring`), so each face's moved copy
 of it lies along the ring's wall whole; refused by the tube's rows where the curve turns tighter
 than the distance, or where it closes at a corner (`brep_offset::a_cylinder_cut_aslant_grown_is_steiners`,
-`a_ball_cut_aslant_grown_is_steiners`).  Shrunk (`offset::shrunk`) is the dual, the solid less
-the inward sweeps and the tubes and balls of its concave creases and corners.  Nothing is
+`a_ball_cut_aslant_grown_is_steiners`).  **Where the tube cannot be built, the crease is joined by
+the sector of it its faces' normals span** (`offset::sectors`): every point nearest the crease
+stands in it, and it lies on the faces' outward side, where the curve's centre of curvature is not,
+so it does not fold where the tube would (a cylinder cut at 45° grown by 4, its ellipse turning on
+2.12).  It is the face family of the arc of the ball's disc between the two normals and its two
+radii, widened past each normal into the face's own sweep by an eighth of a turn and its apex stood
+back into the solid by a quarter of `d` (or less, clear of the fold) — the hull of an arc of the
+disc and a point of it lies within `d` of the crease — so it holds the crease inside it and meets
+its neighbours across, as the tube does, not face to face; a closed crease's is a ring with no end
+(`family::ring`), so each moved face's copy of the crease lies along its arc's wall whole; a
+sheet's, exact between its normals, along any curve.  Shrunk (`offset::shrunk`) is the dual, the solid less
+the inward sweeps and the tubes and balls of its concave creases and corners.  **A round
+swept past its radius stops at its centre**: past the centre of its section's circle (a torus's
+tube, a sphere's) the moved face turns inside out, and a point there is no nearer the face than the
+focal distance allows a nearest point to be, so a distance set's piece (`Reach::cut_at_axis`) is
+cut there and the far side's faces own what lies beyond — a concave fillet grown past its radius,
+a convex round shrunk past it, in one step (`brep_offset::rounds_offset_past_their_radius_in_one_step`);
+a sweep in its own right (a sheet thickened) past it is still refused.  A crease's tube as wide as
+its circle is a horn torus, its section's arc closed on the axis as a sphere's meridian is (a plate
+grown by its hole's radius).  Nothing is
 classified by shape: where moved faces meet (a groove grown shut, a flange shrunk away, a torus
 grown past its hole into an apple) the union decides, as the definition does.  **Sharp joins**
 (`Join::Sharp`) are the other set an offset is asked for, its faces moved and extended until they
@@ -2142,9 +2179,11 @@ clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9
 corner's ball is built with its poles along the corner's mean normal, clear of the circles the
 tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
-bend thickened, an L shelled outward open at its step, sharp and round, and a block open at its
-sloping top, rounded, each to its closed form to 1e-9; a spline sheet and that block shelled sharp
-refused.
+bend thickened, an L shelled outward open at its step, sharp and round, a block open at its
+sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, rounds offset past
+their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its closed
+form to 1e-9; a spline sheet, an elliptic cylinder shrunk past its curvature and that block shelled
+sharp refused.
 
 **A closed spline meeting is one edge round** (brep-bench's geometry/elliptic-hole): a plane square
 to a spline's sweep meets it in the spline carried along the sweep, its weights and knots kept
@@ -2290,7 +2329,10 @@ exact one**: `.CURVE_3D.` wherever the curve in space is written as itself, `.PC
 where that curve is a fit and the `k`-th pcurve is the kernel's own spline in the parameters of a
 surface written exactly. **A face family's wall and its rails, turning at their stations' joints,
 are fitted piece by piece and joined in value** (`step::family_pieces`, `fitted_stretches`): a
-net smooth across the joints stops 1.7e-2 off at its cap of rows. A face on an offset is written
+net smooth across the joints stops 1.7e-2 off at its cap of rows.  Each piece's grid is doubled
+only the way it misses (`nurbs::fit_net_each`): a ball's ring along a spline ellipse needs its
+columns round the tube, never its rows along it, and doubled alike was written as 7233 rows of 129
+(381 MB, 14 s) where 566 hold it. A face on an offset is written
 as `OFFSET_SURFACE` of its sheet's net, so a solid read with one is written again. Gates:
 `step_roundtrip::the_sample_reads_back` (no edge read looser than its file states, no curve past
 `3 MOST + 1` points), `a_lofts_file_states_what_its_fits_hold`,

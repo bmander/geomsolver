@@ -865,46 +865,70 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64,stated: Option<Carry>) -> Result<B
 }
 
 /// **A face family whose section comes back to itself** (a ball's tube along a path that closes on
-/// itself, `swept::canal::ring`): its one round wall, its last station its first, bounds a solid
-/// with no cap. The wall is two faces on the one sheet, each over half its interval, so that no
-/// face meets itself across its own rim, and an edge lying along the wall lies along each face's
-/// surface whole; the rims where the halves meet are the sections there, the rail between them
-/// the wall's seam. Refused where the section does not come back to itself.
-pub fn ring(wall: &Wall) -> Result<Brep,String> {
-    if !(wall.sheet.closed && matches!(wall.sheet.run,Run::Round)) { return Err("a ring of a face family is one round wall".into()) }
-    let sheet = &Arc::new(Sheet {ring:true,..(*wall.sheet).clone()});
-    let [a,b] = sheet.span();
-    let size = rim_length(sheet,a);
-    if (0..4).any(|j| distance(sheet.rim(j as f64/4.,a).0,sheet.rim(j as f64/4.,b).0) > AGREE*size) {
-        return Err("a face family's section does not come back to itself".into())
+/// itself, `swept::canal::ring`; the sector of one about a closed crease, `offset::sectors`): its
+/// one loop of walls, its last station its first, bounds a solid with no cap. Each wall is two
+/// faces on its one sheet, each over half its interval, so that no face meets itself across its
+/// own rim, and an edge lying along a wall lies along each face's surface whole; the rims where the
+/// halves meet are the sections there, the rails between them each wall's first (a round wall
+/// alone, its seam); a wall lying on a plane or a surface of revolution is put on it (`lower`).
+/// Its walls run in walk order, each from its corner to the next's: one round wall alone running
+/// round, or two or more walls, none running round. Refused where the section does not come back
+/// to itself.
+pub fn ring(loop_: &[Wall]) -> Result<Brep,String> {
+    let m = loop_.len();
+    let alone = m == 1 && loop_[0].sheet.closed && matches!(loop_[0].sheet.run,Run::Round);
+    if !(alone || m >= 2 && loop_.iter().all(|w| !w.sheet.closed)) {
+        return Err("a ring of a face family is one round wall, or a loop of walls none of which runs round".into())
     }
-    let m = 0.5*(a+b);
-    let walls = &[Wall {sheet:sheet.clone(),name:wall.name.clone()}];
-    let section = unit(newell(&loop_points(walls,m)));
+    let walls: Vec<Wall> = loop_.iter().map(|w| Wall {sheet:Arc::new(Sheet {ring:true,..(*w.sheet).clone()}),name:w.name.clone()}).collect();
+    let sheets: Vec<&Arc<Sheet>> = walls.iter().map(|w| &w.sheet).collect();
+    let [a,b] = sheets[0].span();
+    if sheets.iter().any(|sh| sh.span() != [a,b]) { return Err("a face family's walls run over different intervals".into()) }
+    for &sheet in &sheets {
+        let size = rim_length(sheet,a);
+        if (0..=4).any(|j| distance(sheet.rim(j as f64/4.,a).0,sheet.rim(j as f64/4.,b).0) > AGREE*size) {
+            return Err("a face family's section does not come back to itself".into())
+        }
+    }
+    let m2 = 0.5*(a+b);
+    let section = unit(newell(&loop_points(&walls,m2)));
     let mut out = Brep::default();
-    let v = [a,m].map(|s| out.vertex(sheet.rim(0.,s).0));
-    let rims = [a,m].map(|s| { let (curve,t) = rim_curve(sheet,s); out.edge(EdgeCurve::Curve(curve),t,if s == a { [v[0];2] } else { [v[1];2] }) });
-    let halves = [[a,m],[m,b]];
-    for (k,[lo,hi]) in halves.into_iter().enumerate() {
-        let rail = out.edge(EdgeCurve::Curve(Curve::Rail(sheet.clone(),0.)),[lo,hi],[v[k],v[1-k]]);
-        let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
-        let mut l = vec![
-            Coedge {edge:rims[k],reversed:false,pcurve:line([0.,lo],[1.,lo])},
-            Coedge {edge:rail,reversed:false,pcurve:line([1.,lo],[1.,hi])},
-            Coedge {edge:rims[1-k],reversed:true,pcurve:line([0.,hi],[1.,hi])},
-            Coedge {edge:rail,reversed:true,pcurve:line([0.,lo],[0.,hi])},
-        ];
-        // outward: right of the walk about the section's own normal there
-        let middle = (lo+hi)/2.;
-        let (_,tangent,_) = sheet.d1([0.5,middle]);
-        let outward = cross(tangent,unit(newell(&loop_points(walls,middle))));
-        let surface = Surface::Family(Frame::about(sheet.rim(0.,a).0,section),sheet.clone());
-        let reversed = dot(surface.normal_raw([0.5,middle]),outward) < 0.;
-        let face = Face {surface,reversed,loops:vec![],name:wall.name.clone()};
-        let ccw = out.loop_area(&face,&l) > 0.;
-        if ccw == reversed { l = reverse_loop(l); }
-        out.faces.push(Face {loops:vec![l],..face});
+    // the corners at each cut (`a`, then the middle): each wall's start; alone, its one point
+    let v: Vec<Vec<u32>> = [a,m2].iter().map(|&s| sheets.iter().map(|sh| out.vertex(sh.rim(0.,s).0)).collect()).collect();
+    let next = |k: usize| (k+1)%m;
+    // each wall's rim at each cut, from its corner to the next's
+    let rims: Vec<Vec<u32>> = [a,m2].iter().enumerate().map(|(c,&s)| (0..m).map(|k| {
+        let (curve,t) = rim_curve(sheets[k],s);
+        out.edge(EdgeCurve::Curve(curve),t,[v[c][k],v[c][next(k)]])
+    }).collect()).collect();
+    let halves = [[a,m2],[m2,b]];
+    // each corner's rail over each half, the wall's first
+    let rails: Vec<Vec<u32>> = halves.iter().enumerate().map(|(h,&[lo,hi])| (0..m).map(|k| {
+        out.edge(EdgeCurve::Curve(Curve::Rail(sheets[k].clone(),0.)),[lo,hi],[v[h][k],v[1-h][k]])
+    }).collect()).collect();
+    for k in 0..m {
+        let surface = Surface::Family(Frame::about(sheets[k].rim(0.,a).0,section),sheets[k].clone());
+        for (h,&[lo,hi]) in halves.iter().enumerate() {
+            let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
+            let mut l = vec![
+                Coedge {edge:rims[h][k],reversed:false,pcurve:line([0.,lo],[1.,lo])},
+                Coedge {edge:rails[h][next(k)],reversed:false,pcurve:line([1.,lo],[1.,hi])},
+                Coedge {edge:rims[1-h][k],reversed:true,pcurve:line([0.,hi],[1.,hi])},
+                Coedge {edge:rails[h][k],reversed:true,pcurve:line([0.,lo],[0.,hi])},
+            ];
+            // outward: right of the walk about the section's own normal there
+            let middle = (lo+hi)/2.;
+            let (_,tangent,_) = sheets[k].d1([0.5,middle]);
+            let outward = cross(tangent,unit(newell(&loop_points(&walls,middle))));
+            let reversed = dot(surface.normal_raw([0.5,middle]),outward) < 0.;
+            let face = Face {surface:surface.clone(),reversed,loops:vec![],name:walls[k].name.clone()};
+            let ccw = out.loop_area(&face,&l) > 0.;
+            if ccw == reversed { l = reverse_loop(l); }
+            out.faces.push(Face {loops:vec![l],..face});
+        }
     }
+    // a wall lying on a plane or a surface of revolution put on it, as `family` puts it
+    for (fi,face) in lower(&out,&out,None) { out.faces[fi] = face; }
     Ok(out)
 }
 

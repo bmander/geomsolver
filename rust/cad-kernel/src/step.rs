@@ -333,20 +333,23 @@ pub fn family_net(w: &super::family::Sheet) -> Result<(super::nurbs::Net,f64),St
 /// (`lofts/pipe.sv`'s tube along a path of straight runs and arcs, 1.7e-2 mm at the fit's cap of
 /// 512 rows). Each piece is fitted over its own stretch on one grid along the edge, and the nets
 /// joined at its ends with a knot of the degree's multiplicity (the joint's row, the same points
-/// interpolated the same way, is each net's end), the grid doubled both ways until every piece is
-/// within `FIT` or past 1024 columns and 64 rows a piece. With the most any piece misses by.
+/// interpolated the same way, is each net's end), the grid doubled each way it misses by more than
+/// `FIT` (along the edge, or along the family: a tube's round wall needs its columns, never its
+/// rows, which doubled alike wrote 7233 rows of 129 for a ball's ring along a spline ellipse, 381
+/// MB) until every piece is within it or past 1024 columns and 64 rows a piece. With the most any
+/// piece misses by.
 fn family_pieces(w: &super::family::Sheet) -> Option<(super::nurbs::Net,f64)> {
-    use super::nurbs::{fit_net,Net};
+    use super::nurbs::{fit_net_each,Net};
     let spans = &w.stations.spans;
     let (mut nu,mut nv) = (8,5);
     loop {
         let mut joined: Option<Net> = None;
-        let mut most = 0f64;
+        let (mut most_u,mut most_v) = (0f64,0f64);
         for (j,sp) in spans.iter().enumerate() {
             // (each piece from where the last one ended, so the joint is one number)
             let a = if j == 0 { sp[0] } else { spans[j-1][1] };
-            let (mut net,err) = fit_net(&|u,v| w.d1([u,a+(sp[1]-a)*v]).0,3,5,nu,nv,f64::INFINITY)?;
-            most = most.max(err);
+            let (mut net,eu,ev) = fit_net_each(&|u,v| w.d1([u,a+(sp[1]-a)*v]).0,3,5,nu,nv,f64::INFINITY)?;
+            (most_u,most_v) = (most_u.max(eu),most_v.max(ev));
             for k in &mut net.vknots { *k = a+(sp[1]-a)**k; }
             joined = Some(match joined {
                 None => net,
@@ -360,9 +363,11 @@ fn family_pieces(w: &super::family::Sheet) -> Option<(super::nurbs::Net,f64)> {
                 }
             });
         }
-        if most <= FIT || (nu >= 1024 && nv >= 64) { return joined.map(|n| (n,most)) }
-        nu = (2*nu).min(1024);
-        nv = (2*nv).min(64);
+        let most = most_u.max(most_v);
+        let (grow_u,grow_v) = (most_u > FIT && nu < 1024,most_v > FIT && nv < 64);
+        if most <= FIT || !grow_u && !grow_v { return joined.map(|n| (n,most)) }
+        if grow_u { nu = (2*nu).min(1024); }
+        if grow_v { nv = (2*nv).min(64); }
     }
 }
 

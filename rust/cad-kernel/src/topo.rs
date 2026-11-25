@@ -308,7 +308,7 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 /// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
 /// `u = 0` whatever the generator), and the end its pcurve is given there does (#797) — an end
 /// within the edge's tolerance `tol` of the pole being at it (`near_pole`).
-fn on_pole(surface: &Surface,uv: Uv,near: Uv,tol: f64) -> Uv {
+pub(crate) fn on_pole(surface: &Surface,uv: Uv,near: Uv,tol: f64) -> Uv {
     let mut out = uv;
     if let Some(k) = near_pole(surface,uv,tol) { out[k] = near[k]; }
     out
