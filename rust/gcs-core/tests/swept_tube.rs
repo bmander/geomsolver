@@ -934,11 +934,12 @@ fn the_bands_seam_is_the_sheets_hole() {
 /// cuspidal edges and depth traced as any chart's, the search settling every cell (in a second or
 /// so: read a layer past the seam, or with its depth bounded over cells wider than one of `τ`, it
 /// halved cells to 2⁻¹⁷ without end, or cleared the whole chart at once). The sheet `+` has two folds
-/// there and no seam; the sheet `−` two folds, two swallowtail points and three seams, each from the
-/// seam to a swallowtail point's disc, and of the sheet `−`'s own seams that end on the band's, at
-/// least two end where one of the band's does, to 1e-12 in space: the one crossing read from both
-/// charts. (Not yet: a crossing grazing the seam the sheet's trace finds and the band's misses, and
-/// the band's at the seam's tip, where the sheet folds back at once.)
+/// there and no seam; the sheet `−` two folds, two swallowtail points and four seams, each from the
+/// seam to a swallowtail point's disc, two at each — its disc half as wide on a band's chart
+/// (`tube::disc`), the seam grazing the band's seam at (6.92, 0.27) is reached from the point at
+/// (6.61, 0.027), where the wider disc swallowed it — and of the sheet `−`'s own seams that end on
+/// the band's, at least two end where one of the band's does, to 1e-12 in space: the one crossing
+/// read from both charts. (Not yet: the band's at the seam's tip, where the sheet folds back at once.)
 #[test]
 fn the_bands_chart_is_traced() {
     use gcs_core::brep::swept::tube::{seams,swallowtails_on};
@@ -948,7 +949,7 @@ fn the_bands_chart_is_traced() {
     let tube = Tube::banded(&ring,&path,roll,tol,feature).unwrap();
     let band = &tube.bands[0];
     let mut traced = Vec::new();
-    for (side,want) in [(1.,0),(-1.,3)] {
+    for (side,want) in [(1.,0),(-1.,4)] {
         let chart = Chart::Band(0,side);
         let (folds,_) = edges(&tube,chart,tol,feature).unwrap();
         let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();

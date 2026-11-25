@@ -3110,14 +3110,15 @@ tube across the line between them — a band's cell wider than one of `τ` is no
 (`BAND_BOUNDED`). And beyond the seam a fold's side is the seam's to say (+1, not the fold's −1, which
 took every exit there and settled it 1e-5 of the seam's measure short). **Measured on the reverse**:
 the sheet `+` has two folds over the band and no seam; the sheet `−` two folds, swallowtail points at
-`(τ, η)` (−6.140, 0.004) and (6.608, 0.027) and three seams, each from the seam to a swallowtail
-point's disc, every cell settled, in a second. Of the sheet `−`'s three crossings of the seam, two are
-the band's own ends to 1e-14 in space — the tracer exits settle on the seam from both charts alike.
-**Not yet**: the third, where a double curve runs along the seam just inside it (`(τ, η)` (6.92,
-0.27): the band's depth −2e-4 a hundredth of `τ` in, +3e-5 between the curve and the seam), grazing
-it — seeded on the seam or a hair inside, the band's trace leaves nothing; it matches at ten turns'
-reach and not at six to nine or twelve, so the seam is to be placed clear of a trim's grazing, as
-the windows' cuts are (`windows`); and a band end at the seam's tip (η −0.35, on the line), where on
+`(τ, η)` (−6.140, 0.004) and (6.608, 0.027) and four seams, two from each point's disc to the seam,
+every cell settled, in a second; and the sheet `−`'s three crossings of the seam are the band's own
+ends to 1e-12 in space — the tracer exits settle on the seam from both charts alike. A swallowtail
+point's disc is half as wide again on a band's chart (`disc`): the double curve's normal form holds to
+the tolerance only nearer the point there (the point at (6.61, 0.027) joined with its leaves 4.6e-6
+apart from the rim the depth alone asks), and on the smaller disc the seam that runs along the band's
+seam just inside it, grazing it at (6.92, 0.27) (the band's depth −2e-4 a hundredth of `τ` in, +3e-5
+between the curve and the seam), is reached from that point — the wider disc swallowed it, and the
+band's trace left nothing there. **Not yet**: a band end at the seam's tip (η −0.35, on the line), where on
 the sheet just outside the double curve meets a cuspidal edge at once (the sheet folds back there:
 the point stands 1.2e-3 in space from another preimage's trim) and no run long enough to keep
 reaches the seam. **The band's faces, built but not yet closed** (`faces::solid` over `Tube::banded`;
@@ -3137,8 +3138,7 @@ member reaches the sewing banded in 7.5 s against 8.0 s built pinched, and the c
 operands with nets of a quarter the poles took 18 s against 20 s — the time is the Boolean's reading
 and the members' traces, not the nets' size; the band is for the sheets' fit, not the bench's clock.
 **Next**: the tip's crossing joined on the sheet as a corner is (or the seam's tip placed clear of
-the cuspidal edge), the grazing crossing, and `closed::ring` calling `Tube::banded`, `Tube::pinched`
-where it refuses.
+the cuspidal edge), and `closed::ring` calling `Tube::banded`, `Tube::pinched` where it refuses.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
