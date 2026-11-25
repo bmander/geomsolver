@@ -207,7 +207,7 @@ fn rounds_offset_past_their_radius_in_one_step() {
 /// swept along a line (`Surface::Extrusion`), has no offset in closed form, but its normal stands
 /// square to the sweep and alike all along each line of it, so its sweep is the face family of
 /// the rectangle a line of it sweeps along its normal (`offset::extruded_sweep`), closed on itself
-/// round the ellipse (`family::rings`).  Grown by 1 (Steiner's: the side's mean curvature `π h`
+/// round the ellipse (`family::ring`).  Grown by 1 (Steiner's: the side's mean curvature `π h`
 /// and the rims' right angles, `π P / 2`) and shrunk by 1 (the ellipse's inner parallel, its
 /// area `π a b − P + π`, swept over 8), within its least radius of curvature 1.8; shrunk past it
 /// the sweep would fold, and it is refused.

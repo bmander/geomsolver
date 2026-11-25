@@ -2072,7 +2072,7 @@ parameter lines do not bound is refused.  **An extrusion's face is the rectangle
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
 stands square to `z` and alike all along each line, so the face's sweep is the face family of four
 lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve
-(`family::rings`, a loop of any walls, its walls on a plane put on it) — the offset of an ellipse or
+(`family::ring`, a loop of any walls, its walls on a plane put on it) — the offset of an ellipse or
 a spline, which has no closed form, its moved face exactly `c(u) + s n(u)` swept along `z`; as a
 distance set's piece the rectangle reaches back past the face a quarter of the distance (or less,
 clear of the fold), every point of it within `d` of the solid, so no Boolean meets the face along
@@ -2097,7 +2097,7 @@ radii, widened past each normal into the face's own sweep by an eighth of a turn
 back into the solid by a quarter of `d` (or less, clear of the fold) — the hull of an arc of the
 disc and a point of it lies within `d` of the crease — so it holds the crease inside it and meets
 its neighbours across, as the tube does, not face to face; a closed crease's is a ring with no end
-(`family::rings`), so each moved face's copy of the crease lies along its arc's wall whole; a
+(`family::ring`), so each moved face's copy of the crease lies along its arc's wall whole; a
 sheet's, exact between its normals, along any curve.  Shrunk (`offset::shrunk`) is the dual, the solid less
 the inward sweeps and the tubes and balls of its concave creases and corners.  **A round
 swept past its radius stops at its centre**: past the centre of its section's circle (a torus's

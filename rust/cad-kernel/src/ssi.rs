@@ -542,6 +542,8 @@ pub enum Recognised {
     /// A plane or a cylinder holding a sharp circle against the ring the circle turns into (#780 L2,
     /// `plane_holding_rim`, `side_holding_rim`).
     RimHeld = 4,
+    /// A plane holding a rail of a ruled sheet (`rail_in_plane`).
+    RailInPlane = 8,
 }
 
 /// **A cylinder about the axis a sheet carries its section round or along** (a swept solid's
@@ -788,7 +790,7 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
         // a ruled sheet one of whose rails lies in a plane: that rail, and the rulings where the
         // other crosses it
         (Surface::Plane(pl),Surface::Blend(_,bl)) | (Surface::Blend(_,bl),Surface::Plane(pl))
-            if let Some(curves) = rail_in_plane(&pl,&bl,tol) => Ssi::Curves(curves),
+            if let Some(curves) = recognised(Recognised::RailInPlane,|| rail_in_plane(&pl,&bl,tol)) => Ssi::Curves(curves),
         // (a section the closed forms do not read, carried round a cylinder about its axis: its
         // paths)
         (Surface::Blend(..),_) | (_,Surface::Blend(..)) => match screwed_meeting(a,b,tol).or_else(|| carried_round(a,b,tol)) {
@@ -834,17 +836,14 @@ fn rail_in_plane(pl: &Frame,bl: &super::geom::Blend,tol: f64) -> Option<Vec<Curv
     let ends = if bl.closed { STEPS } else { STEPS+1 };
     let mut last = f(0.);
     if last == 0. && !bl.closed { out.extend(ruling(0.)); }
-    for k in 1..ends.min(STEPS+1) {
+    for k in 1..ends {
         let u = k as f64/STEPS as f64;
         let y = f(u);
         if y == 0. { out.extend(ruling(u)); }
         else if last != 0. && (last < 0.) != (y < 0.) {
-            let (mut lo,mut hi) = ((k-1) as f64/STEPS as f64,u);
-            for _ in 0..200 {
-                let m = 0.5*(lo+hi);
-                if m <= lo || m >= hi { break }
-                if (f(m) < 0.) == (last < 0.) { lo = m } else { hi = m }
-            }
+            let below = last < 0.;
+            let (lo,hi) = crate::util::roots::bisect((k-1) as f64/STEPS as f64,u,|a,b| 0.5*(a+b),|a,b| a < 0.5*(a+b) && 0.5*(a+b) < b,
+                |m| (f(m) < 0.) == below);
             out.extend(ruling(0.5*(lo+hi)));
         }
         last = y;

@@ -871,31 +871,26 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64,stated: Option<Carry>) -> Result<B
 /// own rim, and an edge lying along a wall lies along each face's surface whole; the rims where the
 /// halves meet are the sections there, the rails between them each wall's first (a round wall
 /// alone, its seam); a wall lying on a plane or a surface of revolution is put on it (`lower`).
-/// Refused where the section does not come back to itself.
-pub fn ring(wall: &Wall) -> Result<Brep,String> {
-    if !(wall.sheet.closed && matches!(wall.sheet.run,Run::Round)) { return Err("a ring of a face family is one round wall".into()) }
-    rings(std::slice::from_ref(wall))
-}
-
-/// `ring` of a loop of any walls in walk order, each running from its corner to the next's: one
-/// round wall alone running round, or two or more walls, none running round.
-pub fn rings(loop_: &[Wall]) -> Result<Brep,String> {
+/// Its walls run in walk order, each from its corner to the next's: one round wall alone running
+/// round, or two or more walls, none running round. Refused where the section does not come back
+/// to itself.
+pub fn ring(loop_: &[Wall]) -> Result<Brep,String> {
     let m = loop_.len();
     let alone = m == 1 && loop_[0].sheet.closed && matches!(loop_[0].sheet.run,Run::Round);
     if !(alone || m >= 2 && loop_.iter().all(|w| !w.sheet.closed)) {
         return Err("a ring of a face family is one round wall, or a loop of walls none of which runs round".into())
     }
-    let sheets: Vec<Arc<Sheet>> = loop_.iter().map(|w| Arc::new(Sheet {ring:true,..(*w.sheet).clone()})).collect();
+    let walls: Vec<Wall> = loop_.iter().map(|w| Wall {sheet:Arc::new(Sheet {ring:true,..(*w.sheet).clone()}),name:w.name.clone()}).collect();
+    let sheets: Vec<&Arc<Sheet>> = walls.iter().map(|w| &w.sheet).collect();
     let [a,b] = sheets[0].span();
     if sheets.iter().any(|sh| sh.span() != [a,b]) { return Err("a face family's walls run over different intervals".into()) }
-    for sheet in &sheets {
+    for &sheet in &sheets {
         let size = rim_length(sheet,a);
         if (0..=4).any(|j| distance(sheet.rim(j as f64/4.,a).0,sheet.rim(j as f64/4.,b).0) > AGREE*size) {
             return Err("a face family's section does not come back to itself".into())
         }
     }
     let m2 = 0.5*(a+b);
-    let walls: Vec<Wall> = sheets.iter().zip(loop_).map(|(sheet,w)| Wall {sheet:sheet.clone(),name:w.name.clone()}).collect();
     let section = unit(newell(&loop_points(&walls,m2)));
     let mut out = Brep::default();
     // the corners at each cut (`a`, then the middle): each wall's start; alone, its one point
@@ -903,7 +898,7 @@ pub fn rings(loop_: &[Wall]) -> Result<Brep,String> {
     let next = |k: usize| (k+1)%m;
     // each wall's rim at each cut, from its corner to the next's
     let rims: Vec<Vec<u32>> = [a,m2].iter().enumerate().map(|(c,&s)| (0..m).map(|k| {
-        let (curve,t) = rim_curve(&sheets[k],s);
+        let (curve,t) = rim_curve(sheets[k],s);
         out.edge(EdgeCurve::Curve(curve),t,[v[c][k],v[c][next(k)]])
     }).collect()).collect();
     let halves = [[a,m2],[m2,b]];

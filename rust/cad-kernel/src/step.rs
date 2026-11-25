@@ -322,14 +322,12 @@ fn family_pieces(w: &super::family::Sheet) -> Option<(super::nurbs::Net,f64)> {
     let (mut nu,mut nv) = (8,5);
     loop {
         let mut joined: Option<Net> = None;
-        let (mut most,mut most_u,mut most_v) = (0f64,0f64,0f64);
+        let (mut most_u,mut most_v) = (0f64,0f64);
         for (j,sp) in spans.iter().enumerate() {
             // (each piece from where the last one ended, so the joint is one number)
             let a = if j == 0 { sp[0] } else { spans[j-1][1] };
             let (mut net,eu,ev) = fit_net_each(&|u,v| w.d1([u,a+(sp[1]-a)*v]).0,3,5,nu,nv,f64::INFINITY)?;
-            let err = eu.max(ev);
             (most_u,most_v) = (most_u.max(eu),most_v.max(ev));
-            most = most.max(err);
             for k in &mut net.vknots { *k = a+(sp[1]-a)**k; }
             joined = Some(match joined {
                 None => net,
@@ -343,6 +341,7 @@ fn family_pieces(w: &super::family::Sheet) -> Option<(super::nurbs::Net,f64)> {
                 }
             });
         }
+        let most = most_u.max(most_v);
         let (grow_u,grow_v) = (most_u > FIT && nu < 1024,most_v > FIT && nv < 64);
         if most <= FIT || !grow_u && !grow_v { return joined.map(|n| (n,most)) }
         if grow_u { nu = (2*nu).min(1024); }

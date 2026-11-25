@@ -26,7 +26,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A spline face lying on a sphere is offset as the sphere** (`offset::on_spheres`): proved on a
   `(2du + 1) × (2dv + 1)` grid of every span, its pcurves read again on the sphere; a ball drawn as
   one rational net grows to the ball.
-- **A face family closes on itself with any loop of walls** (`family::rings`, `recipe::family_solid`),
+- **A face family closes on itself with any loop of walls** (`family::ring`, `recipe::family_solid`),
   not one round wall only, its walls on a plane or a surface of revolution put on it.
 - **A plane meets a ruled sheet one of whose rails lies in it in that rail and the rulings where the
   other crosses it** (`ssi`), exactly; traced, the rail's ends missed its vertices and a plane's

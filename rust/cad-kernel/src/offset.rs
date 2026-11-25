@@ -66,7 +66,7 @@ enum By { Face(usize),Edge(usize),Corner(u32) }
 /// faces moved out by `d` and extended until they meet (`Join::Sharp`).
 pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a growth")?;
-    let b = &on_spheres(b);
+    let b: &Brep = &on_spheres(b);
     let all = vec![true;b.faces.len()];
     folded(b.clone(),pieces(b,&all,Side::Out,d,join)?,Op::Union)
 }
@@ -75,7 +75,7 @@ pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 /// or with its faces moved in by `d` and extended until they meet (`Join::Sharp`).
 pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a shrinking")?;
-    let b = &on_spheres(b);
+    let b: &Brep = &on_spheres(b);
     let all = vec![true;b.faces.len()];
     let out = folded(b.clone(),pieces(b,&all,Side::In,d,join)?,Op::Cut)?;
     if out.faces.is_empty() { return Err(format!("the solid shrunk by {d} is nothing: no point of it is that far inside")) }
@@ -89,7 +89,7 @@ pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<Brep,String> {
     positive(t,"a wall")?;
     if let Some(&f) = open.iter().find(|&&f| f >= b.faces.len()) { return Err(format!("no face {f} to leave open")) }
-    let b = &on_spheres(b);
+    let b: &Brep = &on_spheres(b);
     let walled: Vec<bool> = (0..b.faces.len()).map(|f| !open.contains(&f)).collect();
     if !walled.contains(&true) { return Err("a shell open at every face has no wall".into()) }
     let pieces = match side {
@@ -241,7 +241,7 @@ fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Resu
 /// part, and its rims the walls its boundary sweeps.
 pub fn thickened(sheet: &Brep,s: [f64;2],join: Join) -> Result<Brep,String> {
     if !(s[0] < s[1] && s.iter().all(|x| x.is_finite())) { return Err(format!("a sheet thickened over {s:?}, no depth")) }
-    let sheet = &on_spheres(sheet);
+    let sheet: &Brep = &on_spheres(sheet);
     let all = vec![true;sheet.faces.len()];
     let uses = uses(sheet);
     let mut pieces = (0..sheet.faces.len()).map(|fi| normal_sweep(sheet,fi,s).map(|p| (face_name(sheet,fi),p)))
@@ -257,12 +257,12 @@ pub fn thickened(sheet: &Brep,s: [f64;2],join: Join) -> Result<Brep,String> {
 /// is a sphere's, exactly, as a ball's is however it was drawn.  A spline face on no sphere, or
 /// one the sphere's chart does not hold whole, is left as it is (and refused by its sweep, naming
 /// it).
-fn on_spheres(b: &Brep) -> Brep {
-    let mut out = b.clone();
+fn on_spheres(b: &Brep) -> std::borrow::Cow<'_,Brep> {
+    let mut out = std::borrow::Cow::Borrowed(b);
     for fi in 0..b.faces.len() {
         let Surface::BSpline(_,net) = &b.faces[fi].surface else { continue };
         let Some(sphere) = sphere_of(net,b,fi) else { continue };
-        if let Some(face) = recharted(b,fi,sphere) { out.faces[fi] = face; }
+        if let Some(face) = recharted(b,fi,sphere) { out.to_mut().faces[fi] = face; }
     }
     out
 }
@@ -275,45 +275,37 @@ fn on_spheres(b: &Brep) -> Brep {
 /// collapses to a point (a pole of the net), the sphere's axis runs through it, so its pole stands
 /// there too.  `None` for a sheet on no sphere.
 fn sphere_of(net: &crate::nurbs::Net,b: &Brep,fi: usize) -> Option<Surface> {
-    let spans = |knots: &[f64]| -> Vec<[f64;2]> { knots.windows(2).filter(|w| w[1] > w[0]).map(|w| [w[0],w[1]]).collect() };
+    use crate::util::linalg::{min_norm_solve,Mat};
+    // a polynomial sheet lies on no sphere (no polynomial charts a piece of one)
+    let w = net.weights.as_ref()?;
+    if w.iter().flatten().all(|&x| x == w[0][0]) { return None }
+    let [du,dv] = net.domain();
+    let spans = |k: usize,[a,z]: [f64;2]| -> Vec<[f64;2]> {
+        let cuts: Vec<f64> = std::iter::once(a).chain(net.breaks(k,[a,z])).chain([z]).collect();
+        cuts.windows(2).map(|w| [w[0],w[1]]).collect()
+    };
     let mut pts = Vec::new();
-    for [u0,u1] in spans(&net.uknots) {
-        for [v0,v1] in spans(&net.vknots) {
+    for [u0,u1] in spans(0,du) {
+        for [v0,v1] in spans(1,dv) {
             for i in 0..=2*net.du { for j in 0..=2*net.dv {
                 let (a,c) = ((i as f64+0.5)/(2*net.du+1) as f64,(j as f64+0.5)/(2*net.dv+1) as f64);
                 pts.push(net.point(u0+a*(u1-u0),v0+c*(v1-v0)));
             } }
         }
     }
-    // |p|² = 2 c·p + k, linear in (c, k): the normal equations, solved by elimination
-    let mut m = [[0f64;5];4];
-    for p in &pts {
-        let row = [2.*p[0],2.*p[1],2.*p[2],1.];
-        let rhs = dot(*p,*p);
-        for i in 0..4 { for j in 0..4 { m[i][j] += row[i]*row[j]; } m[i][4] += row[i]*rhs; }
-    }
-    for col in 0..4 {
-        let piv = (col..4).max_by(|&i,&j| m[i][col].abs().total_cmp(&m[j][col].abs()))?;
-        m.swap(col,piv);
-        if !(m[col][col].abs() > 1e-300) { return None }
-        for i in 0..4 {
-            if i == col { continue }
-            let f = m[i][col]/m[col][col];
-            for j in col..5 { m[i][j] -= f*m[col][j]; }
-        }
-    }
-    let c = [m[0][4]/m[0][0],m[1][4]/m[1][1],m[2][4]/m[2][2]];
-    let r2 = m[3][4]/m[3][3]+dot(c,c);
+    // |p|² = 2 c·p + k, linear in (c, k), solved by least squares on its own rows
+    let rows = Mat::from_vec(pts.len(),4,pts.iter().flat_map(|p| [2.*p[0],2.*p[1],2.*p[2],1.]).collect());
+    let (x,rank) = min_norm_solve(&rows,&pts.iter().map(|&p| dot(p,p)).collect::<Vec<_>>(),1e-12);
+    if rank < 4 { return None }
+    let c = [x[0],x[1],x[2]];
+    let r2 = x[3]+dot(c,c);
     if !(r2 > 0.) { return None }
     let r = r2.sqrt();
     if pts.iter().any(|&p| (distance(p,c)-r).abs() > 1e-10*r) { return None }
     // its axis through a collapsed corner of the face, where it has one
     let pole = b.faces[fi].loops.iter().flatten().map(|co| &b.edges[co.edge as usize])
         .find(|e| matches!(e.curve,EdgeCurve::Degenerate)).map(|e| b.vertices[e.v[0] as usize].p);
-    let z = match pole { Some(p) => unit(sub(p,c)),None => [0.,0.,1.] };
-    let x = if z[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-    let x = unit(sub(x,scale(z,dot(x,z))));
-    Some(Surface::Sphere(Frame::new(c,z,x),r))
+    Some(Surface::Sphere(Frame::about(c,pole.map_or([0.,0.,1.],|p| sub(p,c))),r))
 }
 
 /// **Face `fi` of `b` put on `surface`**, a surface its points lie on (`sphere_of`): each use's
@@ -339,9 +331,8 @@ fn recharted(b: &Brep,fi: usize,surface: Surface) -> Option<Face> {
             let t = |k: usize| { let f = k as f64/n as f64; if c.reversed { e.t[1]-(e.t[1]-e.t[0])*f } else { e.t[0]+(e.t[1]-e.t[0])*f } };
             let mut run: Vec<Uv> = (0..=n).map(|k| surface.inverse(e.point(t(k),&b.vertices))).collect();
             // a pole's collapsed parameter from the next point along the use
-            for k in [0,n] {
-                if pole(run[k]) { let near = if k == 0 { run[1] } else { run[n-1] }; run[k][0] = near[0]; }
-            }
+            run[0] = crate::topo::on_pole(&surface,run[0],run[1],tol);
+            run[n] = crate::topo::on_pole(&surface,run[n],run[n-1],tol);
             // walked on from the last use's end, unless one of them stands at a pole
             if let Some(prev) = at { if !pole(run[0]) && !pole(prev) { run[0] = crate::topo::unwrap(run[0],prev,periods); } }
             for k in 1..=n { run[k] = crate::topo::unwrap(run[k],run[k-1],periods); }
@@ -501,21 +492,21 @@ fn joins(b: &Brep,uses: &[Vec<(usize,bool)>],faces: &[bool],side: Side,d: f64,jo
             // a solid's points within `d` of the edge are all of the tube; where the tube cannot be
             // built (it would fold where the edge turns tighter than `d`), the sector its faces'
             // normals span, which is all of it a point nearest the edge stands in
-            Join::Round if of == Of::Solid => tube(c,e.t,d).map(|p| vec![p]).or_else(|why| {
-                if !turns_tighter(c,e.t,d) { return Err(why) }
-                sectors(b,[fa,fb],side,c,e.t,d,closed,true).map_err(|w| format!("{why}; nor its faces' sector: {w}"))
+            Join::Round if of == Of::Solid => tube(c,e.t,d).or_else(|no| match no {
+                Tubeless::Folds(why) => sectors(b,[fa,fb],side,c,e.t,d,closed,true).map_err(|w| format!("{why}; nor its faces' sector: {w}")),
+                Tubeless::Not(why) => Err(why),
             }),
             // a sheet's, only the wedge between its two moved faces (the rest lies across the
             // sheet or within a face's sweep)
             Join::Round => match c {
-                Curve::Line {..} | Curve::Circle(..) => wedge(c,e.t,d,crease.normals.map(|n| scale(n,side.sign()))).map(|p| vec![p]),
+                Curve::Line {..} | Curve::Circle(..) => wedge(c,e.t,d,crease.normals.map(|n| scale(n,side.sign()))),
                 _ => sectors(b,[fa,fb],side,c,e.t,d,closed,false),
             },
             // (a sharp join along a face left open is the opening's to cut off)
             Join::Sharp if !both => continue,
-            Join::Sharp => kite(b,&crease,c,e.t,side,d).map(|p| vec![p]),
+            Join::Sharp => kite(b,&crease,c,e.t,side,d),
         }.map_err(|m| format!("{what}: {m}"))?;
-        for piece in made { out.push((By::Edge(ei),(what.clone(),piece))); }
+        out.push((By::Edge(ei),(what,made)));
     }
     // the corners
     let mut face_at: BTreeMap<u32,BTreeSet<usize>> = BTreeMap::new();
@@ -604,11 +595,11 @@ fn polygon(c: &[V],tol: f64) -> Vec<ProfileEdge> {
 /// The tube of radius `d` about the stretch `t` of the curve `c`, its ends flat (square to the
 /// curve): a cylinder about a line, a torus's stretch about a circle (cut at the axis where it is
 /// wider than the circle).
-fn tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
+fn tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,Tubeless> {
     match *c {
         Curve::Line {..} => {
             let (a,z) = (c.point(t[0]),c.point(t[1]));
-            prism(&disc(a,unit(sub(z,a)),d),0.,distance(a,z))
+            prism(&disc(a,unit(sub(z,a)),d),0.,distance(a,z)).map_err(Tubeless::Not)
         }
         Curve::Circle(f,r) => {
             let e = add(scale(f.x,t[0].dcos()),scale(f.y,t[0].dsin()));
@@ -629,10 +620,18 @@ fn tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
                 if distance(at(c0),at(-c0)) > tol { l.push(ProfileEdge::Line {a:at(c0),b:at(-c0)}); }
                 vec![l]
             };
-            revolve(&profile(centre,n,loops),f.o,f.z,(t[1]-t[0]).min(TAU))
+            revolve(&profile(centre,n,loops),f.o,f.z,(t[1]-t[0]).min(TAU)).map_err(Tubeless::Not)
         }
         _ => swept_tube(c,t,d),
     }
+}
+
+/// Why a tube about a curve is not built: it would fold where the curve turns tighter than its
+/// radius (a crease's sector, clear of the fold, may join it instead), or anything else.
+enum Tubeless { Folds(String),Not(String) }
+
+impl From<Tubeless> for String {
+    fn from(t: Tubeless) -> String { match t { Tubeless::Folds(why) | Tubeless::Not(why) => why } }
 }
 
 /// A path that steps along the curve `curve`: at `t` the translation from `start` to its point at
@@ -655,31 +654,31 @@ impl Path for Stepped {
 /// (`canal::ring`, `family::ring`), so each face's moved copy of the curve lies along its wall
 /// whole. Refused, by the tube's rows, where the curve turns tighter than `d` or comes back within
 /// `2 d` of itself (the tube would fold or cross itself), and where it closes at a corner.
-fn swept_tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
+fn swept_tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,Tubeless> {
     let (k,start) = (c.kind(),c.point(t[0]));
     let closed = distance(start,c.point(t[1])) <= tolerance(norm(start)+d);
     if closed && dot(unit(c.tangent(t[0])),unit(c.tangent(t[1]))) < 1.-1e-9 {
-        return Err(format!("the {k} closes on itself at a corner at {start:?}: no ball's tube runs round it smoothly"))
+        return Err(Tubeless::Not(format!("the {k} closes on itself at a corner at {start:?}: no ball's tube runs round it smoothly")))
     }
     let path = Trajectory::General(Arc::new(Stepped {curve:c.clone(),start}));
     let walls = if closed { canal::ring(&path,start,d,"",t) } else {
         canal::tube(&path,start,d,"",t).map(|tube| tube.and_then(|tube| match tube.spine { Spine::Tube(f) => Some(f),_ => None }))
     };
     let why = match walls {
-        Ok(Some(f)) => return crate::recipe::family_solid(&f,closed),
+        Ok(Some(f)) => return crate::recipe::family_solid(&f,closed).map_err(Tubeless::Not),
         // the ball's own, where the centre never moves: an edge of no length
-        Ok(None) => return Err(format!("the {k} has no length to carry the ball along")),
+        Ok(None) => return Err(Tubeless::Not(format!("the {k} has no length to carry the ball along"))),
         Err(why) => why,
     };
     Err(match why {
         canal::Why::Refused(r) => match r.seen {
-            canal::Seen::Turns {radius,..} =>
-                format!("the {k} turns on a radius of {radius} at {:?}, tighter than the tube's {d}: the tube would fold",r.witness),
-            canal::Seen::Stops {..} => format!("the {k} stops at {:?}, where it has no tangent",r.witness),
-            canal::Seen::Returns {distance,..} => format!("the {k} comes back within {distance} of itself near {:?}, closer than \
-                the tube's diameter {}: the tube would cross itself",r.witness,2.*d),
+            canal::Seen::Turns {radius,..} => Tubeless::Folds(
+                format!("the {k} turns on a radius of {radius} at {:?}, tighter than the tube's {d}: the tube would fold",r.witness)),
+            canal::Seen::Stops {..} => Tubeless::Not(format!("the {k} stops at {:?}, where it has no tangent",r.witness)),
+            canal::Seen::Returns {distance,..} => Tubeless::Not(format!("the {k} comes back within {distance} of itself near {:?}, closer than \
+                the tube's diameter {}: the tube would cross itself",r.witness,2.*d)),
         },
-        other => format!("the ball's tube along the {k} is not built: {other:?}"),
+        other => Tubeless::Not(format!("the ball's tube along the {k} is not built: {other:?}")),
     })
 }
 
@@ -721,89 +720,67 @@ fn wedge(c: &Curve,t: [f64;2],d: f64,n: [V;2]) -> Result<Brep,String> {
 /// of its diameter.  Where the full tube would fold — the curve turning tighter than `d` — the
 /// fold lies toward the curve's centre of curvature, and the sector, standing on the faces'
 /// outward side, clear of it; refused where it is not (the arc would fold too).  A closed crease's
-/// closes on itself with no end (`family::rings`), as its tube does, so each face's moved copy of
+/// closes on itself with no end (`family::ring`), as its tube does, so each face's moved copy of
 /// the crease lies along its arc's wall whole.
-fn sectors(b: &Brep,faces: [usize;2],side: Side,c: &Curve,t: [f64;2],d: f64,closed: bool,widen: bool) -> Result<Vec<Brep>,String> {
-    let period = t[1]-t[0];
-    if !(period > 0.) { return Err("the crease has no length".into()) }
-    // the curve's own parameter for a station's, round again past its end where it closes
-    let wrap = |s: f64| if closed && s > t[1] { t[0]+(s-t[0]).rem_euclid(period) } else { s };
-    // the axis the arc turns about, the curve's tangent, the way that turns the first normal to the second
-    let normals = |s: f64| -> Result<(V,[V;2]),String> {
-        let p = c.point(wrap(s));
-        Ok((p,[outward(b,faces[0],p)?,outward(b,faces[1],p)?].map(|n| scale(n,side.sign()))))
-    };
-    let mid = 0.5*(t[0]+t[1]);
-    let (_,[a,z]) = normals(mid)?;
-    let turn = dot(cross(a,z),c.tangent(mid)).signum();
-    // the arc at `s` from its start, widened by `m` each way: its point, its start and its quarter
-    // turn on (unit), and its sweep
-    let arc = |s: f64,m: f64| -> Result<(V,V,V,f64),String> {
-        let (p,[n0,n1]) = normals(s)?;
-        let axis = scale(unit(c.tangent(wrap(s))),turn);
+fn sectors(b: &Brep,faces: [usize;2],side: Side,c: &Curve,t: [f64;2],d: f64,closed: bool,widen: bool) -> Result<Brep,String> {
+    use crate::family::Run;
+    if !(t[1] > t[0]) { return Err("the crease has no length".into()) }
+    let turn = { let mid = 0.5*(t[0]+t[1]); let (_,[a,z]) = crease_at(b,faces,side,c,mid)?; dot(cross(a,z),c.tangent(mid)).signum() };
+    // the arc at `s`: its point, the first normal and its quarter turn on about the tangent (the
+    // way that turns it to the second), and the angle between the normals
+    let arc = |s: f64| -> Result<(V,V,V,f64),String> {
+        let (p,[n0,n1]) = crease_at(b,faces,side,c,s)?;
+        let axis = scale(unit(c.tangent(s)),turn);
         let angle = dot(cross(n0,n1),axis).datan2(dot(n0,n1));
         if !(angle > 1e-9 && angle < PI-1e-9) { return Err(format!("its faces' normals do not part at {p:?}")) }
-        let (sn,cs) = (-m).dsin_cos();
-        let y = cross(axis,n0);
-        let u0 = add(scale(n0,cs),scale(y,sn));
-        Ok((p,u0,cross(axis,u0),angle+2.*m))
+        Ok((p,n0,cross(axis,n0),angle))
     };
-    // how far the section's farthest point (an end of the arc's, or the apex `back` behind the
-    // crease along the arc's middle) is toward the curve's centre of curvature, as a part of the
-    // fold's distance there: the fold where it reaches 1
+    // at points along the crease, the arc and the curvature vector, read once for every widening
     let steps = 256;
-    let (s0,s1) = if closed { (t[0],t[0]+period) } else { (t[0],t[1]) };
-    let bend = |m: f64,back: f64| -> Result<f64,String> {
-        let mut most = f64::NEG_INFINITY;
-        for k in 0..=steps {
-            let s = s0+(s1-s0)*k as f64/steps as f64;
-            let (_,v,acc) = c.d2(wrap(s));
-            let vv = dot(v,v);
-            if !(vv > 0.) { return Err(format!("it stops at {:?}, where it has no tangent",c.point(wrap(s)))) }
-            // the curvature vector
-            let kappa = scale(sub(acc,scale(v,dot(acc,v)/vv)),1./vv);
-            let (_,u0,y,sweep) = arc(s,m)?;
-            for j in 0..=32 {
-                let (sn,cs) = (sweep*j as f64/32.).dsin_cos();
-                most = most.max(d*dot(add(scale(u0,cs),scale(y,sn)),kappa));
-            }
-            let (sn,cs) = (0.5*sweep).dsin_cos();
-            most = most.max(-back*dot(add(scale(u0,cs),scale(y,sn)),kappa));
-        }
-        Ok(most)
+    let read = (0..=steps).map(|k| {
+        let s = t[0]+(t[1]-t[0])*k as f64/steps as f64;
+        let (_,v,acc) = c.d2(s);
+        let vv = dot(v,v);
+        if !(vv > 0.) { return Err(format!("it stops at {:?}, where it has no tangent",c.point(s))) }
+        Ok((arc(s)?,scale(sub(acc,scale(v,dot(acc,v)/vv)),1./vv)))
+    }).collect::<Result<Vec<_>,String>>()?;
+    // how far the section's farthest point (on the arc widened by `m` each way, or the apex `back`
+    // behind the crease along the arc's middle) reaches toward the centre of curvature, as a part of
+    // the fold's distance there: the fold where it reaches 1
+    let bend = |m: f64,back: f64| -> f64 {
+        read.iter().map(|&((_,n0,y,angle),kappa)| {
+            let (a,e) = (dot(n0,kappa),dot(y,kappa));
+            // `a cos θ + e sin θ` over θ in [−m, angle + m]: its ends, and its top where that falls within
+            let at = |th: f64| { let (sn,cs) = th.dsin_cos(); a*cs+e*sn };
+            let top = e.datan2(a);
+            let inside = (-m..=angle+m).contains(&top) || (-m..=angle+m).contains(&(top+TAU));
+            let most = at(-m).max(at(angle+m)).max(if inside { a.hypot(e) } else { f64::NEG_INFINITY });
+            (d*most).max(-back*at(0.5*angle))
+        }).fold(f64::NEG_INFINITY,f64::max)
     };
-    let (mut m,mut back) = (0.,0.);
-    if widen {
-        'wide: for wide in [FRAC_PI_2/2.,FRAC_PI_2/4.,FRAC_PI_2/8.] {
-            for k in [d/4.,d/8.,d/16.] {
-                if bend(wide,k).is_ok_and(|x| x <= 0.5) { (m,back) = (wide,k); break 'wide }
-            }
-        }
-    }
-    let worst = bend(m,back)?;
+    let candidates: Vec<(f64,f64)> = if widen {
+        [FRAC_PI_2/2.,FRAC_PI_2/4.,FRAC_PI_2/8.].into_iter().flat_map(|m| [d/4.,d/8.,d/16.].map(|k| (m,k))).collect()
+    } else { Vec::new() };
+    let (m,back) = candidates.into_iter().find(|&(m,k)| bend(m,k) <= 0.5).unwrap_or((0.,0.));
+    let worst = bend(m,back);
     if !(worst < 1.-1e-6) { return Err(format!("its arc between its faces' normals reaches {worst} of the way to where it folds")) }
     let section = |s: f64| -> Result<Vec<Vec<f64>>,String> {
-        let (p,u0,y,sweep) = arc(s,m)?;
-        let (sn,cs) = sweep.dsin_cos();
-        let u1 = add(scale(u0,cs),scale(y,sn));
-        let (a,z) = (add(p,scale(u0,d)),add(p,scale(u1,d)));
-        let (sn,cs) = (0.5*sweep).dsin_cos();
-        let apex = sub(p,scale(add(scale(u0,cs),scale(y,sn)),back));
-        Ok(vec![[apex,a].concat(),[p.as_slice(),&scale(u0,d),&scale(y,d),&[sweep]].concat(),[z,apex].concat()])
+        let (p,n0,y,angle) = arc(s)?;
+        let along = |th: f64| { let (sn,cs) = th.dsin_cos(); add(scale(n0,cs),scale(y,sn)) };
+        let (u0,y0) = (along(-m),along(FRAC_PI_2-m));
+        let (a,z) = (add(p,scale(u0,d)),add(p,scale(along(angle+m),d)));
+        let apex = sub(p,scale(along(0.5*angle),back));
+        Ok(vec![[apex,a].concat(),[p.as_slice(),&scale(u0,d),&scale(y0,d),&[angle+2.*m]].concat(),[z,apex].concat()])
     };
-    use crate::family::Run;
-    let f = fitted(&section,vec![Run::Line,Run::Round,Run::Line],[s0,s1],d,closed)?;
-    Ok(vec![crate::recipe::family_solid(&f,closed)?])
+    let f = fitted(&section,vec![Run::Line,Run::Round,Run::Line],t,d,closed)?;
+    crate::recipe::family_solid(&f,closed)
 }
 
-/// Whether the stretch `t` of the curve `c` turns anywhere on a radius under `d`, read at 512
-/// points: where the tube of radius `d` about it would fold.
-fn turns_tighter(c: &Curve,t: [f64;2],d: f64) -> bool {
-    (0..=512).any(|k| {
-        let (_,v,acc) = c.d2(t[0]+(t[1]-t[0])*k as f64/512.);
-        let vv = dot(v,v);
-        vv > 0. && d*norm(cross(v,acc)) >= vv*vv.sqrt()*(1.-1e-9)
-    })
+/// The point at `s` of the crease `c` between the faces `faces` of `b`, and their outward normals
+/// there turned to `side`.
+fn crease_at(b: &Brep,faces: [usize;2],side: Side,c: &Curve,s: f64) -> Result<(V,[V;2]),String> {
+    let p = c.point(s);
+    Ok((p,[outward(b,faces[0],p)?,outward(b,faces[1],p)?].map(|n| scale(n,side.sign()))))
 }
 
 /// **A section's face family fitted over the interval `span`**: the section's walls (of the kinds
@@ -819,9 +796,9 @@ fn fitted(section: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,String>,runs: Vec<crate:
     const CHECKED_AT: [f64;3] = [0.06,0.5,0.94];
     let span = to-from;
     let tol = EXACT*2.*d;
-    let flat = |w: &Vec<Vec<f64>>| -> Vec<f64> { w.concat() };
-    let mut here = flat(&section(from)?);
-    let lens: Vec<usize> = section(from)?.iter().map(Vec::len).collect();
+    let first = section(from)?;
+    let lens: Vec<usize> = first.iter().map(Vec::len).collect();
+    let mut here = first.concat();
     if lens.len() != runs.len() { return Err("a section's walls and their kinds differ in number".into()) }
     // which numbers are plain (counted as so much of `d`): each wall's after its points and directions
     let plain: Vec<bool> = runs.iter().zip(&lens).flat_map(|(run,&len)| {
@@ -835,21 +812,23 @@ fn fitted(section: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,String>,runs: Vec<crate:
         let end = if h >= to-s { to } else { s+h };
         let ss: [f64;6] = NODES.map(|x| s+(end-s)*(x+1.)/2.);
         let mut piece = vec![here.clone()];
-        for &q in &ss[1..] { piece.push(flat(&section(q)?)); }
+        for &q in &ss[1..] { piece.push(section(q)?.concat()); }
         let mut miss = 0f64;
         for f in CHECKED_AT {
             let q = s+(end-s)*f;
             let w = weights(&ss,q);
-            let want = flat(&section(q)?);
+            let want = section(q)?.concat();
             for j in 0..want.len() {
                 let got: f64 = (0..6).map(|i| w[i]*piece[i][j]).sum();
                 let scale = if plain[j] { d } else { 1. };
                 miss = miss.max(scale*(got-want[j]).abs());
             }
         }
-        if miss > tol && end-s > span*1e-9 { h = (end-s)*0.5; continue }
+        // (the step grown or shrunk as the error of a degree-five fit goes, its sixth power)
+        let grow = if miss > 0. { 0.9*(tol/miss).dpowf(1./6.) } else { 2. };
+        if miss > tol && end-s > span*1e-9 { h = (end-s)*grow.clamp(0.1,0.5); continue }
         if miss > tol*1e3 { return Err(format!("its walls miss its section by {miss} between {s} and {end}")) }
-        h = ((end-s)*if miss > 0. { (0.9*(tol/miss).powf(1./6.)).clamp(0.5,2.) } else { 2. }).min(span*LONGEST_PIECE);
+        h = ((end-s)*grow.clamp(0.5,2.)).min(span*LONGEST_PIECE);
         spans.push([s,end]);
         at.push(ss);
         (s,here) = (end,piece[5].clone());
@@ -963,8 +942,10 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
             Some(bx) => revolved_sweep(b,f,bx,s,reach),
             None => carried("its boundary is not its own parameter lines"),
         },
+        Surface::Extrusion(..) if reach.opening || reach.across.contains(&true) =>
+            Err("an extrusion's face bordering an opening is not swept yet".into()),
+        // (a piece cut at the axis is a distance set's, which may reach back past the face)
         Surface::Extrusion(..) => match iso_box(b,f) {
-            _ if reach.opening || reach.across.contains(&true) => Err("an extrusion's face bordering an opening is not swept yet".into()),
             Some(bx) => extruded_sweep(b,fi,bx,s,reach.cut_at_axis).map(Some),
             None => Err("an extrusion's face is swept where its boundary is its own parameter lines, and this one's is not".into()),
         },
@@ -978,7 +959,7 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
 /// `c(u) + v z` (`v` over the face's span) and its copy `s` off it along `n(u)` — four lines in the
 /// plane of `z` and `n(u)`.  The sweep is the face family of that rectangle as `u` runs
 /// (`family::family`; closed on itself, with no end, where the face runs round its curve,
-/// `family::rings`), each wall a line run, held within the family's `EXACT` of its size; the face
+/// `family::ring`), each wall a line run, held within the family's `EXACT` of its size; the face
 /// moved is its wall at `s[1]`, exactly `c(u) + s n(u)` swept along `z` — the offset of a
 /// spline or an ellipse, which has no closed form.  As a distance set's piece (`overlap`), the
 /// rectangle reaches back past the face by a quarter of the distance (or less, clear of the fold)
@@ -989,47 +970,40 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
 fn extruded_sweep(b: &Brep,fi: usize,([u0,u1],[v0,v1]): ([f64;2],[f64;2]),s: [f64;2],overlap: bool) -> Result<Brep,String> {
     use crate::family::Run;
     let f = &b.faces[fi];
-    let Surface::Extrusion(frame,_) = f.surface else { return Err("no extrusion".into()) };
+    let Surface::Extrusion(frame,ref curve) = f.surface else { return Err("no extrusion".into()) };
     let out = if f.reversed { -1. } else { 1. };
     let z = unit(frame.z);
     let normal = |u: f64| -> Result<(V,V),String> {
-        let (p,du,_) = f.surface.d1([u,v0]);
+        let (p,du) = curve.d1(u);
         let n = cross(du,z);
         if !(norm(n) > 0.) { return Err(format!("its curve stops at {p:?}, where it has no normal")) }
-        Ok((p,scale(unit(n),out)))
+        Ok((add(p,scale(frame.z,v0)),scale(unit(n),out)))
     };
     // the face closes round its curve where its two sides `u0`, `u1` are one line
     let closed = distance(f.surface.point([u0,v0]),f.surface.point([u1,v0])) <= tolerance(b.size());
-    // how far round the fold each side `s` reaches: `∂u (c + s n) · c'` over `|c'|²`, which is 1 at
-    // the face and nothing where the sweep folds
-    let steps = 512;
-    let h = 1e-6*(u1-u0);
-    let unfolded = |sides: [f64;2]| -> Result<f64,String> {
-        let mut least = f64::INFINITY;
-        for k in 0..=steps {
-            let u = (u0+(u1-u0)*k as f64/steps as f64).clamp(u0+h,u1-h);
-            let (_,du,_) = f.surface.d1([u,v0]);
-            let dn = scale(sub(normal(u+h)?.1,normal(u-h)?.1),0.5/h);
-            for sd in sides { least = least.min(1.+sd*dot(dn,du)/dot(du,du)); }
-        }
-        Ok(least)
-    };
-    let mut span = s;
-    if overlap {
-        let reach = 0.25*(s[1]-s[0]);
-        let back = [reach,reach/4.,reach/16.].into_iter().find(|&k| {
-            let x = if s[0] == 0. { [-k,s[1]] } else { [s[0],k] };
-            unfolded(x).is_ok_and(|m| m >= 0.25)
-        });
-        if let Some(k) = back { span = if s[0] == 0. { [-k,s[1]] } else { [s[0],k] }; }
+    // how fast the normal turns along the curve against the curve's own pace, `n' · c' / |c'|²`
+    // (`n = (c' × z) / |c' × z|`, so `n' · c' = (c'' × z) · c' / |c' × z|`): the sweep to `s`
+    // runs at `1 + s` that, and folds where it reaches nothing; its least and most along the curve
+    let (mut lo,mut hi) = (f64::INFINITY,f64::NEG_INFINITY);
+    for k in 0..=512 {
+        let (_,du,ddu) = curve.d2(u0+(u1-u0)*k as f64/512.);
+        let w = norm(cross(du,z));
+        if !(w > 0.) { return Err(format!("its curve stops at {:?}, where it has no normal",curve.point(u0+(u1-u0)*k as f64/512.))) }
+        let rate = out*dot(cross(ddu,z),du)/(w*dot(du,du));
+        (lo,hi) = (lo.min(rate),hi.max(rate));
     }
-    let least = unfolded(span)?;
+    let unfolded = |[a,z]: [f64;2]| [a*lo,a*hi,z*lo,z*hi].into_iter().fold(f64::INFINITY,f64::min)+1.;
+    // as a distance set's piece, reaching back past the face by a quarter of the distance, or less
+    let widened = |k: f64| if s[0] == 0. { [-k,s[1]] } else { [s[0],k] };
+    let reach = 0.25*(s[1]-s[0]);
+    let span = if overlap { [reach,reach/4.,reach/16.].into_iter().map(widened).find(|&x| unfolded(x) >= 0.25).unwrap_or(s) } else { s };
+    let least = unfolded(span);
     if !(least > 1e-6) {
         return Err(format!("its sweep to {} folds where its curve turns tighter than that (its rate across the fold {least})",if s[0] == 0. { s[1] } else { s[0] }))
     }
     let section = |u: f64| -> Result<Vec<Vec<f64>>,String> {
         let (p,n) = normal(u)?;
-        let at = |v: f64,sd: f64| add(add(p,scale(z,v-v0)),scale(n,sd));
+        let at = |v: f64,sd: f64| add(add(p,scale(frame.z,v-v0)),scale(n,sd));
         let c = [at(v0,span[0]),at(v1,span[0]),at(v1,span[1]),at(v0,span[1])];
         Ok((0..4).map(|k| [c[k],c[(k+1)%4]].concat()).collect())
     };
@@ -1253,9 +1227,9 @@ fn revolved_sweep(b: &Brep,f: &Face,([mut u0,u1],[mut v0,mut v1]): ([f64;2],[f64
         let middle = Curve::Circle(tf,big);
         let (near,far) = (radii[0].min(radii[1]),radii[0].max(radii[1]));
         if far > big+tol && !reach.cut_at_axis { return Err("its sweep passes the axis of its torus".into()) }
-        let outer = tube(&middle,[u0,u0+span],far)?;
+        let outer = tube(&middle,[u0,u0+span],far).map_err(String::from)?;
         if near <= tol { return Ok(Some(outer)) }
-        return Ok(Some(combined(&outer,&tube(&middle,[u0,u0+span],near)?,Op::Cut,0.).map_err(|e| e.msg)?))
+        return Ok(Some(combined(&outer,&tube(&middle,[u0,u0+span],near).map_err(String::from)?,Op::Cut,0.).map_err(|e| e.msg)?))
     }
     // the section's frame turns about the profile's normal, `z × e`, so its `y` is the axis's
     // opposite: the surface's `v` is the arc's `−v`
