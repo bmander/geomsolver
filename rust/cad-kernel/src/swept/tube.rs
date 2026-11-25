@@ -721,7 +721,11 @@ pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Resul
         let span = (0..RIM).map(|k| d.rim(k as f64/RIM as f64)[1]).fold([f64::INFINITY,f64::NEG_INFINITY],|s,t| [s[0].min(t),s[1].max(t)]);
         let deep = (0..RIM).any(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c)))
             if c.depth < -tol || c.depth > tol && c.at >= span[0] && c.at <= span[1]));
-        if !deep { return Ok(d) }
+        // (on a band's chart a disc half as wide again: beside the band's line the normal form the
+        // double curve is joined to its point by holds to the tolerance only nearer the point — the
+        // reverse member's band's point at (6.61, 0.027) joined with its leaves 4.6e-6 apart from
+        // the rim the depth alone asks, in either chart's parameters)
+        if !deep { return Ok(if let Chart::Band(..) = chart { Disc {radius:0.5*radius,..d} } else { d }) }
         radius *= 0.5;
     }
     Err(Unbuilt::Failed(format!("the tube road: the depth about the swallowtail point {at:?} is not within the tolerance on any disc")))

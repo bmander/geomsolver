@@ -3120,10 +3120,25 @@ reach and not at six to nine or twelve, so the seam is to be placed clear of a t
 the windows' cuts are (`windows`); and a band end at the seam's tip (η −0.35, on the line), where on
 the sheet just outside the double curve meets a cuspidal edge at once (the sheet folds back there:
 the point stands 1.2e-3 in space from another preimage's trim) and no run long enough to keep
-reaches the seam. **Next**: the rim's vertices — each crossing read once from both charts
-(`rim_vertex`'s rule: the root along the seam of the far cover's depth), each trim's partner switching
-chart there, the seam placed clear of grazing trims — then the band's faces, a cover placed in a band
-read as the band's, and `closed::ring` calling `Tube::banded`.
+reaches the seam. **The band's faces, built but not yet closed** (`faces::solid` over `Tube::banded`;
+`closed::ring` still calls `Tube::pinched`): the band's charts are traced after the sheets, seeded
+where the sheets' runs ended on the seam; a run or trim ending on the seam ends at a seam vertex
+(`seam_vertex`: its band, sheet and partner places, the crossing settled along the seam by Newton on
+the far chart's depth), the seam laid as arcs per band and side between them (`Kind::Seam`, the seam
+read in a smooth polar form, `Band::seam_at`, its fraction `Band::fraction`), a band's trim polyline
+refined where its middles stand off its chords (`refined`), a band's charts one window each, its
+face the sheet's fitted over the chart's rectangle (`fit_net`), a cover placed in a band read as the
+band's (`Tube::band_holding`, the seam's ends read before its measure, `Band::holding`). The reverse
+member reaches the sewing and is refused there: the band's tip crossing (η −0.35) has its arc of the
+seam on the band's face and none on the sheet's, the sheet's run leaving the cuspidal edge's meeting
+at once, as above; a band ended a hundredth of the turn further out holds the swallowtail point and
+refuses its turn, and other widths each fit a curve short of the tolerance. **Measured**: the reverse
+member reaches the sewing banded in 7.5 s against 8.0 s built pinched, and the crossed Boolean of
+operands with nets of a quarter the poles took 18 s against 20 s — the time is the Boolean's reading
+and the members' traces, not the nets' size; the band is for the sheets' fit, not the bench's clock.
+**Next**: the tip's crossing joined on the sheet as a corner is (or the seam's tip placed clear of
+the cuspidal edge), the grazing crossing, and `closed::ring` calling `Tube::banded`, `Tube::pinched`
+where it refuses.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

@@ -117,9 +117,33 @@ fn golden(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> (f64,f64) {
 impl Band {
     /// The floor's bend across at `η`, and its rate.
     pub fn mid(&self,eta: f64) -> (f64,f64) {
+        // (`chebyshev`'s recurrence summed as it runs: the same terms in the same order, no list)
         let s = (eta-self.span[0])/self.span[1];
-        let (t,d) = chebyshev(s,self.bend.len()-1);
-        (self.bend.iter().zip(&t).map(|(c,t)| c*t).sum(),self.bend.iter().zip(&d).map(|(c,d)| c*d).sum::<f64>()/self.span[1])
+        let (mut t,mut d) = ([1.,s],[0.,1.]);
+        let (mut v,mut r) = (0.,0.);
+        for (k,c) in self.bend.iter().enumerate() {
+            let (tk,dk) = match k {
+                0|1 => (t[k],d[k]),
+                _ => {
+                    let (tk,dk) = (2.*s*t[1]-t[0],2.*t[1]+2.*s*d[1]-d[0]);
+                    (t,d) = ([t[1],tk],[d[1],dk]);
+                    (tk,dk)
+                }
+            };
+            v += c*tk;
+            r += c*dk;
+        }
+        (v,r/self.span[1])
+    }
+
+    /// **The band's `(τ, η)` at the place `(θ, t)` when its seam holds it**: none outside — at once
+    /// where `η` lies past the seam's ends, which its measure cannot be below one beyond.
+    pub fn holding(&self,uv: [f64;2]) -> Option<[f64;2]> {
+        let th = self.at[0]+(uv[0]-self.at[0]+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI;
+        let eta = (th-self.at[0])*self.ey[0]+(uv[1]-self.at[1])*self.ey[1];
+        if !(eta > self.eta[0] && eta < self.eta[1]) { return None }
+        let q = self.chart_of(uv);
+        (self.seam(q) < 0.).then_some(q)
     }
 
     /// **The place `(θ, t)` of the chart's `(τ, η)`**.
@@ -174,13 +198,16 @@ impl Band {
     /// its turn still narrow, and the depth's search halved its cells over it without end.
     pub fn deep(&self,q: [f64;2]) -> bool { !(self.seam(q) >= -RIM_LAYER) }
 
-    /// The seam's point at the fraction `f` of a turn round it, in `(τ, η)`: the rounded box's
-    /// `(X c^(2/p), h s^(2/p))` across and along, each signed as its cosine and sine, `τ` its `asinh`.
+    /// **The seam's point at the fraction `f` of a turn round it**, in `(τ, η)`: the rounded box in
+    /// polar form, `r(φ) (cos φ, sin φ)` with `r = (|cos φ|^p + |sin φ|^p)^(−1/p)`, across by `X` and
+    /// along by `h` about the middle `m`, `τ` its `asinh` — smooth in `f` all round for an even `p`
+    /// (a box written as `(c^(2/p), s^(2/p))` has the slope of a square root wherever a cosine or a
+    /// sine passes nought, and its arcs were fitted to 1e-3 only there).
     pub fn seam_at(&self,f: f64) -> [f64;2] {
         let (s,c) = (std::f64::consts::TAU*f).dsin_cos();
         let (m,h) = (0.5*(self.eta[0]+self.eta[1]),0.5*(self.eta[1]-self.eta[0]));
-        let lean = |x: f64| x.abs().dpowf(2./SEAM_POWER).copysign(x);
-        [asinh(self.across*lean(c)/self.w),m+h*lean(s)]
+        let r = (c.abs().dpowf(SEAM_POWER)+s.abs().dpowf(SEAM_POWER)).dpowf(-1./SEAM_POWER);
+        [asinh(self.across*r*c/self.w),m+h*r*s]
     }
 
     /// **Whether `(τ, η)` lies beyond the band**: outside its seam past the half digits of its measure
@@ -190,6 +217,22 @@ impl Band {
     /// traces, stopped at the seam, never reached, and halved its cells beside them to 2⁻¹⁷ without
     /// end (an edge of the layer's own as an inner edge stopped nothing the seam had not).
     pub fn beyond(&self,q: [f64;2]) -> bool { !(self.seam(q) <= HALF_READ) }
+
+    /// **The fraction of a turn round the seam at `(τ, η)`** (`seam_at`'s inverse, read through any
+    /// point by its way from the seam's middle): the polar angle of how far across and along, each
+    /// over its reach, in `[0, 1)`.
+    pub fn fraction(&self,[tau,eta]: [f64;2]) -> f64 {
+        let (m,h) = (0.5*(self.eta[0]+self.eta[1]),0.5*(self.eta[1]-self.eta[0]));
+        (((eta-m)/h).datan2(self.w*sinh(tau)/self.across)/std::f64::consts::TAU).rem_euclid(1.)
+    }
+
+    /// **The seam's `η` at `τ`, the way `dir` along the line** (±1): where the rounded box stands at
+    /// that `τ`, `m ± h (1 − |x/X|^p)^(1/p)`; the middle where `τ` reaches past it.
+    pub fn seam_eta(&self,tau: f64,dir: f64) -> f64 {
+        let (m,h) = (0.5*(self.eta[0]+self.eta[1]),0.5*(self.eta[1]-self.eta[0]));
+        let r = (1.-(self.w*sinh(tau)/self.across).abs().dpowf(SEAM_POWER)).max(0.).dpowf(1./SEAM_POWER);
+        m+dir*h*r
+    }
 
     /// **The seam as the band's own inner edge**: `n` chords of it in `(τ, η)`, counter-clockwise.
     pub fn seam_line(&self,n: usize) -> Vec<[f64;2]> { (0..=n).map(|i| self.seam_at(i as f64/n as f64)).collect() }
@@ -371,9 +414,23 @@ impl Tube<'_> {
         Ok(tube)
     }
 
+    /// **Where a chart's point `q` stands on a band's seam**: the band and the fraction round its seam
+    /// there — on a band's chart where its seam reads nought, on a sheet where a band's does, each to
+    /// the half digits of the seam's measure (where a trace's exit settled it); none elsewhere.
+    pub fn on_seam(&self,chart: super::Chart,q: [f64;2]) -> Option<(usize,f64)> {
+        match chart {
+            super::Chart::Band(k,_) => (self.bands[k].seam(q).abs() <= HALF_READ).then(|| (k,self.bands[k].fraction(q))),
+            super::Chart::Sheet(_) => self.bands.iter().enumerate().find_map(|(k,b)| {
+                let r = b.chart_of(q);
+                (b.seam(r).abs() <= HALF_READ).then(|| (k,b.fraction(r)))
+            }),
+            _ => None,
+        }
+    }
+
     /// The band whose seam holds the place `(θ, t)`, and its `(τ, η)` there.
     pub fn band_holding(&self,uv: [f64;2]) -> Option<(&Band,[f64;2])> {
-        self.bands.iter().map(|b| (b,b.chart_of(uv))).find(|(b,q)| b.seam(*q) < 0.)
+        self.bands.iter().find_map(|b| Some((b,b.holding(uv)?)))
     }
 
     /// **The sheet on `side` read on a band's chart at `(τ, η)`**: the sheet's point at the place, its
