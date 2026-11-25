@@ -202,9 +202,10 @@ impl<'a> Tube<'a> {
 /// **A chart of the tube road**: a sheet `X±` over `(θ, t)` (`Sheet(±1)`), the tool posed at an
 /// end of the roll over `(θ, ψ)` (`End(0)` the start, `End(1)` the end), `ψ` round its tube from
 /// the outward way about the ring's axis toward its own, or the collar about the pinch over
-/// `(ψ, ρ)` (`Collar`, `Pinch`).
+/// `(ψ, ρ)` (`Collar`, `Pinch`), or a band about a near miss of a whole-touch over `(τ, η)`, the
+/// sheet on `side` read over it (`Band(k, side)`, the tube's band `k`: `band::Band`).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Chart { Sheet(f64),End(usize),Collar }
+pub enum Chart { Sheet(f64),End(usize),Collar,Band(usize,f64) }
 
 impl Tube<'_> {
     /// The chart's rectangle of parameters.
@@ -212,6 +213,7 @@ impl Tube<'_> {
         match c {
             Chart::Sheet(_) => [[0.,TAU],self.roll],Chart::End(_) => [[0.,TAU],[0.,TAU]],
             Chart::Collar => { let r = self.pinch.as_ref().map_or(0.,|p| p.rho); [[0.,TAU],[-r,r]] }
+            Chart::Band(k,_) => self.bands[k].rect(),
         }
     }
 
@@ -220,6 +222,7 @@ impl Tube<'_> {
         match c {
             Chart::Sheet(_) => uv[1],Chart::End(k) => self.roll[k],
             Chart::Collar => self.pinch.as_ref().and_then(|p| p.collar.place(uv[0],uv[1])).map_or(f64::NAN,|p| p[1]),
+            Chart::Band(k,_) => self.bands[k].place(uv)[1],
         }
     }
 
@@ -240,6 +243,7 @@ impl Tube<'_> {
                     x_t:m.vector(scale(add(scale(er,-sp),scale(ez,cp)),self.r)),n:m.vector(n),area:1.})
             }
             Chart::Collar => self.collar_at(uv[0],uv[1]),
+            Chart::Band(k,side) => self.band_at(&self.bands[k],side,uv),
         }
     }
 
@@ -259,6 +263,12 @@ impl Tube<'_> {
                 self.jacobian(side,uv[0],uv[1])
             }
             Chart::Collar => self.collar_side(uv[0],uv[1]),
+            // (a band's chart read inside its seam alone: `Band::beyond`)
+            Chart::Band(k,side) => {
+                let b = &self.bands[k];
+                if b.beyond(uv) { return None }
+                self.band_side(b,side,uv)
+            }
             Chart::End(k) => {
                 let m = self.path.at(self.roll[k]).ok()?;
                 let p = self.at(c,uv)?;
@@ -373,6 +383,10 @@ impl Field for Depth<'_> {
     /// piece of it touched. None where a point is not kept or the middle's neighbours hold it (the
     /// cell meets the chart's edge).
     fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        // (a band's cell wider than `BAND_BOUNDED` of `τ` is not bounded: across the line the sheet
+        // swings half round the tube within a few of `τ`, between the nine points the reach is read
+        // at — the reverse's whole chart was cleared at once, its middle covered deeper than that)
+        if let Chart::Band(..) = self.chart { if c[0][1]-c[0][0] > BAND_BOUNDED { return None } }
         // (the middle's cover read, the others' points only for the reach)
         let mid = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
         let (pm,rm) = self.reading(mid)?;
@@ -414,7 +428,7 @@ impl Field for Edge<'_> {
     fn least(&self,uv: [f64;2]) -> Option<Value<()>> {
         let grad = match self.chart {
             Chart::Sheet(side) => self.tube.jacobian_gradient(side,uv[0],uv[1]),Chart::End(_) => None,
-            Chart::Collar => self.tube.side_gradient(Chart::Collar,uv),
+            Chart::Collar | Chart::Band(..) => self.tube.side_gradient(self.chart,uv),
         };
         Some(Value {f:self.tube.side(self.chart,uv)?,grad,at:()})
     }
@@ -422,12 +436,12 @@ impl Field for Edge<'_> {
     fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
         match self.chart {
             Chart::Sheet(side) => self.tube.jacobian_bound(side,c),Chart::End(k) => self.tube.contact_bound(k,c),
-            Chart::Collar => None,
+            Chart::Collar | Chart::Band(..) => None,
         }
     }
     fn surface(&self,uv: [f64;2]) -> (V,V,V) {
         let s = match self.chart {
-            Chart::Sheet(_) => self.tube.spine(uv[0],uv[1]).map(|s| (s.s,s.s_th,s.s_t)),
+            Chart::Sheet(_) | Chart::Band(..) => self.tube.spine_on(self.chart,uv),
             Chart::End(_) => self.tube.at(self.chart,uv).map(|p| (p.x,p.x_th,p.x_t)),
             Chart::Collar => self.tube.collar_metric(uv[0],uv[1]),
         };
@@ -639,9 +653,9 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
 /// rectangle (`round`) to `tol` in space (a sheet's spine's), `feature` its longest step — on a
 /// sheet its cuspidal edges, on an end pose its contact circles.
 pub fn edges(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<()>>,Vec<crate::zero_set::Search>),Unbuilt> {
-    let periodic = [true,matches!(chart,Chart::End(_))];
+    let periodic = tube.periodic(chart);
     let hole = tube.hole(chart)?;
-    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..hole.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..hole.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
     let sides: Vec<&dyn Fn([f64;2]) -> f64> = rims.iter().map(|s| &**s).collect();
     round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&hole,&sides,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: where it stops bounding the sweep: {why}")))
@@ -679,6 +693,10 @@ impl Disc {
     pub fn polygon(&self,n: usize) -> Vec<[f64;2]> { (0..=n).map(|k| self.rim(k as f64/n as f64)).collect() }
 }
 
+/// The widest band cell in `τ` the depth's bound is read over (`Depth::bound`): within one of `τ` the
+/// sheet's swing across the line is read at its quarters by the nine points.
+const BAND_BOUNDED: f64 = 1.;
+
 /// Chords a disc's rim is read in: a turn in 64, each a 64th of the disc's girth (structural: the
 /// rim is an edge of the depth's domain, sampled as `zero_set` samples an inner edge).
 const RIM: usize = 64;
@@ -691,8 +709,8 @@ const RIM: usize = 64;
 /// until every far cover read on its rim (`RIM` points) is within `tol`; refused where that asks a
 /// disc under the tolerance.
 pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Result<Disc,Unbuilt> {
-    let Some(sp) = tube.spine(at[0],at[1]) else { return Err(Unbuilt::Failed(format!("the tube road: no spine at the swallowtail point {at:?}"))) };
-    let metric = [[dot(sp.s_th,sp.s_th),dot(sp.s_th,sp.s_t)],[dot(sp.s_th,sp.s_t),dot(sp.s_t,sp.s_t)]];
+    let Some((_,su,sv)) = tube.spine_on(chart,at) else { return Err(Unbuilt::Failed(format!("the tube road: no spine at the swallowtail point {at:?}"))) };
+    let metric = [[dot(su,su),dot(su,sv)],[dot(su,sv),dot(sv,sv)]];
     let field = Depth {tube,chart,within:tol,holes:&[]};
     let mut radius = feature;
     while radius >= tol {
@@ -717,13 +735,13 @@ pub fn disc(tube: &Tube,chart: Chart,at: [f64;2],tol: f64,feature: f64) -> Resul
 #[allow(clippy::type_complexity)]
 pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],seeds: &[[f64;2]],tol: f64,feature: f64)
     -> Result<(Vec<crate::zero_set::Piece<Cover>>,Vec<crate::zero_set::Search>,Vec<Disc>),Unbuilt> {
-    let periodic = [true,matches!(chart,Chart::End(_))];
+    let periodic = tube.periodic(chart);
     // (a swallowtail point held inside by another instant — every far cover on the rim of the
     // feature's disc about it below nought by more than the tolerance — bounds nothing: the double
     // curve it ends is covered through, and no trim comes near it)
     let held = |at: [f64;2]| -> bool {
-        let Some(sp) = tube.spine(at[0],at[1]) else { return false };
-        let metric = [[dot(sp.s_th,sp.s_th),dot(sp.s_th,sp.s_t)],[dot(sp.s_th,sp.s_t),dot(sp.s_t,sp.s_t)]];
+        let Some((_,su,sv)) = tube.spine_on(chart,at) else { return false };
+        let metric = [[dot(su,su),dot(su,sv)],[dot(su,sv),dot(sv,sv)]];
         let d = Disc {at,metric,radius:feature};
         let field = Depth {tube,chart,within:tol,holes:&[]};
         (0..RIM).all(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth < -tol))
@@ -735,9 +753,12 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
     inner.extend(holes.iter().map(|d| d.polygon(RIM)));
     let rim = tube.hole(chart)?;
     inner.extend(rim.iter().cloned());
-    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(-1.);
+    // (a fold's side where the chart is not read: outside it — but beyond a band's seam the seam's
+    // own edge says so, and read there first the fold's took every exit past the seam, settled on its
+    // jump to 1e-5 of the seam's measure instead of on the seam)
+    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(match chart { Chart::Band(k,_) if tube.bands[k].beyond(uv) => 1.,_ => -1. });
     let discs: Vec<Box<dyn Fn([f64;2]) -> f64>> = holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..rim.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..rim.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
     let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = edges.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
     sides.extend(discs.iter().map(|d| &**d));
     sides.extend(rims.iter().map(|s| &**s));
@@ -912,6 +933,8 @@ impl<'a> Tube<'a> {
     /// **The pinch's hole on a chart**, as its inner edges: on a sheet the rim `place(ψ, ±ρ₀)` read
     /// in `HOLE_RIM` chords; none on any other chart or where there is no pinch.
     pub fn hole(&self,chart: Chart) -> Result<Vec<Vec<[f64;2]>>,Unbuilt> {
+        // (a band's chart: its seam, from inside)
+        if let Chart::Band(k,_) = chart { return Ok(vec![self.bands[k].seam_line(HOLE_RIM)]) }
         let Chart::Sheet(side) = chart else { return Ok(Vec::new()) };
         let mut out = Vec::new();
         if let Some(p) = &self.pinch {
@@ -925,9 +948,11 @@ impl<'a> Tube<'a> {
         Ok(out)
     }
 
-    /// **Which side of the hole's rim `k` (as `hole` lists them) a sheet's `(θ, t)` lies**: positive
-    /// outside, nought on it — the pinch's `Pinch::side`, a band's `Band::seam`.
-    pub fn hole_side(&self,k: usize,uv: [f64;2]) -> f64 {
+    /// **Which side of the hole's rim `k` (as `hole` lists them) a chart's point lies**: positive on
+    /// the side the chart keeps, nought on it — on a sheet the pinch's `Pinch::side` and a band's
+    /// `Band::seam`, outside each; on a band's chart its seam's, inside.
+    pub fn hole_side(&self,chart: Chart,k: usize,uv: [f64;2]) -> f64 {
+        if let Chart::Band(b,_) = chart { return -self.bands[b].seam(uv) }
         let k = match &self.pinch { Some(p) if k == 0 => return p.side(uv),Some(_) => k-1,None => k };
         let b = &self.bands[k];
         b.seam(b.chart_of(uv))
@@ -1019,11 +1044,37 @@ impl<'a> Tube<'a> {
         self.point(side,theta,t).map(|p| p.x)
     }
 
-    /// The step of a chart's differences in each parameter: `ε^(1/3)` of an angle, of the roll, or
-    /// of the collar's width (`THIRD_READ`).
+    /// The step of a chart's differences in each parameter: `ε^(1/3)` of an angle, of the roll, of
+    /// the collar's width, or of a band's chart each way (`THIRD_READ`).
     fn steps(&self,c: Chart) -> [f64;2] {
         let r = self.rect(c);
-        [THIRD_READ,match c { Chart::End(_) => THIRD_READ,_ => THIRD_READ*(r[1][1]-r[1][0]) }]
+        match c {
+            Chart::Band(..) => [THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],
+            _ => [THIRD_READ,match c { Chart::End(_) => THIRD_READ,_ => THIRD_READ*(r[1][1]-r[1][0]) }],
+        }
+    }
+
+    /// **Which of a chart's parameters run round**: a sheet's and the collar's angle, an end pose's
+    /// both; neither of a band's.
+    pub fn periodic(&self,c: Chart) -> [bool;2] {
+        match c { Chart::End(_) => [true,true],Chart::Band(..) => [false,false],_ => [true,false] }
+    }
+
+    /// **The spine's point and its two rates over a chart's parameters**, the regular metric a
+    /// sheet's cuspidal edges and swallowtail discs are read on (the sheet's own rates are parallel
+    /// on its edges): a sheet's `(S, S_θ, S_t)`, a band's by the chain rule through its place — and
+    /// on any other chart, read at its parameters as a sheet's, as the discs always were.
+    pub fn spine_on(&self,c: Chart,uv: [f64;2]) -> Option<(V,V,V)> {
+        match c {
+            Chart::Band(k,_) => {
+                let b = &self.bands[k];
+                let p = b.place(uv);
+                let s = self.spine(p[0],p[1])?;
+                let [dt,de] = b.rates(uv);
+                Some((s.s,add(scale(s.s_th,dt[0]),scale(s.s_t,dt[1])),add(scale(s.s_th,de[0]),scale(s.s_t,de[1]))))
+            }
+            _ => self.spine(uv[0],uv[1]).map(|s| (s.s,s.s_th,s.s_t)),
+        }
     }
 
     /// The direction in a chart's parameters along which its rates cancel (`kernel`, on any chart).
@@ -1107,7 +1158,7 @@ pub fn beside_edges(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tol: f64,fea
     let on = |q: [f64;2]| -> Option<(f64,f64)> { match chart {
         Chart::Collar => (q[1].abs() >= rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),
         Chart::Sheet(side) => (pinch.side(q).abs() <= HALF_READ*rho).then(|| pinch.psi(side,q).map(|psi| (side,psi)))?,
-        Chart::End(_) => None,
+        Chart::End(_) | Chart::Band(..) => None,
     } };
     let rim = |sign: f64,psi: f64| -> Option<[f64;2]> { match chart { Chart::Collar => Some([psi,sign*rho]),_ => pinch.rim(sign,psi) } };
     let mut out = Vec::new();

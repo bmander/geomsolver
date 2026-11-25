@@ -30,7 +30,7 @@
 
 use super::{Point,Tube};
 use super::super::closed::Unbuilt;
-use crate::util::fmath::{Det,THIRD_READ};
+use crate::util::fmath::{Det,HALF_READ,THIRD_READ};
 use crate::util::space::{add,scale};
 
 /// A near miss is banded where its turn is narrower than this part of the roll (structural: a
@@ -182,6 +182,17 @@ impl Band {
         let lean = |x: f64| x.abs().dpowf(2./SEAM_POWER).copysign(x);
         [asinh(self.across*lean(c)/self.w),m+h*lean(s)]
     }
+
+    /// **Whether `(τ, η)` lies beyond the band**: outside its seam past the half digits of its measure
+    /// (a point a sheet's trace left on the seam reads on either side of it by its rounding, and is
+    /// the band's too), where the band's chart is not read (`Tube::side`): the sheets'. Its chart ends at its seam as the collar's at its rim — read a
+    /// layer past it, the search met the sheets' own seams running on into that layer, which the
+    /// traces, stopped at the seam, never reached, and halved its cells beside them to 2⁻¹⁷ without
+    /// end (an edge of the layer's own as an inner edge stopped nothing the seam had not).
+    pub fn beyond(&self,q: [f64;2]) -> bool { !(self.seam(q) <= HALF_READ) }
+
+    /// **The seam as the band's own inner edge**: `n` chords of it in `(τ, η)`, counter-clockwise.
+    pub fn seam_line(&self,n: usize) -> Vec<[f64;2]> { (0..=n).map(|i| self.seam_at(i as f64/n as f64)).collect() }
 
     /// **The seam as a sheet's inner edge**: `n` chords of it, each place `(θ, t)` (`θ` unwrapped
     /// along it), counter-clockwise in `(τ, η)` as in `(θ, t)`.

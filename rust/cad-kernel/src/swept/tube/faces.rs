@@ -145,7 +145,7 @@ impl Tube<'_> {
         match chart {
             Chart::Collar => (q[1].abs() >= p.rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),
             Chart::Sheet(side) => if p.side(q).abs() <= HALF_READ*p.rho { p.psi(side,q).map(|psi| (side,psi)) } else { None },
-            Chart::End(_) => None,
+            Chart::End(_) | Chart::Band(..) => None,
         }
     }
 
@@ -555,7 +555,8 @@ fn merged(tube: &Tube,chart: Chart,field: &Depth,pieces: Vec<crate::zero_set::Pi
     let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
     let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
     let (dv,rv) = match chart { Chart::End(_) => (turn as fn(f64) -> f64,HALF_READ),Chart::Sheet(_) => ((|x| x) as fn(f64) -> f64,HALF_READ*(b-a)),
-        Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)) };
+        Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)),
+        Chart::Band(..) => { let r = tube.rect(chart); ((|x| x) as fn(f64) -> f64,HALF_READ*(r[1][1]-r[1][0])) } };
     // (the segment between two points within the tolerance of the zero set, the far cover read on
     // from the one's at its middle and quarters: an angle, and an end pose's `ψ`, met within its turn)
     let band = |p: P,c: &Cover,q: P| [0.25,0.5,0.75].iter().all(|&f| {
@@ -1092,6 +1093,8 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
         let th = q[0]+shift;
         match chart {
             Chart::Sheet(_) | Chart::Collar => Some([th,q[1]]),
+            // (a band's chart runs round neither way: placed as it is)
+            Chart::Band(..) => Some(*q),
             Chart::End(k) => {
                 let (plus,way,_) = band(tube,k,q[0])?;
                 let o = ((q[1]-plus)*way).rem_euclid(TAU);
@@ -1210,7 +1213,7 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 if *area <= 0. { continue }
                 let rings: Vec<&[P]> = std::iter::once(&poly[..]).chain(holes[i].iter().map(|&j| &polys[j].0[..])).collect();
                 let inner = interior(&rings).ok_or_else(|| failed(format!("a part of {chart:?} with no inner point")))?;
-                let q = match chart { Chart::Sheet(_) | Chart::Collar => inner,Chart::End(k) => {
+                let q = match chart { Chart::Sheet(_) | Chart::Collar | Chart::Band(..) => inner,Chart::End(k) => {
                     let (plus,way,_) = band(tube,k,inner[0]).ok_or_else(|| failed("no band".into()))?; [inner[0],plus+way*inner[1]] } };
                 let field = Depth {tube,chart,within:tol,holes:&[]};
                 let keep = match field.reading(q) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
@@ -1319,6 +1322,7 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
     let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
+        Chart::Band(..) => return Err(failed(format!("the band's faces ({chart:?}) are not yet built"))),
         Chart::Sheet(side) => {
             let net = match nets.iter().find(|(s,w,_)| *s == side && *w == (w0,w1)) {
                 Some((_,_,net)) => net.clone(),

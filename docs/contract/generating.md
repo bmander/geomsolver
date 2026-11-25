@@ -3090,11 +3090,40 @@ stand-in held to the bar inside the seam as the sheet outside — no net strays 
 it: the reverse's two in 340 × 283 and 345 × 284 poles (2.2 s each, against 944 × 849 and 942 × 853).
 Both sheets' cuspidal edges and depth trace up to the seam, nothing deep inside (sheet `+` 7 seams in
 3.9 s; sheet `−` 5 in 3.3 s, 3 of their ends on the seam: the boundary runs on into the band).
-**Next**: the band's own edges and seams traced over its chart, its rim's vertices in the sheet and
-the band (`rim_vertex`'s), its faces, a cover whose place lies in the band read as the band's
-(`Tube::in_collar`'s), and `closed::ring` calling `Tube::banded`. The windows' nets about the pinch
-miss the sheet by up to 8.8e-6 between the rows and columns their bar is read along (sampled on a
-600 × 600 grid), banded or not: their check reads the middles of intervals only.
+The windows' nets about the pinch miss the sheet by up to 8.8e-6 between the rows and columns their
+bar is read along (sampled on a 600 × 600 grid), banded or not: their check reads the middles of
+intervals only.
+**The band's chart traced** (`Chart::Band(k, side)`, the sheet on `side` over band `k`'s `(τ, η)`;
+gated by `swept_tube::the_bands_chart_is_traced`; not yet the road's): a chart as the tracers read
+any — its point and rates the sheet's through the place (`Tube::band_at`), its own instant the
+place's, its side the sheet's `J`, its metric for cuspidal edges and swallowtail discs the spine's
+through the place (`Tube::spine_on`), its differences a cube root of the rounding of its rectangle
+each way, running round neither way (`Tube::periodic`) — **read inside its seam alone**
+(`Band::beyond`, past the half digits of its measure, so a sheet's crossing left on the seam is the
+band's too), the seam its inner edge from inside (`Tube::hole`, `hole_side`), as the collar's chart
+ends at its rim. Read a layer past the seam, the search met the sheets' own seams running on into
+the layer, which the traces, stopped at the seam, never reached, and halved its cells beside them to
+2⁻¹⁷ without end (233 409 unsettled, 250 s; an edge of the layer's own stopped nothing the seam had
+not); read over its whole rectangle, it stalled at the rectangle's far side, and the depth's bound,
+its reach read at nine points, cleared the whole chart at once, the sheet swinging half round the
+tube across the line between them — a band's cell wider than one of `τ` is not bounded
+(`BAND_BOUNDED`). And beyond the seam a fold's side is the seam's to say (+1, not the fold's −1, which
+took every exit there and settled it 1e-5 of the seam's measure short). **Measured on the reverse**:
+the sheet `+` has two folds over the band and no seam; the sheet `−` two folds, swallowtail points at
+`(τ, η)` (−6.140, 0.004) and (6.608, 0.027) and three seams, each from the seam to a swallowtail
+point's disc, every cell settled, in a second. Of the sheet `−`'s three crossings of the seam, two are
+the band's own ends to 1e-14 in space — the tracer exits settle on the seam from both charts alike.
+**Not yet**: the third, where a double curve runs along the seam just inside it (`(τ, η)` (6.92,
+0.27): the band's depth −2e-4 a hundredth of `τ` in, +3e-5 between the curve and the seam), grazing
+it — seeded on the seam or a hair inside, the band's trace leaves nothing; it matches at ten turns'
+reach and not at six to nine or twelve, so the seam is to be placed clear of a trim's grazing, as
+the windows' cuts are (`windows`); and a band end at the seam's tip (η −0.35, on the line), where on
+the sheet just outside the double curve meets a cuspidal edge at once (the sheet folds back there:
+the point stands 1.2e-3 in space from another preimage's trim) and no run long enough to keep
+reaches the seam. **Next**: the rim's vertices — each crossing read once from both charts
+(`rim_vertex`'s rule: the root along the seam of the far cover's depth), each trim's partner switching
+chart there, the seam placed clear of grazing trims — then the band's faces, a cover placed in a band
+read as the band's, and `closed::ring` calling `Tube::banded`.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
