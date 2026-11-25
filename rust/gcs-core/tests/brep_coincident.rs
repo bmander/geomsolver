@@ -651,3 +651,47 @@ tab_lo := solid(std.solids.Prism(f66, from: -31.8mm, to: -2.7mm))
 flange_lo union part
 tab_lo union part
 ";
+
+/// **Two lines crossing at a grazing angle cross where they cross** (brep-bench
+/// `tangent/cube-turned-a-hair`): a square's side and the side of the square turned `0.001°` meet
+/// `5 tan(θ/2)` from the side's middle. Read through `1 − (d₁·d₂)²`, which loses half the digits
+/// to cancellation when the lines lie `1.7e-5` rad apart, their crossing came out `3.7e-7` off —
+/// thirty-seven tolerances — while the planes' own crossing stood where it is; read through
+/// `|d₁ × d₂|²` it is exact to the rounding of what the lines are drawn through, moved along the
+/// side by that rounding over `sin θ` (`1e-11` here), a tenth of the tolerance.
+#[test]
+fn lines_crossing_at_a_grazing_angle_cross_where_they_cross() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::curve_curve;
+    let theta = 0.001f64.to_radians();
+    let (c,s) = (theta.cos(),theta.sin());
+    let turned = |x: f64,y: f64| [c*x-s*y,s*x+c*y,0.];
+    let (from,to) = (turned(-5.,-5.),turned(5.,-5.));
+    let length = ((to[0]-from[0]).powi(2)+(to[1]-from[1]).powi(2)).sqrt();
+    let side = Curve::Line {p:[-5.,-5.,0.],d:[1.,0.,0.]};
+    let other = Curve::Line {p:from,d:[(to[0]-from[0])/length,(to[1]-from[1])/length,0.]};
+    let met = curve_curve(&side,[0.,10.],&other,[0.,length],tolerance(10.)).expect("two lines are read in closed form");
+    assert_eq!(met.len(),1,"one crossing: {met:?}");
+    close(met[0].1[0],5.*(theta/2.).tan(),0.1*tolerance(10.),"the crossing along the side");
+    close(met[0].1[1],-5.,1e-12,"the crossing on the side");
+}
+
+/// **A cube united with itself turned a hair is the prism over the two squares' union** (brep-bench
+/// `tangent/cube-turned-a-hair`): each pair of sides `0.001°` apart crosses near its middle, and
+/// the union is larger than the cube by `8.7e-6` of its volume and area. Its crossings with the
+/// cube's top and foot read two ways — the planes', and the edges' as lines — stood `3.7e-7`
+/// apart, and the sliver of edge between them, along which both sides rise square, could not be
+/// ordered round (`faces … coincide along it`).
+#[test]
+fn a_cube_united_with_itself_turned_a_hair() {
+    use gcs_core::brep::boolean::combined;
+    use gcs_core::brep::props::area;
+    let cube = block([-5.,-5.,0.],[5.,5.,10.]);
+    let turned = cube.moved(&Rigid::turn([0.;3],XY,0.001f64.to_radians()));
+    for (x,y) in [(&cube,&turned),(&turned,&cube)] {
+        let u = combined(x,y,Op::Union,0.).unwrap_or_else(|e| panic!("the union: {e}"));
+        u.check(10.*tolerance(u.size())).unwrap_or_else(|e| panic!("the union: {e}"));
+        close(volume(&u),1000.0087264939527,1e-9,"the union's volume");
+        close(u.faces.iter().map(|f| area(&u,f)).sum(),600.0052358963717,1e-9,"the union's area");
+    }
+}

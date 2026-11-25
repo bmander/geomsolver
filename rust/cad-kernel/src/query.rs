@@ -102,10 +102,9 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
             let n = cross(d1,d2);
             if norm(n) <= 1e-12 { return Some(Vec::new()); }
             // the nearest points of the two lines
-            let w = sub(p1,p2);
-            let (b_,d_,e_) = (dot(d1,d2),dot(d1,w),dot(d2,w));
-            let den = 1.-b_*b_;
-            let (s,t) = ((b_*e_-d_)/den,(e_-b_*d_)/den);
+            let w = sub(p2,p1);
+            let nn = dot(n,n);
+            let (s,t) = (dot(cross(w,d2),n)/nn,dot(cross(w,d1),n)/nn);
             let (q1,q2) = (add(p1,scale(d1,s)),add(p2,scale(d2,t)));
             if distance(q1,q2) <= tol { vec![q1] } else { Vec::new() }
         }
