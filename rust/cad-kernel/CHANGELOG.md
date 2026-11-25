@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.24.0] - 2026-11-25
+
 - **A round offset past its radius in one step** (`offset`): a torus's or a sphere's sweep, as a
   distance set's piece, stops at the centre of its section's circle, where the moved face would
   turn inside out (a point past it is nearer the far side), so a concave fillet grown past its
@@ -28,6 +30,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   one rational net grows to the ball.
 - **A face family closes on itself with any loop of walls** (`family::ring`, `recipe::family_solid`),
   not one round wall only, its walls on a plane or a surface of revolution put on it.
+  `family::ring` takes the loop (`&[Wall]`), where it took one `&Wall`.  **Breaking.**
 - **A plane meets a ruled sheet one of whose rails lies in it in that rail and the rulings where the
   other crosses it** (`ssi`), exactly; traced, the rail's ends missed its vertices and a plane's
   pieces did not close.
