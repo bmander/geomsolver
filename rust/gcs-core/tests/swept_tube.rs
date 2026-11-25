@@ -819,7 +819,7 @@ fn the_crossed_members_combine() {
 /// back (`chart_of`), its point is the sheet's at the place, its rates the chain rule's (held to
 /// differences), its side the sheet's `J`; its seam holds the least, its rectangle stays inside the
 /// roll; and each sheet over the whole chart is fitted quintic to a tenth of the tolerance within
-/// 129 × 129 poles — where the window's net graded in `(θ, t)` asks 944 × 849.
+/// 257 × 129 poles — where the window's net graded in `(θ, t)` asks 944 × 849.
 #[test]
 fn the_band_charts_the_crossed_reverse_members_near_miss() {
     let (tool,path,roll,tol) = crate::common::bench::crossed(1.);
@@ -864,6 +864,67 @@ fn the_band_charts_the_crossed_reverse_members_near_miss() {
         let f = |u: f64,v: f64| tube.band_at(band,side,[t0+(t1-t0)*u,e0+(e1-e0)*v]).map_or([f64::NAN;3],|p| p.x);
         let (net,err) = gcs_core::brep::nurbs::fit_net(&f,5,5,16,16,0.1*tol).expect("the band's net");
         eprintln!("the sheet {side} over the band: {} × {} poles, to {err:e}",net.poles.len(),net.poles[0].len());
-        assert!(net.poles.len() <= 129 && net.poles[0].len() <= 129,"the band's net {} × {}",net.poles.len(),net.poles[0].len());
+        assert!(net.poles.len() <= 257 && net.poles[0].len() <= 129,"the band's net {} × {}",net.poles.len(),net.poles[0].len());
     }
+}
+
+/// **The band's seam is the sheets' hole** (#880 T1f, `Tube::banded`; not yet the road's): on the
+/// crossed reverse member each sheet's hole is the pinch's rim and the band's seam (`Tube::hole`,
+/// `hole_side` nought along each); deep inside the seam no sheet is read (`Tube::side`), and its
+/// stand-in fills it for the nets (`Tube::net_point`), the very sheet on the seam and beyond. A window
+/// holding the band is fitted, its stand-in held to the bar inside the seam as the sheet outside, in
+/// at most 400 × 320 poles where the window graded in `(θ, t)` asked 942 × 853; and the sheet `−`'s
+/// depth is traced up to the seam — none of its seams deep inside, some ending on it, where the
+/// boundary runs on into the band.
+#[test]
+fn the_bands_seam_is_the_sheets_hole() {
+    use gcs_core::brep::swept::tube::{seams,faces::sheet_net};
+    let (tool,path,roll,tol) = crate::common::bench::crossed(-1.);
+    let ring = Ring::read(&tool).unwrap();
+    let feature = 0.25*ring.thickness;
+    let tube = Tube::banded(&ring,&path,roll,tol,feature).unwrap();
+    assert_eq!(tube.bands.len(),1);
+    let band = &tube.bands[0];
+    for side in [1.,-1.] {
+        let rims = tube.hole(Chart::Sheet(side)).unwrap();
+        assert_eq!(rims.len(),2,"the pinch's rim and the band's seam");
+        for q in &rims[1] { assert!(tube.hole_side(1,*q).abs() < 1e-9,"the seam's rim off it at {q:?}") }
+        // deep inside no sheet is read, and the stand-in is the sheet on the seam and beyond
+        assert!(tube.side(Chart::Sheet(side),band.at).is_none(),"the sheet read deep in the band");
+        for i in 0..64 {
+            let q = band.seam_at(i as f64/64.);
+            for k in [1.,1.1] {
+                let p = band.place([q[0]*k,q[1]]);
+                let (a,b) = (tube.net_point(side,p[0],p[1]).unwrap(),tube.point(side,p[0],p[1]).unwrap().x);
+                assert!(gcs_core::brep::util::space::distance(a,b) < 1e-13,"the stand-in off the sheet {side} at {p:?}");
+            }
+        }
+    }
+    // the window holding the band, fitted with the stand-in held inside the seam
+    let (w0,w1) = (5.507489549754588,10.570919415858736);
+    let clock = std::time::Instant::now();
+    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol).unwrap();
+    eprintln!("the sheet − over its window: {} × {} poles in {:?}",net.poles.len(),net.poles[0].len(),clock.elapsed());
+    assert!(net.poles.len() <= 400 && net.poles[0].len() <= 320,"{} × {}",net.poles.len(),net.poles[0].len());
+    let mut inside = 0;
+    for i in 0..200 { for j in 0..200 {
+        let (u,v) = ((i as f64+0.5)/200.,(j as f64+0.5)/200.);
+        let (th,t) = (w0+(w1-w0)*u,roll[0]+(roll[1]-roll[0])*v);
+        if tube.band_holding([th,t]).is_none() { continue }
+        inside += 1;
+        let d = gcs_core::brep::util::space::distance(net.point(u,v),tube.net_point(-1.,th,t).unwrap());
+        assert!(d < 5.*0.1*tol,"the net off the stand-in by {d:e} at {:?}",[th,t]);
+    } }
+    assert!(inside > 100,"the seam holds {inside} samples");
+    // the sheet −'s depth traced up to the seam
+    let (folds,_) = edges(&tube,Chart::Sheet(-1.),tol,feature).unwrap();
+    let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();
+    let tails: Vec<[f64;2]> = lines.iter().flat_map(|f| swallowtails(&tube,-1.,f)).collect();
+    let deep = |q: &[f64;2]| tube.band_holding(*q).is_some_and(|(b,x)| b.deep(x));
+    assert!(!lines.iter().flatten().any(deep),"a fold deep in the band");
+    let (pieces,_,_) = seams(&tube,Chart::Sheet(-1.),&lines,&tails,&[],tol,feature).unwrap();
+    assert!(!pieces.iter().flat_map(|p| p.uv.iter()).any(deep),"a seam deep in the band");
+    let on = pieces.iter().flat_map(|p| [p.uv[0],p.uv[p.uv.len()-1]]).filter(|q| tube.hole_side(1,*q).abs() < 1e-6).count();
+    eprintln!("the sheet −: {} seams, {on} ends on the band's seam",pieces.len());
+    assert!(on > 0,"no seam ends on the band's seam");
 }

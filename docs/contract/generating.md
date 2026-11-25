@@ -3066,15 +3066,35 @@ to the floor within a twentieth of its turn; refused by name where the floor fal
 would leave the roll or hold the pinch. **The chart** is `(θ, t) = c + (mid(η) + w sinh τ) e_x +
 η e_y`, one `w`: a wider turn `W` reads `atan(w sinh τ / W)`, turning at most one in `τ`, so the
 sheet over `(τ, η)` is smooth on the chart's scale — each sheet over the whole chart fitted quintic
-to a tenth of the tolerance in 129 × 129 poles (0.1 s), where the window's net graded in `(θ, t)`
-asks 944 × 849; it turns as `(θ, t)` does (`w cosh τ e_x × e_y`), reads back (`chart_of`, in closed
+to a tenth of the tolerance in 257 × 129 poles, where the window's net graded in `(θ, t)` asks
+944 × 849; it turns as `(θ, t)` does (`w cosh τ e_x × e_y`), reads back (`chart_of`, in closed
 form), and its point and rates are the sheet's at the place by the chain rule (`Tube::band_at`), its
-side the sheet's `J`. **The seam**, nearer a box than an ellipse (`|τ/τ_s|⁴ + |η/η_s|⁴ = 1`), stands
-across at twice the turn's width at its ends (cadrs's measure). **Measured, not yet built**: the
-sheets' windows fitted outside the seam ask 271 × 248 and 275 × 252 poles. **Next**: the seam as the
-sheets' hole — a smooth stand-in inside it, as the pinch's (`net_point`), so no net strays where a
-Boolean reads it — the band's edges and seams traced over its chart, its rim's vertices in three
-charts, its faces, and `faces::solid` reading it.
+side the sheet's `J`.
+**The seam, the sheets' hole** (`Tube::banded`, gated by `swept_tube::the_bands_seam_is_the_sheets_hole`;
+`closed::ring` still calls `Tube::pinched`, which has no band): a box with its corners rounded,
+`|x/X|⁴ + |(η − m)/h|⁴ = 1` in how far across the line (`x = w sinh τ`) and along it — not in `τ`,
+where it is a spindle in `(θ, t)` hugging the line and the stand-in's blend falls within a sliver
+(1689 × 1732 poles, then 776 × 907) — across at eight times the turn's width at its ends: the sheet
+beside the seam bends as the tube over how far it stands from the line (measured: at twice 776 ×
+907, four times 476 × 429, eight 340 × 283, sixteen 351 × 217). It is each sheet's inner edge
+(`Tube::hole`, after the pinch's rim; `Tube::hole_side`), the sheet unread deeper than an eighth of
+its measure inside (`Band::deep`: a thin layer, where the pinch's is half its hole — inside the seam
+the line runs on toward its ends with its turn narrow, and the depth's search halved its cells over
+it without end), and filled for the nets by the pinch's rule, `S + s r (B e_r − A e_z)/h`, `h² =
+|(A, B)|² + δ² e^(1 − 1/(1 − S))` over the terms' scale (`Tube::net_point`): `S` the seam's measure,
+so the blend is smooth through the line (one of the seam's radius has a cone point there, and kinked
+the stand-in along the line), flat on the seam, the very sheet there and beyond (to 1e-13); `δ` the
+floor's least where the seam leaves the line, so the stand-in turns no faster than the sheets beyond
+(`Band::delta`, 2.7e-2). A window holding a band is graded as one holding the pinch's hole, its
+stand-in held to the bar inside the seam as the sheet outside — no net strays where a Boolean reads
+it: the reverse's two in 340 × 283 and 345 × 284 poles (2.2 s each, against 944 × 849 and 942 × 853).
+Both sheets' cuspidal edges and depth trace up to the seam, nothing deep inside (sheet `+` 7 seams in
+3.9 s; sheet `−` 5 in 3.3 s, 3 of their ends on the seam: the boundary runs on into the band).
+**Next**: the band's own edges and seams traced over its chart, its rim's vertices in the sheet and
+the band (`rim_vertex`'s), its faces, a cover whose place lies in the band read as the band's
+(`Tube::in_collar`'s), and `closed::ring` calling `Tube::banded`. The windows' nets about the pinch
+miss the sheet by up to 8.8e-6 between the rows and columns their bar is read along (sampled on a
+600 × 600 grid), banded or not: their check reads the middles of intervals only.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

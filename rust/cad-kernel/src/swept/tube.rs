@@ -55,7 +55,10 @@ pub fn covers_read() -> usize { COVERS.load(Ordering::Relaxed) }
 pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub radius: f64,pub height: f64,pub r: f64,
     pub rates: Option<Rates>,
     /// The pinch the collar charts, where the core circle's sweep is singular (`Tube::pinched`).
-    pub pinch: Option<Pinch<'a>> }
+    pub pinch: Option<Pinch<'a>>,
+    /// The bands about its near misses of a whole-touch, where a tube is built round them
+    /// (`Tube::banded`; none otherwise).
+    pub bands: Vec<band::Band> }
 
 /// **How fast the motion carries the core circle over the roll**, bounded: its rotation's spin
 /// (`Trajectory::spin_bound`) and the first four rates of the circle's points
@@ -97,7 +100,7 @@ impl<'a> Tube<'a> {
             }).map(|i| i.ok()).map(|i| i.unwrap_or(crate::util::interval::Interval::ZERO));
             Some(Rates {spin:path.spin_bound().ok()?,jet:path.point_jet_bound_over(boxed,domain,true).ok()?})
         })();
-        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None})
+        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None,bands:Vec::new()})
     }
 
     /// The core circle's point at `θ` in the tool's coordinates, and its first and second rates.
@@ -252,6 +255,7 @@ impl Tube<'_> {
         match c {
             Chart::Sheet(side) => {
                 if self.pinch.as_ref().is_some_and(|p| p.deep(uv)) { return None }
+                if self.band_holding(uv).is_some_and(|(b,q)| b.deep(q)) { return None }
                 self.jacobian(side,uv[0],uv[1])
             }
             Chart::Collar => self.collar_side(uv[0],uv[1]),
@@ -343,8 +347,8 @@ impl Field for Depth<'_> {
     /// holding it keeps a reach of the tube's size however it is halved, and the search asked four
     /// million cells of the forward member.
     fn surface(&self,uv: [f64;2]) -> (V,V,V) {
-        if let (Chart::Sheet(side),Some(p)) = (self.chart,&self.tube.pinch) {
-            if p.side(uv) < 0. {
+        if let Chart::Sheet(side) = self.chart {
+            if self.tube.pinch.as_ref().is_some_and(|p| p.side(uv) < 0.) || self.tube.band_holding(uv).is_some() {
                 let [h,k] = self.tube.steps(self.chart);
                 let x = |a: f64,b: f64| self.tube.net_point(side,a,b).unwrap_or([f64::NAN;3]);
                 let d = |a: V,b: V,e: f64| scale(sub(a,b),0.5/e);
@@ -637,8 +641,8 @@ pub fn round<F: Field>(field: &F,rect: crate::zero_set::Rect,periodic: [bool;2],
 pub fn edges(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> Result<(Vec<crate::zero_set::Piece<()>>,Vec<crate::zero_set::Search>),Unbuilt> {
     let periodic = [true,matches!(chart,Chart::End(_))];
     let hole = tube.hole(chart)?;
-    let side = |uv: [f64;2]| tube.pinch.as_ref().filter(|_| !hole.is_empty()).map_or(1.,|p| p.side(uv));
-    let sides: Vec<&dyn Fn([f64;2]) -> f64> = hole.iter().map(|_| &side as &dyn Fn([f64;2]) -> f64).collect();
+    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..hole.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let sides: Vec<&dyn Fn([f64;2]) -> f64> = rims.iter().map(|s| &**s).collect();
     round(&Edge {tube,chart},tube.rect(chart),periodic,&[],&hole,&sides,tol,feature)
         .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: where it stops bounding the sweep: {why}")))
 }
@@ -733,10 +737,10 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
     inner.extend(rim.iter().cloned());
     let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(-1.);
     let discs: Vec<Box<dyn Fn([f64;2]) -> f64>> = holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let hole = |uv: [f64;2]| match (chart,&tube.pinch) { (Chart::Sheet(_),Some(p)) => p.side(uv),_ => f64::INFINITY };
+    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..rim.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
     let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = edges.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
     sides.extend(discs.iter().map(|d| &**d));
-    sides.extend(rim.iter().map(|_| &hole as &dyn Fn([f64;2]) -> f64));
+    sides.extend(rims.iter().map(|s| &**s));
     let mut seeds = seeds.to_vec();
     seeds.extend(beside_edges(tube,chart,edges,tol,feature));
     let clock = std::time::Instant::now();
@@ -908,11 +912,25 @@ impl<'a> Tube<'a> {
     /// **The pinch's hole on a chart**, as its inner edges: on a sheet the rim `place(ψ, ±ρ₀)` read
     /// in `HOLE_RIM` chords; none on any other chart or where there is no pinch.
     pub fn hole(&self,chart: Chart) -> Result<Vec<Vec<[f64;2]>>,Unbuilt> {
-        let (Chart::Sheet(side),Some(p)) = (chart,&self.pinch) else { return Ok(Vec::new()) };
-        let line: Option<Vec<[f64;2]>> = (0..=HOLE_RIM).map(|i| p.rim(side,TAU*i as f64/HOLE_RIM as f64)).collect();
-        let mut line = line.ok_or_else(|| Unbuilt::Failed("the tube road: the pinch's rim not read".into()))?;
-        for j in 1..line.len() { line[j][0] = line[j-1][0]+(line[j][0]-line[j-1][0]+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI }
-        Ok(vec![line])
+        let Chart::Sheet(side) = chart else { return Ok(Vec::new()) };
+        let mut out = Vec::new();
+        if let Some(p) = &self.pinch {
+            let line: Option<Vec<[f64;2]>> = (0..=HOLE_RIM).map(|i| p.rim(side,TAU*i as f64/HOLE_RIM as f64)).collect();
+            let mut line = line.ok_or_else(|| Unbuilt::Failed("the tube road: the pinch's rim not read".into()))?;
+            for j in 1..line.len() { line[j][0] = line[j-1][0]+(line[j][0]-line[j-1][0]+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI }
+            out.push(line);
+        }
+        // (and each band's seam, `band::Band::rim`)
+        out.extend(self.bands.iter().map(|b| b.rim(HOLE_RIM)));
+        Ok(out)
+    }
+
+    /// **Which side of the hole's rim `k` (as `hole` lists them) a sheet's `(θ, t)` lies**: positive
+    /// outside, nought on it — the pinch's `Pinch::side`, a band's `Band::seam`.
+    pub fn hole_side(&self,k: usize,uv: [f64;2]) -> f64 {
+        let k = match &self.pinch { Some(p) if k == 0 => return p.side(uv),Some(_) => k-1,None => k };
+        let b = &self.bands[k];
+        b.seam(b.chart_of(uv))
     }
 
     /// **The collar's point at `(ψ, ρ)`** with its rates in closed form: its place `(θ, t)`
@@ -966,6 +984,21 @@ impl<'a> Tube<'a> {
     /// sheet itself from `ρ₀/2` out — so a net fitted over a window holding the hole fits the very
     /// sheet across its rim, which the faces cut it along; the sheet's point elsewhere.
     pub fn net_point(&self,side: f64,theta: f64,t: f64) -> Option<V> {
+        // (inside a band's seam the same rule, `h² = |(A, B)|² + δ² β` over the terms' scale, `β` the
+        // band's blend (`band::Band::blend`): the sheet itself on the seam, every rate of the blend
+        // nought there, and no turn narrower than the sheets' beyond the seam anywhere inside it —
+        // `band::Band::delta`)
+        if let Some((band,q)) = self.band_holding([theta,t]) {
+            let (v,size) = self.ring.ab(self.path,0,theta,t)?;
+            let [a,b] = [v[0]/size,v[1]/size];
+            let h = (a*a+b*b+band.delta*band.delta*band.blend(q)).sqrt();
+            let sp = self.spine(theta,t)?;
+            let m = self.path.at(t).ok()?;
+            let (s,c) = theta.dsin_cos();
+            let f = &self.ring.frame;
+            let nn = sub(scale(m.vector(f.dir([c,s,0.])),b),scale(m.vector(f.z),a));
+            return Some(add(sp.s,scale(nn,side*self.r/h)))
+        }
         if let Some(p) = &self.pinch {
             if p.side([theta,t]) < 0. {
                 let [a,b] = p.collar.ab(theta,t)?;

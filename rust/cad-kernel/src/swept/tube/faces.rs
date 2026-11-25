@@ -1401,7 +1401,12 @@ const MOST_GRADED: usize = 4096;
 /// outside the hole from `ρ₀` 0.14 forward and 0.12 reverse at 1024 × 512).
 pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64) -> Result<crate::nurbs::Net,Unbuilt> {
     let [a,b] = tube.roll;
-    let holds = tube.pinch.as_ref().is_some_and(|p| { let th = p.collar.at.1; let th = w0+(th-w0).rem_euclid(TAU); th < w1 });
+    let within = |th: f64| { let th = w0+(th-w0).rem_euclid(TAU); th < w1 };
+    // (a window holding a band's seam graded as one holding the pinch's hole, its stand-in read and
+    // held to the bar inside the seam as outside: the stand-in is smooth, and a net held to it
+    // strays nowhere a Boolean reads it)
+    let holds = tube.pinch.as_ref().is_some_and(|p| within(p.collar.at.1))
+        || tube.bands.iter().any(|b| b.rim(64).iter().any(|q| within(q[0])));
     let fit = if holds {
         let f = |u: f64,v: f64| tube.net_point(side,w0+(w1-w0)*u,a+(b-a)*v).unwrap_or([f64::NAN;3]);
         // (read against the sheet where the net is kept: outside the hole, the faces' rim)

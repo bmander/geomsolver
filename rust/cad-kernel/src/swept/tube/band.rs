@@ -39,14 +39,20 @@ const NEAR_TURN: f64 = 1e-2;
 /// The seam leaves the line where the floor's turn is this part of the roll wide (structural, as
 /// `NEAR_TURN`: what the sheets beyond follow).
 const END_TURN: f64 = 1e-2;
-/// The seam stands this many times the turn's width at its ends across the line (cadrs's measure).
-const BAND_ACROSS: f64 = 2.;
+/// The seam stands this many times the turn's width at its ends across the line: the sheet beside it
+/// bends as sharply as the tube over how far it stands from the line, so the farther the seam, the
+/// fewer knots the sheets' nets carry across their windows (the reverse's, measured: at twice 776 ×
+/// 907 poles, at four times 476 × 429, at eight 340 × 283, at sixteen 351 × 217).
+const BAND_ACROSS: f64 = 8.;
 /// The chart reaches this much of `τ` past its seam.
 const BAND_ROOM: f64 = 0.5;
 /// The chart reaches this part of its seam's length along the line past each end.
 const ROOM_ALONG: f64 = 0.125;
-/// The seam's shape in `(τ, η)`: `|τ/τ_s|^p + |η/η_s|^p = 1`, a box with its corners rounded.
+/// The seam's shape: `|x/X|^p + |η/η_s|^p = 1` across and along the line, a box with its corners
+/// rounded.
 const SEAM_POWER: f64 = 4.;
+/// How far inside the seam, as a part of its measure, a sheet is read past it (`Band::deep`).
+const RIM_LAYER: f64 = 0.125;
 /// The degree of the floor's bend, in Chebyshev polynomials of `η` over the chart.
 const BEND_DEGREE: usize = 8;
 /// Steps of the line's floor followed, at most (structural).
@@ -65,9 +71,14 @@ pub struct Band {
     pub ey: [f64;2],
     /// The turn's width at the least.
     pub w: f64,
-    /// The seam's reach in `τ`, and its ends along the line in `η`.
+    /// The seam's reach across the line in `(θ, t)`, `X`, and in `τ` (`asinh(X / w)`), and its ends along
+    /// the line in `η`.
+    pub across: f64,
     pub tau: f64,
     pub eta: [f64;2],
+    /// The floor of the stand-in's `h` (`Tube::net_point`): the least of `|(A, B)|` over the scale
+    /// where the seam leaves the line, so the stand-in turns no faster than the sheets beyond it.
+    pub delta: f64,
     /// The chart's `η` over which the bend is read: its middle and half its length.
     span: [f64;2],
     /// The floor's bend across, Chebyshev coefficients in `(η − span[0]) / span[1]`.
@@ -139,12 +150,59 @@ impl Band {
         [[-self.tau-BAND_ROOM,self.tau+BAND_ROOM],[self.eta[0]-room,self.eta[1]+room]]
     }
 
-    /// **Which side of the seam `(τ, η)` lies**: positive outside (the sheets'), negative inside (the
-    /// band's), nought on it — `(|τ/τ_s|^p + |(η − m)/h|^p)^(1/p) − 1`, `m` and `h` the middle and half
-    /// of the seam along the line.
-    pub fn seam(&self,[tau,eta]: [f64;2]) -> f64 {
+    /// The seam's measure at `(τ, η)`: `S = |x/X|^p + |(η − m)/h|^p`, `x = w sinh τ` how far across the
+    /// line, `m` and `h` the middle and half of the seam along it — below one inside.
+    fn measure(&self,[tau,eta]: [f64;2]) -> f64 {
         let (m,h) = (0.5*(self.eta[0]+self.eta[1]),0.5*(self.eta[1]-self.eta[0]));
-        ((tau/self.tau).abs().dpowf(SEAM_POWER)+((eta-m)/h).abs().dpowf(SEAM_POWER)).dpowf(1./SEAM_POWER)-1.
+        (self.w*sinh(tau)/self.across).abs().dpowf(SEAM_POWER)+((eta-m)/h).abs().dpowf(SEAM_POWER)
+    }
+
+    /// **Which side of the seam `(τ, η)` lies**: positive outside (the sheets'), negative inside (the
+    /// band's), nought on it — `S^(1/p) − 1`. A box with its corners rounded in how far across the line
+    /// and along it, not in `τ`: so the seam stands its reach off the line all along but at its two
+    /// ends, where the turn is as wide as the sheets beyond follow (a box in `(τ, η)` is a spindle in
+    /// `(θ, t)`, hugging the line where the turn is still narrow, and the stand-in's blend falls from
+    /// one to nought within a sliver of the seam).
+    pub fn seam(&self,q: [f64;2]) -> f64 { self.measure(q).dpowf(1./SEAM_POWER)-1. }
+}
+
+impl Band {
+    /// **Whether `(τ, η)` lies deep in the band**: farther inside the seam than `RIM_LAYER` of its
+    /// measure (`seam` under −`RIM_LAYER`), where a sheet is not read (`Tube::side`) — the pinch's rule
+    /// (`Pinch::deep`), a sheet read on past the rim only as far as a tracer's exit asks; but a thin
+    /// layer, where the pinch's is half its hole: inside the seam the line runs on toward its ends with
+    /// its turn still narrow, and the depth's search halved its cells over it without end.
+    pub fn deep(&self,q: [f64;2]) -> bool { !(self.seam(q) >= -RIM_LAYER) }
+
+    /// The seam's point at the fraction `f` of a turn round it, in `(τ, η)`: the rounded box's
+    /// `(X c^(2/p), h s^(2/p))` across and along, each signed as its cosine and sine, `τ` its `asinh`.
+    pub fn seam_at(&self,f: f64) -> [f64;2] {
+        let (s,c) = (std::f64::consts::TAU*f).dsin_cos();
+        let (m,h) = (0.5*(self.eta[0]+self.eta[1]),0.5*(self.eta[1]-self.eta[0]));
+        let lean = |x: f64| x.abs().dpowf(2./SEAM_POWER).copysign(x);
+        [asinh(self.across*lean(c)/self.w),m+h*lean(s)]
+    }
+
+    /// **The seam as a sheet's inner edge**: `n` chords of it, each place `(θ, t)` (`θ` unwrapped
+    /// along it), counter-clockwise in `(τ, η)` as in `(θ, t)`.
+    pub fn rim(&self,n: usize) -> Vec<[f64;2]> {
+        let mut line: Vec<[f64;2]> = (0..=n).map(|i| self.place(self.seam_at(i as f64/n as f64))).collect();
+        for j in 1..line.len() {
+            line[j][0] = line[j-1][0]+(line[j][0]-line[j-1][0]+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI
+        }
+        line
+    }
+}
+
+impl Band {
+    /// **The stand-in's blend at `(τ, η)`** (`Tube::net_point`): `e^(1 − 1/(1 − S))` inside the seam,
+    /// nought outside, `S` the seam's measure — one on the line at its middle, flat to every order on
+    /// the seam, and smooth through the line: `S` is a polynomial in how far across and along, where
+    /// the seam's radius `S^(1/p)` has a cone point at the middle (a blend of the radius, the pinch's
+    /// rule `β(ρ/ρ₀)`, kinked the stand-in along the very line the band is for).
+    pub fn blend(&self,q: [f64;2]) -> f64 {
+        let s = self.measure(q);
+        if s < 1. { (1.-1./(1.-s)).dexp() } else { 0. }
     }
 }
 
@@ -228,7 +286,7 @@ impl Tube<'_> {
             if !(w < NEAR_TURN*(b-a)) || !(least > 0.) { continue }
             let ey = [-ex[1],ex[0]];
             // the floor followed along the line each way: (η, across, the turn's width)
-            let mut floor: Vec<(f64,f64,f64)> = vec![(0.,0.,w)];
+            let mut floor: Vec<(f64,f64,f64,f64)> = vec![(0.,0.,w,least)];
             let mut ends = [0.;2];
             for (e,dir) in [-1.,1.].into_iter().enumerate() {
                 let (mut eta,mut x,mut turn,mut low) = (0.,0.,w,least);
@@ -246,27 +304,29 @@ impl Tube<'_> {
                     if l < low*(1.-1e-9) { return Err(failed(format!("the floor through {c:?} falls again at {p:?} ({l:e} under {low:e})"))) }
                     let Some((_,rate)) = self.across(p[0],p[1]) else { return Err(failed(format!("no rate across at {p:?}"))) };
                     (x,turn,low) = (nx,l/rate,l);
-                    floor.push((eta,x,turn));
+                    floor.push((eta,x,turn,l));
                     if end.is_none() && turn >= END_TURN*(b-a) { end = Some(eta) }
                     if let Some(z) = end { if eta.abs() >= z.abs()*(1.+2.*ROOM_ALONG) { break } }
                 }
                 ends[e] = end.expect("an end");
             }
             floor.sort_by(|p,q| p.0.total_cmp(&q.0));
-            let turn_at = |eta: f64| floor.iter().min_by(|p,q| (p.0-eta).abs().total_cmp(&(q.0-eta).abs())).map_or(w,|p| p.2);
-            let tau = asinh(BAND_ACROSS*turn_at(ends[0]).max(turn_at(ends[1]))/w);
+            let nearest = |eta: f64| *floor.iter().min_by(|p,q| (p.0-eta).abs().total_cmp(&(q.0-eta).abs())).expect("a floor");
+            let across = BAND_ACROSS*nearest(ends[0]).2.max(nearest(ends[1]).2);
+            let tau = asinh(across/w);
+            let delta = nearest(ends[0]).3.max(nearest(ends[1]).3);
             // the bend: a least-squares Chebyshev fit of the floor over what was followed
             let (lo,hi) = (floor[0].0,floor[floor.len()-1].0);
             let span = [0.5*(lo+hi),0.5*(hi-lo)];
             let mut m = crate::util::linalg::Mat::zeros(floor.len(),BEND_DEGREE+1);
-            for (i,&(eta,_,_)) in floor.iter().enumerate() {
+            for (i,&(eta,..)) in floor.iter().enumerate() {
                 let (t,_) = chebyshev((eta-span[0])/span[1],BEND_DEGREE);
                 for (k,v) in t.into_iter().enumerate() { m.data[i*(BEND_DEGREE+1)+k] = v }
             }
             let rhs: Vec<f64> = floor.iter().map(|p| p.1).collect();
             let (bend,_) = crate::util::linalg::min_norm_solve(&m,&rhs,1e-14);
-            let band = Band {at:c,least,ex,ey,w,tau,eta:ends,span,bend};
-            if let Some((eta,x,turn)) = floor.iter().copied().find(|&(eta,x,turn)| (band.mid(eta).0-x).abs() > 0.05*turn) {
+            let band = Band {at:c,least,ex,ey,w,across,tau,eta:ends,delta,span,bend};
+            if let Some((eta,x,turn,_)) = floor.iter().copied().find(|&(eta,x,turn,_)| (band.mid(eta).0-x).abs() > 0.05*turn) {
                 return Err(failed(format!("the bend through {c:?} misses the floor at η {eta} by {:e}, its turn {turn:e}",band.mid(eta).0-x)))
             }
             // the chart inside the roll, clear of the pinch
@@ -287,6 +347,22 @@ impl Tube<'_> {
             out.push(band);
         }
         Ok(out)
+    }
+
+    /// **A sheet built round its near misses** (`Tube::pinched`, then `bands`): the sheets' hole is
+    /// each band's seam too (`Tube::hole`), deep inside it no sheet is read (`Tube::side`), and its
+    /// stand-in fills it for the nets (`Tube::net_point`). Not yet the road's: `faces::solid` builds
+    /// no band's faces, and `closed::ring` calls `Tube::pinched`.
+    pub fn banded<'a>(ring: &'a super::super::rings::Ring,path: &'a crate::trajectory::Trajectory,roll: [f64;2],tol: f64,feature: f64)
+        -> Result<Tube<'a>,Unbuilt> {
+        let mut tube = Tube::pinched(ring,path,roll,tol,feature)?;
+        tube.bands = tube.bands()?;
+        Ok(tube)
+    }
+
+    /// The band whose seam holds the place `(θ, t)`, and its `(τ, η)` there.
+    pub fn band_holding(&self,uv: [f64;2]) -> Option<(&Band,[f64;2])> {
+        self.bands.iter().map(|b| (b,b.chart_of(uv))).find(|(b,q)| b.seam(*q) < 0.)
     }
 
     /// **The sheet on `side` read on a band's chart at `(τ, η)`**: the sheet's point at the place, its
