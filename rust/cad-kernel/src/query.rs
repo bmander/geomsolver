@@ -101,11 +101,21 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         (&Curve::Line {p:p1,d:d1},&Curve::Line {p:p2,d:d2}) => {
             let n = cross(d1,d2);
             if norm(n) <= 1e-12 { return Some(Vec::new()); }
-            // the nearest points of the two lines
-            let w = sub(p2,p1);
-            let nn = dot(n,n);
-            let (s,t) = (dot(cross(w,d2),n)/nn,dot(cross(w,d1),n)/nn);
+            // the nearest points of the two lines, over `1 − (d₁·d₂)²` where they stand well apart
+            // (exactly 1 where they are square) and over `|d₁ × d₂|²` where they lie near parallel:
+            // there the first loses half its digits to cancellation, and two sides 1.7e-5 rad apart
+            // crossed 3.7e-7 from where they cross (brep-bench `tangent/cube-turned-a-hair`)
+            let w = sub(p1,p2);
+            let (b_,d_,e_) = (dot(d1,d2),dot(d1,w),dot(d2,w));
+            let den = if b_*b_ > 0.5 { dot(n,n) } else { 1.-b_*b_ };
+            let (s,t) = ((b_*e_-d_)/den,(e_-b_*d_)/den);
             let (q1,q2) = (add(p1,scale(d1,s)),add(p2,scale(d2,t)));
+            // two stretches that stand within the tolerance of each other all along run together
+            // and cross nowhere one point can say: a stretch stands off the other line by `|n|`
+            // times how far along it is from the crossing (a round's tangent lines `1.25e-9` rad
+            // apart, read as crossing, minted a sliver at the crossing 2.3e-6 off their end)
+            let along = |span: [f64;2],at: f64| (span[0]-at).abs().max((span[1]-at).abs());
+            if norm(n)*along(ta,s).max(along(tb,t)) <= tol { return Some(Vec::new()); }
             if distance(q1,q2) <= tol { vec![q1] } else { Vec::new() }
         }
         (&Curve::Line {p,d},&Curve::Circle(f,r)) | (&Curve::Circle(f,r),&Curve::Line {p,d}) => line_circle(p,d,f.o,f.z,r),
