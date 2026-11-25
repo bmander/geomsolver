@@ -1768,7 +1768,18 @@ closed form, one twist seen from another with no level between (`Screw::at`,
 go: each reading the same numbers, and the same file, to the bit. The tube road traces its two sheets
 side by side once the collar is traced (`faces::solid`): a sheet's runs leave seeds on the pinch's
 rim of its own side alone, so neither seeds the other, and what each leaves is read after in order,
-as before — the crossed reverse member 15.4 s to 10.0 s, its file the same.
+as before — the crossed reverse member 15.4 s to 10.0 s, its file the same. A span's Bézier points are linear in
+the poles reaching it, so a net's index reads each span's weights once each way
+(`nurbs::blossom_weights`) and every row's and column's points by them, not a blossom a point; and
+a large tree's first levels are grown on threads of their own (`util::bvh`, past 32 768 items), the
+very tree one thread grows (`brep::a_large_tree_answers_as_a_scan_of_its_boxes`). A sheet's foot
+(`geom::net_search`) is the thread's warm foot, without its spans' boxes searched, where that foot
+stands within a thousandth of the sheet's size of the point — no box is nearer than nought, so the
+search keeps it anyway — and where the boxes leave a point off the sheet unsettled, its nearest poles
+are read through a tree of them (`query::net_poles`, past 4 096 poles) as the scan of every pole
+reads them, the first in the rows' order among equals
+(`brep::a_large_sheets_feet_are_its_nearest_points_warm_or_cold`): the crossed tori's Boolean
+20 s to 12 s, the case 28.5 s to 20.6 s, its file the same.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it

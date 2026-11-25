@@ -395,6 +395,23 @@ pub(crate) fn blossom(knots: &[f64],poles: &[V],k: usize,deg: usize,t: [f64;2],j
     if deg < 4 { tabled::<4>(knots,poles,k,deg,t,j) } else if deg < SMALL { tabled::<SMALL>(knots,poles,k,deg,t,j) } else { tabled::<W>(knots,poles,k,deg,t,j) }
 }
 
+/// **`blossom`'s weights**: the `deg + 1` numbers its point is of the poles reaching span `k` —
+/// the blossom is linear in them, so these are de Boor's same steps over the poles `e_0 … e_deg` —
+/// for a piece's every Bézier point read off many rows of poles over the one span.
+pub(crate) fn blossom_weights(knots: &[f64],k: usize,deg: usize,[t0,t1]: [f64;2],j: usize) -> Vec<f64> {
+    let mut q: Vec<Vec<f64>> = (0..=deg).map(|m| (0..=deg).map(|c| if c == m { 1. } else { 0. }).collect()).collect();
+    for r in 1..=deg {
+        let arg = if r <= deg-j { t0 } else { t1 };
+        for m in (r..=deg).rev() {
+            let i = k-deg+m;
+            let den = knots[i+deg+1-r]-knots[i];
+            let alpha = if den > 0. { (arg-knots[i])/den } else { 0. };
+            q[m] = (0..=deg).map(|c| (1.-alpha)*q[m-1][c]+alpha*q[m][c]).collect();
+        }
+    }
+    q.swap_remove(deg)
+}
+
 /// A Bézier curve's point at `f`, its poles in homogeneous coordinates: de Casteljau's steps.
 fn casteljau<const M: usize>(poles: &[[f64;4]],f: f64) -> V {
     let mut d = [[0.;4];M];

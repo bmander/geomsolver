@@ -1238,6 +1238,11 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
     // fitted sheet, 1.4 off a point on it), read again by the search below
     let indexed = || -> Option<Uv> {
         if n.weights.is_some() { return None }
+        let foot = |uv: Uv| (crate::util::space::distance(n.point(uv[0],uv[1]),p),uv);
+        // (a warm foot within `near` of the point is kept whatever the nearest box: no box is nearer
+        // than nought — so the boxes are not searched for it, most asks of a march along the sheet)
+        let warm = start.and_then(|s| net_newton(n,p,s)).map(foot);
+        if let Some((d,uv)) = warm { if d <= near { return Some(uv) } }
         let index = crate::query::net_index(net);
         let gap = |b: crate::util::bvh::Bounds<3>| {
             let d: V = std::array::from_fn(|k| (b.lo[k]-p[k]).max(p[k]-b.hi[k]).max(0.));
@@ -1252,10 +1257,7 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
         });
         let nearest = nearest.into_inner();
         let least = nearest[0].0;
-        let foot = |uv: Uv| (crate::util::space::distance(n.point(uv[0],uv[1]),p),uv);
-        if let Some(uv) = start.and_then(|s| net_newton(n,p,s)).filter(|&uv| foot(uv).0 <= least+near) {
-            return Some(uv)
-        }
+        if let Some((_,uv)) = warm.filter(|&(d,_)| d <= least+near) { return Some(uv) }
         nearest.iter().filter(|c| c.1 != usize::MAX).filter_map(|&(_,i)| {
             let [su,sv] = index.spans[i];
             net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])]).map(foot)
@@ -1265,15 +1267,43 @@ fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
     let warm = || start.filter(|_| n.weights.is_some()).and_then(|s| net_settle(n,p,s)).filter(|&(d,_)| d <= near).map(|(_,uv)| uv);
     let uv = warm().or_else(indexed).unwrap_or_else(|| {
         // from the nearest poles' Greville points, the nearest first, then the grid
+        // (the four least by their squared distance, the first in the rows' order among equals: read
+        // through the poles' tree where the net is large, `query::net_poles`, as over every pole)
         let mut nearest = [(f64::INFINITY,(0,0));4];
-        for (i,row) in n.poles.iter().enumerate() { for (j,&q) in row.iter().enumerate() {
-            let e = sub(q,p);
-            let d = dot(e,e);
-            if d < nearest[3].0 {
-                nearest[3] = (d,(i,j));
-                nearest.sort_by(|a,b| a.0.total_cmp(&b.0));
+        let width = n.poles[0].len();
+        if n.poles.len()*width >= POLES_TREED {
+            let tree = crate::query::net_poles(net);
+            let best = [(f64::INFINITY,usize::MAX);4];
+            let gap = |b: crate::util::bvh::Bounds<3>| {
+                let d: V = std::array::from_fn(|k| (b.lo[k]-p[k]).max(p[k]-b.hi[k]).max(0.));
+                dot(d,d)
+            };
+            let best = std::cell::RefCell::new(best);
+            // (a box at its squared gap past the fourth's, and a hair more, is passed by: none
+            // as near as it is lost to the gap's rounding)
+            tree.query_nearest(gap,|| { let b = best.borrow()[3].0; b+b*1e-12 },|id| {
+                let (i,j) = (id/width,id%width);
+                let e = sub(n.poles[i][j],p);
+                let d = dot(e,e);
+                let mut best = best.borrow_mut();
+                if (d,id) < best[3] && !best.contains(&(d,id)) {
+                    best[3] = (d,id);
+                    best.sort_by(|a,b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                }
+            });
+            for (k,&(d,id)) in best.into_inner().iter().enumerate() {
+                if id != usize::MAX { nearest[k] = (d,(id/width,id%width)) }
             }
-        } }
+        } else {
+            for (i,row) in n.poles.iter().enumerate() { for (j,&q) in row.iter().enumerate() {
+                let e = sub(q,p);
+                let d = dot(e,e);
+                if d < nearest[3].0 {
+                    nearest[3] = (d,(i,j));
+                    nearest.sort_by(|a,b| a.0.total_cmp(&b.0));
+                }
+            } }
+        }
         // the first foot from them inside the domain, or on the sheet; else the nearest of those
         // held on its edge (a point beyond it); the grid's where none settles. (The first foot
         // settled was taken, one held on the domain's edge among them, Newton's method stopped
@@ -1374,6 +1404,9 @@ fn pole_newton(n: &super::nurbs::Net,p: V,mut uv: Uv,k: usize,at: f64) -> Uv {
 /// the eight nearest samples standing at distinct points (a row of poles, collapsed to one point,
 /// counted once: the samples nearest a point by a pole were all the pole, where no foot moves), the
 /// nearest foot it settles on taken; else Gauss–Newton from the nearest sample.
+/// The fewest poles a net has for the nearest of them to be read through their tree (`net_search`).
+const POLES_TREED: usize = 1 << 12;
+
 fn net_grid_inverse(n: &super::nurbs::Net,p: V) -> Uv {
     let [[u0,u1],[v0,v1]] = n.domain();
     // a sample or two per span, at least sixteen a side and at most sixty-four

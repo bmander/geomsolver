@@ -1389,6 +1389,26 @@ pub(crate) fn net_index(net: &std::sync::Arc<crate::nurbs::Net>) -> std::sync::A
     cell.get_or_init(|| std::sync::Arc::new(indexed(net))).clone()
 }
 
+/// **The tree of `net`'s poles** (each a box of no size, in the order of its rows), built once for
+/// the net and kept as `net_index` keeps its spans': the nearest poles of a point off a sheet
+/// (`geom::net_search`) read through it rather than over every pole.
+pub(crate) fn net_poles(net: &std::sync::Arc<crate::nurbs::Net>) -> std::sync::Arc<crate::util::bvh::Bvh<3>> {
+    type Cell = std::sync::Arc<std::sync::OnceLock<std::sync::Arc<crate::util::bvh::Bvh<3>>>>;
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<crate::nurbs::Net>,Cell)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = std::sync::Arc::as_ptr(net) as usize;
+    let cell = {
+        let mut store = STORE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_,c)) = store.get(&key) { c.clone() } else {
+            if store.len() >= INDEXED { store.clear() }
+            let c: Cell = Default::default();
+            store.insert(key,(net.clone(),c.clone()));
+            c
+        }
+    };
+    cell.get_or_init(|| std::sync::Arc::new(crate::util::bvh::Bvh::new(net.poles.iter().flatten().map(|&q| crate::util::bvh::Bounds {lo:q,hi:q})))).clone()
+}
+
 /// The fewest spans a net has for its index to be read on every core (`indexed`).
 const INDEXED_APART: usize = 1 << 14;
 
@@ -1403,19 +1423,28 @@ fn indexed(net: &crate::nurbs::Net) -> NetIndex {
     };
     let (us,vs) = (spans(&net.uknots,du,nu),spans(&net.vknots,dv,nv));
     let apart = us.len()*vs.len() >= INDEXED_APART;
-    // rows[i][s]: row i's Bézier points over v's span s
-    let rows: Vec<Vec<Vec<V>>> = shared(nu,apart,|i| vs.iter().map(|&(sv,l)| {
-        (0..=dv).map(|j| blossom(&net.vknots,&net.poles[i][l-dv..=l],l,dv,sv,j)).collect()
+    // (a Bézier point is linear in the poles reaching its span, `blossom_weights`: each span's weights
+    // once each way, then every row's and every column's points by them)
+    let weights = |knots: &[f64],d: usize,spans: &[([f64;2],usize)]| -> Vec<Vec<Vec<f64>>> {
+        spans.iter().map(|&(t,k)| (0..=d).map(|j| crate::nurbs::blossom_weights(knots,k,d,t,j)).collect()).collect()
+    };
+    let (wu,wv) = (weights(&net.uknots,du,&us),weights(&net.vknots,dv,&vs));
+    fn comb(w: &[f64],p: impl Fn(usize) -> V) -> V {
+        let mut q = [0.;3];
+        for (m,&c) in w.iter().enumerate() { let x = p(m); for i in 0..3 { q[i] += c*x[i] } }
+        q
+    }
+    // rows[i][s(dv + 1) + j]: row i's Bézier point j over v's span s
+    let rows: Vec<Vec<V>> = shared(nu,apart,|i| vs.iter().zip(&wv).flat_map(|(&(_,l),w)| {
+        (0..=dv).map(move |j| comb(&w[j],|m| net.poles[i][l-dv+m]))
     }).collect());
     let boxed: Vec<Vec<crate::util::bvh::Bounds<3>>> = shared(us.len(),apart,|a| {
-        let (su,k) = us[a];
-        let mut col: Vec<V> = vec![[0.;3];du+1];
+        let (k,w) = (us[a].1,&wu[a]);
         (0..vs.len()).map(|s| {
             let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for j in 0..=dv {
-                for (c,i) in (k-du..=k).enumerate() { col[c] = rows[i][s][j] }
                 for i in 0..=du {
-                    let q = blossom(&net.uknots,&col,k,du,su,i);
+                    let q = comb(&w[i],|m| rows[k-du+m][s*(dv+1)+j]);
                     for c in 0..3 { lo[c] = lo[c].min(q[c]); hi[c] = hi[c].max(q[c]) }
                 }
             }
@@ -1424,7 +1453,8 @@ fn indexed(net: &crate::nurbs::Net) -> NetIndex {
     });
     let out: Vec<[[f64;2];2]> = us.iter().flat_map(|&(su,_)| vs.iter().map(move |&(sv,_)| [su,sv])).collect();
     let bounds: Vec<crate::util::bvh::Bounds<3>> = boxed.into_iter().flatten().collect();
-    NetIndex {spans:out,tree:crate::util::bvh::Bvh::new(bounds.iter().copied()),boxes:bounds}
+    let tree = crate::util::bvh::Bvh::new(bounds.iter().copied());
+    NetIndex {spans:out,tree,boxes:bounds}
 }
 
 /// `f(0), …, f(n − 1)` in order, read on every core where `apart` — whether or not the caller is one
