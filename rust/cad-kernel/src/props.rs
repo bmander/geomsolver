@@ -1353,3 +1353,84 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         out
     }
 }
+
+/// The fewest poles a net's face has for `fluxes_bounded` to estimate its flux rather than read
+/// it: a fitted sheet graded to hundreds of knots each way (a tumbling torus's, #1013), whose
+/// table `Cells` reads strip by strip across every knot the face spans.
+const ESTIMATED_POLES: usize = 40_000;
+
+/// The fewest grid points inside a face its estimate is taken on: a face narrower than that across
+/// the grid is read exactly.
+const ESTIMATED_INSIDE: usize = 1024;
+
+/// **Each face's flux with a bound on its error** — what a sign is read from (`sew::orient`), never
+/// a measure. A face on a net of `ESTIMATED_POLES` poles or more is read by the midpoint rule on
+/// two grids over its loops' box, each point weighed by the winding number of its loops as stored
+/// (Green's theorem's `∮ G dv` is `∬ g w du dv`, so the sense comes as `terms`' does), and the
+/// finer kept, its error the two readings' difference twice over and, for the cells its loops cut
+/// (each counted whole or not at all), `|g|` where each row crosses a loop times a cell; every
+/// other face is read exactly (`terms`), with no error.
+pub fn fluxes_bounded(b: &Brep) -> Vec<(f64,f64)> {
+    crate::util::par::indices(b.faces.len(),|fi| {
+        let f = &b.faces[fi];
+        estimated(b,f).unwrap_or_else(|| (terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum(),0.))
+    })
+}
+
+/// A large net's face's flux on the grid (`fluxes_bounded`), or none where it is read exactly.
+fn estimated(b: &Brep,f: &Face) -> Option<(f64,f64)> {
+    let s = &f.surface;
+    let Surface::BSpline(_,n) = s else { return None };
+    if n.poles.len()*n.poles[0].len() < ESTIMATED_POLES || s.periods() != [None,None] { return None }
+    // each loop's polygon in the face's parameters, its uses in the order the loop runs them
+    const PER_USE: usize = 64;
+    let mut loops: Vec<Vec<Uv>> = Vec::new();
+    for l in &f.loops {
+        let mut ring: Vec<Uv> = Vec::new();
+        for c in l {
+            let e = &b.edges[c.edge as usize];
+            let mut pts: Vec<Uv> = (0..=PER_USE).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/PER_USE as f64,e,s,&b.vertices)).collect();
+            if c.reversed { pts.reverse() }
+            ring.extend(pts);
+        }
+        if !ring.iter().flatten().all(|x| x.is_finite()) { return None }
+        if ring.len() >= 3 { loops.push(ring) }
+    }
+    let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+    for q in loops.iter().flatten() { for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]) } }
+    if !(hi[0] > lo[0] && hi[1] > lo[1]) { return None }
+    // the midpoint rule on an `m` × `m` grid of the box, each row's winding read along it
+    let grid = |m: usize| -> (f64,usize,f64) {
+        let (hu,hv) = ((hi[0]-lo[0])/m as f64,(hi[1]-lo[1])/m as f64);
+        let (mut sum,mut inside,mut cut) = (0.,0,0.);
+        for j in 0..m {
+            let v = lo[1]+(j as f64+0.5)*hv;
+            // (each edge crossing the row: where, and +1 upward, −1 downward)
+            let mut cross: Vec<(f64,i32)> = Vec::new();
+            for ring in &loops {
+                for i in 0..ring.len() {
+                    let (p,q) = (ring[i],ring[(i+1)%ring.len()]);
+                    if (p[1] <= v) != (q[1] <= v) {
+                        cross.push((p[0]+(v-p[1])/(q[1]-p[1])*(q[0]-p[0]),if q[1] > p[1] { 1 } else { -1 }));
+                    }
+                }
+            }
+            if cross.is_empty() { continue }
+            cross.sort_by(|a,b| a.0.total_cmp(&b.0));
+            for &(u,_) in &cross { cut += integrand(s,[u,v],What::Flux).abs() }
+            // (the winding at `u` is the sum of the crossings beyond it)
+            let mut k = cross.len();
+            let mut w: i32 = 0;
+            for i in (0..m).rev() {
+                let u = lo[0]+(i as f64+0.5)*hu;
+                while k > 0 && cross[k-1].0 > u { k -= 1; w += cross[k].1 }
+                if w != 0 { sum += w as f64*integrand(s,[u,v],What::Flux); inside += 1 }
+            }
+        }
+        (sum*hu*hv,inside,cut*hu*hv)
+    };
+    let (fine,inside,cut) = grid(256);
+    if inside < ESTIMATED_INSIDE || !cut.is_finite() { return None }
+    let (coarse,..) = grid(128);
+    Some((fine,2.*(fine-coarse).abs()+cut))
+}

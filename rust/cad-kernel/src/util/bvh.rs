@@ -31,6 +31,65 @@ struct Node<const D: usize> {
     first: usize,
     count: usize,
 }
+/// How many levels of a tree over `n` items are grown on threads of their own (`grow`): none for a
+/// small tree or without threads, else one a doubling of the cores, up to three.
+fn spread(n: usize) -> usize {
+    #[cfg(target_arch = "wasm32")]
+    { let _ = n; 0 }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if n < SPREAD_ITEMS { return 0 }
+        let cores = std::thread::available_parallelism().map_or(1, |c| c.get());
+        (usize::BITS - 1 - cores.max(1).leading_zeros()).min(3) as usize
+    }
+}
+
+/// The fewest items a tree has for its first levels to be grown on threads of their own.
+const SPREAD_ITEMS: usize = 1 << 15;
+
+/// The subtree over `items` (the tree's items from `first` on) appended to `nodes` in preorder,
+/// each node's `end` the index past its subtree in `nodes`: the box of them all, and, past eight
+/// items, its halves by their middles along its longest side. Where `spread`, the halves grown on
+/// two threads into lists of their own and appended in order, their ends carried along — the very
+/// tree a single thread grows.
+fn grow<const D: usize>(items: &mut [(usize, Bounds<D>)], first: usize, nodes: &mut Vec<Node<D>>,
+    spread: usize) {
+    let count = items.len();
+    let bounds = items.iter().map(|(_, b)| *b).reduce(Bounds::union).unwrap();
+    let slot = nodes.len();
+    nodes.push(Node { bounds, end: slot + 1, first, count });
+    if count > 8 {
+        let axis = (0..D).max_by(|&a, &b| {
+            (bounds.hi[a] - bounds.lo[a]).total_cmp(&(bounds.hi[b] - bounds.lo[b]))
+        }).unwrap();
+        let mid = count / 2;
+        items.select_nth_unstable_by(mid, |(i, a), (j, b)| {
+            (a.lo[axis] * 0.5 + a.hi[axis] * 0.5)
+                .total_cmp(&(b.lo[axis] * 0.5 + b.hi[axis] * 0.5)).then(i.cmp(j))
+        });
+        nodes[slot].count = 0;
+        let (left, right) = items.split_at_mut(mid);
+        #[cfg(not(target_arch = "wasm32"))]
+        if spread > 0 {
+            let (mut a, mut b) = (Vec::new(), Vec::new());
+            std::thread::scope(|scope| {
+                let other = scope.spawn(|| grow(right, first + mid, &mut b, spread - 1));
+                grow(left, first, &mut a, spread - 1);
+                other.join().unwrap_or_else(|e| std::panic::resume_unwind(e));
+            });
+            for part in [a, b] {
+                let base = nodes.len();
+                nodes.extend(part.into_iter().map(|n| Node { end: n.end + base, ..n }));
+            }
+            nodes[slot].end = nodes.len();
+            return;
+        }
+        let _ = spread;
+        grow(left, first, nodes, 0);
+        grow(right, first + mid, nodes, 0);
+        nodes[slot].end = nodes.len();
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Bvh<const D: usize> {
     nodes: Vec<Node<D>>,
@@ -38,30 +97,11 @@ pub struct Bvh<const D: usize> {
 }
 impl<const D: usize> Bvh<D> {
     pub fn new(bounds: impl Iterator<Item = Bounds<D>>) -> Self {
-        let items: Vec<_> = bounds.enumerate().collect();
-        let mut tree = Self { nodes: Vec::with_capacity(items.len()), items };
-        if !tree.items.is_empty() { tree.build(0, tree.items.len()); }
-        tree
-    }
-    fn build(&mut self, first: usize, count: usize) {
-        let bounds = self.items[first..first + count].iter().map(|(_, b)| *b)
-            .reduce(Bounds::union).unwrap();
-        let slot = self.nodes.len();
-        self.nodes.push(Node { bounds, end: slot + 1, first, count });
-        if count > 8 {
-            let axis = (0..D).max_by(|&a, &b| {
-                (bounds.hi[a] - bounds.lo[a]).total_cmp(&(bounds.hi[b] - bounds.lo[b]))
-            }).unwrap();
-            let mid = count / 2;
-            self.items[first..first + count].select_nth_unstable_by(mid, |(i, a), (j, b)| {
-                (a.lo[axis] * 0.5 + a.hi[axis] * 0.5)
-                    .total_cmp(&(b.lo[axis] * 0.5 + b.hi[axis] * 0.5)).then(i.cmp(j))
-            });
-            self.nodes[slot].count = 0;
-            self.build(first, mid);
-            self.build(first + mid, count - mid);
-            self.nodes[slot].end = self.nodes.len();
-        }
+        let mut items: Vec<_> = bounds.enumerate().collect();
+        let mut nodes = Vec::with_capacity(items.len());
+        let n = items.len();
+        if n > 0 { grow(&mut items, 0, &mut nodes, spread(n)); }
+        Self { nodes, items }
     }
     /// Visit every item whose box `intersects` accepts, skipping each subtree whose box it refuses.
     pub fn query(&self, intersects: impl Fn(Bounds<D>) -> bool, mut visit: impl FnMut(usize)) {

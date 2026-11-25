@@ -99,6 +99,11 @@ impl Tube<'_> {
             let d = |s: f64| self.point(s,th,c.at).map_or(f64::INFINITY,|p| distance(p.x,x));
             d(s).total_cmp(&d(r))
         })?;
+        // (a place inside a band's seam: the band's chart of that sheet, settled there)
+        if let Some((k,q)) = self.bands.iter().enumerate().find_map(|(k,b)| Some((k,b.holding([th,c.at])?))) {
+            let chart = Chart::Band(k,side);
+            return Some((chart,self.settled_on(chart,x,q)?))
+        }
         Some((Chart::Sheet(side),self.settled(side,x,[th,c.at])?))
     }
 
@@ -145,7 +150,7 @@ impl Tube<'_> {
         match chart {
             Chart::Collar => (q[1].abs() >= p.rho*(1.-HALF_READ)).then(|| (q[1].signum(),q[0])),
             Chart::Sheet(side) => if p.side(q).abs() <= HALF_READ*p.rho { p.psi(side,q).map(|psi| (side,psi)) } else { None },
-            Chart::End(_) => None,
+            Chart::End(_) | Chart::Band(..) => None,
         }
     }
 
@@ -220,10 +225,11 @@ struct Trim { own: Chart,other: Chart,uv: Vec<P>,partner: Vec<P>,ends: [usize;2]
 
 /// How a trim is read between its points: traced (each point settled on the double curve), the
 /// swallowtail's normal form from a pair on a disc's rim to its point (`rings::normal_form`, its
-/// offsets `d` and kernel's way, from the point's parameters on each chart `base`), or straight in
-/// its sheet's parameters to a corner on the end pose `k`.
+/// offsets `d` and kernel's way, from the point's parameters on each chart `base`, a use on a band's
+/// chart read in its sheet's and carried through the band, `through`), or straight in its sheet's
+/// parameters to a corner on the end pose `k`.
 #[derive(Clone,Debug)]
-enum Shape { Traced,Normal { base: [P;2],d: [P;2],way: f64 },Straight { k: usize } }
+enum Shape { Traced,Normal { base: [P;2],d: [P;2],way: f64,through: [Option<usize>;2] },Straight { k: usize } }
 
 impl Trim {
     /// The trim's point at `s` of `[0, 1]`: its two charts' parameters, settled where it is traced.
@@ -233,20 +239,43 @@ impl Trim {
         if s >= 1. { return Some([self.uv[n-1],self.partner[n-1]]) }
         match self.shape {
             Shape::Traced => {
-                // (its place along its own polyline by length in the chart's parameters)
+                // (its place along its own polyline by length in the chart's parameters; on a band's
+                // chart by length in space — its `τ` stretched as a sinh, a run near the line moves
+                // across the tube in a sliver of it, and a curve fitted evenly in its parameters'
+                // length missed by 1.9e-5)
                 let mut ls = vec![0.];
-                for w in self.uv.windows(2) { ls.push(ls[ls.len()-1]+crate::plane2::dist(w[0],w[1])) }
+                if let Chart::Band(..) = self.own {
+                    let xs: Vec<V> = self.uv.iter().map(|&q| tube.at(self.own,q).map_or([f64::NAN;3],|p| p.x)).collect();
+                    for w in xs.windows(2) { ls.push(ls[ls.len()-1]+distance(w[0],w[1])) }
+                } else {
+                    for w in self.uv.windows(2) { ls.push(ls[ls.len()-1]+crate::plane2::dist(w[0],w[1])) }
+                }
                 let l = s*ls[n-1];
                 let j = (0..n-1).find(|&j| ls[j+1] >= l).unwrap_or(n-2);
                 let f = if ls[j+1] > ls[j] { (l-ls[j])/(ls[j+1]-ls[j]) } else { 0. };
                 let lerp = |a: P,b: P| [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
                 let (u,p) = (lerp(self.uv[j],self.uv[j+1]),lerp(self.partner[j],self.partner[j+1]));
-                let dir = [self.uv[j+1][0]-self.uv[j][0],self.uv[j+1][1]-self.uv[j][1]];
+                let mut dir = [self.uv[j+1][0]-self.uv[j][0],self.uv[j+1][1]-self.uv[j][1]];
+                // (on a band's chart the line the point is held on turns smoothly, between the
+                // polyline's tangents at its points: its segments' own ways jump at each point, the
+                // point settled there jumping along the curve by its chord's sag, which beside the
+                // band's line is over the bar — a curve fitted through them missed by 3.1e-6)
+                if let Chart::Band(..) = self.own {
+                    let tangent = |m: usize| {
+                        let (a,b) = (self.uv[m.saturating_sub(1)],self.uv[(m+1).min(n-1)]);
+                        let d = [b[0]-a[0],b[1]-a[1]];
+                        let l = d[0].hypot(d[1]);
+                        if l > 0. { [d[0]/l,d[1]/l] } else { d }
+                    };
+                    let (t0,t1) = (tangent(j),tangent(j+1));
+                    dir = [t0[0]+(t1[0]-t0[0])*f,t0[1]+(t1[1]-t0[1])*f];
+                }
                 settle(tube,(self.own,self.other),[u,p],dir)
             }
-            Shape::Normal {base,d,way} => {
+            Shape::Normal {base,d,way,through} => {
                 let o = crate::swept::rings::normal_form(d,way)(1.-s);
-                Some([[base[0][0]+o[0][0],base[0][1]+o[0][1]],[base[1][0]+o[1][0],base[1][1]+o[1][1]]])
+                let at = |i: usize| { let p = [base[i][0]+o[i][0],base[i][1]+o[i][1]]; through[i].map_or(p,|k| tube.bands[k].chart_of(p)) };
+                Some([at(0),at(1)])
             }
             Shape::Straight {k} => {
                 let (q,c) = (self.uv[0],self.uv[n-1]);
@@ -262,10 +291,11 @@ impl Trim {
 /// What an edge of the faces is, for its curve in space: a run traced, a sheet's rim at the roll's
 /// end `k` between two angles, a cut at an angle across a sheet (between two instants), across an
 /// end pose's band (between two angles round its tube, `ψ` unwrapped) or across the collar
-/// (between its two rims), or the pinch's rim on the sheet `sign` between two of the collar's
-/// angles.
+/// (between its two rims), the pinch's rim on the sheet `sign` between two of the collar's
+/// angles, or band `k`'s seam on the sheet `side` between two fractions round it.
 #[derive(Clone,Debug)]
-enum Kind { Trim(usize),Rim { side: f64,k: usize,th: [f64;2] },Across { chart: Chart,th: f64,v: [f64;2] },Hole { sign: f64,psi: [f64;2] } }
+enum Kind { Trim(usize),Rim { side: f64,k: usize,th: [f64;2] },Across { chart: Chart,th: f64,v: [f64;2] },Hole { sign: f64,psi: [f64;2] },
+    Seam { k: usize,side: f64,f: [f64;2] } }
 
 /// An edge of the faces: what it is, its vertices, and its uses, each a chart and its polyline
 /// there (in the chart's own parameters, an end pose's `ψ` unwrapped along it).
@@ -311,6 +341,10 @@ fn band(tube: &Tube,k: usize,th: f64) -> Option<(f64,f64,f64)> {
     Some(if s > 0. { (plus,1.,up) } else { (plus,-1.,TAU-up) })
 }
 
+/// A chart traced (`solid`'s): its cuspidal edges, the discs about their swallowtail points,
+/// and its depth's seams' runs, each point with what covers it.
+struct Traced { folds: Vec<Vec<P>>,discs: Vec<super::Disc>,runs: Vec<(Vec<P>,Vec<Cover>)> }
+
 /// **The closed solid**, the tube road's (the module's method), sewn to `tol`.
 pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     let feature = 0.25*tube.ring.thickness;
@@ -318,22 +352,61 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     let on_rim = |t: f64| [a,b].iter().position(|&e| (t-e).abs() <= HALF_READ*(b-a));
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut trims: Vec<Trim> = Vec::new();
-    // (each swallowtail point, and the cuts from it: its sheet, its point, its vertex)
-    let mut tails: Vec<(f64,P,usize)> = Vec::new();
-    // (where there is a pinch the collar first: its runs' ends on the hole's rim seed the sheets')
-    let charts = if tube.pinch.is_some() { vec![Chart::Collar,Chart::Sheet(1.),Chart::Sheet(-1.)] } else { vec![Chart::Sheet(1.),Chart::Sheet(-1.)] };
+    // (each swallowtail point, and the cuts from it: its chart, its point, its vertex)
+    let mut tails: Vec<(Chart,P,usize)> = Vec::new();
+    // (where there is a pinch the collar first: its runs' ends on the hole's rim seed the sheets';
+    // each band after the sheets, both its charts: the sheets' runs' ends on its seam seed them)
+    let mut charts = if tube.pinch.is_some() { vec![Chart::Collar,Chart::Sheet(1.),Chart::Sheet(-1.)] } else { vec![Chart::Sheet(1.),Chart::Sheet(-1.)] };
+    for k in 0..tube.bands.len() { charts.extend([Chart::Band(k,1.),Chart::Band(k,-1.)]) }
     let mut on_hole: Vec<(f64,f64)> = Vec::new();
-    for chart in charts {
+    // (each crossing of a band's seam: the band, the sheet's side, the fraction round the seam)
+    let mut on_seam: Vec<(usize,f64,f64)> = Vec::new();
+    // **each chart traced** — its cuspidal edges, their swallowtail points, its depth's seams and
+    // their runs — from the seeds the charts read before it left on the pinch's rim
+    let traced = |chart: Chart,seeds: Vec<P>| -> Result<Traced,Unbuilt> {
         let side = if let Chart::Sheet(s) = chart { s } else { 0. };
         let (folds,_) = edges(tube,chart,tol,feature)?;
         let folds: Vec<Vec<P>> = folds.into_iter().map(|p| p.uv).collect();
-        let points: Vec<P> = folds.iter().flat_map(|f| if side != 0. { swallowtails(tube,side,f) } else { swallowtails_on(tube,chart,f) }).collect();
+        let points: Vec<P> = folds.iter().flat_map(|f| if let Chart::Sheet(_) = chart { swallowtails(tube,side,f) } else { swallowtails_on(tube,chart,f) }).collect();
         if chart == Chart::Collar && !points.is_empty() { return Err(failed(format!("the collar holds swallowtail points {points:?}"))) }
+        if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
+        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
+        let field = Depth {tube,chart,within:tol,holes:&discs};
+        let runs = merged(tube,chart,&field,pieces,tol);
+        Ok(Traced {folds,discs,runs})
+    };
+    // (the seeds of a chart: what the charts before it left on the pinch's rim, on its side)
+    let seeds_of = |chart: Chart,on_hole: &[(f64,f64)],on_seam: &[(usize,f64,f64)]| -> Vec<P> {
+        // (a band's chart: the sheet's crossings of its seam, on its side)
+        if let Chart::Band(k,side) = chart {
+            return on_seam.iter().filter(|c| c.0 == k && c.1 == side).map(|c| tube.bands[k].seam_at(c.2)).collect()
+        }
+        let side = if let Chart::Sheet(s) = chart { s } else { 0. };
+        on_hole.iter().filter(|h| side == 0. || h.0 == side).filter_map(|&(sign,psi)| match chart {
+            Chart::Collar => tube.pinch.as_ref().map(|p| [psi,sign*p.rho]),_ => tube.pinch.as_ref().and_then(|p| p.rim(sign,psi)) }).collect()
+    };
+    // (the two sheets traced side by side once the collar is: a sheet's runs leave on the rim seeds
+    // of its own side alone, so neither seeds the other, and the tracing is most of the road's time
+    // — the crossed reverse member's two 3.7 and 3.4 s; what each leaves is read after in order, as
+    // before, so the vertices and trims are numbered as they were)
+    let mut sheets: Vec<Result<Traced,Unbuilt>> = Vec::new();
+    for chart in charts {
+        let side = match chart { Chart::Sheet(s) | Chart::Band(_,s) => s,_ => 0. };
+        let Traced {folds,discs,runs} = if !matches!(chart,Chart::Sheet(_)) { traced(chart,seeds_of(chart,&on_hole,&on_seam))? } else {
+            if sheets.is_empty() {
+                let both = [Chart::Sheet(1.),Chart::Sheet(-1.)];
+                let seeds: Vec<Vec<P>> = both.iter().map(|&c| seeds_of(c,&on_hole,&on_seam)).collect();
+                sheets = crate::util::par::map(&[0,1],|&k| traced(both[k],seeds[k].clone()));
+                sheets.reverse();
+            }
+            sheets.pop().expect("a sheet traced")?
+        };
+        let field = Depth {tube,chart,within:tol,holes:&discs};
         // the corners: each fold's end on a rim, settled there
         let mut corners: Vec<(usize,P)> = Vec::new();
         for f in &folds {
             for q in [f[0],f[f.len()-1]] {
-                if side == 0. { continue }
+                if !matches!(chart,Chart::Sheet(_)) { continue }
                 let Some(k) = on_rim(q[1]) else { continue };
                 let c = tube.corner(side,k,q[0]).ok_or_else(|| failed(format!("a corner of the sheet {side} at {q:?} not settled")))?;
                 if corners.iter().any(|(_,d)| (d[0]-c[0]).abs() <= HALF_READ) { continue }
@@ -343,12 +416,6 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 corners.push((vertices.len()-1,c));
             }
         }
-        let seeds: Vec<P> = on_hole.iter().filter(|h| side == 0. || h.0 == side).filter_map(|&(sign,psi)| match chart {
-            Chart::Collar => tube.pinch.as_ref().map(|p| [psi,sign*p.rho]),_ => tube.pinch.as_ref().and_then(|p| p.rim(sign,psi)) }).collect();
-        if debug() { eprintln!("tube: {chart:?} seeded on the pinch's rim at {seeds:?}") }
-        let (pieces,_,discs) = seams(tube,chart,&folds,&points,&seeds,tol,feature)?;
-        let field = Depth {tube,chart,within:tol,holes:&discs};
-        let runs = merged(tube,chart,&field,pieces,tol);
         // each piece cut into runs by what covers it, and the runs kept; each switch of what covers
         // it resolved once for both runs beside it (`switched`: its vertex, or none where it is the
         // partner run's rim crossing, read once every run's ends are — a switch between a sheet's
@@ -358,7 +425,12 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             let l = tube.ring.frame.local(c.point);
             p.side([l[1].datan2(l[0]).rem_euclid(TAU),c.at]) < 0.
         });
-        let class = |c: &Cover| on_rim(c.at).map_or(if in_hole(c) { 3 } else { 2 },|k| k);
+        // (a cover whose place lies inside a band's seam: the band's)
+        let in_band = |c: &Cover| {
+            let l = tube.ring.frame.local(c.point);
+            tube.band_holding([l[1].datan2(l[0]).rem_euclid(TAU),c.at]).is_some()
+        };
+        let class = |c: &Cover| on_rim(c.at).map_or(if in_hole(c) { 3 } else if in_band(c) { 4 } else { 2 },|k| k);
         let mut kept: Vec<(Vec<P>,Vec<Cover>,[Option<Option<usize>>;2])> = Vec::new();
         for (uv,at) in runs {
             let n = uv.len();
@@ -366,7 +438,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             let mut before = None;
             for i in 1..=n {
                 if i < n && class(&at[i]) == class(&at[from]) { continue }
-                let after = if i < n { Some(if class(&at[i-1]) == 3 || class(&at[i]) == 3 { None }
+                let after = if i < n { Some(if class(&at[i-1]) >= 3 || class(&at[i]) >= 3 { None }
                     else { switched(tube,chart,(uv[i-1],&at[i-1]),(uv[i],&at[i]),&mut vertices,tol)? }) } else { None };
                 let (u,c) = (uv[from..i].to_vec(),at[from..i].to_vec());
                 let m = c.len()/2;
@@ -378,6 +450,12 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                     let Some((sign,psi)) = tube.on_hole(chart,q) else { continue };
                     let j = rim_vertex(tube,&mut vertices,sign,psi,cv.clone(),tol)?;
                     if let Some((_,[psi,_])) = vertices[j].on.iter().find(|(ch,_)| *ch == Chart::Collar) { on_hole.push((sign,*psi)) }
+                }
+                // (each end on a band's seam a vertex too, and a seed of the band's chart)
+                for (q,cv) in [(u[0],&c[0]),(u[u.len()-1],&c[c.len()-1])] {
+                    let Some((k,f)) = tube.on_seam(chart,q) else { continue };
+                    let j = seam_vertex(tube,&mut vertices,k,side,f,cv.clone(),tol)?;
+                    if let Some((_,b)) = vertices[j].on.iter().find(|(ch,_)| *ch == Chart::Band(k,side)) { on_seam.push((k,side,tube.bands[k].fraction(*b))) }
                 }
                 if keep && !u.is_empty() { kept.push((u,c,[before,after])) }
                 (before,from) = (after,i);
@@ -409,8 +487,8 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             }
             // (each angle unwrapped along the run, and an end pose's ψ)
             for j in 1..uv.len() {
-                uv[j][0] = unwrap(uv[j][0],uv[j-1][0]);
-                partner[j][0] = unwrap(partner[j][0],partner[j-1][0]);
+                uv[j][0] = wrap(chart,uv[j][0],uv[j-1][0]);
+                partner[j][0] = wrap(other,partner[j][0],partner[j-1][0]);
                 if let Chart::End(_) = other { partner[j][1] = unwrap(partner[j][1],partner[j-1][1]) }
             }
             trims.push(Trim {own:chart,other,uv,partner,ends:[usize::MAX;2],shape:Shape::Traced});
@@ -437,8 +515,20 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                     (t.uv[i],t.partner[i],t.ends[e]) = (own,p,j);
                     continue
                 }
+                // a crossing of a band's seam
+                if let Some((k,f)) = tube.on_seam(chart,q) {
+                    let j = seam_vertex(tube,&mut vertices,k,side,f,c,tol)?;
+                    let v = &vertices[j];
+                    let own = v.on.iter().find(|(ch,_)| *ch == chart).map(|(_,p)| *p).expect("on its chart");
+                    let other = trims[ti].other;
+                    let p = v.on[2..].iter().find(|(ch,_)| *ch == other).map(|(_,p)| *p)
+                        .ok_or_else(|| failed(format!("a crossing of a band's seam at {q:?} whose partner is not on {other:?}")))?;
+                    let t = &mut trims[ti];
+                    (t.uv[i],t.partner[i],t.ends[e]) = (own,p,j);
+                    continue
+                }
                 // a rim crossing
-                if side == 0. { return Err(failed(format!("a trim of the collar ends at {q:?}, at no event"))) }
+                if chart == Chart::Collar { return Err(failed(format!("a trim of the collar ends at {q:?}, at no event"))) }
                 // (a run against the end pose `k` reaching its sheet's rim at that end: the corner. Beside
                 // the rim the end pose stands from the sheet's point by half its depth's second rate
                 // in the instant times the square of the instant's way to the end, nought only where
@@ -448,7 +538,8 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 // trace stops at the cuspidal edge short of the rim or runs on to the rim beside the
                 // corner is a rounding's. Its tail is the straight join to the corner (`cornered`)
                 // wherever that join holds the end pose, taken back point by point from the rim.)
-                if let (Some(k),Chart::End(o)) = (on_rim(q[1]),trims[ti].other) {
+                let sheet = matches!(chart,Chart::Sheet(_));
+                if let (true,Some(k),Chart::End(o)) = (sheet,on_rim(q[1]),trims[ti].other) {
                     if o == k {
                         let apart = |c: P| crate::plane2::dist([unwrap(c[0],q[0]),c[1]],q);
                         let Some(&(v,cq)) = corners.iter().min_by(|x,y| apart(x.1).total_cmp(&apart(y.1))) else {
@@ -469,7 +560,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                         continue
                     }
                 }
-                if let Some(k) = on_rim(q[1]) {
+                if let (true,Some(k)) = (sheet,on_rim(q[1])) {
                     let (th,c) = crossing(&field,k,q[0],c).ok_or_else(|| failed(format!("a rim crossing from {q:?} not settled")))?;
                     let own = [th.rem_euclid(TAU),tube.roll[k]];
                     let x = tube.at(chart,own).ok_or_else(|| failed("no sheet at a rim crossing".into()))?.x;
@@ -485,19 +576,20 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
                 // a swallowtail point's disc
                 // (ending on the rim as `seams` reads it, the march's last step short of or past
                 // it: within the disc's radius of it)
-                if let Some(d) = discs.iter().find(|d| d.side([unwrap(q[0],d.at[0]),q[1]]).abs() <= d.radius) {
-                    if !tails.iter().any(|(s,p,_)| *s == side && *p == d.at) {
-                        let x = tube.point(side,d.at[0],d.at[1]).ok_or_else(|| failed("no sheet at a swallowtail point".into()))?.x;
+                if let Some(d) = discs.iter().find(|d| d.side([wrap(chart,q[0],d.at[0]),q[1]]).abs() <= d.radius) {
+                    if !tails.iter().any(|(s,p,_)| *s == chart && *p == d.at) {
+                        let x = tube.at(chart,d.at).ok_or_else(|| failed("no sheet at a swallowtail point".into()))?.x;
                         vertices.push(Vertex {x,on:vec![(chart,d.at)]});
-                        tails.push((side,d.at,vertices.len()-1));
+                        tails.push((chart,d.at,vertices.len()-1));
                     }
-                    let tail = tails.iter().find(|(s,p,_)| *s == side && *p == d.at).expect("the tail").2;
-                    let (j,join) = joined(tube,side,d,&trims[ti],e,tail,&mut vertices,tol)?;
+                    let tail = tails.iter().find(|(s,p,_)| *s == chart && *p == d.at).expect("the tail").2;
+                    let (j,join) = joined(tube,chart,d,&trims[ti],e,tail,&mut vertices,tol)?;
                     trims[ti].ends[e] = j;
                     trims.push(join);
                     continue
                 }
                 // a corner, joined straight
+                if !sheet { return Err(failed(format!("a trim of {chart:?} ends at {q:?}, at no event"))) }
                 let apart = |c: P| crate::plane2::dist([unwrap(c[0],q[0]),c[1]],q);
                 let Some(&(v,cq)) = corners.iter().min_by(|x,y| apart(x.1).total_cmp(&apart(y.1))) else {
                     return Err(failed(format!("a trim of the sheet {side} ends at {q:?}, at no event")))
@@ -520,7 +612,7 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
             if trims[ti].ends[e] != usize::MAX { continue }
             let t = &trims[ti];
             let q = t.uv[if e == 0 { 0 } else { t.uv.len()-1 }];
-            let apart = |p: P| crate::plane2::dist([unwrap(p[0],q[0]),p[1]],q);
+            let apart = |p: P| crate::plane2::dist([wrap(t.own,p[0],q[0]),p[1]],q);
             let near = |v: &Vertex| v.on.iter().filter(|(c,_)| *c == t.own).map(|(_,p)| apart(*p)).fold(f64::INFINITY,f64::min);
             let (v,_) = vertices.iter().enumerate().filter(|(_,v)| v.on.len() >= 3)
                 .map(|(j,v)| (j,near(v))).min_by(|x,y| x.1.total_cmp(&y.1))
@@ -531,8 +623,8 @@ pub fn solid(tube: &Tube,tol: f64) -> Result<Brep,Unbuilt> {
     // (each trim's angles unwrapped along it once its ends are in place, and an end pose's ψ)
     for t in &mut trims {
         for j in 1..t.uv.len() {
-            t.uv[j][0] = unwrap(t.uv[j][0],t.uv[j-1][0]);
-            t.partner[j][0] = unwrap(t.partner[j][0],t.partner[j-1][0]);
+            t.uv[j][0] = wrap(t.own,t.uv[j][0],t.uv[j-1][0]);
+            t.partner[j][0] = wrap(t.other,t.partner[j][0],t.partner[j-1][0]);
             if let Chart::End(_) = t.own { t.uv[j][1] = unwrap(t.uv[j][1],t.uv[j-1][1]) }
             if let Chart::End(_) = t.other { t.partner[j][1] = unwrap(t.partner[j][1],t.partner[j-1][1]) }
         }
@@ -555,7 +647,8 @@ fn merged(tube: &Tube,chart: Chart,field: &Depth,pieces: Vec<crate::zero_set::Pi
     let near = |p: P,q: P| match (tube.at(chart,p),tube.at(chart,q)) { (Some(x),Some(y)) => distance(x.x,y.x) <= tol,_ => false };
     let turn = |x: f64| (x+PI).rem_euclid(TAU)-PI;
     let (dv,rv) = match chart { Chart::End(_) => (turn as fn(f64) -> f64,HALF_READ),Chart::Sheet(_) => ((|x| x) as fn(f64) -> f64,HALF_READ*(b-a)),
-        Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)) };
+        Chart::Collar => ((|x| x) as fn(f64) -> f64,HALF_READ*tube.pinch.as_ref().map_or(0.,|p| 2.*p.rho)),
+        Chart::Band(..) => { let r = tube.rect(chart); ((|x| x) as fn(f64) -> f64,HALF_READ*(r[1][1]-r[1][0])) } };
     // (the segment between two points within the tolerance of the zero set, the far cover read on
     // from the one's at its middle and quarters: an angle, and an end pose's `ψ`, met within its turn)
     let band = |p: P,c: &Cover,q: P| [0.25,0.5,0.75].iter().all(|&f| {
@@ -716,7 +809,7 @@ fn switched(tube: &Tube,chart: Chart,a: (P,&Cover),b: (P,&Cover),vertices: &mut 
 /// the trim's partner (another of them where that is the same chart), put at that end.
 fn ended(t: &mut Trim,e: usize,v: usize,vertices: &[Vertex]) -> Result<(),Unbuilt> {
     let q = t.uv[if e == 0 { 0 } else { t.uv.len()-1 }];
-    let apart = |p: P| crate::plane2::dist([unwrap(p[0],q[0]),p[1]],q);
+    let apart = |p: P| crate::plane2::dist([wrap(t.own,p[0],q[0]),p[1]],q);
     let on = &vertices[v].on;
     let (j,own) = on.iter().enumerate().filter(|(_,(c,_))| *c == t.own).map(|(j,(_,p))| (j,*p))
         .min_by(|x,y| apart(x.1).total_cmp(&apart(y.1))).ok_or_else(|| failed(format!("a switch at {q:?} not on the trim's chart")))?;
@@ -742,32 +835,86 @@ fn rim_vertex(tube: &Tube,vertices: &mut Vec<Vertex>,sign: f64,psi: f64,c: Cover
     Ok(vertices.len()-1)
 }
 
+/// **A run's crossing of a band's seam**, solved on the seam — one curve read in two charts (the band's
+/// `seam_at(f)`, the sheet's at its place) — as the root in the fraction `f` round it of the far
+/// cover's depth on the band's chart continued from `c` (`Depth::along`), its rate by differences a
+/// cube root of the rounding apart, by Newton's method while the steps shrink (`hole_crossing`'s rule
+/// on the pinch's rim). The crossing's fraction and its cover.
+fn seam_crossing(tube: &Tube,k: usize,side: f64,mut f: f64,mut c: Cover,tol: f64) -> Option<(f64,Cover)> {
+    let b = &tube.bands[k];
+    let field = Depth {tube,chart:Chart::Band(k,side),within:tol,holes:&[]};
+    let h = crate::util::fmath::THIRD_READ;
+    let mut prev = f64::INFINITY;
+    for _ in 0..CORRECTIONS {
+        let v = field.along(b.seam_at(f),&c)?;
+        let g = (field.along(b.seam_at(f+h),&v.at)?.f-field.along(b.seam_at(f-h),&v.at)?.f)/(2.*h);
+        if !(g.abs() > 0.) { return None }
+        let step = v.f/g;
+        c = v.at;
+        if !(step.abs() < prev) { break }
+        prev = step.abs();
+        f -= step;
+    }
+    Some((f.rem_euclid(1.),c))
+}
+
+/// **The vertex where a run crosses a band's seam** (`seam_crossing`, from the fraction `f` round it
+/// and the run's cover `c` there): on the band's chart, on the sheet `side` and on its partner — one
+/// crossing read once, a vertex already at its point (within the tolerance) taken.
+fn seam_vertex(tube: &Tube,vertices: &mut Vec<Vertex>,k: usize,side: f64,f: f64,c: Cover,tol: f64) -> Result<usize,Unbuilt> {
+    let (f,c) = seam_crossing(tube,k,side,f,c,tol).ok_or_else(|| failed(format!("a crossing of band {k}'s seam from {f} not settled")))?;
+    let b = &tube.bands[k];
+    let (chart,q) = (Chart::Band(k,side),b.seam_at(f));
+    let x = tube.at(chart,q).ok_or_else(|| failed("no band at a crossing of its seam".into()))?.x;
+    if let Some(j) = vertices.iter().position(|v| v.on.iter().any(|(ch,r)| *ch == chart && b.seam(*r).abs() <= HALF_READ) && distance(v.x,x) <= tol) { return Ok(j) }
+    let place = b.place(q);
+    let (ch,pp) = tube.partner(x,&c).ok_or_else(|| failed(format!("no partner of a crossing of band {k}'s seam at {f}")))?;
+    vertices.push(Vertex {x,on:vec![(chart,q),(Chart::Sheet(side),[place[0].rem_euclid(TAU),place[1]]),(ch,pp)]});
+    Ok(vertices.len()-1)
+}
+
 /// **A trim joined to its swallowtail point inside its disc** (`rings::joined_by_normal_form`, the
 /// ring road's rule): from its end `e` on the disc's rim, with its partner there, to the point (the
 /// vertex `tail`) — a trim of its own along the normal form, from a vertex at that end, returned.
-fn joined(tube: &Tube,side: f64,d: &Disc,t: &Trim,e: usize,tail: usize,vertices: &mut Vec<Vertex>,tol: f64) -> Result<(usize,Trim),Unbuilt> {
+fn joined(tube: &Tube,chart: Chart,d: &Disc,t: &Trim,e: usize,tail: usize,vertices: &mut Vec<Vertex>,tol: f64) -> Result<(usize,Trim),Unbuilt> {
     let i = if e == 0 { 0 } else { t.uv.len()-1 };
-    let (q,r) = (t.uv[i],t.partner[i]);
-    let at = d.at;
-    let off = |q: P| [(q[0]-at[0]+PI).rem_euclid(TAU)-PI,q[1]-at[1]];
-    let pair = [off(q),off(r)];
-    let k = tube.kernel(side,at[0],at[1]).ok_or_else(|| failed("no kernel at a swallowtail point".into()))?;
-    let x = |q: P| tube.point(side,q[0],q[1]).map(|p| p.x);
-    let xq = x(q).ok_or_else(|| failed("no sheet at a disc's rim".into()))?;
-    let span = distance(xq,x(at).ok_or_else(|| failed("no sheet at a swallowtail point".into()))?);
-    let outer = |_: usize,o: P,_: f64| -> Option<V> {
-        let q = [at[0]+o[0],at[1]+o[1]];
-        (tube.jacobian(side,q[0],q[1])? > 0.).then(|| x(q))?
+    let (q0,r0) = (t.uv[i],t.partner[i]);
+    let side = match chart { Chart::Sheet(s) | Chart::Band(_,s) => s,_ => 0. };
+    let band_of = |c: Chart| if let Chart::Band(k,_) = c { Some(k) } else { None };
+    // **the join read in the sheet's parameters** (a use on a band's chart carried to its place and
+    // back: `Shape::Normal`'s `through`), and on a band's chart, where that does not hold, **in the
+    // band's own** — beside the band's line neither is the sheet's own map's: the sheet's turns
+    // fast across the line, the band's `τ` is stretched as a sinh, and the normal form's second order
+    // with each (the reverse member's band's point at (6.61, 0.027) held by its own chart alone, its
+    // leaves 4.6e-6 apart in the sheet's)
+    let attempt = |sheet: bool| -> Option<([P;2],[P;2],f64,[Option<usize>;2],V)> {
+        let through = if sheet { [band_of(t.own),band_of(t.other)] } else { [None,None] };
+        let to = |k: Option<usize>,p: P| k.map_or(p,|k| tube.bands[k].place(p));
+        let (q,r) = (to(through[0],q0),to(through[1],r0));
+        let at = if sheet { to(band_of(chart),d.at) } else { d.at };
+        let off = |q: P| [if sheet { (q[0]-at[0]+PI).rem_euclid(TAU)-PI } else { q[0]-at[0] },q[1]-at[1]];
+        let pair = [off(q),off(r)];
+        let k = if sheet { tube.kernel(side,at[0],at[1]) } else { tube.kernel_on(chart,at) }?;
+        let x = |q: P| if sheet { tube.point(side,q[0],q[1]).map(|p| p.x) } else { tube.at(chart,q).map(|p| p.x) };
+        let xq = x(q)?;
+        let span = distance(xq,x(at)?);
+        let outer = |_: usize,o: P,_: f64| -> Option<V> {
+            let q = [at[0]+o[0],at[1]+o[1]];
+            (if sheet { tube.jacobian(side,q[0],q[1]) } else { tube.side(chart,q) }? > 0.).then(|| x(q))?
+        };
+        crate::swept::rings::joined_by_normal_form(pair,k[1]/k[0],span,(8.*tol*tube.r).sqrt(),&outer,tol)?;
+        // (the point's angle unwrapped as the run's, on each chart)
+        let base = [[q[0]-pair[0][0],at[1]],[r[0]-pair[1][0],at[1]]];
+        Some((base,pair,k[1]/k[0],through,xq))
     };
-    crate::swept::rings::joined_by_normal_form(pair,k[1]/k[0],span,(8.*tol*tube.r).sqrt(),&outer,tol)
-        .ok_or_else(|| failed(format!("a double curve not joined to its swallowtail point {at:?}")))?;
-    vertices.push(Vertex {x:xq,on:vec![(t.own,q),(t.other,r)]});
+    let (base,pair,way,through,xq) = attempt(true).or_else(|| band_of(chart).and_then(|_| attempt(false)))
+        .ok_or_else(|| failed(format!("a double curve not joined to its swallowtail point {:?}",d.at)))?;
+    vertices.push(Vertex {x:xq,on:vec![(t.own,q0),(t.other,r0)]});
     let junction = vertices.len()-1;
-    // (the point's angle unwrapped as the run's, on each chart)
-    let base = [[q[0]-pair[0][0],at[1]],[r[0]-pair[1][0],at[1]]];
-    let mut join = Trim {own:t.own,other:t.other,uv:vec![],partner:vec![],ends:[junction,tail],shape:Shape::Normal {base,d:pair,way:k[1]/k[0]}};
-    join.uv = vec![q,base[0]];
-    join.partner = vec![r,base[1]];
+    let mut join = Trim {own:t.own,other:t.other,uv:vec![],partner:vec![],ends:[junction,tail],shape:Shape::Normal {base,d:pair,way,through}};
+    let ends = [0,1].map(|i| through[i].map_or(base[i],|k| tube.bands[k].chart_of(base[i])));
+    join.uv = vec![q0,ends[0]];
+    join.partner = vec![r0,ends[1]];
     let line: Vec<[P;2]> = (0..=16).map(|j| join.at(tube,j as f64/16.)).collect::<Option<_>>().ok_or_else(|| failed("a join not read".into()))?;
     join.uv = line.iter().map(|p| p[0]).collect();
     join.partner = line.iter().map(|p| p[1]).collect();
@@ -863,6 +1010,48 @@ fn fitted(f: &dyn Fn(f64) -> (V,Vec<P>),at: &dyn Fn(usize,P) -> Option<V>,bars: 
     }
 }
 
+/// **A band's trim's polyline refined** until its curve stands within `bar` of each chord's middle in
+/// space: each segment's middle settled on the double curve (`settle`) and put in where it stands
+/// off the chord by more, at most `REFINED` times over. A trim is read by its length along its
+/// polyline (`Trim::at`), and where the polyline is a coarse chord of a curve bending fast — beside
+/// a band's line — its speed jumps at each of its points: a curve fitted through it missed by
+/// 3.2e-6, its second differences ten times over at each point. None on any other chart, or where
+/// nothing is put in.
+fn refined(tube: &Tube,t: &Trim,bar: f64) -> Option<Trim> {
+    if !matches!((t.own,&t.shape),(Chart::Band(..),Shape::Traced)) { return None }
+    let x = |q: P| tube.at(t.own,q).map(|p| p.x);
+    let mut out = t.clone();
+    let mut more = false;
+    for _ in 0..REFINED {
+        let (mut uv,mut partner) = (vec![out.uv[0]],vec![out.partner[0]]);
+        let mut put = false;
+        for j in 0..out.uv.len()-1 {
+            let (a,b) = (out.uv[j],out.uv[j+1]);
+            let mid = |p: P,q: P| [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+            let (u,w) = (mid(a,b),mid(out.partner[j],out.partner[j+1]));
+            if let (Some(xa),Some(xb),Some([u,w])) = (x(a),x(b),settle(tube,(t.own,t.other),[u,w],[b[0]-a[0],b[1]-a[1]])) {
+                if let Some(xm) = x(u) {
+                    // (a middle settled on the curve beside its chord: within a quarter of the chord
+                    // of its middle, in the parameters and in space — none settled on another branch)
+                    let off = distance(xm,crate::util::space::scale(crate::util::space::add(xa,xb),0.5));
+                    let (m0,c) = (mid(a,b),crate::plane2::dist(a,b));
+                    if off > bar && off <= 0.25*distance(xa,xb) && crate::plane2::dist(u,m0) <= 0.25*c { uv.push(u); partner.push(w); put = true }
+                }
+            }
+            uv.push(b);
+            partner.push(out.partner[j+1]);
+        }
+        (out.uv,out.partner) = (uv,partner);
+        if !put { break }
+        more = true;
+    }
+    more.then_some(out)
+}
+
+/// How many times over a band's trim's polyline is refined at most (`refined`): each a halving of
+/// the segments that need it, their sag a quarter each time (structural).
+const REFINED: usize = 6;
+
 /// **A double curve's point**: its two charts' parameters, from `guess`, settled by Newton's method
 /// on `X₁(u₁) = X₂(u₂)` with `u₁` held on the line square to `dir` through the guess, while the
 /// steps shrink. None where it does not settle.
@@ -906,10 +1095,14 @@ fn solve4(mut m: [[f64;4];4],mut f: [f64;4]) -> Option<[f64;4]> {
 /// `x` moved by whole periods to stand within half a period of `near`.
 fn unwrap(x: f64,near: f64) -> f64 { x-TAU*((x-near)/TAU).round() }
 
+/// `unwrap` on a chart whose first parameter runs round (a sheet's angle, the collar's, an end
+/// pose's); a band's `τ` as it is: it runs ±7 and is no angle.
+fn wrap(chart: Chart,x: f64,near: f64) -> f64 { if let Chart::Band(..) = chart { x } else { unwrap(x,near) } }
+
 /// The faces, their edges and vertices as the trims and the windows give them, sewn.
-fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(f64,P,usize)],tol: f64) -> Result<Brep,Unbuilt> {
+fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(Chart,P,usize)],tol: f64) -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
-    let mut points: Vec<(Chart,P)> = tails.iter().map(|t| (Chart::Sheet(t.0),t.1)).collect();
+    let mut points: Vec<(Chart,P)> = tails.iter().map(|t| (t.0,t.1)).collect();
     // (the sheets' windows clear of the pinch's hole, which lies whole in one of them)
     for side in [1.,-1.] { points.extend(tube.hole(Chart::Sheet(side))?.into_iter().flatten().map(|p| (Chart::Sheet(side),p))) }
     let mut cuts: Vec<(Chart,[f64;2])> = CHARTS.iter().map(|&c| windows(trims,&points,c).map(|w| (c,w))).collect::<Result<_,_>>()?;
@@ -918,8 +1111,32 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     // the cuts from each swallowtail point toward the rim it opens away from (the way whose point a
     // disc's span beside it is kept), each to the first trim it meets or else that rim
     let mut across: Vec<Arc2> = Vec::new();
-    for &(side,p,v) in tails {
-        let chart = Chart::Sheet(side);
+    for &(chart,p,v) in tails {
+        // (on a band's chart, along the line from the point to its seam, the way it opens away from)
+        if let Chart::Band(kb,side) = chart {
+            let band = &tube.bands[kb];
+            let step = 0.02*(band.eta[1]-band.eta[0]);
+            let field = Depth {tube,chart,within:tol,holes:&[]};
+            let kept = |eta: f64| match field.reading([p[0],eta]) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
+            let dir = if kept(p[1]-step) { -1. } else if kept(p[1]+step) { 1. } else {
+                return Err(failed(format!("neither way from the swallowtail point {p:?} on {chart:?} is kept")))
+            };
+            let target = band.seam_eta(p[0],dir);
+            let (foot,e) = match met_by_cut(tube,chart,p,target,v,trims,vertices)? {
+                Some(f) => f,
+                None => {
+                    let q = [p[0],target];
+                    let x = tube.at(chart,q).ok_or_else(|| failed("no band at a cut's foot".into()))?.x;
+                    let place = band.place(q);
+                    vertices.push(Vertex {x,on:vec![(chart,q),(Chart::Sheet(side),[place[0].rem_euclid(TAU),place[1]])]});
+                    (vertices.len()-1,target)
+                }
+            };
+            let line: Vec<P> = (0..=32).map(|j| [p[0],p[1]+(e-p[1])*j as f64/32.]).collect();
+            across.push(Arc2 {kind:Kind::Across {chart,th:p[0],v:[p[1],e]},v:[v,foot],uses:vec![(chart,line.clone()),(chart,line)]});
+            continue
+        }
+        let Chart::Sheet(side) = chart else { return Err(failed(format!("a swallowtail point on {chart:?}"))) };
         let step = 0.02*(b-a);
         let kept = |t: f64| match tube.reading(side,p[0],t,tol) { Some(Reading::Alone) => true,Some(Reading::Far(c)) => c.depth >= 0.,_ => false };
         let k = if kept(p[1]-step) { 0 } else if kept(p[1]+step) { 1 } else {
@@ -1006,6 +1223,37 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
             arcs.push(Arc2 {kind:Kind::Across {chart:Chart::Collar,th:c,v:[-p.rho,p.rho]},v:[v0,v1],uses:vec![(Chart::Collar,line.clone()),(Chart::Collar,line)]});
         }
     }
+    // each band's seam, on both sheets, split at every vertex on it (at its half turns where fewer
+    // than two are: a closed edge is two)
+    for (kb,band) in tube.bands.iter().enumerate() {
+        for side in [1.,-1.] {
+            let chart = Chart::Band(kb,side);
+            let mut splits: Vec<(f64,usize)> = vertices.iter().enumerate()
+                .flat_map(|(j,v)| v.on.iter().filter(|(c,q)| *c == chart && band.seam(*q).abs() <= HALF_READ).map(move |(_,q)| (band.fraction(*q),j))).collect();
+            if splits.len() < 2 {
+                for f in [0.,0.5] {
+                    if splits.iter().any(|s| (s.0-f).abs() < 0.01) { continue }
+                    let q = band.seam_at(f);
+                    let x = tube.at(chart,q).ok_or_else(|| failed("no band on its seam".into()))?.x;
+                    let place = band.place(q);
+                    vertices.push(Vertex {x,on:vec![(chart,q),(Chart::Sheet(side),[place[0].rem_euclid(TAU),place[1]])]});
+                    splits.push((f,vertices.len()-1));
+                }
+            }
+            splits.sort_by(|p,q| p.0.total_cmp(&q.0));
+            let n = splits.len();
+            for i in 0..n {
+                let (f0,v0) = splits[i];
+                let (f1,v1) = if i+1 < n { splits[i+1] } else { (splits[0].0+1.,splits[0].1) };
+                let m = (((f1-f0)*256.).ceil() as usize).max(4);
+                let fs: Vec<f64> = (0..=m).map(|j| f0+(f1-f0)*j as f64/m as f64).collect();
+                let own: Vec<P> = fs.iter().map(|&f| band.seam_at(f)).collect();
+                let mut sheet: Vec<P> = own.iter().map(|&q| band.place(q)).collect();
+                for j in 1..sheet.len() { sheet[j][0] = unwrap(sheet[j][0],sheet[j-1][0]) }
+                arcs.push(Arc2 {kind:Kind::Seam {k:kb,side,f:[f0,f1]},v:[v0,v1],uses:vec![(chart,own),(Chart::Sheet(side),sheet)]});
+            }
+        }
+    }
     // the cuts across each chart at the windows' angles
     let at_rim = |vs: &Vec<Vertex>,chart: Chart,q: P| vs.iter().position(|v| v.on.iter().any(|(c,p)| *c == chart && p[0] == q[0] && p[1] == q[1]));
     for side in [1.,-1.] {
@@ -1047,7 +1295,7 @@ fn met_by_cut(tube: &Tube,chart: Chart,p: P,e: f64,tail: usize,trims: &mut Vec<T
             if ch != chart { continue }
             for j in 0..line.len()-1 {
                 let (u,w) = (line[j],line[j+1]);
-                let c = unwrap(p[0],u[0]);
+                let c = wrap(chart,p[0],u[0]);
                 if u[0] == w[0] || (u[0]-c)*(w[0]-c) > 0. { continue }
                 let f = (c-u[0])/(w[0]-u[0]);
                 let t = u[1]+(w[1]-u[1])*f;
@@ -1092,6 +1340,8 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
         let th = q[0]+shift;
         match chart {
             Chart::Sheet(_) | Chart::Collar => Some([th,q[1]]),
+            // (a band's chart runs round neither way: placed as it is)
+            Chart::Band(..) => Some(*q),
             Chart::End(k) => {
                 let (plus,way,_) = band(tube,k,q[0])?;
                 let o = ((q[1]-plus)*way).rem_euclid(TAU);
@@ -1112,7 +1362,8 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
         let at = |u: usize,p: P| tube.at(arc.uses[u].0,p).map(|q| q.x);
         let (c,pcs) = match arc.kind {
             Kind::Trim(i) => {
-                let t = &trims[i];
+                let refined = refined(tube,&trims[i],fit);
+                let t = refined.as_ref().unwrap_or(&trims[i]);
                 let f = |s: f64| match t.at(tube,s) {
                     Some([u,p]) => (tube.at(t.own,u).map_or([f64::NAN;3],|q| q.x),vec![u,p]),
                     None => ([f64::NAN;3],vec![[f64::NAN;2];2]),
@@ -1144,6 +1395,15 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 };
                 fitted(&f,&at,&[fit,fit])?
             }
+            Kind::Seam {k,side,f} => {
+                let (b,chart,near) = (&tube.bands[k],Chart::Band(k,side),arc.uses[1].1[0][0]);
+                let g = |s: f64| {
+                    let q = b.seam_at(f[0]+(f[1]-f[0])*s);
+                    let p = b.place(q);
+                    (tube.at(chart,q).map_or([f64::NAN;3],|x| x.x),vec![q,[unwrap(p[0],near),p[1]]])
+                };
+                fitted(&g,&at,&[fit,fit])?
+            }
         };
         if debug() { eprintln!("tube: arc {} {:?} {:?} mid {:?} ends {:?} {:?}",curves.len(),arc.kind,arc.v,c.point(0.5),c.point(0.),c.point(1.)) }
         curves.push((Arc::new(Curve::BSpline(Arc::new(c))),pcs));
@@ -1153,10 +1413,13 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
     let mut nets: Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)> = Vec::new();
     let mut charts = CHARTS.to_vec();
     if tube.pinch.is_some() { charts.push(Chart::Collar) }
+    for k in 0..tube.bands.len() { charts.extend([Chart::Band(k,1.),Chart::Band(k,-1.)]) }
     for chart in charts {
-        let cuts = cuts_of(cuts,chart);
-        for w in 0..2 {
-            let (w0,w1) = if w == 0 { (cuts[0],cuts[1]) } else { (cuts[1],cuts[0]+TAU) };
+        // (a band's chart runs round neither way: one window, the whole of it)
+        let banded = matches!(chart,Chart::Band(..));
+        let cuts = if banded { [f64::NAN;2] } else { cuts_of(cuts,chart) };
+        for w in 0..(if banded { 1 } else { 2 }) {
+            let (w0,w1) = if banded { (f64::NEG_INFINITY,f64::INFINITY) } else if w == 0 { (cuts[0],cuts[1]) } else { (cuts[1],cuts[0]+TAU) };
             // the window's edges: (arc, use, its polyline placed)
             let mut lines: Vec<(usize,usize,Vec<P>)> = Vec::new();
             for (i,arc) in arcs.iter().enumerate() {
@@ -1204,13 +1467,14 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 let (poly,area) = &polys[i];
                 if debug() {
                     let named = |e: usize| match arcs[lines[e].0].kind { Kind::Trim(i) => format!("trim {i}"),Kind::Rim {..} => "rim".into(),
-                        Kind::Across {th,..} => format!("across {th}"),Kind::Hole {sign,..} => format!("the pinch's rim {sign}") };
+                        Kind::Across {th,..} => format!("across {th}"),Kind::Hole {sign,..} => format!("the pinch's rim {sign}"),
+                        Kind::Seam {k,side,..} => format!("band {k}'s seam {side}") };
                     eprintln!("tube: {chart:?} window {w}: a loop {:?}, area {area:e}, holes {:?}",l.iter().map(|&(e,f)| (arcs[lines[e].0].v,f,named(e))).collect::<Vec<_>>(),holes[i])
                 }
                 if *area <= 0. { continue }
                 let rings: Vec<&[P]> = std::iter::once(&poly[..]).chain(holes[i].iter().map(|&j| &polys[j].0[..])).collect();
                 let inner = interior(&rings).ok_or_else(|| failed(format!("a part of {chart:?} with no inner point")))?;
-                let q = match chart { Chart::Sheet(_) | Chart::Collar => inner,Chart::End(k) => {
+                let q = match chart { Chart::Sheet(_) | Chart::Collar | Chart::Band(..) => inner,Chart::End(k) => {
                     let (plus,way,_) = band(tube,k,inner[0]).ok_or_else(|| failed("no band".into()))?; [inner[0],plus+way*inner[1]] } };
                 let field = Depth {tube,chart,within:tol,holes:&[]};
                 let keep = match field.reading(q) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
@@ -1319,6 +1583,24 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
     let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
+        // (a band's chart: the sheet over all its rectangle, one net each band and side, its faces
+        // there sharing it — kept with the sheets' windows' nets, at no angle a window has)
+        Chart::Band(k,side) => {
+            let [[t0,t1],[e0,e1]] = tube.rect(chart);
+            let key = (f64::NEG_INFINITY,k as f64);
+            let net = match nets.iter().find(|(s,w,_)| *s == side && *w == key) {
+                Some((_,_,net)) => net.clone(),
+                None => {
+                    let f = |u: f64,v: f64| tube.at(chart,[t0+(t1-t0)*u,e0+(e1-e0)*v]).map_or([f64::NAN;3],|p| p.x);
+                    let (net,err) = crate::nurbs::fit_net(&f,DEGREE,DEGREE,16,16,FIT*tol).ok_or_else(|| failed(format!("the band {k}'s sheet {side} not fitted")))?;
+                    if debug() { eprintln!("tube: the band {k}'s sheet {side}: {}×{} poles, fitted to {err:e}",net.poles.len(),net.poles[0].len()) }
+                    let net = Arc::new(net);
+                    nets.push((side,key,net.clone()));
+                    net
+                }
+            };
+            (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| [(p[0]-t0)/(t1-t0),(p[1]-e0)/(e1-e0)]))
+        }
         Chart::Sheet(side) => {
             let net = match nets.iter().find(|(s,w,_)| *s == side && *w == (w0,w1)) {
                 Some((_,_,net)) => net.clone(),
@@ -1401,7 +1683,12 @@ const MOST_GRADED: usize = 4096;
 /// outside the hole from `ρ₀` 0.14 forward and 0.12 reverse at 1024 × 512).
 pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64) -> Result<crate::nurbs::Net,Unbuilt> {
     let [a,b] = tube.roll;
-    let holds = tube.pinch.as_ref().is_some_and(|p| { let th = p.collar.at.1; let th = w0+(th-w0).rem_euclid(TAU); th < w1 });
+    let within = |th: f64| { let th = w0+(th-w0).rem_euclid(TAU); th < w1 };
+    // (a window holding a band's seam graded as one holding the pinch's hole, its stand-in read and
+    // held to the bar inside the seam as outside: the stand-in is smooth, and a net held to it
+    // strays nowhere a Boolean reads it)
+    let holds = tube.pinch.as_ref().is_some_and(|p| within(p.collar.at.1))
+        || tube.bands.iter().any(|b| b.rim(64).iter().any(|q| within(q[0])));
     let fit = if holds {
         let f = |u: f64,v: f64| tube.net_point(side,w0+(w1-w0)*u,a+(b-a)*v).unwrap_or([f64::NAN;3]);
         // (read against the sheet where the net is kept: outside the hole, the faces' rim)

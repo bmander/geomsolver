@@ -8,6 +8,30 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.24.1] - 2026-11-25
+
+- **A swept tube's crossed members, and their Boolean, built in a quarter the time** (brep-bench's
+  `swept/tumbling-torus-crossed-intersection`, 87 s to 20.6 s end to end, its STEP file byte for byte
+  the same at every step):
+  - a screw's pose read in closed form, one twist seen from another with no level between
+    (`Screw::at_rate`, `Trajectory::unchecked`);
+  - a sewn shell turned by its faces' fluxes estimated first where a face lies on a large net
+    (`props::fluxes_bounded`), read exactly unless every shell's volume stands clear of ten times its
+    bound;
+  - a net's span index built once however many threads ask, on every core (`query::net_index`), each
+    span's Bézier points by its blossom's weights read once each way (`nurbs::blossom_weights`), a
+    large tree's first levels grown on threads of their own (`util::bvh`), the very tree one thread
+    grows;
+  - a sheet's foot kept from the thread's warm start, without its spans' boxes searched, where it
+    stands within a thousandth of the sheet's size of the point, and a point off the sheet given its
+    nearest poles through a tree of them (`query::net_poles`), as the scan of every pole gives them;
+  - a Boolean's traced meetings read on every core before its face pairs are laid, in order;
+  - the tube road's two sheets traced side by side once the collar is traced (`swept::tube::faces`);
+  - a STEP file's points written where they go (`step::push_real`).
+- **A near pinch of a tube's sheets found and charted** (`swept::tube::band`, not yet the road's): the
+  line through a near miss of the spine's two terms, its band chart `(τ, η)`, the seam the sheets' hole
+  and their stand-in inside it, and the band's chart traced; `closed::ring` still builds pinched.
+
 ## [0.24.0] - 2026-11-25
 
 - **A round offset past its radius in one step** (`offset`): a torus's or a sphere's sweep, as a

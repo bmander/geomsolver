@@ -1369,21 +1369,52 @@ fn line_meets_box(p: V,d: V,ab: [f64;2],lo: V,hi: V) -> bool { line_in_box(p,d,a
 const INDEXED: usize = 256;
 
 /// **The index of `net`'s spans**, built once for the net and kept, keyed by the net it was built
-/// for (held, so no other net takes its place).
+/// for (held, so no other net takes its place). A net asked for on several threads at once is
+/// indexed once, the others waiting for it: an edge's crossings with every face are read on every
+/// core, and a sheet graded to 900 × 850 was indexed twice over, two seconds each.
 pub(crate) fn net_index(net: &std::sync::Arc<crate::nurbs::Net>) -> std::sync::Arc<NetIndex> {
-    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<crate::nurbs::Net>,std::sync::Arc<NetIndex>)>;
+    type Cell = std::sync::Arc<std::sync::OnceLock<std::sync::Arc<NetIndex>>>;
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<crate::nurbs::Net>,Cell)>;
     static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
     let key = std::sync::Arc::as_ptr(net) as usize;
-    if let Some((_,i)) = STORE.lock().unwrap().get(&key) { return i.clone() }
-    let index = std::sync::Arc::new(indexed(net));
-    let mut store = STORE.lock().unwrap();
-    if store.len() >= INDEXED { store.clear() }
-    store.insert(key,(net.clone(),index.clone()));
-    index
+    let cell = {
+        let mut store = STORE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_,c)) = store.get(&key) { c.clone() } else {
+            if store.len() >= INDEXED { store.clear() }
+            let c: Cell = Default::default();
+            store.insert(key,(net.clone(),c.clone()));
+            c
+        }
+    };
+    cell.get_or_init(|| std::sync::Arc::new(indexed(net))).clone()
 }
 
+/// **The tree of `net`'s poles** (each a box of no size, in the order of its rows), built once for
+/// the net and kept as `net_index` keeps its spans': the nearest poles of a point off a sheet
+/// (`geom::net_search`) read through it rather than over every pole.
+pub(crate) fn net_poles(net: &std::sync::Arc<crate::nurbs::Net>) -> std::sync::Arc<crate::util::bvh::Bvh<3>> {
+    type Cell = std::sync::Arc<std::sync::OnceLock<std::sync::Arc<crate::util::bvh::Bvh<3>>>>;
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<crate::nurbs::Net>,Cell)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = std::sync::Arc::as_ptr(net) as usize;
+    let cell = {
+        let mut store = STORE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_,c)) = store.get(&key) { c.clone() } else {
+            if store.len() >= INDEXED { store.clear() }
+            let c: Cell = Default::default();
+            store.insert(key,(net.clone(),c.clone()));
+            c
+        }
+    };
+    cell.get_or_init(|| std::sync::Arc::new(crate::util::bvh::Bvh::new(net.poles.iter().flatten().map(|&q| crate::util::bvh::Bounds {lo:q,hi:q})))).clone()
+}
+
+/// The fewest spans a net has for its index to be read on every core (`indexed`).
+const INDEXED_APART: usize = 1 << 14;
+
 /// `net`'s spans, each boxed by its Bézier points, indexed (`NetIndex`): each row's poles carried to
-/// their Bézier points along each span of v once, then each span's along u.
+/// their Bézier points along each span of v once, then each span's along u — a large net's rows
+/// and spans of u shared out among the cores, each read as alone, in order.
 fn indexed(net: &crate::nurbs::Net) -> NetIndex {
     let (du,dv) = (net.du,net.dv);
     let (nu,nv) = (net.poles.len(),net.poles[0].len());
@@ -1391,27 +1422,63 @@ fn indexed(net: &crate::nurbs::Net) -> NetIndex {
         (d..n).filter(|&k| knots[k+1] > knots[k]).map(|k| ([knots[k],knots[k+1]],k)).collect()
     };
     let (us,vs) = (spans(&net.uknots,du,nu),spans(&net.vknots,dv,nv));
-    // rows[i][s]: row i's Bézier points over v's span s
-    let rows: Vec<Vec<Vec<V>>> = (0..nu).map(|i| vs.iter().map(|&(sv,l)| {
-        (0..=dv).map(|j| blossom(&net.vknots,&net.poles[i][l-dv..=l],l,dv,sv,j)).collect()
-    }).collect()).collect();
-    let mut out = Vec::with_capacity(us.len()*vs.len());
-    let mut bounds = Vec::with_capacity(us.len()*vs.len());
-    for &(su,k) in &us {
-        for (s,&(sv,_)) in vs.iter().enumerate() {
+    let apart = us.len()*vs.len() >= INDEXED_APART;
+    // (a Bézier point is linear in the poles reaching its span, `blossom_weights`: each span's weights
+    // once each way, then every row's and every column's points by them)
+    let weights = |knots: &[f64],d: usize,spans: &[([f64;2],usize)]| -> Vec<Vec<Vec<f64>>> {
+        spans.iter().map(|&(t,k)| (0..=d).map(|j| crate::nurbs::blossom_weights(knots,k,d,t,j)).collect()).collect()
+    };
+    let (wu,wv) = (weights(&net.uknots,du,&us),weights(&net.vknots,dv,&vs));
+    fn comb(w: &[f64],p: impl Fn(usize) -> V) -> V {
+        let mut q = [0.;3];
+        for (m,&c) in w.iter().enumerate() { let x = p(m); for i in 0..3 { q[i] += c*x[i] } }
+        q
+    }
+    // rows[i][s(dv + 1) + j]: row i's Bézier point j over v's span s
+    let rows: Vec<Vec<V>> = shared(nu,apart,|i| vs.iter().zip(&wv).flat_map(|(&(_,l),w)| {
+        (0..=dv).map(move |j| comb(&w[j],|m| net.poles[i][l-dv+m]))
+    }).collect());
+    let boxed: Vec<Vec<crate::util::bvh::Bounds<3>>> = shared(us.len(),apart,|a| {
+        let (k,w) = (us[a].1,&wu[a]);
+        (0..vs.len()).map(|s| {
             let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for j in 0..=dv {
-                let col: Vec<V> = (k-du..=k).map(|i| rows[i][s][j]).collect();
                 for i in 0..=du {
-                    let q = blossom(&net.uknots,&col,k,du,su,i);
+                    let q = comb(&w[i],|m| rows[k-du+m][s*(dv+1)+j]);
                     for c in 0..3 { lo[c] = lo[c].min(q[c]); hi[c] = hi[c].max(q[c]) }
                 }
             }
-            out.push([su,sv]);
-            bounds.push(crate::util::bvh::Bounds {lo,hi});
+            crate::util::bvh::Bounds {lo,hi}
+        }).collect()
+    });
+    let out: Vec<[[f64;2];2]> = us.iter().flat_map(|&(su,_)| vs.iter().map(move |&(sv,_)| [su,sv])).collect();
+    let bounds: Vec<crate::util::bvh::Bounds<3>> = boxed.into_iter().flatten().collect();
+    let tree = crate::util::bvh::Bvh::new(bounds.iter().copied());
+    NetIndex {spans:out,tree,boxes:bounds}
+}
+
+/// `f(0), …, f(n − 1)` in order, read on every core where `apart` — whether or not the caller is one
+/// of `util::par`'s workers, which read their own work serially (`par::threads`): an index is asked
+/// for inside such work, and every worker asking for it waits for it (`net_index`).
+fn shared<R: Send>(n: usize,apart: bool,f: impl Fn(usize) -> R + Sync) -> Vec<R> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if apart {
+        let threads = std::thread::available_parallelism().map_or(1,|t| t.get()).min(n);
+        if threads > 1 {
+            let chunk = n.div_ceil(threads);
+            let mut parts: Vec<Vec<R>> = Vec::new();
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..threads).map(|t| {
+                    let f = &f;
+                    scope.spawn(move || (t*chunk..((t+1)*chunk).min(n)).map(f).collect::<Vec<R>>())
+                }).collect();
+                parts = handles.into_iter().map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect();
+            });
+            return parts.into_iter().flatten().collect()
         }
     }
-    NetIndex {spans:out,tree:crate::util::bvh::Bvh::new(bounds.iter().copied()),boxes:bounds}
+    let _ = apart;
+    (0..n).map(f).collect()
 }
 
 /// How finely a span's Bézier patch is halved toward a line through it, as a part of the span each

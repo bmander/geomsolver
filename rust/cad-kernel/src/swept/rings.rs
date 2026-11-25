@@ -1572,7 +1572,7 @@ fn same_shape(a: &[Vec<Piece>],b: &[Vec<Piece>]) -> bool {
 }
 
 /// How many rolls the instants a ring's contact changes shape at are sought between.
-const SHAPE_LOOKS: usize = 4096;
+pub(crate) const SHAPE_LOOKS: usize = 4096;
 
 /// **The scale and the instants over `[a, b]` where a ring's contact changes shape under `path`**
 /// (#880 T1d): a fold pair born or vanishing at a point of a curve — where its least `s''` reaches
@@ -3608,6 +3608,33 @@ impl Ring {
         (pp,q,qq,pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]))
     }
 
+    /// **The contact terms `(A, B)` of the arc `k` in the half-plane at `θ` at the roll `t`** (`terms`
+    /// read at `θ`: the arc's centre's velocity there, outward and along the axis, as `Collar::ab`
+    /// reads it), and the terms' scale; none where `k` is no arc or no pose is read. Nought both at a
+    /// meridian touched whole (`touched_once`), small beside one all but touched (`Tube::bands`).
+    pub fn ab(&self,path: &Trajectory,k: usize,theta: f64,t: f64) -> Option<([f64;2],f64)> {
+        let Element::Arc {c,..} = self.elements[k] else { return None };
+        let (pp,q,qq,size) = self.terms(&Twist::body(path.at(t).ok()?),c);
+        let (s,co) = theta.dsin_cos();
+        Some(([pp[0]*co+pp[1]*s,q+qq[0]*co+qq[1]*s],size))
+    }
+
+    /// **The two angles `A` vanishes at under the twist `w`, and `B` at each** as a part of the terms'
+    /// scale, for the arc about `c` (`terms`): `θ = atan2(−P₁, P₂)` and half a turn on.
+    fn where_a_vanishes(&self,w: &Twist,c: P2) -> [(f64,f64);2] {
+        let (pp,q,qq,size) = self.terms(w,c);
+        let base = (-pp[0]).datan2(pp[1]);
+        [base,base+std::f64::consts::PI].map(|st| { let (ss,cs) = st.dsin_cos(); (st,(q+qq[0]*cs+qq[1]*ss)/size) })
+    }
+
+    /// `where_a_vanishes` of the arc `k` at the roll `t` (`touched_once`'s reading, which a near miss
+    /// of a whole-touch is read along too: `Tube::bands`); none where `k` is no arc or no pose is
+    /// read.
+    pub fn a_vanishes(&self,path: &Trajectory,k: usize,t: f64) -> Option<[(f64,f64);2]> {
+        let Element::Arc {c,..} = self.elements[k] else { return None };
+        Some(self.where_a_vanishes(&Twist::body(path.at(t).ok()?),c))
+    }
+
     /// The point of the meridian's arc `k` in the half-plane at `θ` farthest from the ring's axis.
     pub fn meridian_point(&self,theta: f64,k: usize) -> V {
         let m = match self.elements[k] { Element::Arc {c,r,..} => [c[0]+r,c[1]],Element::Line {a,b} => if a[0] >= b[0] { a } else { b } };
@@ -3659,11 +3686,7 @@ impl Ring {
         for (k,e) in self.elements.iter().enumerate() {
             let Element::Arc {c,..} = *e else { continue };
             // (at the roll `t`, `B` as a part of the scale at each of the two angles `A` vanishes at)
-            let read = |t: f64| -> Result<[(f64,f64);2],Unbuilt> {
-                let (pp,q,qq,size) = self.terms(&Twist::body(path.at(t)?),c);
-                let base = (-pp[0]).datan2(pp[1]);
-                Ok([base,base+std::f64::consts::PI].map(|st| { let (ss,cs) = st.dsin_cos(); (st,(q+qq[0]*cs+qq[1]*ss)/size) }))
-            };
+            let read = |t: f64| -> Result<[(f64,f64);2],Unbuilt> { Ok(self.where_a_vanishes(&Twist::body(path.at(t)?),c)) };
             // (the angle at `t` nearer `theta`, of the two, and `B` there: followed by continuity,
             // the two swapping where `P` passes nought)
             let near = |t: f64,theta: f64| -> Result<(f64,f64),Unbuilt> {

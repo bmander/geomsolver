@@ -12,7 +12,6 @@ use super::meeting::Met;
 use super::complex::{Complex,Origin};
 use super::topo::{leaving_pole,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{distance,norm,scale};
-use std::cell::Cell;
 use std::collections::BTreeMap;
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -1789,7 +1788,47 @@ impl<'a> Arrangement<'a> {
                 super::geom::widen(filled.entry(i).or_insert(super::geom::EMPTY),self.boxes[key.0][key.1]);
             }
         }
-        for faces in pairs {
+        // **the meetings traced of every two surfaces, read on every core** before the pairs are laid
+        // in order: each two surfaces' pairs traced in that order, each knowing the curves its
+        // predecessors traced, as the order lays them — a function of the faces and phase 1's
+        // findings alone, from no warm start (`util::par`), so the arrangement is the same however
+        // they were shared out. A build under a budget (`util::meter`) traces them in order, so that
+        // it stops where it always does.
+        let mut first: BTreeMap<usize,Result<Vec<Curve>,String>> = BTreeMap::new();
+        if crate::util::meter::current().is_none() && crate::util::par::threads() > 1 {
+            let mut group_of: BTreeMap<(usize,usize),usize> = BTreeMap::new();
+            let mut groups: Vec<(Box3,Vec<(usize,Two)>)> = Vec::new();
+            for (k,faces) in pairs.iter().enumerate() {
+                let ids = [0,1].map(|j| self.surface_of[&(faces.s[j],faces.f[j])]);
+                let key = (ids[0].min(ids[1]),ids[0].max(ids[1]));
+                let g = match group_of.get(&key) {
+                    Some(&g) => g,
+                    None => {
+                        if !matches!(self.shared.meeting(ids[0],ids[1],self.tol),Ssi::Traced) || !self.shared.traced(ids[0],ids[1]).is_empty() { continue }
+                        let (fi,fj) = (filled[&ids[0]],filled[&ids[1]]);
+                        groups.push(((std::array::from_fn(|k| fi.0[k].max(fj.0[k])),std::array::from_fn(|k| fi.1[k].min(fj.1[k]))),Vec::new()));
+                        group_of.insert(key,groups.len()-1);
+                        groups.len()-1
+                    }
+                };
+                groups[g].1.push((k,*faces));
+            }
+            let this = &*self;
+            let read = crate::util::par::map(&groups,|(within,members)| {
+                let mut known: Vec<Curve> = Vec::new();
+                let mut out = Vec::with_capacity(members.len());
+                for &(k,faces) in members {
+                    let r = this.traced_meeting(faces,crossings,&known,*within);
+                    let failed = r.is_err();
+                    if let Ok(t) = &r { known.extend(t[known.len()..].iter().cloned()) }
+                    out.push((k,r));
+                    if failed { break }
+                }
+                out
+            });
+            first = read.into_iter().flatten().collect();
+        }
+        for (k,faces) in pairs.into_iter().enumerate() {
             let ([sa,sb],[fa,fb]) = (faces.s,faces.f);
             let (a,b) = (self.solids[sa],self.solids[sb]);
             let surfaces = [&a.faces[fa].surface,&b.faces[fb].surface];
@@ -1837,7 +1876,10 @@ impl<'a> Arrangement<'a> {
                     let (fi,fj) = (filled[&ids[0]],filled[&ids[1]]);
                     let within = (std::array::from_fn(|k| fi.0[k].max(fj.0[k])),std::array::from_fn(|k| fi.1[k].min(fj.1[k])));
                     let known = self.shared.traced(ids[0],ids[1]).to_vec();
-                    let mut traced = self.traced_meeting(faces,crossings,&known,within)?;
+                    let mut traced = match first.remove(&k) {
+                        Some(read) => read?,
+                        _ => self.traced_meeting(faces,crossings,&known,within)?,
+                    };
                     self.shared.add_traced(ids[0],ids[1],traced[known.len()..].iter().cloned());
                     // a traced meeting lying along an edge either face already has is that edge
                     // (#735 A2: "this meeting is that existing edge"), laid once, not twice
@@ -3141,8 +3183,8 @@ struct Narration {
     /// the clock at the end of each phase timed: the edges against the faces, the pairs of faces
     laps: Vec<f64>,
     /// the time spent laying grids of seeds across sheets' faces, and tracing
-    grid: Cell<f64>,
-    trace: Cell<f64>,
+    grid: std::sync::Mutex<f64>,
+    trace: std::sync::Mutex<f64>,
 }
 
 /// Two faces of a pair, of two operands, by their operands, indices and surfaces' kinds.
@@ -3153,7 +3195,7 @@ fn named(faces: Two,surfaces: [&Surface;2]) -> String {
 impl Narration {
     fn new() -> Narration {
         Narration {debug:super::debug(),timing:super::timing(),clock:crate::util::clock::Instant::now(),laps:Vec::new(),
-            grid:Cell::new(0.),trace:Cell::new(0.)}
+            grid:std::sync::Mutex::new(0.),trace:std::sync::Mutex::new(0.)}
     }
 
     /// The end of a phase timed.
@@ -3164,7 +3206,7 @@ impl Narration {
         if !self.timing { return }
         let [t1,t2] = [0,1].map(|k| self.laps.get(k).copied().unwrap_or(0.));
         eprintln!("time: arrange: edges against faces {t1:.2} s; face pairs {:.2} s (grid seeds {:.2}, traces {:.2}); \
-            the rest {:.2} s",t2-t1,self.grid.get(),self.trace.get(),self.clock.elapsed().as_secs_f64()-t2);
+            the rest {:.2} s",t2-t1,*self.grid.lock().unwrap_or_else(|e| e.into_inner()),*self.trace.lock().unwrap_or_else(|e| e.into_inner()),self.clock.elapsed().as_secs_f64()-t2);
     }
 
     /// Edge `i` of solid `s` read against face `fi` of the other, which took `took` seconds.
@@ -3199,7 +3241,7 @@ impl Narration {
     }
 
     /// Grids of seeds laid across a sheet's face, in `took` seconds.
-    fn seeded(&self,took: f64) { self.grid.set(self.grid.get()+took); }
+    fn seeded(&self,took: f64) { *self.grid.lock().unwrap_or_else(|e| e.into_inner()) += took; }
 
     /// Two faces' meeting about to be traced from `seeds`.
     fn tracing(&self,faces: Two,surfaces: [&Surface;2],seeds: &[V]) {
@@ -3213,7 +3255,7 @@ impl Narration {
 
     /// Two faces' meeting traced, as `traced`, from `seeds`, in `took` seconds.
     fn traced(&self,faces: Two,surfaces: [&Surface;2],traced: &[Curve],seeds: &[V],took: f64) {
-        self.trace.set(self.trace.get()+took);
+        *self.trace.lock().unwrap_or_else(|e| e.into_inner()) += took;
         if took > 0.2 && self.timing {
             eprintln!("time: {}: traced {} curves from {} seeds in {took:.2} s",named(faces,surfaces),traced.len(),seeds.len());
         }

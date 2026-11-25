@@ -4000,3 +4000,144 @@ fn a_crescent_whose_ends_stand_apart_at_a_vertex_meshes() {
     let m = gcs_core::brep::mesh::mesh(&b,0.01,0.2).unwrap_or_else(|e| panic!("{e}"));
     assert!(m.tris.len() >= 2 && m.turned == 0,"{} triangles, {} turned",m.tris.len(),m.turned);
 }
+
+/// **A screw's pose is the slide to its axis, the turn and the slide back, read in one step**: the
+/// closed form `Screw::at` reads (`x ↦ R x + (o − R o)`, its rate `Ṙ x − Ṙ o`, the advance after)
+/// is that composition, point for point and rate for rate, to the rounding (`Motion::rotation`
+/// normalises its axis again) — and the tumbles' motion, one twist seen from another, reads as the
+/// two composed, to the bit.
+#[test]
+fn a_screws_pose_in_closed_form_is_its_composition() {
+    use gcs_core::brep::trajectory::{Motion,Screw,Trajectory};
+    let axis = gcs_core::brep::util::space::unit([0.3,-0.5,0.8]);
+    let screws = [Screw {origin:[1.,-2.,0.5],axis,ratio:0.7,advance:0.},Screw {origin:[0.,0.7,0.7],axis:[0.,0.,1.],ratio:-1.,advance:2.5}];
+    let probes = [[0.,0.,0.],[1.,2.,3.],[-4.,0.5,2.]];
+    for s in &screws {
+        for t in [-1.7,-0.3,0.,0.9,1.7] {
+            let m = s.at(t).unwrap();
+            let slide = Motion::translation(s.axis.map(|v| v*s.advance/TAU*t),s.axis.map(|v| v*s.advance/TAU)).unwrap();
+            let composed = Motion::translation(s.origin.map(|v| -v),[0.;3]).unwrap()
+                .then(Motion::rotation(s.axis,s.ratio*t,s.ratio).unwrap()).then(Motion::translation(s.origin,[0.;3]).unwrap()).then(slide);
+            let near = |a: V,b: V| (0..3).all(|k| (a[k]-b[k]).abs() <= 1e-14*(1.+b[k].abs()));
+            for p in probes {
+                assert!(near(m.point(p),composed.point(p)),"the screw {s:?} at {t}: its point");
+                assert!(near(m.velocity(p),composed.velocity(p)),"the screw {s:?} at {t}: its velocity");
+            }
+        }
+    }
+    let path = Trajectory::Relative {source:Box::new(Trajectory::Twist(screws[0])),observer:Box::new(Trajectory::Twist(screws[1]))};
+    for t in [-1.2,0.4] {
+        let (m,w) = (path.at(t).unwrap(),screws[0].at(t).unwrap().then(screws[1].at(t).unwrap().inverse()));
+        for p in probes { assert_eq!(m.point(p),w.point(p)); assert_eq!(m.velocity(p),w.velocity(p)); }
+    }
+}
+
+/// **A tree grown on threads answers as one grown on one** (`util::bvh`): over 50 000 boxes — past
+/// the count whose first levels are grown on threads of their own — every box a query box meets is
+/// visited, and no other, and the nearest found is the nearest, as a scan of them all reads them.
+#[test]
+fn a_large_tree_answers_as_a_scan_of_its_boxes() {
+    use gcs_core::brep::util::bvh::{Bounds,Bvh};
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut draw = || { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; (seed >> 11) as f64/(1u64 << 53) as f64 };
+    let boxes: Vec<Bounds<3>> = (0..50_000).map(|_| {
+        let lo: V = [draw()*10.,draw()*10.,draw()*10.];
+        let size = 0.05*draw();
+        Bounds {lo,hi:lo.map(|x| x+size)}
+    }).collect();
+    let tree = Bvh::new(boxes.iter().copied());
+    for _ in 0..50 {
+        let lo: V = [draw()*10.,draw()*10.,draw()*10.];
+        let q = Bounds {lo,hi:lo.map(|x| x+0.4*draw())};
+        let mut found = Vec::new();
+        tree.query_box(q,|i| found.push(i));
+        found.sort();
+        let scanned: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].overlaps(q)).collect();
+        assert_eq!(found,scanned,"the boxes a query box meets");
+        let p: V = [draw()*10.,draw()*10.,draw()*10.];
+        let gap = |b: Bounds<3>| (0..3).map(|k| (b.lo[k]-p[k]).max(p[k]-b.hi[k]).max(0.).powi(2)).sum::<f64>();
+        let best = std::cell::Cell::new(f64::INFINITY);
+        tree.query_nearest(gap,|| best.get(),|i| best.set(best.get().min(gap(boxes[i]))));
+        assert_eq!(best.get(),boxes.iter().map(|&b| gap(b)).fold(f64::INFINITY,f64::min),"the nearest box");
+    }
+}
+
+/// **A large sheet's feet are its nearest points, read warm or cold** (`geom::net_search`): over a
+/// gently waved net of 160 × 160 cubic poles — its spans indexed on every core, its poles in a tree
+/// of their own (`query::net_poles`) — a point's foot read on a thread of its own, and read on one
+/// thread after the points before it (a warm foot near the sheet kept without its boxes searched),
+/// is the nearest point a fine grid over the sheet finds, to a hair: points on the sheet along a
+/// line, above it and past its edges.
+#[test]
+fn a_large_sheets_feet_are_its_nearest_points_warm_or_cold() {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::nurbs::Net;
+    let n = 160;
+    let mut knots = vec![0.;4];
+    knots.extend((1..n-3).map(|i| i as f64/(n-3) as f64));
+    knots.extend([1.;4]);
+    let at = |x: f64,y: f64| -> V { [x,y,0.05*(3.*x).sin()*(2.*y).cos()] };
+    let poles: Vec<Vec<V>> = (0..n).map(|i| (0..n).map(|j| at(4.*i as f64/(n-1) as f64,3.*j as f64/(n-1) as f64)).collect()).collect();
+    let net = Net {du:3,dv:3,uknots:knots.clone(),vknots:knots,poles,weights:None};
+    net.check().unwrap();
+    let s = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let mut probes: Vec<V> = (0..40).map(|k| { let t = k as f64/39.; let q = s.point([0.1+0.8*t,0.2+0.6*t]); [q[0],q[1],q[2]+1e-9] }).collect();
+    probes.extend([[2.,1.5,1.],[1.,2.,-0.7],[3.5,0.5,2.],[-1.,1.5,0.3],[5.,-1.,0.2],[2.,4.,-0.1]]);
+    let cold: Vec<[f64;2]> = probes.iter().map(|&p| { let s = s.clone(); std::thread::spawn(move || s.inverse(p)).join().unwrap() }).collect();
+    let warm: Vec<[f64;2]> = { let (s,probes) = (s.clone(),probes.clone()); std::thread::spawn(move || probes.iter().map(|&p| s.inverse(p)).collect()).join().unwrap() };
+    let m = 400;
+    let grid: Vec<V> = (0..=m).flat_map(|i| (0..=m).map(move |j| [i as f64/m as f64,j as f64/m as f64])).map(|uv| s.point(uv)).collect();
+    let dist = |a: V,b: V| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+    for (k,&p) in probes.iter().enumerate() {
+        let nearest = grid.iter().map(|&q| dist(q,p)).fold(f64::INFINITY,f64::min);
+        for (how,uv) in [("cold",cold[k]),("warm",warm[k])] {
+            let d = dist(s.point(uv),p);
+            assert!(d <= nearest+1e-12,"probe {k} {p:?} read {how}: its foot {uv:?} stands {d:e} off, the grid's nearest {nearest:e}");
+        }
+    }
+}
+
+/// **A face on a large net has its flux estimated within its bound, and a shell is turned by it**
+/// (`props::fluxes_bounded`, `sew::orient`): a block whose top is borne by a net of degree one
+/// over 201 × 201 poles — the plane itself, read through 40 000 spans — has that face's flux
+/// estimated on the grid, within the bound it gives of the flux read exactly (`props::fluxes`),
+/// every other face's exact; and the block sewn turned inside out comes out with its volume, the
+/// estimate deciding the way round.
+#[test]
+fn a_large_nets_flux_is_estimated_within_its_bound() {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::nurbs::Net;
+    let (lo,hi) = ([0.,0.,0.],[3.,2.,1.]);
+    let mut b = gcs_core::brep::build::block(lo,hi).unwrap();
+    // the top: the face all of whose vertices stand at the block's height
+    let top = (0..b.faces.len()).find(|&f| b.faces[f].loops.iter().flatten().all(|c| {
+        let e = &b.edges[c.edge as usize];
+        e.v.iter().all(|&v| (b.vertices[v as usize].p[2]-hi[2]).abs() < 1e-12)
+    })).expect("a top face");
+    let Surface::Plane(frame) = b.faces[top].surface.clone() else { panic!("a planar top") };
+    let uv: Vec<V> = b.faces[top].loops.iter().flatten().flat_map(|c| b.edges[c.edge as usize].v).map(|v| frame.local(b.vertices[v as usize].p)).collect();
+    let (u0,u1) = uv.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,z),q| (a.min(q[0]),z.max(q[0])));
+    let (v0,v1) = uv.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,z),q| (a.min(q[1]),z.max(q[1])));
+    let n = 200;
+    let knots = |a: f64,z: f64| { let mut k = vec![a]; k.extend((0..=n).map(|i| a+(z-a)*i as f64/n as f64)); k.push(z); k };
+    let poles: Vec<Vec<V>> = (0..=n).map(|i| (0..=n).map(|j| frame.at([u0+(u1-u0)*i as f64/n as f64,v0+(v1-v0)*j as f64/n as f64,0.])).collect()).collect();
+    let net = Net {du:1,dv:1,uknots:knots(u0,u1),vknots:knots(v0,v1),poles,weights:None};
+    net.check().unwrap();
+    b.faces[top].surface = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let exact = gcs_core::brep::props::fluxes(&b);
+    let bounded = gcs_core::brep::props::fluxes_bounded(&b);
+    for (f,(&x,&(e,bound))) in exact.iter().zip(&bounded).enumerate() {
+        if f == top {
+            assert!(bound > 0.,"the top's flux is estimated");
+            assert!((e-x).abs() <= bound,"the top's flux {e} is {x} within {bound}");
+            assert!(bound < 0.05*x.abs(),"its bound {bound} is a small part of it {x}");
+        } else {
+            assert_eq!((e,bound),(x,0.),"face {f} is read exactly");
+        }
+    }
+    // every face turned: sewn, the block is turned back by its estimated volume
+    for f in &mut b.faces { f.reversed = !f.reversed; for l in &mut f.loops { *l = gcs_core::brep::topo::reverse_loop(std::mem::take(l)) } }
+    assert!(volume(&b) < 0.,"turned inside out");
+    let sewn = gcs_core::brep::sew::sewn(&[b],1e-9).unwrap();
+    assert!((volume(&sewn)-6.).abs() < 1e-9,"sewn, the block's volume: {}",volume(&sewn));
+}

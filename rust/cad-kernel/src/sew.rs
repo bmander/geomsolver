@@ -352,12 +352,22 @@ fn orient(b: &mut Brep,tol: f64) -> Result<(),KernelError> {
     }
     for f in 0..n { if flip[f] { b.faces[f] = faced(&b.faces[f],true); } }
     // each shell's volume, and whether it lies inside an odd number of the others
-    let fluxes = super::props::fluxes(b);
-    let mut volumes = vec![0.;shells];
-    for f in 0..n { volumes[shell[f]] += fluxes[f]/3.; }
+    // (each shell's volume its faces' fluxes summed: estimated first where a face lies on a net graded
+    // to hundreds of knots each way, whose exact reading crosses every knot it spans — taken where
+    // every shell's sign stands clear of ten times its bound, read exactly otherwise)
     let size = b.size();
+    let floor = 1e-12*size*size*size;
+    let bounded = super::props::fluxes_bounded(b);
+    let mut volumes = vec![0.;shells];
+    let mut bounds = vec![0.;shells];
+    for f in 0..n { volumes[shell[f]] += bounded[f].0/3.; bounds[shell[f]] += bounded[f].1/3.; }
+    if volumes.iter().zip(&bounds).any(|(&v,&e)| e > 0. && !(v.abs() > 10.*e && v.abs() > floor)) {
+        let fluxes = super::props::fluxes(b);
+        volumes = vec![0.;shells];
+        for f in 0..n { volumes[shell[f]] += fluxes[f]/3.; }
+    }
     for (s,&v) in volumes.iter().enumerate() {
-        if !(v.abs() > 1e-12*size*size*size) {
+        if !(v.abs() > floor) {
             return Err(KernelError::new(Kind::Refused,format!("sewn shell {s} encloses nothing ({v:e})")))
         }
     }

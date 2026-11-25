@@ -16,13 +16,25 @@ use crate::util::space::{add,distance,dot,norm,scale};
 use std::fmt::Write;
 
 /// A real as STEP writes one: shortest round-trip digits, a decimal point, `E` for the exponent.
-fn real(x: f64) -> String {
+fn real(x: f64) -> String { let mut s = String::new(); push_real(&mut s,x); s }
+
+/// `real`, written onto the end of `out`: a net's poles are millions of numbers (a sheet graded to
+/// 944 × 849), each written where it goes rather than made and copied.
+fn push_real(out: &mut String,x: f64) {
     let x = if x == 0. { 0. } else { x };
-    let s = format!("{x:?}");
-    match s.split_once('e') {
-        Some((m,e)) => format!("{}{}E{e}",m,if m.contains('.') { "" } else { "." }),
-        None if s.contains('.') => s,
-        None => format!("{s}."),
+    let start = out.len();
+    let _ = write!(out,"{x:?}");
+    match out[start..].find('e') {
+        Some(e) => {
+            let e = start+e;
+            let dot = out[start..e].contains('.');
+            let exponent: String = out[e+1..].to_string();
+            out.truncate(e);
+            if !dot { out.push('.') }
+            out.push('E');
+            out.push_str(&exponent);
+        }
+        None => if !out[start..].contains('.') { out.push('.') },
     }
 }
 
@@ -39,7 +51,14 @@ impl Out {
     /// is known (the context, whose uncertainty is the most the solids written in it hold).
     fn reserve(&mut self) -> usize { let id = self.next; self.next += 1; id }
     fn put(&mut self,id: usize,entity: String) { let _ = writeln!(self.text,"#{id} = {entity};"); }
-    fn point(&mut self,p: V) -> usize { self.add(format!("CARTESIAN_POINT('',({},{},{}))",real(p[0]),real(p[1]),real(p[2]))) }
+    fn point(&mut self,p: V) -> usize {
+        let id = self.next;
+        self.next += 1;
+        let _ = write!(self.text,"#{id} = CARTESIAN_POINT('',(");
+        for (k,&x) in p.iter().enumerate() { if k > 0 { self.text.push(',') } push_real(&mut self.text,x) }
+        self.text.push_str("));\n");
+        id
+    }
     fn direction(&mut self,d: V) -> usize { self.add(format!("DIRECTION('',({},{},{}))",real(d[0]),real(d[1]),real(d[2]))) }
     fn placement(&mut self,f: &Frame) -> usize {
         let (o,z,x) = (self.point(f.o),self.direction(f.z),self.direction(f.x));
@@ -102,8 +121,11 @@ impl Out {
     /// alphabetical order the standard asks.
     fn net(&mut self,net: &super::nurbs::Net) -> usize {
         let rows: Vec<String> = net.poles.iter().map(|col| {
-            let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
-            format!("({})",ids.join(","))
+            let mut row = String::with_capacity(8*col.len()+2);
+            row.push('(');
+            for (k,&p) in col.iter().enumerate() { if k > 0 { row.push(',') } let _ = write!(row,"#{}",self.point(p)); }
+            row.push(')');
+            row
         }).collect();
         let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
         let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");

@@ -3053,6 +3053,92 @@ miss** (`|(A, B)|` 6.3e-4 at (1.0764, 0.4611), most of its build's minute in two
 own boundary and no window may stop short of it; and `|(A, B)|` runs low along a valley, not to a
 point — `(A, B)` folds over `(θ, t)` there — so no collar `(ψ, ρ)` offset from its least is regular
 either: a chart regular across that fold is what it asks.
+**The band about a near miss, in place** (#880 T1f, `tube::band`, `Tube::bands`; gated by
+`swept_tube::the_band_charts_the_crossed_reverse_members_near_miss`; not yet read by
+`faces::solid`): along each angle `A` vanishes at, followed over the roll as `touched_once` follows
+it (`Ring::a_vanishes`, its reading), each least of `|B|` keeping its sign is settled as the least
+of `|(A, B)|` over the scale in `(θ, t)` (the floor across the line, then along it), and banded where
+the turn of the sheets' normal there — the least over the rate across, `w` — is under a hundredth
+of the roll: the reverse's at (1.0725, 0.4627), least 3.05e-4, `w` 5.4e-4; the forward has none.
+The line's floor is followed each way to where its turn is a hundredth of the roll wide (η −0.351
+and 0.470: the turn widens faster one way), the bend across fitted by Chebyshev polynomials and held
+to the floor within a twentieth of its turn; refused by name where the floor falls again, the chart
+would leave the roll or hold the pinch. **The chart** is `(θ, t) = c + (mid(η) + w sinh τ) e_x +
+η e_y`, one `w`: a wider turn `W` reads `atan(w sinh τ / W)`, turning at most one in `τ`, so the
+sheet over `(τ, η)` is smooth on the chart's scale — each sheet over the whole chart fitted quintic
+to a tenth of the tolerance in 257 × 129 poles, where the window's net graded in `(θ, t)` asks
+944 × 849; it turns as `(θ, t)` does (`w cosh τ e_x × e_y`), reads back (`chart_of`, in closed
+form), and its point and rates are the sheet's at the place by the chain rule (`Tube::band_at`), its
+side the sheet's `J`.
+**The seam, the sheets' hole** (`Tube::banded`, gated by `swept_tube::the_bands_seam_is_the_sheets_hole`;
+`closed::ring` still calls `Tube::pinched`, which has no band): a box with its corners rounded,
+`|x/X|⁴ + |(η − m)/h|⁴ = 1` in how far across the line (`x = w sinh τ`) and along it — not in `τ`,
+where it is a spindle in `(θ, t)` hugging the line and the stand-in's blend falls within a sliver
+(1689 × 1732 poles, then 776 × 907) — across at eight times the turn's width at its ends: the sheet
+beside the seam bends as the tube over how far it stands from the line (measured: at twice 776 ×
+907, four times 476 × 429, eight 340 × 283, sixteen 351 × 217). It is each sheet's inner edge
+(`Tube::hole`, after the pinch's rim; `Tube::hole_side`), the sheet unread deeper than an eighth of
+its measure inside (`Band::deep`: a thin layer, where the pinch's is half its hole — inside the seam
+the line runs on toward its ends with its turn narrow, and the depth's search halved its cells over
+it without end), and filled for the nets by the pinch's rule, `S + s r (B e_r − A e_z)/h`, `h² =
+|(A, B)|² + δ² e^(1 − 1/(1 − S))` over the terms' scale (`Tube::net_point`): `S` the seam's measure,
+so the blend is smooth through the line (one of the seam's radius has a cone point there, and kinked
+the stand-in along the line), flat on the seam, the very sheet there and beyond (to 1e-13); `δ` the
+floor's least where the seam leaves the line, so the stand-in turns no faster than the sheets beyond
+(`Band::delta`, 2.7e-2). A window holding a band is graded as one holding the pinch's hole, its
+stand-in held to the bar inside the seam as the sheet outside — no net strays where a Boolean reads
+it: the reverse's two in 340 × 283 and 345 × 284 poles (2.2 s each, against 944 × 849 and 942 × 853).
+Both sheets' cuspidal edges and depth trace up to the seam, nothing deep inside (sheet `+` 7 seams in
+3.9 s; sheet `−` 5 in 3.3 s, 3 of their ends on the seam: the boundary runs on into the band).
+The windows' nets about the pinch miss the sheet by up to 8.8e-6 between the rows and columns their
+bar is read along (sampled on a 600 × 600 grid), banded or not: their check reads the middles of
+intervals only.
+**The band's chart traced** (`Chart::Band(k, side)`, the sheet on `side` over band `k`'s `(τ, η)`;
+gated by `swept_tube::the_bands_chart_is_traced`; not yet the road's): a chart as the tracers read
+any — its point and rates the sheet's through the place (`Tube::band_at`), its own instant the
+place's, its side the sheet's `J`, its metric for cuspidal edges and swallowtail discs the spine's
+through the place (`Tube::spine_on`), its differences a cube root of the rounding of its rectangle
+each way, running round neither way (`Tube::periodic`) — **read inside its seam alone**
+(`Band::beyond`, past the half digits of its measure, so a sheet's crossing left on the seam is the
+band's too), the seam its inner edge from inside (`Tube::hole`, `hole_side`), as the collar's chart
+ends at its rim. Read a layer past the seam, the search met the sheets' own seams running on into
+the layer, which the traces, stopped at the seam, never reached, and halved its cells beside them to
+2⁻¹⁷ without end (233 409 unsettled, 250 s; an edge of the layer's own stopped nothing the seam had
+not); read over its whole rectangle, it stalled at the rectangle's far side, and the depth's bound,
+its reach read at nine points, cleared the whole chart at once, the sheet swinging half round the
+tube across the line between them — a band's cell wider than one of `τ` is not bounded
+(`BAND_BOUNDED`). And beyond the seam a fold's side is the seam's to say (+1, not the fold's −1, which
+took every exit there and settled it 1e-5 of the seam's measure short). **Measured on the reverse**:
+the sheet `+` has two folds over the band and no seam; the sheet `−` two folds, swallowtail points at
+`(τ, η)` (−6.140, 0.004) and (6.608, 0.027) and four seams, two from each point's disc to the seam,
+every cell settled, in a second; and the sheet `−`'s three crossings of the seam are the band's own
+ends to 1e-12 in space — the tracer exits settle on the seam from both charts alike. A swallowtail
+point's disc is half as wide again on a band's chart (`disc`): the double curve's normal form holds to
+the tolerance only nearer the point there (the point at (6.61, 0.027) joined with its leaves 4.6e-6
+apart from the rim the depth alone asks), and on the smaller disc the seam that runs along the band's
+seam just inside it, grazing it at (6.92, 0.27) (the band's depth −2e-4 a hundredth of `τ` in, +3e-5
+between the curve and the seam), is reached from that point — the wider disc swallowed it, and the
+band's trace left nothing there. **Not yet**: a band end at the seam's tip (η −0.35, on the line), where on
+the sheet just outside the double curve meets a cuspidal edge at once (the sheet folds back there:
+the point stands 1.2e-3 in space from another preimage's trim) and no run long enough to keep
+reaches the seam. **The band's faces, built but not yet closed** (`faces::solid` over `Tube::banded`;
+`closed::ring` still calls `Tube::pinched`): the band's charts are traced after the sheets, seeded
+where the sheets' runs ended on the seam; a run or trim ending on the seam ends at a seam vertex
+(`seam_vertex`: its band, sheet and partner places, the crossing settled along the seam by Newton on
+the far chart's depth), the seam laid as arcs per band and side between them (`Kind::Seam`, the seam
+read in a smooth polar form, `Band::seam_at`, its fraction `Band::fraction`), a band's trim polyline
+refined where its middles stand off its chords (`refined`), a band's charts one window each, its
+face the sheet's fitted over the chart's rectangle (`fit_net`), a cover placed in a band read as the
+band's (`Tube::band_holding`, the seam's ends read before its measure, `Band::holding`). The reverse
+member reaches the sewing and is refused there: the band's tip crossing (η −0.35) has its arc of the
+seam on the band's face and none on the sheet's, the sheet's run leaving the cuspidal edge's meeting
+at once, as above; a band ended a hundredth of the turn further out holds the swallowtail point and
+refuses its turn, and other widths each fit a curve short of the tolerance. **Measured**: the reverse
+member reaches the sewing banded in 7.5 s against 8.0 s built pinched, and the crossed Boolean of
+operands with nets of a quarter the poles took 18 s against 20 s — the time is the Boolean's reading
+and the members' traces, not the nets' size; the band is for the sheets' fit, not the bench's clock.
+**Next**: the tip's crossing joined on the sheet as a corner is (or the seam's tip placed clear of
+the cuspidal edge), and `closed::ring` calling `Tube::banded`, `Tube::pinched` where it refuses.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
