@@ -28,6 +28,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   one rational net grows to the ball.
 - **A face family closes on itself with any loop of walls** (`family::ring`, `recipe::family_solid`),
   not one round wall only, its walls on a plane or a surface of revolution put on it.
+  `family::ring` takes the loop (`&[Wall]`), where it took one `&Wall`.  **Breaking.**
 - **A plane meets a ruled sheet one of whose rails lies in it in that rail and the rulings where the
   other crosses it** (`ssi`), exactly; traced, the rail's ends missed its vertices and a plane's
   pieces did not close.
