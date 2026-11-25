@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.25.0] - 2026-11-25
+
 - **A swept tube's crossed members, and their Boolean, built in a quarter the time** (brep-bench's
   `swept/tumbling-torus-crossed-intersection`, 87 s to 20.6 s end to end, its STEP file byte for byte
   the same at every step):
