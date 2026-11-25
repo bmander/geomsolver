@@ -77,6 +77,7 @@ impl Motion {
     }
 
     /// `rotation` about the unit axis `a`, read as it is.
+    #[inline]
     fn turn(a: V3, angle: f64, rate: f64) -> Self {
         let (s, c) = angle.dsin_cos();
         let k = [[0.,-a[2],a[1]], [a[2],0.,-a[0]], [-a[1],a[0],0.]];
@@ -309,21 +310,29 @@ impl Screw {
 
     /// Its pose at `t` and its rate: turned `ratio · t` about its axis and slid `advance · t / τ`
     /// along it, a slide (no `ratio`) by its step alone.
+    #[inline]
     pub fn at(&self, t: f64) -> Result<Motion, Error> { self.at_rate(t, 1.) }
 
     /// Its pose at `t`, its rate taken `rate` times as fast: where a pace running at `rate` takes it
     /// (`Trajectory::Paced`), each step's rate its own times the pace's. Its axis is unit, read as it
     /// is.
+    #[inline]
     pub fn at_rate(&self, t: f64, rate: f64) -> Result<Motion, Error> {
         let advance = self.advance/std::f64::consts::TAU;
         let slide = Motion::translation(self.axis.map(|v| v*advance*t), self.axis.map(|v| v*advance*rate))?;
         if self.ratio == 0. { return Ok(slide) }
         let (angle, turning) = (self.ratio*t, self.ratio*rate);
         if !angle.is_finite() || !turning.is_finite() { return Err(Error::NonFinite) }
-        let rotation = Motion::turn(self.axis, angle, turning);
-        let pose = Motion::translation(self.origin.map(|v| -v), [0.;3])?
-            .then(rotation).then(Motion::translation(self.origin, [0.;3])?);
-        Ok(if self.advance == 0. { pose } else { pose.then(slide) })
+        if !self.origin.iter().all(|x| x.is_finite()) { return Err(Error::NonFinite) }
+        // (the turn about the axis through the origin `o`, written out rather than composed of a
+        // slide to it, the turn and a slide back — the hottest thing in a swept envelope's
+        // readings: `x ↦ R x + (o − R o)`, its rate `Ṙ x − Ṙ o`, and the advance along it after)
+        let Motion {r, dr, ..} = Motion::turn(self.axis, angle, turning);
+        let o = self.origin;
+        let p = add(scale(mv(r, o), -1.), o);
+        let dp = scale(mv(dr, o), -1.);
+        Ok(if self.advance == 0. { Motion {r, dr, p, dp} }
+            else { Motion {r, dr, p: add(p, slide.p), dp: add(dp, slide.dp)} })
     }
 }
 
@@ -561,7 +570,14 @@ impl Trajectory {
     fn unchecked(&self, t: f64) -> Result<Motion, KernelError> {
         Ok(match self {
             Trajectory::Twist(s) => s.at(t).map_err(|e| read(e, t))?,
-            Trajectory::Relative {source, observer} => source.unchecked(t)?.then(observer.unchecked(t)?.inverse()),
+            Trajectory::Relative {source, observer} => {
+                // (one twist seen from another, the tumbles' motion, read with no level between: the
+                // same steps, the hottest reading of a swept envelope)
+                if let (Trajectory::Twist(s), Trajectory::Twist(o)) = (&**source, &**observer) {
+                    if let (Ok(a), Ok(b)) = (s.at(t), o.at(t)) { return Ok(a.then(b.inverse())) }
+                }
+                source.unchecked(t)?.then(observer.unchecked(t)?.inverse())
+            }
             Trajectory::Paced {path, pace} => {
                 let [s, rate] = pace.jet(t)?;
                 match **path {

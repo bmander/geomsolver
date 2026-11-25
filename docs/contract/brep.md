@@ -1749,6 +1749,23 @@ face using them (a seam's two uses in one loop too), are one edge, the vertex an
 a true corner gone. And work asked of the cores from a worker of theirs is done on that worker
 (`util::par::threads` is one there), not on threads started for it, which a cell's interior read
 inside a read of every cell spent most of its time doing.
+**Work on a sheet graded to hundreds of knots each way is read once, and on every core** (brep-bench's
+crossed tumbling tori, whose reverse member's sheets are nets of some 940 × 850 poles beside a spine
+all but pinched a second time). A net's span index (`query::net_index`) is built once however many
+threads ask for it at once, the others waiting for it, and a large one's rows and spans are read on
+every core even from a worker (`query::indexed`): every worker asking waits on it, so the cores are
+otherwise idle. A sewn shell is turned by its volume's sign (`sew::orient`), its faces' fluxes
+estimated first where a face lies on such a net (`props::fluxes_bounded`: the midpoint rule on two
+grids over its loops' box, weighed by their winding number, its bound the readings' difference twice
+over and `|g|` a cell where each row crosses a loop) and the estimate taken only where every shell's
+volume stands clear of ten times its bound — else every flux is read exactly, as on any smaller face
+(`brep::a_large_nets_flux_is_estimated_within_its_bound`). A Boolean's traced meetings (`ssi::Traced`)
+are read on every core before its face pairs are laid in order: each two surfaces' pairs traced in
+their order, each knowing what its predecessors traced, from no warm start — the same arrangement
+however they were shared out; a build under a budget traces them in order. A screw's pose is read in
+closed form, one twist seen from another with no level between (`Screw::at`,
+`brep::a_screws_pose_in_closed_form_is_its_composition`), and a STEP file's points written where they
+go: each reading the same numbers, and the same file, to the bit.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it

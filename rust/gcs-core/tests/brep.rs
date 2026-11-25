@@ -4000,3 +4000,79 @@ fn a_crescent_whose_ends_stand_apart_at_a_vertex_meshes() {
     let m = gcs_core::brep::mesh::mesh(&b,0.01,0.2).unwrap_or_else(|e| panic!("{e}"));
     assert!(m.tris.len() >= 2 && m.turned == 0,"{} triangles, {} turned",m.tris.len(),m.turned);
 }
+
+/// **A screw's pose is the slide to its axis, the turn and the slide back, read in one step**: the
+/// closed form `Screw::at` reads (`x ↦ R x + (o − R o)`, its rate `Ṙ x − Ṙ o`, the advance after)
+/// is that composition, point for point and rate for rate, to the rounding (`Motion::rotation`
+/// normalises its axis again) — and the tumbles' motion, one twist seen from another, reads as the
+/// two composed, to the bit.
+#[test]
+fn a_screws_pose_in_closed_form_is_its_composition() {
+    use gcs_core::brep::trajectory::{Motion,Screw,Trajectory};
+    let axis = gcs_core::brep::util::space::unit([0.3,-0.5,0.8]);
+    let screws = [Screw {origin:[1.,-2.,0.5],axis,ratio:0.7,advance:0.},Screw {origin:[0.,0.7,0.7],axis:[0.,0.,1.],ratio:-1.,advance:2.5}];
+    let probes = [[0.,0.,0.],[1.,2.,3.],[-4.,0.5,2.]];
+    for s in &screws {
+        for t in [-1.7,-0.3,0.,0.9,1.7] {
+            let m = s.at(t).unwrap();
+            let slide = Motion::translation(s.axis.map(|v| v*s.advance/TAU*t),s.axis.map(|v| v*s.advance/TAU)).unwrap();
+            let composed = Motion::translation(s.origin.map(|v| -v),[0.;3]).unwrap()
+                .then(Motion::rotation(s.axis,s.ratio*t,s.ratio).unwrap()).then(Motion::translation(s.origin,[0.;3]).unwrap()).then(slide);
+            let near = |a: V,b: V| (0..3).all(|k| (a[k]-b[k]).abs() <= 1e-14*(1.+b[k].abs()));
+            for p in probes {
+                assert!(near(m.point(p),composed.point(p)),"the screw {s:?} at {t}: its point");
+                assert!(near(m.velocity(p),composed.velocity(p)),"the screw {s:?} at {t}: its velocity");
+            }
+        }
+    }
+    let path = Trajectory::Relative {source:Box::new(Trajectory::Twist(screws[0])),observer:Box::new(Trajectory::Twist(screws[1]))};
+    for t in [-1.2,0.4] {
+        let (m,w) = (path.at(t).unwrap(),screws[0].at(t).unwrap().then(screws[1].at(t).unwrap().inverse()));
+        for p in probes { assert_eq!(m.point(p),w.point(p)); assert_eq!(m.velocity(p),w.velocity(p)); }
+    }
+}
+
+/// **A face on a large net has its flux estimated within its bound, and a shell is turned by it**
+/// (`props::fluxes_bounded`, `sew::orient`): a block whose top is borne by a net of degree one
+/// over 201 × 201 poles — the plane itself, read through 40 000 spans — has that face's flux
+/// estimated on the grid, within the bound it gives of the flux read exactly (`props::fluxes`),
+/// every other face's exact; and the block sewn turned inside out comes out with its volume, the
+/// estimate deciding the way round.
+#[test]
+fn a_large_nets_flux_is_estimated_within_its_bound() {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::nurbs::Net;
+    let (lo,hi) = ([0.,0.,0.],[3.,2.,1.]);
+    let mut b = gcs_core::brep::build::block(lo,hi).unwrap();
+    // the top: the face all of whose vertices stand at the block's height
+    let top = (0..b.faces.len()).find(|&f| b.faces[f].loops.iter().flatten().all(|c| {
+        let e = &b.edges[c.edge as usize];
+        e.v.iter().all(|&v| (b.vertices[v as usize].p[2]-hi[2]).abs() < 1e-12)
+    })).expect("a top face");
+    let Surface::Plane(frame) = b.faces[top].surface.clone() else { panic!("a planar top") };
+    let uv: Vec<V> = b.faces[top].loops.iter().flatten().flat_map(|c| b.edges[c.edge as usize].v).map(|v| frame.local(b.vertices[v as usize].p)).collect();
+    let (u0,u1) = uv.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,z),q| (a.min(q[0]),z.max(q[0])));
+    let (v0,v1) = uv.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,z),q| (a.min(q[1]),z.max(q[1])));
+    let n = 200;
+    let knots = |a: f64,z: f64| { let mut k = vec![a]; k.extend((0..=n).map(|i| a+(z-a)*i as f64/n as f64)); k.push(z); k };
+    let poles: Vec<Vec<V>> = (0..=n).map(|i| (0..=n).map(|j| frame.at([u0+(u1-u0)*i as f64/n as f64,v0+(v1-v0)*j as f64/n as f64,0.])).collect()).collect();
+    let net = Net {du:1,dv:1,uknots:knots(u0,u1),vknots:knots(v0,v1),poles,weights:None};
+    net.check().unwrap();
+    b.faces[top].surface = Surface::BSpline(Frame::WORLD,std::sync::Arc::new(net));
+    let exact = gcs_core::brep::props::fluxes(&b);
+    let bounded = gcs_core::brep::props::fluxes_bounded(&b);
+    for (f,(&x,&(e,bound))) in exact.iter().zip(&bounded).enumerate() {
+        if f == top {
+            assert!(bound > 0.,"the top's flux is estimated");
+            assert!((e-x).abs() <= bound,"the top's flux {e} is {x} within {bound}");
+            assert!(bound < 0.05*x.abs(),"its bound {bound} is a small part of it {x}");
+        } else {
+            assert_eq!((e,bound),(x,0.),"face {f} is read exactly");
+        }
+    }
+    // every face turned: sewn, the block is turned back by its estimated volume
+    for f in &mut b.faces { f.reversed = !f.reversed; for l in &mut f.loops { *l = gcs_core::brep::topo::reverse_loop(std::mem::take(l)) } }
+    assert!(volume(&b) < 0.,"turned inside out");
+    let sewn = gcs_core::brep::sew::sewn(&[b],1e-9).unwrap();
+    assert!((volume(&sewn)-6.).abs() < 1e-9,"sewn, the block's volume: {}",volume(&sewn));
+}
