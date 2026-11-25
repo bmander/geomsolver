@@ -244,8 +244,7 @@ pub(crate) fn family_solid(f: &Family,ring: bool) -> Result<Brep,String> {
     let walls = walls(f)?;
     if !ring { return super::family::family(&walls,f.vanish,f.carry) }
     let [w] = &walls[..] else { return Err("a ring of a face family is one loop".into()) };
-    let [w] = &w[..] else { return Err("a ring of a face family is one round wall".into()) };
-    super::family::ring(w)
+    super::family::rings(w)
 }
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their

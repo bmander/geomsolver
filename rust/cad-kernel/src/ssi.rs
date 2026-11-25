@@ -785,6 +785,10 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
             Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
+        // a ruled sheet one of whose rails lies in a plane: that rail, and the rulings where the
+        // other crosses it
+        (Surface::Plane(pl),Surface::Blend(_,bl)) | (Surface::Blend(_,bl),Surface::Plane(pl))
+            if let Some(curves) = rail_in_plane(&pl,&bl,tol) => Ssi::Curves(curves),
         // (a section the closed forms do not read, carried round a cylinder about its axis: its
         // paths)
         (Surface::Blend(..),_) | (_,Surface::Blend(..)) => match screwed_meeting(a,b,tol).or_else(|| carried_round(a,b,tol)) {
@@ -793,6 +797,59 @@ fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
         },
         _ => Ssi::Traced,
     }
+}
+
+/// **A ruled sheet meeting a plane its rail lies in**: a `Blend` carried along a line,
+/// `S(u, v) = (1 − v) A(u) + v (B(u) + δ)`, read across a plane `n·x = h` is
+/// `(1 − v) α(u) + v β(u)` with `α`, `β` the rails' heights over it; where `α` is nothing all along
+/// (the rail `A` lies in the plane: a face's edge, the wall it sweeps standing on the face's plane)
+/// that is `v β(u)`, so the meeting is exactly the rail and the rulings at the roots of `β`, and
+/// alike for `B` where `δ` is nothing.  Traced, the rail was fitted, its ends a few millionths off
+/// the vertices it runs between, and the plane's pieces did not close (brep-bench's
+/// offset/slant-cut-cylinder-grown-by-four: the slant top against its side's sweep).  `None` where
+/// neither rail lies in the plane, or both do (the sheet is the plane's, or meets it so).
+fn rail_in_plane(pl: &Frame,bl: &super::geom::Blend,tol: f64) -> Option<Vec<Curve>> {
+    let Carry::Line {delta} = bl.carry else { return None };
+    let n = unit(pl.z);
+    let h = dot(n,pl.o);
+    const STEPS: usize = 256;
+    let a_at = |u: f64| bl.a.point(bl.ta[0]+u*(bl.ta[1]-bl.ta[0]));
+    let b_at = |u: f64| add(bl.b.point(bl.tb[0]+u*(bl.tb[1]-bl.tb[0])),delta);
+    let height = |p: V| dot(n,p)-h;
+    let lies = |rail: &dyn Fn(f64) -> V| (0..=STEPS).all(|k| height(rail(k as f64/STEPS as f64)).abs() <= tol);
+    let (on_a,on_b) = (lies(&a_at),norm(delta) == 0. && lies(&b_at));
+    let (rail,other,curve): (&dyn Fn(f64) -> V,&dyn Fn(f64) -> V,&Curve) = match (on_a,on_b) {
+        (true,false) => (&a_at,&b_at,&bl.a),
+        (false,true) => (&b_at,&a_at,&bl.b),
+        _ => return None,
+    };
+    let mut out = vec![curve.clone()];
+    // the rulings: where the other rail crosses the plane, each crossing halved to the bit
+    let ruling = |u: f64| -> Option<Curve> {
+        let (p,q) = (rail(u),other(u));
+        let d = sub(q,p);
+        (norm(d) > tol).then(|| Curve::Line {p,d:unit(d)})
+    };
+    let f = |u: f64| height(other(u));
+    let ends = if bl.closed { STEPS } else { STEPS+1 };
+    let mut last = f(0.);
+    if last == 0. && !bl.closed { out.extend(ruling(0.)); }
+    for k in 1..ends.min(STEPS+1) {
+        let u = k as f64/STEPS as f64;
+        let y = f(u);
+        if y == 0. { out.extend(ruling(u)); }
+        else if last != 0. && (last < 0.) != (y < 0.) {
+            let (mut lo,mut hi) = ((k-1) as f64/STEPS as f64,u);
+            for _ in 0..200 {
+                let m = 0.5*(lo+hi);
+                if m <= lo || m >= hi { break }
+                if (f(m) < 0.) == (last < 0.) { lo = m } else { hi = m }
+            }
+            out.extend(ruling(0.5*(lo+hi)));
+        }
+        last = y;
+    }
+    Some(out)
 }
 
 /// **A leaning round face at a pose of a turn, against the surface its own contact turns into**
