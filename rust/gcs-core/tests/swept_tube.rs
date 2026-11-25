@@ -810,3 +810,60 @@ fn the_crossed_members_combine() {
     assert!((d-va+i).abs() <= 1e-7,"|A − B| − |A| + |A ∩ B| = {:e}",d-va+i);
     assert!((u-25.7842683).abs() <= 1e-6,"the union's volume {u}");
 }
+
+/// **The band charts the crossed reverse member's near miss of a whole-touch** (#880 T1f,
+/// `tube::band`): beside its pinch the reverse member all but touches a meridian whole a second
+/// time — `|(A, B)|` 3.05e-4 of the terms' scale at its least, `(θ, t)` (1.0725, 0.4627), the turn
+/// of the sheets' normal 5.4e-4 wide there — and the band is found there and nowhere else (the
+/// forward member has none). Its chart is the sheets' own map read over `(τ, η)`: its place reads
+/// back (`chart_of`), its point is the sheet's at the place, its rates the chain rule's (held to
+/// differences), its side the sheet's `J`; its seam holds the least, its rectangle stays inside the
+/// roll; and each sheet over the whole chart is fitted quintic to a tenth of the tolerance within
+/// 129 × 129 poles — where the window's net graded in `(θ, t)` asks 944 × 849.
+#[test]
+fn the_band_charts_the_crossed_reverse_members_near_miss() {
+    let (tool,path,roll,tol) = crate::common::bench::crossed(1.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    assert!(tube.bands().unwrap().is_empty(),"the forward member all but touches no meridian");
+    let (tool,path,roll,tol) = crate::common::bench::crossed(-1.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    let bands = tube.bands().unwrap();
+    assert_eq!(bands.len(),1,"one near miss: {bands:?}");
+    let band = &bands[0];
+    eprintln!("the band at {:?}: least {:e}, turn {:e}, τ ±{}, η {:?}",band.at,band.least,band.w,band.tau,band.eta);
+    assert!((band.at[0]-1.0725).abs() < 1e-3 && (band.at[1]-0.4627).abs() < 1e-3,"the least at {:?}",band.at);
+    assert!((band.least/3.05e-4-1.).abs() < 0.02,"the least {}",band.least);
+    assert!((band.w/5.43e-4-1.).abs() < 0.02,"the turn's width {}",band.w);
+    assert!(band.seam(band.chart_of(band.at)) < 0.,"the seam holds the least");
+    let [[t0,t1],[e0,e1]] = band.rect();
+    assert!(e0 < band.eta[0] && band.eta[1] < e1 && t1 > band.tau);
+    for i in 0..=8 { for j in 0..=8 {
+        let q = [t0+(t1-t0)*i as f64/8.,e0+(e1-e0)*j as f64/8.];
+        let p = band.place(q);
+        assert!(p[1] > roll[0] && p[1] < roll[1],"the chart inside the roll at {q:?}");
+        let back = band.chart_of(p);
+        assert!((back[0]-q[0]).abs() < 1e-11 && (back[1]-q[1]).abs() < 1e-11,"{q:?} read back as {back:?}");
+        for side in [1.,-1.] {
+            let x = tube.band_at(band,side,q).unwrap();
+            assert_eq!(x.x,tube.point(side,p[0],p[1]).unwrap().x);
+            let h = 1e-6;
+            let d = |k: usize| { let (mut a,mut b) = (q,q); a[k] += h; b[k] -= h;
+                let (pa,pb) = (tube.band_at(band,side,a).unwrap().x,tube.band_at(band,side,b).unwrap().x);
+                std::array::from_fn::<f64,3,_>(|c| (pa[c]-pb[c])/(2.*h)) };
+            for (k,rate) in [x.x_th,x.x_t].into_iter().enumerate() {
+                let fd = d(k);
+                let scale = rate.iter().map(|v| v.abs()).fold(1.,f64::max);
+                assert!((0..3).all(|c| (rate[c]-fd[c]).abs() < 1e-5*scale),"side {side} at {q:?}: the rate {k} {rate:?} against {fd:?}");
+            }
+            assert_eq!(tube.band_side(band,side,q),tube.jacobian(side,p[0],p[1]));
+        }
+    } }
+    for side in [1.,-1.] {
+        let f = |u: f64,v: f64| tube.band_at(band,side,[t0+(t1-t0)*u,e0+(e1-e0)*v]).map_or([f64::NAN;3],|p| p.x);
+        let (net,err) = gcs_core::brep::nurbs::fit_net(&f,5,5,16,16,0.1*tol).expect("the band's net");
+        eprintln!("the sheet {side} over the band: {} × {} poles, to {err:e}",net.poles.len(),net.poles[0].len());
+        assert!(net.poles.len() <= 129 && net.poles[0].len() <= 129,"the band's net {} × {}",net.poles.len(),net.poles[0].len());
+    }
+}

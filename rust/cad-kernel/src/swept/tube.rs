@@ -26,6 +26,7 @@
 //! Its idea is taken, none of its code: its trims are marching squares on fixed grids; here every
 //! curve is traced to the tolerance from events found exactly.)
 
+pub mod band;
 pub mod cover;
 pub mod faces;
 

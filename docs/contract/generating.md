@@ -3053,6 +3053,28 @@ miss** (`|(A, B)|` 6.3e-4 at (1.0764, 0.4611), most of its build's minute in two
 own boundary and no window may stop short of it; and `|(A, B)|` runs low along a valley, not to a
 point — `(A, B)` folds over `(θ, t)` there — so no collar `(ψ, ρ)` offset from its least is regular
 either: a chart regular across that fold is what it asks.
+**The band about a near miss, in place** (#880 T1f, `tube::band`, `Tube::bands`; gated by
+`swept_tube::the_band_charts_the_crossed_reverse_members_near_miss`; not yet read by
+`faces::solid`): along each angle `A` vanishes at, followed over the roll as `touched_once` follows
+it (`Ring::a_vanishes`, its reading), each least of `|B|` keeping its sign is settled as the least
+of `|(A, B)|` over the scale in `(θ, t)` (the floor across the line, then along it), and banded where
+the turn of the sheets' normal there — the least over the rate across, `w` — is under a hundredth
+of the roll: the reverse's at (1.0725, 0.4627), least 3.05e-4, `w` 5.4e-4; the forward has none.
+The line's floor is followed each way to where its turn is a hundredth of the roll wide (η −0.351
+and 0.470: the turn widens faster one way), the bend across fitted by Chebyshev polynomials and held
+to the floor within a twentieth of its turn; refused by name where the floor falls again, the chart
+would leave the roll or hold the pinch. **The chart** is `(θ, t) = c + (mid(η) + w sinh τ) e_x +
+η e_y`, one `w`: a wider turn `W` reads `atan(w sinh τ / W)`, turning at most one in `τ`, so the
+sheet over `(τ, η)` is smooth on the chart's scale — each sheet over the whole chart fitted quintic
+to a tenth of the tolerance in 129 × 129 poles (0.1 s), where the window's net graded in `(θ, t)`
+asks 944 × 849; it turns as `(θ, t)` does (`w cosh τ e_x × e_y`), reads back (`chart_of`, in closed
+form), and its point and rates are the sheet's at the place by the chain rule (`Tube::band_at`), its
+side the sheet's `J`. **The seam**, nearer a box than an ellipse (`|τ/τ_s|⁴ + |η/η_s|⁴ = 1`), stands
+across at twice the turn's width at its ends (cadrs's measure). **Measured, not yet built**: the
+sheets' windows fitted outside the seam ask 271 × 248 and 275 × 252 poles. **Next**: the seam as the
+sheets' hole — a smooth stand-in inside it, as the pinch's (`net_point`), so no net strays where a
+Boolean reads it — the band's edges and seams traced over its chart, its rim's vertices in three
+charts, its faces, and `faces::solid` reading it.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
