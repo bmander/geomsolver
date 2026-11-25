@@ -3202,6 +3202,23 @@ parameters, not by the geometry: a reading of B8 in any other parameters meets a
 and the stretch waits on a Boolean whose arrangement stands where three faces of one operand cross
 a face of the other.
 
+**What the tube road refuses, each as plain as it refuses** (`swept_tumbles`): brep-bench's
+crossed members fuzzed — their ten numbers jittered by a seed, each sweep built by `closed::ring` as
+the runner builds it and, where built, held against the exact sweep at random points (a point is in
+it where some pose of the roll holds it within the tube) — built only one time in four, and never
+wrong: 52 sweeps, 12 built, each checked and placing every point it was asked as the exact sweep
+does; 40 refused, none panicking. Within 5 % of the ranges three of eight built: the forward member
+moved 0.015 off its plane is refused when its faces are sewn (three faces along an edge), 0.02 for
+a curve fitted to 1.6e-4, 0.025 for a rim crossing not settled — 0.021 builds. Each refusal's class
+(its words, its numbers dropped) shrunk to the fewest numbers moved off the member, those rounded
+while it holds, is a gate of what is **not yet** built: a trim not joined to its corner or ending
+beside one, a double curve not joined to its swallowtail point, a swallowtail point's depth within
+the tolerance on no disc, no angle free for the windows' cuts, a switch's crossing off its partner
+or its rim crossing not settled, three instants touching a meridian whole (refused at once); and
+past the road, slow, a ring's contact's sheet fitted short along the roll, the boundary open along a
+sheet's edge or a torus's piece facing behind, a sheet's pieces ending nowhere. The day one builds,
+its test fails and becomes its build's.
+
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
 `depth::cover`'s certified march is the reading): the sweep is the union of

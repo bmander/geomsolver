@@ -1,5 +1,5 @@
 //! brep-bench's swept cases as the kernel takes them, written once for `swept_rings`,
-//! `swept_depth`, `swept_tube` and `swept_upright`: the tumbling torus of tube 0.16 over a half or
+//! `swept_depth`, `swept_tube`, `swept_tumbles` and `swept_upright`: the tumbling torus of tube 0.16 over a half or
 //! a whole turn, the thin one, the bench's own tumbling torus of tube 0.5, the bench runner's frame
 //! along its cubic, and the bull nose carried along its looping spline. Each is the computation it
 //! was where it was first written, to the bit — the gates pin volumes to 1e-7 and read inputs
@@ -65,6 +65,50 @@ pub fn crossed_moved(observer: f64,moved: impl FnOnce([f64;3]) -> [f64;3]) -> (B
         ratio:observer,advance:0.});
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
     (tool,path,[-100f64.to_radians(),100f64.to_radians()],0.22/50_000.)
+}
+
+/// **A tumbling torus as brep-bench's runner states one** (`tumble.rs`'s `Tumble`): a torus of
+/// radius one about the vertical through `centre`, of tube `tube`, turned `ratio` a radian about the
+/// vertical line through `(hub, 0, 0)` and seen from a frame turning `observer` a radian about the
+/// line through `(0, h cos lean, h sin lean)` along `(cos heading, sin heading cos lean, sin heading
+/// sin lean)`, over `roll` (degrees), at a 50 000th of the tube. `crossed`'s members are
+/// `Tumble::crossed(±1)`.
+#[derive(Clone,Copy,Debug)]
+pub struct Tumble {
+    pub centre: [f64;3],
+    pub hub: f64,
+    pub tube: f64,
+    pub ratio: f64,
+    pub lean: f64,
+    pub heading: f64,
+    pub height: f64,
+    pub observer: f64,
+    pub roll: [f64;2],
+}
+
+impl Tumble {
+    /// brep-bench's crossed members: `observer` 1 the forward, −1 the reverse.
+    pub fn crossed(observer: f64) -> Tumble {
+        Tumble {centre:[3.,0.,2.],hub:2.,tube:0.22,ratio:0.7,lean:45.,heading:20.,height:0.7071,observer,roll:[-100.,100.]}
+    }
+
+    /// Its tool, motion, roll (radians) and tolerance.
+    pub fn sweep(&self) -> (Brep,Trajectory,[f64;2],f64) {
+        let tool = gcs_core::brep::build::torus(self.centre,[0.,0.,1.],1.,self.tube).unwrap();
+        let (sl,cl) = self.lean.to_radians().sin_cos();
+        let (sa,ca) = self.heading.to_radians().sin_cos();
+        let own = Trajectory::Twist(Screw {origin:[self.hub,0.,0.],axis:[0.,0.,1.],ratio:self.ratio,advance:0.});
+        let frame = Trajectory::Twist(Screw {origin:[0.,self.height*cl,self.height*sl],axis:[ca,sa*cl,sa*sl],
+            ratio:self.observer,advance:0.});
+        let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+        (tool,path,self.roll.map(f64::to_radians),self.tube/50_000.)
+    }
+
+    /// Swept as the runner sweeps it (`swept::closed::ring`, its bar the tube's 250th).
+    pub fn ring(&self) -> Result<Brep,gcs_core::brep::swept::closed::Unbuilt> {
+        let (tool,path,roll,tol) = self.sweep();
+        gcs_core::brep::swept::closed::ring(&tool,&path,roll,self.tube/250.,tol)
+    }
 }
 
 /// The cubic brep-bench's ring is carried along, in the plane `z = 0`.
