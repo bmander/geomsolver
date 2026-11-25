@@ -144,22 +144,115 @@ fn steiner_cut_cylinder(r: f64,h: f64,alpha: f64,d: f64) -> (f64,f64) {
 /// face carried between its moved copies, walled by the ruled sheet the ellipse sweeps along the
 /// normals (exactly `60π (1 + d / 2r)` at d = 1); the top's is its face carried along its normal;
 /// and the ellipse's own tube is the ball carried along it.  Grown, each is Steiner's formula.
-/// Grown past the ellipse's least radius of curvature (`b² / a`) its tube would fold, and it is
-/// refused.
+/// Grown past the ellipse's least radius of curvature (`b² / a`, 2.12 at 45°) its tube would fold,
+/// and the crease is joined by the sector of it its faces' normals span (`offset::sectors`), clear
+/// of the fold; its side's wall, ruled along the normals from the ellipse, stands on the top's
+/// plane along the ellipse and two rulings, which the plane meets in closed form
+/// (`ssi::rail_in_plane`; traced, the ellipse's ends missed its vertices at 4).  Still Steiner's.
 #[test]
 fn a_cylinder_cut_aslant_grown_is_steiners() {
     let thirty = cut_cylinder(3.,10.,PI/6.);
     let side = faces_through(&thirty,&[[-3.,0.,-5.]])[0];
     close("the side swept",volume(&normal_sweep(&thirty,side,[0.,1.]).unwrap()),70.*PI);
-    for (alpha,d) in [(PI/6.,1.),(PI/4.,2.)] {
+    for (alpha,d) in [(PI/6.,1.),(PI/4.,2.),(PI/4.,2.5),(PI/4.,4.)] {
         let g = grown(&cut_cylinder(3.,10.,alpha),d,Join::Round).unwrap();
         g.check(1e-7).unwrap();
         let (v,a) = steiner_cut_cylinder(3.,10.,alpha,d);
         close(&format!("grown by {d} at {alpha}: its volume"),volume(&g),v);
         close(&format!("grown by {d} at {alpha}: its area"),total_area(&g),a);
     }
-    let e = grown(&cut_cylinder(3.,10.,PI/4.),2.5,Join::Round).unwrap_err();
-    assert!(e.contains("tighter than the tube's 2.5"),"{e}");
+}
+
+/// A round swept past its radius turns inside out: its piece stops at the centre of its section's
+/// circle (a point past it is nearer the far side), so one offset step takes a round of any radius.
+/// A puck of radius 6 and height 10, both rims rounded to 2, shrunk by 3 is the cylinder of
+/// radius 3 from 3 to 7 (brep-bench's offset/rounded-puck-shrunk-past-its-rounds); a post on a
+/// plate filleted at its foot to 2 and grown by 3 is the sharp post and plate grown by 3, the
+/// fillet's moved face gone and the moved faces meeting in a sharp concave edge
+/// (offset/filleted-post-grown-past-its-fillet); and a plate drilled through by a hole of radius 3
+/// grown by 3, the rim's tube a horn torus touching the axis, fills the hole
+/// (offset/drilled-plate-grown-by-its-hole).
+#[test]
+fn rounds_offset_past_their_radius_in_one_step() {
+    use gcs_core::brep::fillet::roll;
+    use gcs_core::brep::geom::tolerance;
+    let up = [0.,0.,1.];
+    let rounded = |part: &Brep,at: V,r: f64| {
+        let round = roll(part,at,r,tolerance(part.size())).unwrap();
+        combined(part,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).unwrap()
+    };
+    let cylinder = prism(&disc([0.;3],up,6.),0.,10.).unwrap();
+    let puck = rounded(&rounded(&cylinder,[0.,6.,10.],2.),[0.,6.,0.],2.);
+    let s = shrunk(&puck,3.,Join::Round).unwrap();
+    s.check(1e-7).unwrap();
+    close("the puck shrunk",volume(&s),36.*PI);
+    let plate = prism(&disc([0.,0.,-4.],up,8.),0.,4.).unwrap();
+    let post = prism(&disc([0.;3],up,3.),0.,8.).unwrap();
+    let part = combined(&plate,&post,Op::Union,0.).unwrap();
+    let g = grown(&rounded(&part,[0.,3.,0.],2.),3.,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    let d = 3f64;
+    let plate_grown = 256.*PI+192.*PI*d+(4.*PI+8.*PI*PI)*d*d+4.*PI*d*d*d/3.;
+    let want = plate_grown+PI*(3.+d)*(3.+d)*(8.-d)+9.*PI*d+(PI*PI*d*d/2.)*(3.+4.*d/(3.*PI));
+    close("the post grown",volume(&g),want);
+    let drilled = combined(&block([-10.,-10.,0.],[10.,10.,4.]),&prism(&disc([0.,0.,-1.],up,3.),0.,6.).unwrap(),Op::Cut,0.).unwrap();
+    let g = grown(&drilled,3.,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    let (a,c,rho) = (20f64,4f64,3f64);
+    let v0 = a*a*c+2.*(a*a+2.*a*c)*d+PI*(2.*a+c)*d*d+4.*PI*d*d*d/3.;
+    close("the plate grown",volume(&g),v0-4.*PI*(d*rho*rho/2.-rho/2.*d*d*(rho/d).asin()+d*d*d/3.));
+}
+
+/// The ellipse x²/25 + y²/9 ≤ 1, a closed rational spline, swept up 10: its side, the spline
+/// swept along a line (`Surface::Extrusion`), has no offset in closed form, but its normal stands
+/// square to the sweep and alike all along each line of it, so its sweep is the face family of
+/// the rectangle a line of it sweeps along its normal (`offset::extruded_sweep`), closed on itself
+/// round the ellipse (`family::ring`).  Grown by 1 (Steiner's: the side's mean curvature `π h`
+/// and the rims' right angles, `π P / 2`) and shrunk by 1 (the ellipse's inner parallel, its
+/// area `π a b − P + π`, swept over 8), within its least radius of curvature 1.8; shrunk past it
+/// the sweep would fold, and it is refused.
+#[test]
+fn an_elliptic_cylinder_grown_and_shrunk() {
+    let at = |x: f64,y: f64| [5.*x,3.*y,0.];
+    let poles = vec![at(1.,0.),at(1.,1.),at(0.,1.),at(-1.,1.),at(-1.,0.),at(-1.,-1.),at(0.,-1.),at(1.,-1.),at(1.,0.)];
+    let h = FRAC_1_SQRT_2;
+    let knots = vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.];
+    let rim = BSpline::rational(2,knots,poles,vec![1.,h,1.,h,1.,h,1.,h,1.]).unwrap();
+    let section = Profile {origin:[0.;3],normal:[0.,0.,1.],loops:vec![vec![ProfileEdge::Spline(Arc::new(rim))]],names:Vec::new()};
+    let solid = prism(&section,0.,10.).unwrap();
+    // the ellipse's perimeter, by the trapezoid rule (exact to rounding for a periodic integrand)
+    let n = 4096;
+    let p = (0..n).map(|k| { let t = 2.*PI*k as f64/n as f64; (25.*t.sin().powi(2)+9.*t.cos().powi(2)).sqrt() }).sum::<f64>()*2.*PI/n as f64;
+    let (v0,s0,m) = (150.*PI,30.*PI+10.*p,10.*PI+PI*p/2.);
+    let g = grown(&solid,1.,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    close("grown",volume(&g),v0+s0+m+4.*PI/3.);
+    let s = shrunk(&solid,1.,Join::Round).unwrap();
+    s.check(1e-7).unwrap();
+    close("shrunk",volume(&s),(15.*PI-p+PI)*8.);
+    let e = shrunk(&solid,2.5,Join::Round).unwrap_err();
+    assert!(e.contains("folds"),"{e}");
+}
+
+/// A ball drawn as one rational biquadratic net with a pole at each end, its four patches spline
+/// faces, has no offset in closed form as a spline — but the net lies on a sphere, which its
+/// equation vanishing on a grid of each span proves (`offset::sphere_of`), so each face is put on
+/// the sphere, its edges its own, and grown as a ball's: the ball of radius 7.  A net on no
+/// sphere is left a spline, and refused (`a_spline_sheet_is_not_thickened`).
+#[test]
+fn a_spline_ball_grown_is_a_ball() {
+    use gcs_core::brep::build::grid_sheet;
+    use gcs_core::brep::nurbs::Net;
+    let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
+    let meridian = [[0.,-5.],[5.,-5.],[5.,0.],[5.,5.],[0.,5.]];
+    let (cw,mw) = ([1.,FRAC_1_SQRT_2,1.,FRAC_1_SQRT_2,1.,FRAC_1_SQRT_2,1.,FRAC_1_SQRT_2,1.],[1.,FRAC_1_SQRT_2,1.,FRAC_1_SQRT_2,1.]);
+    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,0.,0.5,0.5,1.,1.,1.],
+        poles:circle.iter().map(|c| meridian.iter().map(|m| [m[0]*c[0],m[0]*c[1],m[1]]).collect()).collect(),
+        weights:Some(cw.iter().map(|a| mw.iter().map(|b| a*b).collect()).collect())};
+    let ball = grid_sheet(&net,&[0.,0.5,1.],&[0.,0.5,1.],&["east".into(),"west".into()],[true,false]).unwrap();
+    let g = grown(&ball,2.,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    close("grown",volume(&g),4.*PI*343./3.);
 }
 
 /// A ball cut by a plane leaning off its axis: the circle the plane cuts is no parallel of the
