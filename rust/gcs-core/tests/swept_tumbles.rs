@@ -4,7 +4,9 @@
 //! sweep at random points (none was built wrong) — and each refusal's class (its words, its numbers
 //! dropped) shrunk to the fewest numbers moved off the member and those rounded, the refusal kept.
 //! Each is a gate of what is **not yet** built: the day one builds, its test fails, and becomes the
-//! test that it builds — checked, and its volume against the exact sweep's.
+//! test that it builds — checked, and its volume against the exact sweep's. Three have: the ring
+//! road's refusals of a whole torus are the tube road's to build (`closed::ring`), held to the
+//! sweep's boundary (`tube::faces::held`).
 use crate::common::bench::Tumble;
 
 /// The tumble swept, refused, the refusal saying `why`.
@@ -109,23 +111,41 @@ fn a_switchs_rim_crossing_is_not_settled() {
         "its rim crossing not settled");
 }
 
-/// **A reverse tumble of tube 0.147 turned 0.377 a radian, leaning 58.9°: the boundary is open along
-/// a sheet's edge**, a piece of a torus the boundary beside it (the Boolean's assembly, past the road).
+/// The tumble swept, built, every face held to the sweep's boundary (`tube::faces::held`, which the
+/// tube road reads before it returns), its volume `want` to 1e-9 — and cadrs's (MIT/Apache, its sweep
+/// of a solid by the same two turns) `cadrs` to 1e-6.
+fn built(t: Tumble,want: f64,cadrs: f64) {
+    let clock = std::time::Instant::now();
+    let b = t.ring().unwrap_or_else(|e| panic!("{t:?} refused: {e:?}"));
+    let (_,_,_,tol) = t.sweep();
+    b.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&b);
+    eprintln!("{t:?} built in {:?}: {} faces, volume {v:.10}",clock.elapsed(),b.faces.len());
+    assert!((v-want).abs() <= 1e-9,"the volume {v}, pinned {want}");
+    assert!((v-cadrs).abs() <= 1e-6,"the volume {v}, cadrs's {cadrs}");
+}
+
+/// **A reverse tumble of tube 0.147 turned 0.377 a radian, leaning 58.9°, built by the tube road**:
+/// the ring road leaves its boundary open along a sheet's edge, a piece of a torus the boundary
+/// beside it (the arrangement's), and the tube road builds what it refuses — 9 faces.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, refused after some 19 s")]
-fn the_boundary_is_open_along_a_sheets_edge() {
-    refused(Tumble {centre:[3.23,-0.13,2.26],hub:2.03,tube:0.147,ratio:0.377,lean:58.9,heading:31.8,height:0.82,
-        observer:-0.8,roll:[-100.,111.]},"the boundary is open along a bspline edge");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~25 s")]
+fn the_ring_roads_open_boundary_is_built_by_the_tube_road() {
+    built(Tumble {centre:[3.23,-0.13,2.26],hub:2.03,tube:0.147,ratio:0.377,lean:58.9,heading:31.8,height:0.82,
+        observer:-0.8,roll:[-100.,111.]},8.5463430810,8.546343);
 }
 
 /// **A reverse tumble seen from its own axis (`height` 0), turned 0.37 a radian about a hub at 1.87,
-/// leaning and heading 37°: a ring's contact's sheet fits along the roll only to 0.46** (the ring
-/// road's, not the tube's).
+/// leaning and heading 37°, built by the tube road**: the ring road's contact sheet fits along the roll
+/// only to 0.46, and the tube road builds what it refuses. Built first by the tube road at
+/// 18.0825371883 — its folded sheet kept 0.15 inside the solid, a pocket beside a fold hanging from
+/// the roll's end missed by the depth's search, every check of its own passed — now its depth held
+/// to the grid (`tube::seams`'s `unexplained`) and its faces to the boundary (`held`).
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, refused after some 29 s")]
-fn a_rings_contacts_sheet_fits_short_along_the_roll() {
-    refused(Tumble {centre:[3.4,0.,2.2],hub:1.87,ratio:0.37,lean:37.,heading:37.,height:0.,..Tumble::crossed(-1.)},
-        "a ring's contact's sheet fits within");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~30 s")]
+fn the_ring_roads_short_contact_sheet_is_built_by_the_tube_road() {
+    built(Tumble {centre:[3.4,0.,2.2],hub:1.87,ratio:0.37,lean:37.,heading:37.,height:0.,..Tumble::crossed(-1.)},
+        18.0818507296,18.081851);
 }
 
 /// **A forward tumble of tube 0.14 on a torus at (3, 0.4, 2), turned 0.58 a radian about a hub at
@@ -140,10 +160,39 @@ fn a_piece_of_a_torus_is_the_boundary_facing_behind() {
 
 /// **A forward tumble of tube 0.27 on a torus at (2.8, 0, 2.28), turned 0.38 a radian about a hub at
 /// 2.232, leaning 24°, heading 10°, seen from 0.95 off the observer's axis turning 0.7 a radian,
-/// rolled on to 155.3°: a sheet's pieces end nowhere** (the assembly's, past the road).
+/// rolled on to 155.3°, built by the tube road**: the ring road's sheet's pieces end nowhere (the
+/// arrangement's), and the tube road builds what it refuses — 10 faces.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, refused after some 17 s")]
-fn a_sheets_pieces_end_nowhere() {
-    refused(Tumble {centre:[2.8,0.,2.28],hub:2.232,tube:0.27,ratio:0.38,lean:24.,heading:10.,height:0.95,observer:0.7,
-        roll:[-100.,155.3],..Tumble::crossed(1.)},"a bspline's pieces end nowhere");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~25 s")]
+fn the_ring_roads_pieces_ending_nowhere_are_built_by_the_tube_road() {
+    built(Tumble {centre:[2.8,0.,2.28],hub:2.232,tube:0.27,ratio:0.38,lean:24.,heading:10.,height:0.95,observer:0.7,
+        roll:[-100.,155.3],..Tumble::crossed(1.)},21.4295434731,21.429543);
+}
+
+/// **A tube road's build that keeps a sheet inside the solid is caught, and built again right**
+/// (`tube::faces::held`, `Tube::completed`): the tumble seen from its own axis, read by the tube road
+/// alone — its sheet `+` folds from the roll's end back to it, and a pocket beside the fold (covered
+/// by the end pose on one side, by an instant near its own on the other) lies inside cells the
+/// depth's bound cleared by nine readings, none of them covered: the search traced nothing on the
+/// sheet and the folded sheet was kept, every check of the solid's own passed (volume 18.0825371883).
+/// Its faces read against the sweep, one stands 0.15 inside it and the build is refused there; built
+/// again with each chart's depth held to the grid at the feature (the crossings no piece crosses
+/// seeding the trace), every face is on the boundary, the volume cadrs's to 1e-6.
+#[test]
+fn a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again() {
+    use gcs_core::brep::swept::closed::Unbuilt;
+    use gcs_core::brep::swept::tube::{Tube,faces};
+    let t = Tumble {centre:[3.4,0.,2.2],hub:1.87,ratio:0.37,lean:37.,heading:37.,height:0.,..Tumble::crossed(-1.)};
+    let (tool,path,roll,tol) = t.sweep();
+    let ring = gcs_core::brep::swept::rings::Ring::read(&tool).unwrap();
+    let mut tube = Tube::pinched(&ring,&path,roll,tol,0.25*ring.thickness).unwrap();
+    let wrong = faces::solid(&tube,tol).unwrap();
+    wrong.check(tol).unwrap();
+    assert!(matches!(faces::held(&tube,&wrong,tol),Err(Unbuilt::Wrong {held:true,..})),"a face inside the sweep caught");
+    tube.completed = true;
+    let b = faces::solid(&tube,tol).unwrap();
+    faces::held(&tube,&b,tol).unwrap();
+    let v = gcs_core::brep::props::volume(&b);
+    assert!((v-18.0818507296).abs() <= 1e-9,"the volume {v}, pinned 18.0818507296");
+    assert!((v-18.081851).abs() <= 1e-6,"the volume {v}, cadrs's 18.081851");
 }

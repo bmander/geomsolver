@@ -1829,3 +1829,48 @@ fn graded(ts: &[f64],errors: &[f64],bar: f64) -> Vec<f64> {
     }
     out
 }
+
+/// **The built solid's faces held to the sweep's boundary** (the design bible's fourth principle:
+/// built right or refused with a witness): each face read at the points of a 4 × 4 grid over its
+/// parameters that lie in it (`query::Located::face_place`), and at each the tool's least depth over
+/// the roll — sampled at `HELD_SAMPLES`, each least refined by golden sections — within a hair of
+/// nought (`1e-4` of the solid's size, or 64 tolerances). A face read deeper lies inside the sweep
+/// or off it, and the solid is refused there (`Unbuilt::Wrong`): a chart whose depth's search missed
+/// a pocket beside a fold kept its folded sheet, 0.15 inside the solid, every check of its own passed.
+pub fn held(tube: &Tube,built: &Brep,tol: f64) -> Result<(),Unbuilt> {
+    use crate::query::{Located,Place};
+    let solid = Located::new(built,tol);
+    let size = { let (lo,hi) = built.bounds(); distance(lo,hi) };
+    let hair = (1e-4*size).max(64.*tol);
+    let [a,b] = tube.roll;
+    let depth = |x: V| -> f64 {
+        let d = |t: f64| tube.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+        let n = HELD_SAMPLES;
+        let h = (b-a)/n as f64;
+        let vals: Vec<f64> = (0..=n).map(|k| d(a+h*k as f64)).collect();
+        let mut best = vals.iter().copied().fold(f64::INFINITY,f64::min);
+        for k in 0..=n {
+            let (l,r) = (if k > 0 { vals[k-1] } else { f64::INFINITY },if k < n { vals[k+1] } else { f64::INFINITY });
+            if vals[k] <= l && vals[k] <= r && vals[k] <= best+hair {
+                let t = super::golden(&d,(a+h*(k as f64-1.)).max(a),(a+h*(k as f64+1.)).min(b));
+                best = best.min(d(t));
+            }
+        }
+        best
+    };
+    let points: Vec<(usize,V)> = (0..built.faces.len()).flat_map(|fi| {
+        let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
+        let f = &built.faces[fi];
+        (1..5).flat_map(move |i| (1..5).map(move |j| [u0+(u1-u0)*(i as f64-0.5)/4.,v0+(v1-v0)*(j as f64-0.5)/4.]))
+            .map(move |uv| (fi,f.surface.point(uv)))
+    }).filter(|&(fi,p)| solid.face_place(fi,p) == Place::In).collect();
+    let off = crate::util::par::map(&points,|&(fi,p)| { let v = depth(p); (v.abs() > hair).then_some((fi,p,v)) });
+    if let Some((fi,p,v)) = off.into_iter().flatten().next() {
+        if debug() { eprintln!("tube: face {fi} at {p:?} stands {v:e} from the sweep's boundary, past {hair:e}") }
+        return Err(Unbuilt::Wrong {at:p,held:v < 0.})
+    }
+    Ok(())
+}
+
+/// The instants of the roll `held` reads a point's depth at before refining each least.
+const HELD_SAMPLES: usize = 512;

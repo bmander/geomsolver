@@ -1211,14 +1211,47 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     // the tube of the surface the core circle sweeps, its pinch charted by the collar
     // (`tube::Tube::pinched`, `tube::faces::solid`); nowhere else. Cut from a blank it stays refused.
     let twice = touched.len() >= 2;
-    match entered_from(tool,path,[a,b],tol,ring,&touched) {
+    let built = match entered_from(tool,path,[a,b],tol,ring,&touched) {
         Err(Unbuilt::Curved {at}) if blank.is_none() && !twice => {
             let ring = super::rings::Ring::read(tool)?;
             if ring.touched_once(path,[a,b])?.is_empty() { return Err(Unbuilt::Curved {at}) }
-            let tube = super::tube::Tube::pinched(&ring,path,[a,b],tol,0.25*ring.thickness)?;
-            super::tube::faces::solid(&tube,tol)
+            return tube_road(tool,path,[a,b],tol)
         }
-        entered => entered_built(tool,path,[a,b],bar,tol,blank,entered?),
+        entered => entered.and_then(|e| entered_built(tool,path,[a,b],bar,tol,blank,e)),
+    };
+    // **a whole ring this road refuses, built by the tube road** (`tube_road`): whatever this road
+    // refused it for — a sheet fitted short along the roll, the arrangement's boundary left open, a
+    // piece facing behind, a sheet's pieces ending nowhere — the tube road reads the same set by
+    // another way, and builds three of the four fuzzed tumbles so refused (`swept_tumbles`). Where it
+    // refuses too, this road's refusal stands. Not past a budget (the build is stopped), and not cut
+    // from a blank.
+    match built {
+        Err(why) if blank.is_none() && !matches!(why,Unbuilt::Budget {..}) => tube_road(tool,path,[a,b],tol).map_err(|_| why),
+        built => built,
+    }
+}
+
+/// **The tube road** (#880 T1f): the set of points within the tube of the surface the core circle
+/// sweeps, its pinch charted by the collar (`tube::Tube::pinched`, `tube::faces::solid`), and the
+/// solid returned only where every face it built is held to the sweep's boundary
+/// (`tube::faces::held`).
+/// A build whose faces are not so held is built again with each chart's depth held to the grid at
+/// the feature (`Tube::completed`): the depth's search clears a cell nothing else covers by its nine
+/// readings, evidence a pocket between them escapes — the tumble seen from its own axis kept its
+/// folded sheet 0.15 inside the solid so, every check of its own passed.
+fn tube_road(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Brep,Unbuilt> {
+    let ring = super::rings::Ring::read(tool)?;
+    let mut tube = super::tube::Tube::pinched(&ring,path,[a,b],tol,0.25*ring.thickness)?;
+    let built = super::tube::faces::solid(&tube,tol)?;
+    match super::tube::faces::held(&tube,&built,tol) {
+        Ok(()) => Ok(built),
+        Err(Unbuilt::Wrong {..}) => {
+            tube.completed = true;
+            let built = super::tube::faces::solid(&tube,tol)?;
+            super::tube::faces::held(&tube,&built,tol)?;
+            Ok(built)
+        }
+        Err(e) => Err(e),
     }
 }
 

@@ -60,7 +60,11 @@ pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64
     /// (`Tube::banded`; none otherwise).
     pub bands: Vec<band::Band>,
     /// The near misses its sheets' nets are stretched across (`Tube::stretched`; none otherwise).
-    pub stretches: Vec<band::Band> }
+    pub stretches: Vec<band::Band>,
+    /// Whether each chart's depth is held to the grid at the feature (`seams`'s `unexplained`), the
+    /// crossings no piece crosses seeding its trace again: asked where a build's faces were not held
+    /// to the sweep's boundary (`faces::held`, `closed`'s `tube_road`).
+    pub completed: bool }
 
 /// **How fast the motion carries the core circle over the roll**, bounded: its rotation's spin
 /// (`Trajectory::spin_bound`) and the first four rates of the circle's points
@@ -102,7 +106,7 @@ impl<'a> Tube<'a> {
             }).map(|i| i.ok()).map(|i| i.unwrap_or(crate::util::interval::Interval::ZERO));
             Some(Rates {spin:path.spin_bound().ok()?,jet:path.point_jet_bound_over(boxed,domain,true).ok()?})
         })();
-        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None,bands:Vec::new(),stretches:Vec::new()})
+        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None,bands:Vec::new(),stretches:Vec::new(),completed:false})
     }
 
     /// The core circle's point at `θ` in the tool's coordinates, and its first and second rates.
@@ -699,6 +703,12 @@ impl Disc {
 /// sheet's swing across the line is read at its quarters by the nine points.
 const BAND_BOUNDED: f64 = 1.;
 
+/// The most grid lines a side `unexplained` reads a chart on, and the points each length is read at.
+const GRID_MOST: usize = 256;
+const GRID_LINE: usize = 64;
+/// How many times a grid edge's crossing is halved (`unexplained`): to a part in 2⁴⁰ of the edge.
+const GRID_HALVINGS: usize = 40;
+
 /// Chords a disc's rim is read in: a turn in 64, each a 64th of the disc's girth (structural: the
 /// rim is an edge of the depth's domain, sampled as `zero_set` samples an inner edge).
 const RIM: usize = 64;
@@ -771,10 +781,102 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
     let mut seeds = seeds.to_vec();
     seeds.extend(beside_edges(tube,chart,edges,tol,feature));
     let clock = std::time::Instant::now();
-    let (pieces,search) = round(&Depth {tube,chart,within:tol,holes:&holes},tube.rect(chart),periodic,&seeds,&inner,&sides,tol,feature)
-        .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")))?;
+    let field = Depth {tube,chart,within:tol,holes:&holes};
+    let traced = |seeds: &[[f64;2]]| round(&field,tube.rect(chart),periodic,seeds,&inner,&sides,tol,feature)
+        .map_err(|why| Unbuilt::Failed(format!("the tube road's chart {chart:?}: its depth's zero set: {why}")));
+    let (mut pieces,mut search) = traced(&seeds)?;
+    // (the search's answer held to the grid at the feature: each crossing between a covered place and
+    // a clear one that no piece crosses seeds the chart's trace again — a cell nothing else covers is
+    // cleared by its nine readings, evidence a cover between them escapes, and a pocket beside a fold
+    // hanging from a rim was missed whole, the folded sheet kept, 0.15 inside the solid)
+    // (a crossing no piece of this chart crosses may be bounded all the same — a sliver beside a fold
+    // whose double curve is traced on its other preimage, a partner's — so the grid is read only
+    // where a build's faces were not held to the boundary, and seeds, never refuses)
+    let missed = if tube.completed { unexplained(&field,tube.rect(chart),&pieces,feature) } else { Vec::new() };
+    if !missed.is_empty() {
+        if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() { eprintln!("seams of {chart:?}: {} crossings no piece crosses, traced again from them: {:?}",missed.len(),&missed[..missed.len().min(6)]) }
+        seeds.extend(missed);
+        (pieces,search) = traced(&seeds)?;
+    }
     if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() { eprintln!("seams of {chart:?}: {} pieces in {:?}",pieces.len(),clock.elapsed()) }
     Ok((pieces,search,holes))
+}
+
+/// **The grid's crossings of a chart's depth that no traced piece crosses**, each settled on the
+/// zero set: the chart read on a grid of about the feature in space (its lengths along each
+/// parameter read on five lines, `GRID_MOST` a side at most), and each grid edge between a place a
+/// far cover holds below nought and one clear of it (a far cover above nought, or none: `Alone`)
+/// halved to the rounding of the roll toward the zero — where no piece's chord crosses the edge. An
+/// edge with an end the chart does not read (past a fold, in a disc, held by its neighbours) is the
+/// edges' and discs' to bound, not read.
+fn unexplained(field: &Depth,rect: crate::zero_set::Rect,pieces: &[crate::zero_set::Piece<Cover>],feature: f64) -> Vec<[f64;2]> {
+    let [[u0,u1],[v0,v1]] = rect;
+    let at = |uv: [f64;2]| field.tube.at(field.chart,uv).map(|p| p.x);
+    let length = |line: &dyn Fn(f64) -> [f64;2]| -> f64 {
+        let mut last: Option<V> = None;
+        let mut l = 0.;
+        for k in 0..=GRID_LINE { if let Some(x) = at(line(k as f64/GRID_LINE as f64)) { if let Some(y) = last { l += crate::util::space::distance(x,y) } last = Some(x) } }
+        l
+    };
+    let lines = |k: usize| (k as f64+0.5)/5.;
+    let lu = (0..5).map(|k| length(&|f: f64| [u0+(u1-u0)*f,v0+(v1-v0)*lines(k)])).fold(0.,f64::max);
+    let lv = (0..5).map(|k| length(&|f: f64| [u0+(u1-u0)*lines(k),v0+(v1-v0)*f])).fold(0.,f64::max);
+    let count = |l: f64| ((l/feature).ceil() as usize).clamp(8,GRID_MOST);
+    let (nu,nv) = (count(lu),count(lv));
+    let node = |i: usize,j: usize| [u0+(u1-u0)*i as f64/nu as f64,v0+(v1-v0)*j as f64/nv as f64];
+    // (below nought covered; `Alone` clear; none not read — nor inside a hole's rim, the pinch's or
+    // a band's seam, where the pieces stop on the rim and another chart reads on)
+    let rims = field.tube.hole(field.chart).map_or(0,|r| r.len());
+    let value = |uv: [f64;2]| -> Option<f64> {
+        if (0..rims).any(|k| !(field.tube.hole_side(field.chart,k,uv) > 0.)) { return None }
+        match field.reading(uv)?.1 { Reading::Far(c) => Some(c.depth),Reading::Alone => Some(f64::INFINITY),Reading::Near => None }
+    };
+    let grid: Vec<Vec<Option<f64>>> = crate::util::par::indices(nu+1,|i| (0..=nv).map(|j| value(node(i,j))).collect());
+    let crosses = |p: [f64;2],q: [f64;2]| -> bool {
+        let orient = |a: [f64;2],b: [f64;2],c: [f64;2]| (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+        let (lo,hi) = ([p[0].min(q[0]),p[1].min(q[1])],[p[0].max(q[0]),p[1].max(q[1])]);
+        pieces.iter().any(|piece| piece.uv.windows(2).any(|w| {
+            let (a,b) = (w[0],w[1]);
+            if a[0].max(b[0]) < lo[0] || a[0].min(b[0]) > hi[0] || a[1].max(b[1]) < lo[1] || a[1].min(b[1]) > hi[1] { return false }
+            let (d1,d2) = (orient(p,q,a),orient(p,q,b));
+            let (d3,d4) = (orient(a,b,p),orient(a,b,q));
+            d1*d2 <= 0. && d3*d4 <= 0.
+        }))
+    };
+    let near = |q: [f64;2],within: f64| pieces.iter().any(|piece| piece.uv.windows(2).any(|w| {
+        let (a,b) = (w[0],w[1]);
+        let d = [b[0]-a[0],b[1]-a[1]];
+        let l = d[0]*d[0]+d[1]*d[1];
+        let f = if l > 0. { (((q[0]-a[0])*d[0]+(q[1]-a[1])*d[1])/l).clamp(0.,1.) } else { 0. };
+        crate::plane2::dist([a[0]+f*d[0],a[1]+f*d[1]],q) <= within
+    }) || piece.uv.len() == 1 && crate::plane2::dist(piece.uv[0],q) <= within);
+    let mut out = Vec::new();
+    for i in 0..=nu { for j in 0..=nv {
+        for (k,l) in [(i+1,j),(i,j+1)] {
+            if k > nu || l > nv { continue }
+            let (Some(a),Some(b)) = (grid[i][j],grid[k][l]) else { continue };
+            if (a < 0.) == (b < 0.) || crosses(node(i,j),node(k,l)) { continue }
+            // halved toward the zero, each end kept on its side
+            let (mut p,mut q) = if a < 0. { (node(i,j),node(k,l)) } else { (node(k,l),node(i,j)) };
+            let mut settled = true;
+            for _ in 0..GRID_HALVINGS {
+                let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+                match value(m) { Some(v) if v < 0. => p = m,Some(_) => q = m,None => { settled = false; break } }
+            }
+            // (a piece ending on the chart's rim, or a hair short of the edge it crosses, beside the
+            // zero settled: within a hundredth of a cell of it, the crossing is that piece's)
+            let cell = ((u1-u0)/nu as f64).min((v1-v0)/nv as f64);
+            if settled && near(q,0.01*cell) { continue }
+            if settled {
+                if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() {
+                    let near = pieces.iter().enumerate().flat_map(|(n,pc)| pc.uv.iter().map(move |u| (n,*u))).min_by(|x,y| crate::plane2::dist(x.1,q).total_cmp(&crate::plane2::dist(y.1,q)));
+                    eprintln!("  missed: edge {:?} ({a:e}) to {:?} ({b:e}), zero at {q:?}; nearest piece point {near:?}; rims {rims}, hole side {:?}",node(i,j),node(k,l),(0..rims).map(|k| field.tube.hole_side(field.chart,k,q)).collect::<Vec<_>>())
+                }
+                out.push(q)
+            }
+        }
+    } }
+    out
 }
 
 /// **The swallowtail points on a cuspidal edge** (`edges`' piece `uv`): where the sheet's kernel

@@ -3217,7 +3217,34 @@ the tolerance on no disc, no angle free for the windows' cuts, a switch's crossi
 or its rim crossing not settled, three instants touching a meridian whole (refused at once); and
 past the road, slow, a ring's contact's sheet fitted short along the roll, the boundary open along a
 sheet's edge or a torus's piece facing behind, a sheet's pieces ending nowhere. The day one builds,
-its test fails and becomes its build's.
+its test fails and becomes its build's. Three have: the ring road's refusals of a whole torus
+(a contact sheet fitted short along the roll, the boundary left open, a sheet's pieces ending
+nowhere) are now the tube road's to build (`closed::ring` tries it wherever the ring road refuses a
+whole torus, not past a budget nor cut from a blank, the ring road's refusal standing where it
+refuses too), each its volume cadrs's to 1e-6.
+
+**The tube road's solid is held to the sweep's boundary before it is returned**
+(`tube::faces::held`, gated by
+`swept_tumbles::a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again`): each face read
+at the points of a 4 × 4 grid over its parameters that lie in it, and at each the tool's least depth
+over the roll (sampled 512 times, each least refined by golden sections) within a hair of nought —
+`1e-4` of the solid's size, or 64 tolerances — else the build is refused there (`Unbuilt::Wrong`).
+The tumble seen from its own axis was built with its folded sheet 0.15 inside the solid, every check
+of its own passed and its volume 7e-4 off cadrs's: its sheet `+` folds from the roll's end back to
+it, and the pocket beside the fold (covered by the end pose on one side, by an instant near its own
+on the other) lay inside cells the depth's bound clears by nine readings where nothing else covers
+the middle (`Depth::bound`, `Reading::Alone` — evidence, as it says, not proof), so the search traced
+nothing on the sheet. A build so refused is **built again with each chart's depth held to the grid at
+the feature** (`Tube::completed`, `seams`'s `unexplained`): the chart read on a grid of about the
+feature in space (256 a side at most), and each grid edge between a place a far cover holds below
+nought and one clear of it whose zero (halved to it) no traced piece crosses or stands within a
+hundredth of a cell of seeds the trace again. Only so: a crossing no piece of the chart crosses may
+be bounded all the same — a sliver beside a fold whose double curve is traced on its other preimage
+and bounds this one as its partner (the crossed reverse member's sheet `−` has two, 3.3e-4 deep and
+0.014 across, its solid right without them) — and halving the cells such evidence clears to the
+feature everywhere instead fragmented the crossed members' traces (the forward refused, the reverse
+9.8 s to 15.7 s). Built so it is 18.0818507296 against cadrs's 18.081851, every mesh vertex of it
+within 1.5e-7 of the sweep's boundary; the crossed members, held, are their files to the byte.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

@@ -115,10 +115,12 @@ whole torus**, whatever it refuses for.
 
 ## 8. Steps, each with its gate
 
-1. **The road taken** (§7): `closed::ring` falls back to the tube road on any refusal of a whole
-   torus. Gates: `the_boundary_is_open_along_a_sheets_edge`, `a_sheets_pieces_end_nowhere`,
-   `a_rings_contacts_sheet_fits_short_along_the_roll` flip to builds, each volume against cadrs's
-   and against a fine membership integral (the 7e-4 settled first).
+1. **The road taken** (§7) — *done*: `closed::ring` falls back to the tube road on any refusal of
+   a whole torus, and the tube road's solid is held to the sweep's boundary (`faces::held`), a build
+   held off it built again with each chart's depth completed on a grid (`Tube::completed`). The 7e-4
+   was ours: the tube road kept a folded sheet 0.15 inside that solid, a pocket beside its fold
+   missed by the depth's search (`docs/contract/generating.md`). The three gates build, each volume
+   cadrs's to 1e-6; the fourth (a torus's piece facing behind) the tube road refuses too.
 2. **The membership field** (§2) as one type over every chart, and **patches with shared edges**
    (§3), the edges' crossings read once. Gate: on the crossed members, the patches' edge crossings
    are the present trims' crossings of the same lines, to the tolerance.
