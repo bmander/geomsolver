@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.26.0] - 2026-11-26
+
 - **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever
   the ring road refuses a whole torus for (not past a budget, not cut from a blank), the tube road is
   tried, and the ring road's refusal stands where it refuses too. Three fuzzed tumbles so refused
