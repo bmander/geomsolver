@@ -3190,7 +3190,17 @@ builds as before. **But the crossed members' Boolean is refused** (their union, 
 difference: "a bspline's pieces do not close"): on a stretched sheet's face two of the Boolean's
 meetings leave a node of its walk tangent to 8e-6 however far along they are read (`TANGENT_TIE`),
 a sliver between them — the meetings of operands within 1e-7 of the pinched ones, read in other
-parameters. So `closed::ring` still builds pinched: the stretch waits on that walk.
+parameters. Measured further: the forward member's faces A1, A2 and A3 meet where they cross the
+reverse member's face B8 — each pair traced from the same six seeds by [3.157, 0.913, 1.746] — and
+B8's arrangement takes 15 cut edges stretched where it took 9 pinched (its meetings with A1–A3 in
+18, 27 and 35 curves, against 20, 22 and 24), two of them one curve split twice. A milder stretch,
+`a sinh(x′/λ)` with `a` ten or thirty times `w` (its parameters' speed across the line ten and a
+hundred times evener), changes the nets little (534 × 402, 584 × 467) and the union's refusal
+only in kind: a shell kept on one side of a sheet's face and dropped on another, then a face with
+a hole in no piece. So the Boolean of the crossed members is held by the pinched nets' own
+parameters, not by the geometry: a reading of B8 in any other parameters meets a refusal there,
+and the stretch waits on a Boolean whose arrangement stands where three faces of one operand cross
+a face of the other.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
