@@ -2318,6 +2318,24 @@ found lines 0.075 mm off their edges), otherwise as the cubic within `EXACT`. Ga
 the reader's evaluation of the standard, on its edge within `FIT + 2·EXACT`),
 `a_lemon_is_written_as_a_degenerate_torus`.
 
+**The faces on one sheet's net that share no edge are written on one surface**
+(`step::face_nets`). A face on a sheet's net is written on its own stretch of the net, its
+parameter box grown by a sixteenth (`Net::segment`, the same surface at the same parameters, #1013;
+whole, the crossed tori's union was a 2.4 GB file). The faces of one window of a swept sheet lie
+on its net side by side, their boxes overlapping, and each stretch wrote the overlap again: the
+crossed tori's forward member wrote 242 thousand poles of the 136 thousand in its nets. So faces
+are taken in the order written, each into the first stretch of its net none of whose faces it
+shares an edge with, where the stretch, the least box holding theirs, then holds no more poles
+than the two apart; else a stretch of its own, and a net several faces share is written once. Two
+faces sharing an edge are never on one surface: on a sheet's double curve the edge's two pcurves
+lie on two layers of the net, and only their surfaces tell a reader which is whose (a reader takes
+two pcurves on one surface for a seam). Nor two faces of two lumps: each solid is read on its own
+surfaces, so the halves of a block cut through, on one net, read back on two. `step_check::Solid`
+reads the faces' surfaces as `face_nets` writes them.
+`step_shared_nets::faces_on_one_net_sharing_no_edge_are_written_on_one_surface` is the gate: a
+block under a patch slotted across its top, its top's two halves one surface and the file read back
+to the same solid; cut through, no two lumps' faces on one surface, read back the same.
+
 **A STEP file never states less than it holds** (#993 stage 1, `step::write_stating`,
 `step::statement`). The uncertainty a file states is the tolerance asked (at least 1e-7) where
 that covers a quarter more than its geometry holds, and otherwise what it holds, rounded up to 1,

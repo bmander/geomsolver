@@ -443,6 +443,7 @@ pub fn turned(s: &Surface) -> bool { matches!(*s,Surface::Torus(_,big,_) if big 
 /// preimage's exact net over the parameters the face reaches, its poles mapped. How the face's
 /// parameters land on the net's: an angle at `nurbs::arc_parameter` over the turn it was built on,
 /// anything else as it is (`plain` where both are).
+#[derive(Clone)]
 pub struct OnNet { pub net: Arc<super::nurbs::Net>,arcs: [Option<[f64;2]>;2],pub surface: Surface,
     /// How far the net stands off the face's own surface (millimetres): its fit's measured miss
     /// for a loft's or a family wall's, nought for an exact one.
@@ -475,19 +476,11 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
         // parameter box grown by a sixteenth (`Net::segment`, which keeps the parameters, so its
         // pcurves are the face's still): a surface of its own, a fraction of the net. Every face on
         // one sheet wrote the whole net: a swept sheet's is some 55 MB, and the crossed tori's
-        // union was a 2.4 GB file no reader could measure. Not one surface shared by the faces on
-        // a net: an edge between two of them on two layers of it (a sheet's double curve) has a
-        // pcurve on each, and only their surfaces tell a reader which is whose
-        Surface::BSpline(g,n) => {
-            let [u,v] = super::boolean::parameters(b,fi,true);
-            let [du,dv] = n.domain();
-            let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
-            if !(u[1] > u[0] && v[1] > v[0]) || !(within(u,du) || within(v,dv)) {
-                return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.}))
-            }
-            let net = Arc::new(n.segment(u,v));
-            return Some(Ok(OnNet {surface:Surface::BSpline(*g,net.clone()),net,arcs:[None,None],fit:0.}))
-        }
+        // union was a 2.4 GB file no reader could measure. The faces on one net that share no edge
+        // are written on one stretch of it (`face_nets`, which the writer reads): an edge between
+        // two of them on two layers of it (a sheet's double curve) has a pcurve on each, and only
+        // their surfaces tell a reader which is whose
+        Surface::BSpline(g,n) => return Some(Ok(stretch(*g,n,stretch_box(b,fi)))),
         Surface::Blend(g,bl) => return Some(net(blend_net(bl),[None,None],*g)),
         Surface::Family(g,w) => return Some(net(family_net(w),[None,None],*g)),
         Surface::Affine(m) => m,
@@ -547,6 +540,92 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
         ref other => Err(format!("an affine image of a {} has no net to write",other.kind())),
     };
     Some(built.and_then(|(n,arcs,fit)| net(Ok((n,fit)),arcs,m.frame)))
+}
+
+/// A sheet face's stretch of its net: its parameters' box grown by a sixteenth
+/// (`boolean::parameters`), none where that is no box.
+fn stretch_box(b: &Brep,fi: usize) -> Option<[[f64;2];2]> {
+    let [u,v] = super::boolean::parameters(b,fi,true);
+    (u[1] > u[0] && v[1] > v[0]).then_some([u,v])
+}
+
+/// The net `n` on frame `g` written over the box `at` (`Net::segment`, which keeps the parameters,
+/// so the faces' pcurves are still theirs), or whole where no box is given or it reaches past the
+/// net both ways.
+fn stretch(g: Frame,n: &Arc<super::nurbs::Net>,at: Option<[[f64;2];2]>) -> OnNet {
+    let [du,dv] = n.domain();
+    let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
+    match at {
+        Some([u,v]) if within(u,du) || within(v,dv) => {
+            let net = Arc::new(n.segment(u,v));
+            OnNet {surface:Surface::BSpline(g,net.clone()),net,arcs:[None,None],fit:0.}
+        }
+        _ => OnNet {net:n.clone(),arcs:[None,None],surface:Surface::BSpline(g,n.clone()),fit:0.},
+    }
+}
+
+/// How many poles a net's stretch over the box `at` holds (whole where none), counted by its knots.
+fn stretch_poles(n: &super::nurbs::Net,at: Option<[[f64;2];2]>) -> usize {
+    let count = |knots: &[f64],p: usize,[lo,hi]: [f64;2],[a,b]: [f64;2]| {
+        let (lo,hi) = (lo.max(a),hi.min(b));
+        knots.iter().filter(|&&k| k > lo && k < hi).count()+p+1
+    };
+    let [du,dv] = n.domain();
+    match at {
+        Some([u,v]) => count(&n.uknots,n.du,u,du)*count(&n.vknots,n.dv,v,dv),
+        None => n.poles.len()*n.poles[0].len(),
+    }
+}
+
+/// **Every face's net as the file writes it** (`face_net`), **the faces on one sheet's net that
+/// share no edge written on one stretch of it**, the least box holding theirs: each face's own
+/// stretch of a net its window's faces lie on (#1013) wrote the poles where their boxes overlap
+/// once a face — 242 thousand for the crossed tori's forward sweep, of 136 thousand in its nets.
+/// Faces are taken in the order written (`written_order`), each into the first stretch of its net
+/// none of whose faces it shares an edge with, where the stretch then holds no more poles than the
+/// two apart; else a stretch of its own. Two faces sharing an edge are never on one surface: on a
+/// sheet's double curve the edge's two pcurves lie on two layers of the net, and only their
+/// surfaces tell a reader which is whose. Nor two faces of two lumps (`written_lumps`): each solid
+/// is read on its own surfaces. Faces not on a sheet's net as `face_net` writes them.
+pub fn face_nets(b: &Brep) -> Vec<Option<Result<OnNet,String>>> {
+    let mut out: Vec<Option<Result<OnNet,String>>> = Vec::with_capacity(b.faces.len());
+    // (each stretch: its net and frame, its faces' lump, the box, and its faces' edges)
+    struct Stretch { net: Arc<super::nurbs::Net>,frame: Frame,lump: usize,at: Option<[[f64;2];2]>,edges: std::collections::BTreeSet<u32> }
+    let mut stretches: Vec<Stretch> = Vec::new();
+    let mut on: Vec<Option<usize>> = vec![None;b.faces.len()];
+    let mut lump = vec![0;b.faces.len()];
+    let lumps = written_lumps(b);
+    for (k,l) in lumps.iter().enumerate() { for fi in l.faces() { lump[fi] = k; } }
+    // (in the order the file writes them: the stretches the same however `b` orders its faces)
+    for fi in lumps.iter().flat_map(Lump::faces) {
+        let f = &b.faces[fi];
+        let Surface::BSpline(g,n) = &f.surface else { continue };
+        let at = stretch_box(b,fi);
+        let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
+        let join = |a: Option<[[f64;2];2]>,b: Option<[[f64;2];2]>| -> Option<[[f64;2];2]> {
+            let (a,b) = (a?,b?);
+            Some(std::array::from_fn(|k| [a[k][0].min(b[k][0]),a[k][1].max(b[k][1])]))
+        };
+        let k = stretches.iter().position(|s| Arc::ptr_eq(&s.net,n) && s.frame == *g && s.lump == lump[fi] && s.edges.is_disjoint(&edges)
+            && stretch_poles(n,join(s.at,at)) <= stretch_poles(n,s.at)+stretch_poles(n,at));
+        match k {
+            Some(k) => {
+                let s = &mut stretches[k];
+                s.at = join(s.at,at);
+                s.edges.extend(edges);
+                on[fi] = Some(k);
+            }
+            None => {
+                on[fi] = Some(stretches.len());
+                stretches.push(Stretch {net:n.clone(),frame:*g,lump:lump[fi],at,edges});
+            }
+        }
+    }
+    let written: Vec<OnNet> = stretches.iter().map(|s| stretch(s.frame,&s.net,s.at)).collect();
+    for fi in 0..b.faces.len() {
+        out.push(match on[fi] { Some(k) => Some(Ok(written[k].clone())),None => face_net(b,fi) });
+    }
+    out
 }
 
 /// The least uncertainty a file states (millimetres): a tolerance asked finer is written as this.
@@ -1243,9 +1322,16 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
     // (a vertex stands off its edges' ends by its own tolerance: every curve is written ending
     // where the edge's does)
     let mut held = b.vertices.iter().zip(&wanted).filter(|(_,&w)| w).map(|(v,_)| v.tol).fold(0.,f64::max);
-    let nets: Vec<Option<OnNet>> = (0..b.faces.len()).map(|fi| face_net(b,fi).transpose()).collect::<Result<_,_>>()?;
+    let nets: Vec<Option<OnNet>> = face_nets(b).into_iter().map(Option::transpose).collect::<Result<_,_>>()?;
+    // (a net several faces share, `face_nets`, written once)
+    let mut once: Vec<(Arc<super::nurbs::Net>,usize)> = Vec::new();
     let (surfaces,sheets): (Vec<usize>,Vec<f64>) = b.faces.iter().zip(&nets).map(|(f,n)| match n {
-        Some(n) => Ok((o.net(&n.net),n.fit)),
+        Some(n) => {
+            if let Some(&(_,id)) = once.iter().find(|(m,_)| Arc::ptr_eq(m,&n.net)) { return Ok((id,n.fit)) }
+            let id = o.net(&n.net);
+            once.push((n.net.clone(),id));
+            Ok((id,n.fit))
+        }
         None => o.surface(&f.surface),
     }).collect::<Result<Vec<_>,String>>()?.into_iter().unzip();
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());

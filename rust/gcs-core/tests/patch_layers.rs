@@ -27,7 +27,7 @@ use std::sync::Arc;
 const TOL: f64 = 1e-7;
 
 /// The Bézier net of degree (`poles.len() − 1`, `poles[0].len() − 1`) on `poles`.
-fn bezier(poles: Vec<Vec<V>>) -> Net {
+pub fn bezier(poles: Vec<Vec<V>>) -> Net {
     let clamped = |d: usize| [vec![0.;d+1],vec![1.;d+1]].concat();
     let (du,dv) = (poles.len()-1,poles[0].len()-1);
     Net {du,dv,uknots:clamped(du),vknots:clamped(dv),poles,weights:None}
@@ -35,7 +35,7 @@ fn bezier(poles: Vec<Vec<V>>) -> Net {
 
 /// A net of degree 1 in `v` whose rows at `v = 0` and `v = 1` are those of `z` over `x`, the second
 /// a tenth higher: `(x(u), v, z(u) + v/10)`.
-fn rising(x: &[f64],z: &[f64]) -> Net {
+pub fn rising(x: &[f64],z: &[f64]) -> Net {
     bezier(x.iter().zip(z).map(|(&x,&z)| vec![[x,0.,z],[x,1.,z+0.1]]).collect())
 }
 
@@ -43,7 +43,7 @@ fn rising(x: &[f64],z: &[f64]) -> Net {
 /// floor), its walls upright, sewn: its top face on the whole of `patch`, trimmed to the part
 /// (`whole`), or on the part alone, cut down to it (`Net::segment`, the same parameters, so the
 /// face's trims are the same either way).
-fn under(patch: &Net,us: [f64;2],vs: [f64;2],whole: bool) -> Brep {
+pub fn under(patch: &Net,us: [f64;2],vs: [f64;2],whole: bool) -> Brep {
     let top = patch.segment(us,vs);
     let floored = |r: &Vec<V>| r.iter().map(|p| [p[0],p[1],0.]).collect();
     let floor = Net {poles:top.poles.iter().map(floored).collect(),..top.clone()};

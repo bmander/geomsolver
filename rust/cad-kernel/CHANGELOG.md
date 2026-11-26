@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The faces on one sheet's net that share no edge are written on one surface** (`step::face_nets`,
+  public; `step_check` reads it too): each face's own stretch of its net (#1013) wrote the poles
+  where the stretches overlap once a face. Faces are taken in the order written into the first
+  stretch of their net none of whose faces they share an edge with, where it then holds no more
+  poles than the two apart; two faces sharing an edge, or of two lumps, are never on one surface. A
+  net several faces share is written once. Of brep-bench's 538 files seven are smaller — the crossed
+  tumbling tori's forward member 24.1 MB to 21.7 MB, the reverse 350 MB to 298 MB, their union,
+  intersection and difference 126, 220 and 236 MB to 117, 202 and 233 MB, `integration/benchy` and
+  `swept/tumbling-torus-half-turn` by a surface or two, each measured the same — and the rest the
+  same to the byte.
+
 ## [0.26.0] - 2026-11-26
 
 - **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever

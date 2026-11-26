@@ -54,10 +54,11 @@ impl Solid {
     pub fn of_lumps(b: &crate::topo::Brep,lumps: &[crate::step::Lump]) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
         // (in the order the writer writes them: each lump's outer shell's faces, then its voids')
+        let mut nets = crate::step::face_nets(b);
         let faces = lumps.iter().flat_map(crate::step::Lump::faces).map(|fi| (fi,&b.faces[fi])).map(|(fi,f)| {
             // a sheet, a loft's face, a family's wall and an affine image are written as nets (one
             // the writer could not fit was refused there, and has no numbers here)
-            if let Some(net) = crate::step::face_net(b,fi) {
+            if let Some(net) = nets[fi].take() {
                 let numbers = net.map(|n| crate::step::net_numbers(&n.net)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }

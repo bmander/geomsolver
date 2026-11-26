@@ -357,6 +357,7 @@ mod step_parameters;
 mod step_read;
 mod step_rewrite;
 mod step_roundtrip;
+mod step_shared_nets;
 mod step_sound;
 mod stock;
 mod strata;
