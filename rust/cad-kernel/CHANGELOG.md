@@ -26,6 +26,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   and `Band::unstretch`, `Band::straight`; not yet the ring's road): the pinched tube's faces, each
   sheet's window's net read in parameters stretched across the line by a smooth map onto the plane
   itself — the crossed reverse member's nets a quarter the poles.
+- **Breaking**: `swept::tube::faces::sheet_net` takes the stretches its net is read through (`&[]`
+  for none, as before), and `swept::tube::Tube` has a field `stretches` (empty but on a
+  `Tube::stretched`).
 
 ## [0.25.0] - 2026-11-25
 
