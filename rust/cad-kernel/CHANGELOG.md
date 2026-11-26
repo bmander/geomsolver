@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.26.0] - 2026-11-26
+
 - **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever
   the ring road refuses a whole torus for (not past a budget, not cut from a blank), the tube road is
   tried, and the ring road's refusal stands where it refuses too. Three fuzzed tumbles so refused
@@ -36,8 +38,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   held on a line turning between its polyline's tangents, as a band's are, where held square to its
   segments they jumped along the curve at each corner (a double curve crossing a sheet's half turn
   fitted to 2e-6 against 4.4e-7). Every build that fitted before the same.
-
-## [0.26.0] - 2026-11-26
 
 - **A face's area on a large net in a ninth the time, the same to the bit** (brep-bench's
   `swept/tumbling-torus-crossed-reverse`, whose faces lie on nets of some 940 × 850 poles: its area
