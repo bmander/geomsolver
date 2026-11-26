@@ -903,7 +903,7 @@ fn the_bands_seam_is_the_sheets_hole() {
     // the window holding the band, fitted with the stand-in held inside the seam
     let (w0,w1) = (5.507489549754588,10.570919415858736);
     let clock = std::time::Instant::now();
-    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol).unwrap();
+    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol,&[]).unwrap();
     eprintln!("the sheet − over its window: {} × {} poles in {:?}",net.poles.len(),net.poles[0].len(),clock.elapsed());
     assert!(net.poles.len() <= 400 && net.poles[0].len() <= 320,"{} × {}",net.poles.len(),net.poles[0].len());
     let mut inside = 0;
