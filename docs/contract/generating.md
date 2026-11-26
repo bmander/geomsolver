@@ -3139,6 +3139,23 @@ operands with nets of a quarter the poles took 18 s against 20 s — the time is
 and the members' traces, not the nets' size; the band is for the sheets' fit, not the bench's clock.
 **Next**: the tip's crossing joined on the sheet as a corner is (or the seam's tip placed clear of
 the cuspidal edge), and `closed::ring` calling `Tube::banded`, `Tube::pinched` where it refuses.
+**Why the tip will not close** (measured, `closed::ring` switched to `Tube::banded` by hand): the
+sheet `−` holds a swallowtail point just past the tip, S at (1.4383, 0.1616), `(τ, η)` (−6.379,
+−0.454), its cuspidal edge crossing the seam twice — at the tip, (1.360, 0.245), and beside the seam
+vertex at (1.214, 0.137) — and its double curve running through the band to the band's own
+swallowtail point at (−6.140, 0.004): a swallowtail pair astride the seam. The double curve's
+preimage B is traced on the sheet from the seam to the fold beside S; preimage A leaves the band at
+the tip and no run of the sheet carries it on to S, so B's end on the sheet is a vertex one trim
+reaches (the trim used thrice, the seam's arc there once). And past S's fold the sheet has a third
+layer, onto which `partner` settles B as A nears the tip ((1.474, 0.071), where B's own trace
+ends at (1.452, 0.138)). No tip clears it: ended past S (η −0.47 to −0.50, the width from the
+natural ends) the pair is the band's, and the trim from S's disc misfits its curve near S by
+7e-6 to 1.1e-5 (its partner on the sheet beside the fold, the double curve shallow there); past
+η −0.51 the floor falls again; ended short (η −0.30 to −0.37) the tip still cuts the pair; and a
+band too narrow to hold any swallowtail point (2.5 to 3.5 times the end turn across) is refused
+at other events, its sheets' nets 512 × 645 to 611 × 638 — not the eighth the band is for. The
+probe from a swallowtail point on a band's chart (`build`'s cut, a fiftieth of the band's length)
+also lands past the seam where the point stands nearer it than that.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
