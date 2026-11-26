@@ -129,11 +129,7 @@ fn cut_cylinder(r: f64,h: f64,alpha: f64) -> Brep {
 /// `J = ∫ acos(−sin α cos φ) r √(1 + tan² α sin² φ) dφ` over a turn, which has no elementary form:
 /// the trapezoid rule, exact to rounding for a smooth periodic integrand at this many points.
 fn steiner_cut_cylinder(r: f64,h: f64,alpha: f64,d: f64) -> (f64,f64) {
-    let n = 4096;
-    let j = (0..n).map(|k| {
-        let phi = 2.*PI*k as f64/n as f64;
-        (-alpha.sin()*phi.cos()).acos()*r*(1.+(alpha.tan()*phi.sin()).powi(2)).sqrt()
-    }).sum::<f64>()*2.*PI/n as f64;
+    let j = turn(|phi| (-alpha.sin()*phi.cos()).acos()*r*(1.+(alpha.tan()*phi.sin()).powi(2)).sqrt());
     let (v0,s0) = (PI*r*r*h,2.*PI*r*h+PI*r*r+PI*r*r/alpha.cos());
     let m = PI*h+PI*PI*r/2.+j/2.;
     (v0+s0*d+m*d*d+4.*PI*d*d*d/3.,s0+2.*m*d+4.*PI*d*d)
@@ -446,15 +442,7 @@ pub(crate) fn cut_torus(r: f64,beta: f64,c: f64) -> Brep {
 /// its faces' normals, `|E'| = √(ρ² + r² v'²)`.
 fn cut_torus_measures(r: f64,beta: f64,c: f64) -> (f64,f64,f64) {
     let (big,t) = (5f64,beta.tan());
-    let arc = |u: f64| -> ([f64;2],[f64;2]) {
-        let (k,dk) = (t*u.cos(),-t*u.sin());
-        let q = 1.+k*k;
-        let s = (big*k+c)/(r*q.sqrt());
-        assert!(s.abs() < 1.,"the plane misses the meridian at {u}");
-        let ds = dk*(big-c*k)/(r*q.powf(1.5))/(1.-s*s).sqrt();
-        let (phi,dphi) = (k.atan(),dk/q);
-        ([phi+PI-s.asin(),phi+2.*PI+s.asin()],[dphi-ds,dphi+ds])
-    };
+    let arc = |u: f64| cut_torus_arc(r,beta,c,u);
     let across = |g: &dyn Fn(f64) -> f64,u: f64| { let [a,b] = arc(u).0; g(b)-g(a) };
     let rho = |v: f64| big+r*v.cos();
     let plane = |u: f64| { let [i,o] = arc(u).0.map(rho); (i,o) };
@@ -501,15 +489,22 @@ fn a_torus_cut_aslant_shrunk_and_its_face_thickened() {
     }
 }
 
+/// The arc `cut_torus(r, β, c)` keeps of its meridian at `u`, `[v_a, v_b]` (`cut_torus_measures`),
+/// and its ends' rates in `u`.
+fn cut_torus_arc(r: f64,beta: f64,c: f64,u: f64) -> ([f64;2],[f64;2]) {
+    let (big,t) = (5f64,beta.tan());
+    let (k,dk) = (t*u.cos(),-t*u.sin());
+    let q = 1.+k*k;
+    let s = (big*k+c)/(r*q.sqrt());
+    assert!(s.abs() < 1.,"the plane misses the meridian at {u}");
+    let ds = dk*(big-c*k)/(r*q.powf(1.5))/(1.-s*s).sqrt();
+    let (phi,dphi) = (k.atan(),dk/q);
+    ([phi+PI-s.asin(),phi+2.*PI+s.asin()],[dphi-ds,dphi+ds])
+}
+
 /// `∫ (g(v_b) − g(v_a)) du` over the arcs `cut_torus(r, β, c)` keeps of its meridians.
 fn cut_torus_turn(r: f64,beta: f64,c: f64,g: &dyn Fn(f64) -> f64) -> f64 {
-    let (big,t) = (5f64,beta.tan());
-    turn(|u| {
-        let k = t*u.cos();
-        let s = (big*k+c)/(r*(1.+k*k).sqrt());
-        let phi = k.atan();
-        g(phi+2.*PI+s.asin())-g(phi+PI-s.asin())
-    })
+    turn(|u| { let [a,b] = cut_torus_arc(r,beta,c,u).0; g(b)-g(a) })
 }
 
 /// The parabolic trough's profile, `z = x²/8` over `|x| ≤ 4` as a quadratic Bézier closed by the
@@ -541,12 +536,10 @@ fn a_spline_extrusion_cut_aslant_is_thickened() {
     let th = 1.;
     let t = thickened(&side,toward_focus(&side,th),Join::Round).unwrap();
     t.check(1e-7).unwrap();
-    let panels = 16;
-    let h = 4./panels as f64;
-    let want: f64 = (0..panels).flat_map(|k| gcs_core::integral::GAUSS8.map(|(x,w)| (-4.+h*(2*k+1) as f64+h*x,h*w))).map(|(x,w)| {
+    let want = crate::swept_slid::gauss(&|x| {
         let g = 1.+x*x/16.;
-        w*(th-th*th*0.25/g.powf(1.5)/2.)*g.sqrt()*(6.+0.3*x+0.2*x*x/8.)
-    }).sum();
+        (th-th*th*0.25/g.powf(1.5)/2.)*g.sqrt()*(6.+0.3*x+0.2*x*x/8.)
+    },-4.,4.,16);
     close("volume",volume(&t),want);
     let e = thickened(&side,toward_focus(&side,5.),Join::Round).unwrap_err();
     assert!(e.contains("folds"),"{e}");

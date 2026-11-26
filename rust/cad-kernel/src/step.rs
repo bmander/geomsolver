@@ -297,13 +297,8 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
     let f = |u,v| b.d1([u,v]).0;
     // where a rail's parameter turns its pace (a traced rail's, at each of its points), the net
     // breaks there too
-    let mut breaks: Vec<f64> = [(&b.a,b.ta),(&b.b,b.tb)].into_iter().flat_map(|(c,t)| {
-        let span = t[1]-t[0];
-        c.breaks(t).into_iter().map(move |x| (x-t[0])/span)
-    }).filter(|&u| u > 1e-9 && u < 1.-1e-9).collect();
-    breaks.sort_by(f64::total_cmp);
-    breaks.dedup_by(|x,y| (*x-*y).abs() <= 1e-9);
-    let fit = |dv: usize| if breaks.is_empty() || !rough(&b.a) && !rough(&b.b) { super::nurbs::fit_net(&f,3,dv,8,nv,FIT) }
+    let breaks = if rough(&b.a) || rough(&b.b) { b.breaks() } else { Vec::new() };
+    let fit = |dv: usize| if breaks.is_empty() { super::nurbs::fit_net(&f,3,dv,8,nv,FIT) }
         else { super::nurbs::fit_net_broken(&f,3,dv,&breaks,nv,FIT) };
     let fitted = match fit(dv) {
         Some((_,err)) if err > FIT && dv == 3 => fit(5),
@@ -317,9 +312,10 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
 }
 
 /// Whether a curve's pace jumps where its parameter breaks (`Curve::breaks`), a net through it
-/// being fitted across them: a trace's, and a curve carried along a normal from one.
+/// being fitted across them: a trace's, and a curve carried along a normal from one or mapped
+/// from one.
 fn rough(c: &Curve) -> bool {
-    match c { Curve::Traced(_) => true,Curve::Parallel(m) => rough(&m.of),_ => false }
+    match c { Curve::Traced(_) => true,Curve::Parallel(m) => rough(&m.of),Curve::Affine(m) => rough(&m.of),_ => false }
 }
 
 /// A face family's wall as the file writes it (#243 L2): the net through it fitted within `FIT` as

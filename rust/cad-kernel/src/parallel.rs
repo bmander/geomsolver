@@ -28,7 +28,7 @@ pub enum Foot { Line { t: [f64;2],a: Uv,b: Uv },Curve(Arc<Curve>) }
 
 impl Foot {
     /// The foot at `t` and its rate.
-    fn at(&self,t: f64) -> (Uv,Uv) {
+    fn d1(&self,t: f64) -> (Uv,Uv) {
         match *self {
             Foot::Line {t:[t0,t1],a,b} => {
                 let rate = [(b[0]-a[0])/(t1-t0),(b[1]-a[1])/(t1-t0)];
@@ -36,6 +36,10 @@ impl Foot {
             }
             Foot::Curve(ref c) => { let (p,d) = c.d1(t); ([p[0],p[1]],[d[0],d[1]]) }
         }
+    }
+    /// The foot at `t`.
+    fn at(&self,t: f64) -> Uv {
+        match *self { Foot::Line {..} => self.d1(t).0,Foot::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] } }
     }
 }
 
@@ -58,18 +62,11 @@ impl Parallel {
     /// `C`, `C'`.
     pub fn d1(&self,t: f64) -> (V,V) {
         let (q,dq) = self.of.d1(t);
-        let (uv,rate) = match self.foot {
-            Some(ref f) => f.at(t),
-            None => (self.base.continued_inverse(q),[f64::NAN;2]),
-        };
+        let (uv,rate) = match self.foot { Some(ref f) => { let (uv,r) = f.d1(t); (uv,Some(r)) },None => (self.base.continued_inverse(q),None) };
         let (b,bu,bv) = self.base.d1(uv);
         let (p,pu,pv) = self.under.d1(uv);
-        let [du,dv] = if self.foot.is_some() { rate } else { crate::topo::solved(bu,bv,dq) };
+        let [du,dv] = rate.unwrap_or_else(|| crate::topo::solved(bu,bv,dq));
         (add(q,sub(p,b)),add(dq,add(scale(sub(pu,bu),du),scale(sub(pv,bv),dv))))
-    }
-    /// The foot of `of`'s point `q` at `t` on `base`.
-    fn foot_at(&self,t: f64,q: V) -> Uv {
-        match self.foot { Some(ref f) => f.at(t).0,None => self.base.continued_inverse(q) }
     }
     /// `C`, `C'`, `C''`: the last a central difference of the first, exact enough for the curvature
     /// a sampler reads (`Curve::Iso`'s).
@@ -81,7 +78,7 @@ impl Parallel {
     }
     pub fn point(&self,t: f64) -> V {
         let q = self.of.point(t);
-        let uv = self.foot_at(t,q);
+        let uv = match self.foot { Some(ref f) => f.at(t),None => self.base.continued_inverse(q) };
         add(q,sub(self.under.point(uv),self.base.point(uv)))
     }
     /// Where Newton seeks its point nearest `p` from (`Curve::inverse`): the foot of `p` on `under`

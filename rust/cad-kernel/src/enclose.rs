@@ -534,7 +534,8 @@ fn parallel_enclosed(m: &crate::parallel::Parallel,t: [f64;2]) -> Patch<1> {
     let r = Iv::new(-m.d.abs(),m.d.abs());
     let near = add3(e.at,[r;3]);
     let rough = Patch {at:near,d:[[Iv::ANY;3]],proved:e.proved};
-    if !e.bounded() { return rough }
+    // (a sheet's offset encloses nothing: no foot helps)
+    if !e.bounded() || matches!(m.under,Surface::Offset(..)) { return rough }
     if let Some((n,dn)) = normal_at(&m.base,e.at,e.d[0]) {
         let d = Iv::point(m.d);
         let (at,rate) = (add3(e.at,scale3(n,d)),add3(e.d[0],scale3(dn,d)));
@@ -552,7 +553,7 @@ fn parallel_enclosed(m: &crate::parallel::Parallel,t: [f64;2]) -> Patch<1> {
     };
     let (Some(us),Some(vs)) = (uv[0].bounds(),uv[1].bounds()) else { return rough };
     let (b,p) = (m.base.enclose([us,vs]),m.under.enclose([us,vs]));
-    if !(b.bounded() && p.bounded() && e.bounded()) { return rough }
+    if !(b.bounded() && p.bounded()) { return rough }
     let at = add3(e.at,sub3(p.at,b.at));
     let d = add3(e.d[0],add3(scale3(sub3(p.d[0],b.d[0]),rate[0]),scale3(sub3(p.d[1],b.d[1]),rate[1])));
     Patch {at:meet3(at,near),d:[d],proved:e.proved && b.proved && p.proved}
@@ -566,13 +567,13 @@ fn parallel_enclosed(m: &crate::parallel::Parallel,t: [f64;2]) -> Patch<1> {
 /// kind (a lemon's middle circle crosses its axis), and where `ρ` may be nothing.
 fn normal_at(s: &Surface,q: I3,dq: I3) -> Option<(I3,I3)> {
     use crate::util::fmath::Det;
+    if !matches!(*s,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)) { return None }
     let f = *s.frame();
     let (l,dl) = (frame_local(&f,q),frame_dir_local(&f,dq));
     let zero = Iv::point(0.);
     // the unit direction from the axis in the frame's plane, and its rate
     let radial = || -> Option<([Iv;2],[Iv;2])> {
-        let sq = |x: Iv| { let m = x.mag(); (x*x).meet(Iv::new(0.,m*m*(1.+4.*f64::EPSILON))) };
-        let rho = (sq(l[0])+sq(l[1])).sqrt();
+        let rho = (l[0].square()+l[1].square()).sqrt();
         if !(rho.lo() > 0.) { return None }
         let e = [l[0]/rho,l[1]/rho];
         let along = e[0]*dl[0]+e[1]*dl[1];

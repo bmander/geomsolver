@@ -284,7 +284,9 @@ pub enum Surface {
     /// `o + r (cos u x + sin u y) + v z`.
     Cylinder(Frame,f64),
     /// `o + (r + v sin α)(cos u x + sin u y) + v cos α z`: `r` the radius at `o`, `α` the
-    /// half-angle, `v` along the generator; the apex at `v = −r / sin α`.
+    /// half-angle, `v` along the generator; the apex at `v = −r / sin α`. `r` is less than nothing
+    /// where `o` lies past the apex, as on a cone moved inward along its normal
+    /// (`Surface::normal_moved`), a face on it on the nappe its parameters reach.
     Cone(Frame,f64,f64),
     /// `o + r cos v (cos u x + sin u y) + r sin v z`, `v ∈ [−π/2, π/2]`.
     Sphere(Frame,f64),
@@ -624,6 +626,18 @@ impl Pipe {
 }
 
 impl Blend {
+    /// Where, strictly inside its `u` from 0 to 1, either of its sections stops being smooth: each
+    /// one's breaks (`Curve::breaks`) at its own fraction of `u`, in order, each once.
+    pub fn breaks(&self) -> Vec<f64> {
+        let mut out = Vec::new();
+        for (c,t) in [(&self.a,self.ta),(&self.b,self.tb)] {
+            let (lo,hi) = (t[0].min(t[1]),t[0].max(t[1]));
+            out.extend(c.breaks([lo,hi]).into_iter().map(|k| (k-t[0])/(t[1]-t[0])).filter(|&u| u > 0. && u < 1.));
+        }
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+    }
     /// **The box the patch keeps within over the parameters `[u, v]`** (#847): a face's piece of a
     /// sheet, where the ring its whole sections turn in (`Surface::bounds_over`) stands for the
     /// whole sheet turned about its axis — a sliver of a cell beside a screwed edge's sheet read as
@@ -1891,20 +1905,25 @@ impl Surface {
     /// (`swept_net`, both its parameters its own). `None` where a radius reaches nothing, and
     /// for any other kind.
     pub fn normal_moved(&self,d: f64) -> Option<Surface> {
+        if !self.has_normal_moved() { return None }
         match *self {
-            Surface::Plane(f) => Some(Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f})),
-            Surface::Cylinder(f,r) => (r+d > 0.).then(|| Surface::Cylinder(f,r+d)),
             Surface::Cone(f,r,a) => {
                 // `N = cos α ρ̂ − sin α z`, the same along each generator
                 let (sa,ca) = a.dsin_cos();
                 Some(Surface::Cone(Frame {o:f.at([0.,0.,-d*sa]),..f},r+d*ca,a))
             }
-            Surface::Sphere(f,r) => (r+d > 0.).then(|| Surface::Sphere(f,r+d)),
-            Surface::Torus(f,big,r) => (r+d > 0.).then(|| Surface::Torus(f,big,r+d)),
-            Surface::BSpline(..) | Surface::Offset(..) => self.parallel(d,0.).and_then(Offset::surface),
-            Surface::Extrusion(f,ref c) if matches!(**c,Curve::BSpline(_)) =>
-                self.swept_net().map(|n| Surface::Offset(f,Arc::new(n),d)),
-            _ => None,
+            // the rest as `parallel` reads them, a radius taken to nothing none
+            _ => self.parallel(d,0.).and_then(Offset::surface),
+        }
+    }
+    /// Whether `normal_moved` reads the surface moved along its normal with its parameters kept:
+    /// the analytic kinds but the affine image, a sheet and its offset, a spline swept along a line.
+    pub fn has_normal_moved(&self) -> bool {
+        match self {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)
+                | Surface::BSpline(..) | Surface::Offset(..) => true,
+            Surface::Extrusion(_,c) => matches!(**c,Curve::BSpline(_)),
+            Surface::Affine(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::Family(..) => false,
         }
     }
     /// The curve a spline or an ellipse swept along a line (`Extrusion`) is swept from, as a spline:
@@ -2150,14 +2169,8 @@ impl Surface {
             (Surface::Family(_,w),k) => w.breaks(k,span),
             (Surface::Affine(m),k) => m.of.breaks(k,span),
             (Surface::Blend(_,b),0) => {
-                let mut out = Vec::new();
-                for (c,t) in [(&b.a,b.ta),(&b.b,b.tb)] {
-                    let (lo,hi) = (t[0].min(t[1]),t[0].max(t[1]));
-                    out.extend(c.breaks([lo,hi]).into_iter().map(|k| (k-t[0])/(t[1]-t[0]))
-                        .filter(|&u| u > span[0].min(span[1]) && u < span[0].max(span[1])));
-                }
-                out.sort_by(f64::total_cmp);
-                out.dedup();
+                let mut out = b.breaks();
+                out.retain(|&u| u > span[0].min(span[1]) && u < span[0].max(span[1]));
                 out
             }
             _ => vec![],

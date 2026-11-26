@@ -1044,17 +1044,15 @@ fn extruded_sweep(b: &Brep,fi: usize,([u0,u1],[v0,v1]): ([f64;2],[f64;2]),s: [f6
 fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     let f = &b.faces[fi];
     let out = if f.reversed { -1. } else { 1. };
-    if f.surface.normal_moved(0.).is_none() {
+    if !f.surface.has_normal_moved() {
         return Err(format!("its {}'s offset is read over no parameters of its own",f.surface.kind()))
     }
     let sheet = sheet_of(b,&[fi])?;
-    unfolded(b,fi,[out*s[0],out*s[1]])?;
-    // the face moved to `h`: on its surface moved, an affine image where the move is one
-    let moved = |h: f64| -> Result<Brep,String> {
+    let [s0,s1] = unfolded(b,fi,[out*s[0],out*s[1]])?;
+    // the face moved to `h`, onto `surface`: on its surface moved, an affine image where the move
+    // is one
+    let moved = |h: f64,surface: Surface| -> Result<Brep,String> {
         let d = out*h;
-        let Some(surface) = f.surface.normal_moved(d) else {
-            return Err(format!("swept past the centre of its {}: no point stands that far off it",f.surface.kind()))
-        };
         let map = match f.surface {
             Surface::Plane(fr) => Affine::new(Affine::IDENTITY.m,scale(fr.z,d)),
             Surface::Cylinder(fr,r) => Affine::stretch(&fr,[(r+d)/r,(r+d)/r,1.]),
@@ -1066,7 +1064,7 @@ fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
         c.faces[0].surface = surface;
         Ok(c)
     };
-    let (near,far) = (moved(s[0])?,moved(s[1])?);
+    let (near,far) = (moved(s[0],s0)?,moved(s[1],s1)?);
     let tol = tolerance(b.size()+s[1]-s[0]);
     let (nv,ne) = (near.vertices.len() as u32,near.edges.len() as u32);
     let mut solid = near.clone();
@@ -1182,8 +1180,10 @@ fn moved_face(sheet: &Brep,under: Surface,d: f64) -> Brep {
 /// torus's `v` at its outer and inner equators: a cone's curvature `cos α / ρ` runs one way along
 /// each generator, a cylinder's, a sphere's and a plane's are constant), the face's own points
 /// and its box's alike, so a fold is refused, naming where and how far, wherever the box holds
-/// one. A cone's face reaching its apex, where it has no normal, is refused too.
-fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
+/// one (at its middle, where the curvature is the same everywhere). A cone's face reaching its
+/// apex, where it has no normal, is refused too, and a surface moved past its centre. The surface
+/// moved to `s[0]` and to `s[1]`, read once.
+fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<[Surface;2],String> {
     let f = &b.faces[fi];
     let (_,[lo,hi]) = samples(b,f);
     let base = &f.surface;
@@ -1192,16 +1192,17 @@ fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
         let least = (r+lo[1]*sa).min(r+hi[1]*sa);
         if !(least > tolerance(b.size())) { return Err("its face reaches its cone's apex, where it has no normal".into()) }
     }
-    let ends = [s[0],0.5*(s[0]+s[1]),s[1]].map(|h| base.normal_moved(h));
-    let Some(ends) = ends.iter().cloned().collect::<Option<Vec<Surface>>>() else {
+    let [Some(e0),Some(e1),Some(e2)] = [s[0],0.5*(s[0]+s[1]),s[1]].map(|h| base.normal_moved(h)) else {
         return Err(format!("swept past the centre of its {}: no point stands that far off it",base.kind()))
     };
+    let constant = matches!(base,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..));
     // where a torus's curvature across its tube, `cos v / (big + r cos v)`, turns
     let turns = |k: usize,[a,z]: [f64;2]| -> Vec<f64> {
         if k == 0 || !matches!(base,Surface::Torus(..)) { return vec![] }
         ((a/PI).ceil() as i64..=(z/PI).floor() as i64).map(|j| j as f64*PI).collect()
     };
     let grid = |k: usize| -> Vec<f64> {
+        if constant { return vec![0.5*(lo[k]+hi[k])] }
         let mut cuts: Vec<f64> = std::iter::once(lo[k]).chain(base.breaks(k,[lo[k],hi[k]])).chain(turns(k,[lo[k],hi[k]])).chain([hi[k]]).collect();
         cuts.sort_by(f64::total_cmp);
         cuts.dedup();
@@ -1216,14 +1217,14 @@ fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
         let area = dot(n,n);
         if !(area > 1e-24*(dot(su,su)+dot(sv,sv)).powi(2)) { continue }
         // the stretch at each of the three distances, and the quadratic through them over `s`
-        let [g0,g1,g2] = [0,1,2].map(|i| { let (_,pu,pv) = ends[i].d1([u,v]); dot(cross(pu,pv),n)/area });
+        let [g0,g1,g2] = [&e0,&e1,&e2].map(|p| { let (_,pu,pv) = p.d1([u,v]); dot(cross(pu,pv),n)/area });
         let (a2,a1) = (2.*(g0-2.*g1+g2),-3.*g0+4.*g1-g2);
         let least = if a2 > 0. && (0. ..1.).contains(&(-a1/(2.*a2))) { g0-a1*a1/(4.*a2) } else { g0.min(g2) };
         if !(least > 1e-6) {
             return Err(format!("its sweep over {s:?} folds where the {} curves tighter than that, at {q:?} (its area stretched by {least:.3e} there)",base.kind()))
         }
     } }
-    Ok(())
+    Ok([e0,e2])
 }
 
 /// The plane the points `pts` lie in within `tol`, or none: through the first, across the farthest
