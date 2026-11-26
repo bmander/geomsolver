@@ -1895,7 +1895,10 @@ const GRADED_SHARE: f64 = 0.25;
 /// 218 × 193 and 225 × 180 poles over `(θ, t)`, 156 × 86 and 173 × 81 over `(σ, t)`, its span half
 /// again as wide; its STEP file 14.1 MB and 5.2 MB. Affine, so a pcurve in the chart's `(θ, t)` is one in
 /// the net's `(s, v)`, its poles mapped. The net runs on past the window, and is the sheet there
-/// too (`sheet_net`).
+/// too (`sheet_net`) — but its span never past a whole turn, the lean held to what keeps it so: a
+/// span past it holds some of the sheet twice, at `θ` and `θ + 2π`, and a point of a face read back
+/// on the net (a ray's crossing, a point placed) took the copy outside the face (a fuzzed tumble's
+/// spans 7.1 and 8.2 radians: a point 0.19 inside the sweep placed out of the solid built).
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Lay { pub window: (f64,f64),pub roll: [f64;2],pub lean: f64,pub at: f64,pub span: [f64;2] }
 
@@ -1914,7 +1917,10 @@ impl Lay {
             let j = p.rates(th0,t0)?;
             let (at,aa) = ([j[0][0],j[1][0]],[j[0][1],j[1][1]]);
             let k = -(at[0]*aa[0]+at[1]*aa[1])/(at[0]*at[0]+at[1]*at[1]);
-            k.is_finite().then_some((k,t0))
+            // (no more than turns the net's span to a whole turn: past it the net holds some of the
+            // sheet twice, at θ and θ + 2π, and a point on the face reads back on the other copy)
+            let most = (TAU-(w1-w0)).max(0.)/(b-a);
+            k.is_finite().then_some((k.clamp(-most,most),t0))
         });
         // (a lean that moves the net over the roll by less than one of its first columns is none:
         // the crossed reverse's, −0.016, a third of one)
