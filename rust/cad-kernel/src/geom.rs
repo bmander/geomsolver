@@ -1878,6 +1878,35 @@ impl Surface {
             s => s.offset(d,tol),
         }
     }
+    /// **The surface whose point at `(u, v)` is this one's moved `d` along its unit normal there**,
+    /// `S(u, v) + d N(u, v)` over the same parameters (`N` along `S_u × S_v`): what a face moved
+    /// along its normal lies on with its own pcurves (`offset::carried_sweep`), the promise
+    /// `parallel` does not make (an ellipse swept along a line is read there over its rational
+    /// spline's parameter, and a cone's offset there keeps its frame, shifting `v`). A plane
+    /// moved; a cylinder's, a sphere's or a torus's radius grown; a cone placed `d sin α` back
+    /// along its axis with its radius there grown by `d cos α` — the generator through `u` carried
+    /// along its own normal, `v` kept, its radius at the origin less than nothing where the
+    /// origin falls past the moved apex (a face on it stays on the nappe its parameters reach);
+    /// a sheet's offset (`Surface::Offset`), a spline swept along a line read as its sheet
+    /// (`swept_net`, both its parameters its own). `None` where a radius reaches nothing, and
+    /// for any other kind.
+    pub fn normal_moved(&self,d: f64) -> Option<Surface> {
+        match *self {
+            Surface::Plane(f) => Some(Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f})),
+            Surface::Cylinder(f,r) => (r+d > 0.).then(|| Surface::Cylinder(f,r+d)),
+            Surface::Cone(f,r,a) => {
+                // `N = cos α ρ̂ − sin α z`, the same along each generator
+                let (sa,ca) = a.dsin_cos();
+                Some(Surface::Cone(Frame {o:f.at([0.,0.,-d*sa]),..f},r+d*ca,a))
+            }
+            Surface::Sphere(f,r) => (r+d > 0.).then(|| Surface::Sphere(f,r+d)),
+            Surface::Torus(f,big,r) => (r+d > 0.).then(|| Surface::Torus(f,big,r+d)),
+            Surface::BSpline(..) | Surface::Offset(..) => self.parallel(d,0.).and_then(Offset::surface),
+            Surface::Extrusion(f,ref c) if matches!(**c,Curve::BSpline(_)) =>
+                self.swept_net().map(|n| Surface::Offset(f,Arc::new(n),d)),
+            _ => None,
+        }
+    }
     /// The curve a spline or an ellipse swept along a line (`Extrusion`) is swept from, as a spline:
     /// an ellipse its rational one, the unit circle's whole turn stretched and placed (its parameter
     /// meeting the angle at its knots only). `None` for any other kind.
