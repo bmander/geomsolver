@@ -1009,6 +1009,42 @@ pub fn fit_net_each(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,m
     }
 }
 
+/// **`fit_net` across breaks**: the net of degrees `du`, `dv` through `f` over `[0, 1]²` whose
+/// knots along `u` hold each of `breaks` (in `(0, 1)`, increasing) `du` times over, so it may turn
+/// its rate there as `f` does — a surface ruled between two traced rails, whose parameter's pace
+/// jumps at each of their points, which no net smooth across them follows within a fit's
+/// tolerance. Each stretch between breaks gets `m` even spans along `u` (`m` from 2), each row
+/// interpolated at its knots' Greville abscissae (`interpolate_on`), the rows' poles along `v` as
+/// `fit_net`'s; `m` and `nv` doubled while the net misses `f` by more than `tol` midway between
+/// knots, up to 64 a stretch and 512 rows. With how far it misses.
+pub fn fit_net_broken(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,breaks: &[f64],mut nv: usize,tol: f64) -> Option<(Net,f64)> {
+    let ends: Vec<f64> = std::iter::once(0.).chain(breaks.iter().copied().filter(|&b| b > 0. && b < 1.)).chain([1.]).collect();
+    let mut m = 2;
+    loop {
+        let mut knots = vec![0.;du+1];
+        for (k,w) in ends.windows(2).enumerate() {
+            knots.extend((1..m).map(|i| w[0]+(w[1]-w[0])*i as f64/m as f64));
+            knots.extend(std::iter::repeat(w[1]).take(if k+2 == ends.len() { du+1 } else { du }));
+        }
+        let tv: Vec<f64> = (0..=nv).map(|j| j as f64/nv as f64).collect();
+        let rows: Vec<BSpline> = tv.iter().map(|&v| interpolate_on(&|u| f(u,v),du,knots.clone())).collect::<Option<_>>()?;
+        let count = rows[0].poles.len();
+        let cols: Vec<BSpline> = (0..count).map(|i| interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&tv,dv))
+            .collect::<Option<_>>()?;
+        let net = Net {du,dv:cols[0].degree,uknots:knots.clone(),vknots:cols[0].knots.clone(),
+            poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
+        let off = |u: f64,v: f64| crate::util::space::distance(net.point(u,v),f(u,v));
+        let us: Vec<f64> = distinct(&knots).into_iter().map(|k| k.0).collect();
+        let (mut eu,mut ev) = (0f64,0f64);
+        for w in us.windows(2) { for &v in &tv { eu = eu.max(off((w[0]+w[1])/2.,v)); } }
+        for j in 0..nv { for &u in &us { ev = ev.max(off(u,(tv[j]+tv[j+1])/2.)); } }
+        let (grow_u,grow_v) = (eu > tol && m < 64,ev > tol && nv < 512);
+        if !grow_u && !grow_v { return Some((net,eu.max(ev))) }
+        if grow_u { m *= 2; }
+        if grow_v { nv *= 2; }
+    }
+}
+
 /// The curve of degree `d` through `f` on a uniform grid of `[0, 1]`, refined as `fit_net` is.
 pub fn fit_curve(f: &dyn Fn(f64) -> V,d: usize,mut n: usize,tol: f64) -> Option<(BSpline,f64)> {
     loop {

@@ -30,6 +30,10 @@
 //!   beside a ruling the plane holds — where both vanish — the divided differences `α/δ`, `β/δ`
 //!   enclosed by the mean value of `α'`, `β'` (and their rates by `α''/2`, `β''/2`), so the curve is
 //!   enclosed through that point as anywhere.
+//! * **A curve carried along its surface's normal** (`parallel::Parallel`): `q + d N(q)` and its
+//!   rate, the unit normal of a plane, cylinder, cone, sphere or torus a closed form of the point
+//!   (`normal_at`); on a sheet, through the face's pcurve and the surfaces' enclosures; within
+//!   `|d|` of `q`, its rate unread, where neither is known.
 //! * **Traced curves** (`Traced`): a trace is points pulled onto two surfaces by Newton, with no
 //!   closed form to read in intervals; its enclosure is its own error bound — its points over the
 //!   stretch, grown by the chords between them — measured, not proved, and said so (`Patch::proved`

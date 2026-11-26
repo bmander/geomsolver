@@ -317,6 +317,26 @@ fn steiner_cut_cone(beta: f64,d: f64) -> (f64,f64) {
     (v0+s0*d+mean*d*d+4.*PI*d*d*d/3.,s0+2.*mean*d+4.*PI*d*d)
 }
 
+/// `cut_cone(π/6)` grown by 1 (`a_cone_cut_aslant_grown_is_steiners`): its moved side on a cone
+/// stood back along its axis, its edges carried along the normal.
+pub(crate) fn cone_cut_aslant_grown() -> Brep { grown(&cut_cone(PI/6.),1.,Join::Round).unwrap() }
+
+/// The torus's faces of `cut_torus(2, 12°, 0.4)` lifted out and thickened outward by a half
+/// (`a_torus_cut_aslant_shrunk_and_its_face_thickened`).
+pub(crate) fn torus_face_cut_aslant_thickened() -> Brep {
+    let ring = cut_torus(2.,12f64.to_radians(),0.4);
+    let tori: Vec<usize> = (0..ring.faces.len()).filter(|&f| ring.faces[f].surface.kind() == "torus").collect();
+    thickened(&sheet_of(&ring,&tori).unwrap(),[0.,0.5],Join::Round).unwrap()
+}
+
+/// `cut_trough`'s side lifted out and thickened by 1 toward its focus
+/// (`a_spline_extrusion_cut_aslant_is_thickened`).
+pub(crate) fn spline_extrusion_cut_aslant_thickened() -> Brep {
+    let cut = cut_trough();
+    let side = sheet_of(&cut,&faces_through(&cut,&[[0.,1.,0.]])).unwrap();
+    thickened(&side,toward_focus(&side,1.),Join::Round).unwrap()
+}
+
 /// A frustum cut aslant: its side meets the slanted top in an ellipse no parameter line of the
 /// cone is, and a cone's move along its normal is no map of space, so its side's sweep is the face
 /// on its cone moved along the normal with its parameters kept (`Surface::normal_moved`, the

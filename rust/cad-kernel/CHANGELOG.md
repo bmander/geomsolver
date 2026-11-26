@@ -34,7 +34,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   each to its closed form to 1e-9; the fold check (`offset::unfolded`) runs for every carried face,
   a torus's grid cut where its curvature turns, and a cone's face reaching its apex is refused.
   A cone whose radius at its origin is less than nothing (its origin past its apex, as a face moved
-  inward lies on) is written to STEP placed at its apex.
+  inward lies on) is written to STEP placed at its apex. A carried edge is enclosed
+  (`enclose::normal_at`: on the analytic kinds the unit normal a closed form of the point), so the
+  Booleans prove its meetings and a grown cone's sweep unites.
+- **A loft face ruled between traced rails is written within `FIT`** (`nurbs::fit_net_broken`):
+  its net breaks along `u` where a rail's parameter turns its pace, each of a trace's points, not
+  fitted smooth across them (a thickened torus's wall was 8.4e-6 off).
 
 ## [0.26.0] - 2026-11-26
 
