@@ -140,8 +140,10 @@ whole torus**, whatever it refuses for.
    gates flip one by one, each to a build checked against the exact sweep at random points and
    against cadrs's volume.
 5. **Pinches past one** (§5). Gate: `three_instants_touch_a_meridian_whole`.
-6. **The fuzz** made a slow-tier test: a fixed set of seeds, each built or refused by name, none
-   wrong — the count built only rising.
+6. **The fuzz** made a slow-tier test — *done*
+   (`swept_tumbles::the_fuzzed_tumbles_are_built_right_or_refused_by_name`): the 52 seeds the fuzz
+   read, each built (checked, and its point location read against the exact sweep at 400 points)
+   or refused by name, none panicking and none wrong, the count built at least the fuzz's 12.
 
 ## 9. What it costs and risks
 

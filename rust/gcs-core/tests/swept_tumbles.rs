@@ -196,3 +196,92 @@ fn a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again() {
     assert!((v-18.0818507296).abs() <= 1e-9,"the volume {v}, pinned 18.0818507296");
     assert!((v-18.081851).abs() <= 1e-6,"the volume {v}, cadrs's 18.081851");
 }
+
+/// **The fuzzed tumbles: each built right or refused by name, none wrong** (step 6 of
+/// `docs/tube-trims-by-membership.md`): the crossed members' ten numbers jittered by a seed — the
+/// 52 tumbles the fuzz read, at a twentieth, a tenth, three tenths and the whole of its ranges —
+/// each swept as the runner sweeps it. A refusal is a refusal; a panic fails; a build is checked and
+/// its point location read against the exact sweep (a point is in it where some instant of the roll
+/// holds it within the tube: the tool's distance over the roll sampled and each least refined) at
+/// 400 points of its box, none misplaced past a 250th of the tube. The count built only rises: 12 of
+/// the 52 when the fuzz was read.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 52 sweeps built or refused, ~20 min")]
+fn the_fuzzed_tumbles_are_built_right_or_refused_by_name() {
+    use gcs_core::brep::query::{Located,Place};
+    // (the fuzz's generator: a xorshift from the seed, each number jittered by `scale` of its range)
+    struct Draw(u64);
+    impl Draw {
+        fn next(&mut self) -> f64 { self.0 ^= self.0 << 13; self.0 ^= self.0 >> 7; self.0 ^= self.0 << 17; (self.0 >> 11) as f64/(1u64 << 53) as f64 }
+        fn range(&mut self,a: f64,b: f64) -> f64 { a+(b-a)*self.next() }
+    }
+    let fuzzed = |seed: u64,scale: f64| -> Tumble {
+        let mut r = Draw(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        for _ in 0..8 { r.next(); }
+        let sign = if r.next() < 0.5 { 1. } else { -1. };
+        let b = Tumble::crossed(sign);
+        let mut j = |x: f64,w: f64| x+scale*r.range(-w,w);
+        let half = j(100.,50.);
+        let skew = j(0.,20.);
+        Tumble {centre:[j(b.centre[0],0.4),j(b.centre[1],0.4),j(b.centre[2],0.4)],hub:j(b.hub,0.5),tube:j(b.tube,0.1).max(0.02),
+            ratio:j(b.ratio,0.35),lean:j(b.lean,25.),heading:j(b.heading,20.),height:j(b.height,0.3),observer:sign*j(1.,0.4),
+            roll:[-half+skew,half+skew]}
+    };
+    let mut runs: Vec<(u64,f64)> = Vec::new();
+    for sc in [0.05,0.1] { runs.extend((201..=208).map(|s| (s,sc))) }
+    runs.extend((1..=12).map(|s| (s,0.3)));
+    runs.extend((101..=124).map(|s| (s,1.)));
+    let (mut built,mut refused) = (0,0);
+    for (seed,scale) in runs {
+        let t = fuzzed(seed,scale);
+        let clock = std::time::Instant::now();
+        let b = match std::panic::catch_unwind(|| t.ring()) {
+            Err(_) => panic!("seed {seed} at {scale}: {t:?} panicked"),
+            Ok(Err(e)) => { refused += 1; eprintln!("seed {seed} at {scale}: refused in {:?}: {e:?}",clock.elapsed()); continue }
+            Ok(Ok(b)) => b,
+        };
+        let (_,path,roll,tol) = t.sweep();
+        b.check(tol).unwrap_or_else(|e| panic!("seed {seed} at {scale}: {t:?} built, not checked: {e:?}"));
+        // the exact sweep's depth at `p`: the tool's distance over the roll, each least refined
+        let depth = |p: [f64;3]| -> f64 {
+            let at = |s: f64| -> f64 {
+                let Ok(m) = path.at(s) else { return f64::INFINITY };
+                let q = m.inverse().point(p);
+                let (x,y,z) = (q[0]-t.centre[0],q[1]-t.centre[1],q[2]-t.centre[2]);
+                (x.hypot(y)-1.).hypot(z)-t.tube
+            };
+            let [a,z] = roll;
+            const N: usize = 400;
+            let h = (z-a)/N as f64;
+            let vals: Vec<f64> = (0..=N).map(|k| at(a+h*k as f64)).collect();
+            let mut best = vals.iter().copied().fold(f64::INFINITY,f64::min);
+            for k in 0..=N {
+                let (l,r) = (if k > 0 { vals[k-1] } else { f64::INFINITY },if k < N { vals[k+1] } else { f64::INFINITY });
+                if vals[k] <= l && vals[k] <= r && vals[k] < best+0.2 {
+                    let (mut lo,mut hi) = ((a+h*(k as f64-1.)).max(a),(a+h*(k as f64+1.)).min(z));
+                    for _ in 0..60 { let (m1,m2) = (lo+(hi-lo)/3.,hi-(hi-lo)/3.); if at(m1) < at(m2) { hi = m2 } else { lo = m1 } }
+                    best = best.min(at(0.5*(lo+hi)));
+                }
+            }
+            best
+        };
+        let (lo,hi) = b.bounds();
+        let located = Located::new(&b,tol);
+        let mut draw = Draw(seed ^ 0xDEAD_BEEF_1234_5678);
+        let bar = t.tube/250.;
+        let points: Vec<[f64;3]> = (0..400).map(|_| std::array::from_fn(|k| draw.range(lo[k],hi[k]))).collect();
+        let wrong = gcs_core::brep::util::par::map(&points,|&p| {
+            let d = depth(p);
+            if d.abs() <= bar { return None }
+            let placed = located.solid_place(p);
+            (!matches!((placed,d < 0.),(Place::In,true) | (Place::Out,false))).then_some((p,d,placed))
+        });
+        if let Some((p,d,placed)) = wrong.into_iter().flatten().next() {
+            panic!("seed {seed} at {scale}: {t:?} built wrong: {p:?} placed {placed:?}, its depth in the sweep {d:e}")
+        }
+        built += 1;
+        eprintln!("seed {seed} at {scale}: built in {:?}, {} faces, every point placed",clock.elapsed(),b.faces.len());
+    }
+    eprintln!("the fuzzed tumbles: {built} built, {refused} refused");
+    assert!(built >= 12,"{built} built, fewer than the 12 the fuzz read");
+}
