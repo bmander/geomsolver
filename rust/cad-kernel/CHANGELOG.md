@@ -22,6 +22,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   inner edge, read just past it, traced from that edge (`zero_set`); and on a band's chart, not yet
   the road's, a trim's stray points settled, a swallowtail point's probe kept on the chart and the
   seam's arcs fitted paced.
+- **A tube's sheets' nets stretched across a near miss's line** (`Tube::stretched`, `Band::stretch`
+  and `Band::unstretch`, `Band::straight`; not yet the ring's road): the pinched tube's faces, each
+  sheet's window's net read in parameters stretched across the line by a smooth map onto the plane
+  itself — the crossed reverse member's nets a quarter the poles.
 
 ## [0.25.0] - 2026-11-25
 

@@ -3172,6 +3172,25 @@ near (2.83, 0.79, 1.79) leaves an edge bounding one face; a seam eight turns acr
 corner at −0.50 too, nine fits its arcs short of the bar without the pacing. So `closed::ring` still
 builds pinched: the band wants an end chosen against the sheets' swallowtail pairs (traced before it
 is placed) and a crossing of its seam by a double curve that grazes it.
+**The sheets' nets stretched across the line instead** (`Tube::stretched`, `Band::stretch`; gated
+by `swept_tube::a_bands_stretch_is_a_smooth_map_of_the_plane_onto_itself`; not yet the road's): no
+band chart, no seam — the pinched tube's charts, traces and faces, only each sheet's window's net
+read in stretched parameters, the place moved across the line from `x′` to `x′ + β (w sinh(x′/λ) − x′)`
+(`w sinh(X/λ) = X` at the seam's reach `X`; `β` a smooth bump, one about the line, nought beyond the
+reach and past the band's ends by `ROOM_ALONG`), a smooth map of the plane onto itself, the
+identity outside the band; the sheet's uses' pcurves fitted in the nets' parameters
+(`Band::unstretch`, its inverse by bisection across), and a stretch read on a sheet only where its
+outline lies whole in one of the sheet's windows, inside the roll (`faces`). **Measured**: the
+crossed reverse member builds stretched with nothing chosen for it, volume to 1.3e-8 of the pinched
+road's and area to 3.5e-10, valid, its sheets' windows' nets 518 × 367 and 530 × 371 (against
+944 × 849 and 942 × 853: a single tensor grid carries the band's knots across the window, the
+sheet's and the band's each way, where the band's own patch carried them apart — a reach of 1.5
+or 2 seams only adds knots), the bench's measuring of it 19.8 s against 54 s; every tumbling torus
+builds as before. **But the crossed members' Boolean is refused** (their union, intersection and
+difference: "a bspline's pieces do not close"): on a stretched sheet's face two of the Boolean's
+meetings leave a node of its walk tangent to 8e-6 however far along they are read (`TANGENT_TIE`),
+a sliver between them — the meetings of operands within 1e-7 of the pinched ones, read in other
+parameters. So `closed::ring` still builds pinched: the stretch waits on that walk.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
