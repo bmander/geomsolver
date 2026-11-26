@@ -740,21 +740,24 @@ fn audited(solid: &gcs_core::brep::topo::Brep,tube: &Tube,[a,b]: [f64;2],delta: 
 
 /// **The crossed forward member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar at `(t*, θ*)` (1.3264, 5.9712), sheet `−`'s two double curves with itself ending at
-/// swallowtail points. 14 faces, volume 16.6109998153 against cadrs's 16.6109997999 — once its
+/// swallowtail points. 14 faces, volume 16.6109997592 against cadrs's 16.6109997999 — once its
 /// flux was read cut at each pcurve's crossings of its graded net's knot lines (`props`; read
-/// whole, 16.6116290673, the face holding the pinch's hole 6.6e-4 off). About 15 s a build.
+/// whole, 16.6116290673, the face holding the pinch's hole 6.6e-4 off), and its sheets' nets held
+/// in every cell and laid along the pinch's rows (`faces::Lay`; 16.6109998153 before, its STEP file
+/// 24 MB, now 6.1 MB). About 10 s a build.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed forward built three times, ~2 min")]
 fn the_crossed_forward_member_builds_by_the_tube_road() {
     let (faces,v) = crossed_held(1.,16.610999799920087);
     assert_eq!(faces,14);
-    assert!((v-16.6109998153).abs() <= 1e-9,"the volume {v}, pinned 16.6109998153");
+    assert!((v-16.6109997592).abs() <= 1e-9,"the volume {v}, pinned 16.6109997592");
 }
 
 /// **The crossed reverse member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar, the closed cuspidal edge beside its fold loop traced (the lobe below the near-pinch), the
-/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898471844
-/// against cadrs's 13.7898472784 — once a knot a pcurve's step lands on exactly was crossed there
+/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898473304
+/// against cadrs's 13.7898472784 (13.7898471844 before its sheets' nets were held in every cell)
+/// — once a knot a pcurve's step lands on exactly was crossed there
 /// (`props::crossings`; before, 13.7898471917, its sheet face 1's flux −4.602553423 where the face
 /// read with its net's parameters transposed is −4.602553430438, as it now reads). About a minute a build, most of it the two graded nets over the
 /// windows holding the near-pinch at `(θ, t)` (1.076, 0.461). Built again with the observer's
@@ -766,7 +769,7 @@ fn the_crossed_forward_member_builds_by_the_tube_road() {
 fn the_crossed_reverse_member_builds_by_the_tube_road() {
     let (faces,v) = crossed_held(-1.,13.789847278416222);
     assert_eq!(faces,15);
-    assert!((v-13.7898471844).abs() <= 1e-9,"the volume {v}, pinned 13.7898471844");
+    assert!((v-13.7898473304).abs() <= 1e-9,"the volume {v}, pinned 13.7898473304");
 }
 
 /// **The crossed members combine** (#1013): brep-bench's union, difference and intersection of the
@@ -791,7 +794,7 @@ fn the_crossed_members_combine() {
     };
     let ((a,tol),(b,_)) = (member(1.),member(-1.));
     let (va,vb) = (volume(&a),volume(&b));
-    assert!((va-16.6109998153).abs() <= 1e-9 && (vb-13.7898471844).abs() <= 1e-9,"the members' volumes {va}, {vb}");
+    assert!((va-16.6109997592).abs() <= 1e-9 && (vb-13.7898473304).abs() <= 1e-9,"the members' volumes {va}, {vb}");
     let mut v = [0.;3];
     for (k,op) in [Op::Union,Op::Cut,Op::Common].into_iter().enumerate() {
         let clock = std::time::Instant::now();
@@ -878,7 +881,7 @@ fn the_band_charts_the_crossed_reverse_members_near_miss() {
 /// boundary runs on into the band.
 #[test]
 fn the_bands_seam_is_the_sheets_hole() {
-    use gcs_core::brep::swept::tube::{seams,faces::sheet_net};
+    use gcs_core::brep::swept::tube::{seams,faces::{Lay,sheet_net}};
     let (tool,path,roll,tol) = crate::common::bench::crossed(-1.);
     let ring = Ring::read(&tool).unwrap();
     let feature = 0.25*ring.thickness;
@@ -903,7 +906,7 @@ fn the_bands_seam_is_the_sheets_hole() {
     // the window holding the band, fitted with the stand-in held inside the seam
     let (w0,w1) = (5.507489549754588,10.570919415858736);
     let clock = std::time::Instant::now();
-    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol,&[]).unwrap();
+    let net = sheet_net(&tube,-1.,&Lay::plain((w0,w1),roll),0.1*tol,&[]).unwrap();
     eprintln!("the sheet − over its window: {} × {} poles in {:?}",net.poles.len(),net.poles[0].len(),clock.elapsed());
     assert!(net.poles.len() <= 400 && net.poles[0].len() <= 320,"{} × {}",net.poles.len(),net.poles[0].len());
     let mut inside = 0;

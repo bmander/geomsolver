@@ -2967,8 +2967,29 @@ four million cells). **The sheets' nets about the hole**: a uniform net over a w
 roll holds its bar outside the hole only from `ρ₀` 0.14 forward and 0.12 reverse (at 1024 × 512 and
 3.5 s a sheet) — past the forward's swallowtail points and at the reverse's reach — so a window
 holding the hole is fitted with its parameters graded toward where it misses (`faces::sheet_net`,
-each interval over the bar halved, neighbours within a factor two), read against the sheet
-outside the hole: forward 241 × 230 poles in 1.3 s. **Measured on the collar**: the reverse's
+`fit_graded`, neighbours within a factor two), read against the sheet outside the hole: forward
+241 × 230 poles in 1.3 s. **Every window's net is graded**, held at the middle of every cell as
+well as of every row's and column's intervals, and **a window holding the pinch is laid along its
+rows** (`faces::Lay`). A net through the grid's lines can miss between them: about the forward's
+pinch, its lines held to 4.4e-7, it missed the sheet by 8e-6 inside its cells and a sewn edge stood
+4e-5 off its face. A cell's miss is read apart, along `u` through its middle row and along `v`
+through its middle column, and each way's intervals halved where they miss by the bar and by a
+quarter of the worst miss (`GRADED_SHARE`: short of it the miss is the interpolant's ringing from
+where the grid does not yet follow the sheet, not the sheet's own). Each row's nearest place to the
+pinch lies at its own `θ`, `θ − θ* = κ (t − t*)` with `κ = −(A_θ · A_t)/|A_θ|²` of the Jacobian of
+`(A, B)` there, so a net over `(θ, t)` grades every column those places spread over; one over `σ = θ
+− κ (t − t*)` grades the columns about `σ = θ*` alone, its span half again as wide and the sheet
+past the window too, an affine map of the chart's parameters so every pcurve's poles are mapped. A
+lean moving the net by less than one of its first columns over the roll is none (the reverse's,
+−0.016). Its miss about the pinch leans one way over the wider stretches it grades, so a leaning
+net is graded to `SHEET_FIT`, 0.03 of the tolerance, where a square one is graded to `FIT`'s 0.1.
+Forward (`κ` −0.71), each to `FIT`: 218 × 193 and 225 × 180 poles over `(θ, t)`, 156 × 86 and
+173 × 81 over `(σ, t)` (halving every interval past the bar, 279 × 156 and 299 × 155); its volume so
+2.3e-7 below cadrs's, past brep-bench's agreement of exact kernels (1e-8 of it), and to
+`SHEET_FIT`, 168 × 97 and 187 × 90 poles, 6e-9 off. Its STEP file is 6.1 MB, where it was 24 MB. The
+reverse's windows are set by its near-pinch (#942), not its pinch: laid square and held at their
+cells, 897 × 797 and 888 × 778 poles, its file 266 MB where it was 350 MB, built in 28 s where it was
+15.5 s. **Measured on the collar**: the reverse's
 depth gives two trims rim to rim at `ψ` 175.5° and 337.9° (the meridian's 175.333° and
 337.210°), the sheet `+`'s runs ending on the hole's rim at the same own instants (0.867, 0.970);
 the forward's gives its trim at 72.83°, its other (257.1°) and the sheets' runs into the hole not

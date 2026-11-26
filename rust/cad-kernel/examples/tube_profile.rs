@@ -194,14 +194,15 @@ fn main() {
         let (w0,w1) = (th-2.,th+1.);
         for side in [1.,-1.] {
             let clock = Instant::now();
-            let net = tube::faces::sheet_net(&tb,side,(w0,w1),0.1*tol,&[]).unwrap();
+            let lay = tube::faces::Lay::of(&tb,(w0,w1));
+            let net = tube::faces::sheet_net(&tb,side,&lay,0.1*tol,&[]).unwrap();
             let el = clock.elapsed();
             let mut worst = 0f64;
             let n = 600;
             for i in 0..=n { for j in 0..=n/2 {
                 let (u,v) = ((i as f64+0.37)/(n as f64+1.),(j as f64+0.61)/(n as f64/2.+1.));
-                let (a,b) = (w0+(w1-w0)*u,roll[0]+(roll[1]-roll[0])*v);
-                if p.side([a,b]) < 0. { continue }
+                let [a,b] = lay.chart([u,v]);
+                if !lay.holds([a,b]) || p.side([a,b]) < 0. { continue }
                 let x = tb.point(side,a,b).unwrap().x;
                 let y = net.point(u,v);
                 worst = worst.max(((x[0]-y[0]).powi(2)+(x[1]-y[1]).powi(2)+(x[2]-y[2]).powi(2)).sqrt());

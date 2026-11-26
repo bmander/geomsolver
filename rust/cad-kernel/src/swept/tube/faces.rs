@@ -42,6 +42,15 @@ type P = [f64;2];
 /// How finely the road fits its curves and nets, as a part of the tolerance (structural: what
 /// `upright` and the ring road fit to, so the sewing's gaps are the tolerance's).
 const FIT: f64 = 0.1;
+/// How finely a sheet's net laid along the pinch's rows is graded (`Lay`), as a part of the
+/// tolerance (measured; a net laid square is graded to `FIT`): graded where it bends, a leaning net
+/// meets its bar about the pinch over wider stretches than a square one, and its miss there leans
+/// one way. The crossed tori's forward member, its leaning nets graded to `FIT`, read a volume
+/// 2.3e-7 below cadrs's (1.4e-8 of it, past brep-bench's agreement of exact kernels; Open CASCADE
+/// read its file 1.9e-7 below the file before), its nets laid square 3.5e-8 off; graded to a third
+/// of `FIT`, 6e-9 off, its STEP file 6.1 MB where `FIT` wrote 5.2 MB (and the nets doubled whole
+/// 24 MB, 5e-8 off).
+const SHEET_FIT: f64 = 0.03;
 /// The degree of every curve and net fitted.
 const DEGREE: usize = 5;
 /// The most points a fitted curve is read at (structural, as `upright`'s).
@@ -1768,7 +1777,6 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
 fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>)],loops: &[&[(usize,bool)]],arcs: &[Arc2],
     curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],nets: &mut Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)>,
     stretches: &[&super::band::Band],tol: f64) -> Result<Brep,Unbuilt> {
-    let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
         // (a band's chart: the sheet over all its rectangle, one net each band and side, its faces
@@ -1790,11 +1798,17 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
             (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| [(p[0]-t0)/(t1-t0),(p[1]-e0)/(e1-e0)]))
         }
         Chart::Sheet(side) => {
+            let lay = Lay::of(tube,(w0,w1));
             let net = match nets.iter().find(|(s,w,_)| *s == side && *w == (w0,w1)) {
                 Some((_,_,net)) => net.clone(),
-                None => { let net = Arc::new(sheet_net(tube,side,(w0,w1),FIT*tol,stretches)?); nets.push((side,(w0,w1),net.clone())); net }
+                None => {
+                    let bar = if lay.lean == 0. { FIT } else { SHEET_FIT }*tol;
+                    let net = Arc::new(sheet_net(tube,side,&lay,bar,stretches)?);
+                    nets.push((side,(w0,w1),net.clone()));
+                    net
+                }
             };
-            (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-a)/(b-a)]))
+            (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| lay.net(p)))
         }
         Chart::Collar => {
             let [_,[lo,hi]] = tube.rect(chart);
@@ -1862,15 +1876,76 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
 
 /// The most points a graded net is read at along either way (structural, as `fit_net`'s caps).
 const MOST_GRADED: usize = 4096;
+/// The share of the worst miss a graded net's round halves past (structural): a round halves only
+/// the intervals missing by more than this share of the worst, and by more than the bar. Halving
+/// every interval past the bar halves those the interpolant's ringing reaches from where the grid
+/// does not yet follow the sheet, a few places each way of it, which the sheet itself never asked:
+/// the crossed tori's forward member's sheets about its pinch graded to 279 × 156 and 299 × 155
+/// poles so, 156 × 86 and 173 × 81 at a quarter (each to `FIT`).
+const GRADED_SHARE: f64 = 0.25;
 
-/// **A sheet's net over the window `(w0, w1)`**, fitted as a map (`nurbs::fit_net`) to `bar`; where
-/// the window holds the pinch's hole, through the sheet with the hole filled smoothly
+/// **How a sheet's net lies over its window `(w0, w1)`**: its `v` the roll's, `(t − a)/(b − a)`,
+/// and its `s` along `σ = θ − κ (t − t*)` over `span`, the least `σ` of the window to the greatest.
+/// The lean `κ` is nought but over a window holding the pinch `(θ*, t*)`, where it is the pinch's
+/// own (`Lay::of`): the sheet's turns gather on the rows about the pinch, each row's nearest the
+/// pinch at its own `θ` — `|(A, B)|` least along the row where `θ − θ* = κ (t − t*)`, `κ = −(A_θ ·
+/// A_t)/|A_θ|²` of the Jacobian of `(A, B)` there — so a net over `(θ, t)` grades every column the
+/// rows' nearest places spread over, and one over `(σ, t)` only those about `σ = θ*`. The crossed
+/// tori's forward member's sheets about its pinch (`κ` −0.71), graded to the same bar (`FIT`):
+/// 218 × 193 and 225 × 180 poles over `(θ, t)`, 156 × 86 and 173 × 81 over `(σ, t)`, its span half
+/// again as wide; its STEP file 14.1 MB and 5.2 MB. Affine, so a pcurve in the chart's `(θ, t)` is one in
+/// the net's `(s, v)`, its poles mapped. The net runs on past the window, and is the sheet there
+/// too (`sheet_net`).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Lay { pub window: (f64,f64),pub roll: [f64;2],pub lean: f64,pub at: f64,pub span: [f64;2] }
+
+impl Lay {
+    /// The window laid square: `s` the window's `θ`, `v` the roll's.
+    pub fn plain(window: (f64,f64),roll: [f64;2]) -> Lay {
+        Lay {window,roll,lean:0.,at:0.,span:[window.0,window.1]}
+    }
+    /// The window `(w0, w1)` of `tube`'s sheets laid along its pinch's rows where it holds the pinch,
+    /// else square.
+    pub fn of(tube: &Tube,(w0,w1): (f64,f64)) -> Lay {
+        let [a,b] = tube.roll;
+        let within = |th: f64| { let th = w0+(th-w0).rem_euclid(TAU); th < w1 };
+        let lean = tube.pinch.as_ref().filter(|p| within(p.collar.at.1)).and_then(|p| {
+            let (t0,th0) = p.collar.at;
+            let j = p.rates(th0,t0)?;
+            let (at,aa) = ([j[0][0],j[1][0]],[j[0][1],j[1][1]]);
+            let k = -(at[0]*aa[0]+at[1]*aa[1])/(at[0]*at[0]+at[1]*at[1]);
+            k.is_finite().then_some((k,t0))
+        });
+        // (a lean that moves the net over the roll by less than one of its first columns is none:
+        // the crossed reverse's, −0.016, a third of one)
+        let Some((lean,at)) = lean.filter(|(k,_)| k.abs()*(b-a) >= (w1-w0)/32.) else { return Lay::plain((w0,w1),tube.roll) };
+        let (p,q) = (lean*(a-at),lean*(b-at));
+        Lay {window:(w0,w1),roll:tube.roll,lean,at,span:[w0-p.max(q),w1-p.min(q)]}
+    }
+    /// The net's `(s, v)` of the chart's `(θ, t)`.
+    pub fn net(&self,p: P) -> P {
+        let ([c0,c1],[a,b]) = (self.span,self.roll);
+        [(p[0]-self.lean*(p[1]-self.at)-c0)/(c1-c0),(p[1]-a)/(b-a)]
+    }
+    /// The chart's `(θ, t)` of the net's `(s, v)`.
+    pub fn chart(&self,q: P) -> P {
+        let ([c0,c1],[a,b]) = (self.span,self.roll);
+        let t = a+(b-a)*q[1];
+        [c0+(c1-c0)*q[0]+self.lean*(t-self.at),t]
+    }
+    /// Whether the chart's `(θ, t)` lies in the window (a net leaning past it reads the sheet
+    /// beyond, which no face of the window lies on).
+    pub fn holds(&self,p: P) -> bool { self.lean == 0. || p[0] >= self.window.0 && p[0] <= self.window.1 }
+}
+
+/// **A sheet's net over its window, laid as `lay` says**, fitted as a map (`nurbs::fit_net`) to
+/// `bar`; where the window holds the pinch's hole, through the sheet with the hole filled smoothly
 /// (`Tube::net_point`) and its parameters graded toward it (`fit_graded`): about the pinch the sheet
 /// bends at the scale of `ρ₀` (its normal turns half round across the hole), which a uniform grid
 /// over the whole roll meets only with `ρ₀` past the swallowtail points (measured: the bar held
 /// outside the hole from `ρ₀` 0.14 forward and 0.12 reverse at 1024 × 512).
-pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64,stretches: &[&super::band::Band]) -> Result<crate::nurbs::Net,Unbuilt> {
-    let [a,b] = tube.roll;
+pub fn sheet_net(tube: &Tube,side: f64,lay: &Lay,bar: f64,stretches: &[&super::band::Band]) -> Result<crate::nurbs::Net,Unbuilt> {
+    let (w0,w1) = lay.window;
     let within = |th: f64| { let th = w0+(th-w0).rem_euclid(TAU); th < w1 };
     // (the place of the net's parameters: through each stretch, the identity outside them all)
     let place = |q: P| stretches.iter().fold(q,|q,s| s.stretch(q));
@@ -1880,33 +1955,53 @@ pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64,stretches: &[
     let holds = tube.pinch.as_ref().is_some_and(|p| within(p.collar.at.1))
         || tube.bands.iter().any(|b| b.rim(64).iter().any(|q| within(q[0])))
         || stretches.iter().any(|s| s.stretch_outline(16).iter().any(|q| within(q[0])));
+    // (every window graded, not only one holding a hole: a window's grid doubled whole wherever
+    // any of it misses fitted the crossed tori's first window to 1.6e-8 at a bar of 4.4e-7, 65 × 129
+    // poles where 33 × 33 grade to it)
     let fit = if holds {
-        let f = |u: f64,v: f64| { let q = place([w0+(w1-w0)*u,a+(b-a)*v]); tube.net_point(side,q[0],q[1]).unwrap_or([f64::NAN;3]) };
-        // (read against the sheet where the net is kept: outside the hole, the faces' rim)
-        let kept = |u: f64,v: f64| tube.pinch.as_ref().is_none_or(|p| p.side(place([w0+(w1-w0)*u,a+(b-a)*v])) >= 0.);
-        fit_graded(&f,&kept,DEGREE,32,16,bar)
+        let f = |u: f64,v: f64| { let q = place(lay.chart([u,v])); tube.net_point(side,q[0],q[1]).unwrap_or([f64::NAN;3]) };
+        // (read against the sheet where the net is kept: outside the hole, the faces' rim — and past
+        // the window, where a leaning net runs on: a face's stretch of it reaches there, which a
+        // Boolean reads for crossings, so it is the sheet there too)
+        let kept = |u: f64,v: f64| tube.pinch.as_ref().is_none_or(|p| p.side(place(lay.chart([u,v]))) >= 0.);
+        // (a leaning net's span wider than the window, its first columns as many to the radian)
+        let nu = if lay.lean == 0. { 32 } else { (32.*(lay.span[1]-lay.span[0])/(w1-w0)).ceil() as usize };
+        fit_graded(&f,&kept,DEGREE,nu,16,bar)
     } else {
-        let f = |u: f64,v: f64| tube.point(side,w0+(w1-w0)*u,a+(b-a)*v).map_or([f64::NAN;3],|p| p.x);
-        crate::nurbs::fit_net(&f,DEGREE,DEGREE,32,16,bar)
+        let f = |u: f64,v: f64| { let q = lay.chart([u,v]); tube.point(side,q[0],q[1]).map_or([f64::NAN;3],|p| p.x) };
+        fit_graded(&f,&|_,_| true,DEGREE,32,16,bar)
     };
     let (net,err) = fit.ok_or_else(|| failed(format!("the sheet {side} not fitted over a window")))?;
-    if debug() { eprintln!("tube: the sheet {side} over ({w0}, {w1}): {}×{} poles, fitted to {err:e}",net.poles.len(),net.poles[0].len()) }
+    if debug() { eprintln!("tube: the sheet {side} over ({w0}, {w1}), leaning {}: {}×{} poles, fitted to {err:e}",lay.lean,net.poles.len(),net.poles[0].len()) }
     Ok(net)
 }
 
 /// **A net through `f` over the unit square, its parameters graded where it bends**: interpolated
 /// row by row and then pole by pole (as `nurbs::fit_net`) at parameters that start even and are
-/// halved, interval by interval, where the net misses `f` at an interval's middle by more than
-/// `bar` along any row or column where `kept` — each neighbour halved too where it would stand more than twice
-/// as wide (the grading kept within a factor two, structural, so the interpolant does not ring) —
-/// until none does. None where `f` is not read or a way asks more than `MOST_GRADED` points.
+/// halved, interval by interval, until the net holds `f` within `bar` wherever `kept` at the middle
+/// of every interval of every row and column and at the middle of every cell — each neighbour of
+/// an interval halved halved too where it would stand more than twice as wide (the grading kept
+/// within a factor two, structural, so the interpolant does not ring). None where `f` is not read, a
+/// way asks more than `MOST_GRADED` points, or a round finds nothing to halve.
+///
+/// **Which way a miss is the grid's**: on a row the net is that row's interpolant along `u`, on a
+/// column the columns' along `v`, so a miss at an interval's middle there is that way's. A miss at a
+/// cell's middle is both ways' at once, and is read apart: the interpolant along `u` through the
+/// cell's middle row, read at its middle, is the miss `u`'s grid makes there, and along `v` through
+/// its middle column `v`'s. Each way's intervals are halved where they miss by more than the bar
+/// and by more than `GRADED_SHARE` of the worst miss (where the grid does not yet follow `f`, the
+/// interpolant rings out from it, and a miss some places off is its echo); a cell missing neither
+/// way alone, its two intervals. Held at its lines alone, a net about the crossed tori's pinch
+/// missed the sheet by 8e-6 inside its cells at a bar of 4.4e-7 and a sewn edge stood 4e-5 off its
+/// face; halving both of a cell's intervals for its miss grew it to 581 × 457.
 fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool + Sync),degree: usize,nu: usize,nv: usize,bar: f64) -> Option<(crate::nurbs::Net,f64)> {
+    use crate::util::par::indices;
     let even = |n: usize| (0..=n).map(|i| i as f64/n as f64).collect::<Vec<f64>>();
+    let mids = |ts: &[f64]| ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<f64>>();
     let (mut us,mut vs) = (even(nu),even(nv));
     loop {
         // (each row read, interpolated and its error read on every core, `util::par`, in order: a
         // window about a pinch is graded to some 900 × 850, read a few times over, #1013)
-        use crate::util::par::indices;
         let grid: Vec<Vec<V>> = indices(vs.len(),|j| us.iter().map(|&u| f(u,vs[j])).collect());
         if grid.iter().flatten().flatten().any(|x| !x.is_finite()) { return None }
         let rows: Vec<BSpline> = indices(grid.len(),|j| crate::nurbs::interpolate(&grid[j],&us,degree)).into_iter().collect::<Option<_>>()?;
@@ -1914,18 +2009,42 @@ fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool 
             .into_iter().collect::<Option<_>>()?;
         let net = crate::nurbs::Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
             poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
+        let (mu,mv) = (mids(&us),mids(&vs));
         let off = |u: f64,v: f64| if kept(u,v) { distance(net.point(u,v),f(u,v)) } else { 0. };
-        let eu: Vec<f64> = indices(us.len()-1,|i| vs.iter().map(|&v| off(0.5*(us[i]+us[i+1]),v)).fold(0.,f64::max));
-        let ev: Vec<f64> = indices(vs.len()-1,|j| us.iter().map(|&u| off(u,0.5*(vs[j]+vs[j+1]))).fold(0.,f64::max));
-        let worst = eu.iter().chain(&ev).fold(0f64,|m,&e| m.max(e));
+        let mut eu: Vec<f64> = indices(mu.len(),|i| vs.iter().map(|&v| off(mu[i],v)).fold(0.,f64::max));
+        let mut ev: Vec<f64> = indices(mv.len(),|j| us.iter().map(|&u| off(u,mv[j])).fold(0.,f64::max));
+        // (each cell's middle: `f` there where kept, and the net's miss)
+        let middle: Vec<Vec<Option<V>>> = indices(mu.len(),|i| mv.iter().map(|&v| kept(mu[i],v).then(|| f(mu[i],v))).collect());
+        let cells: Vec<Vec<f64>> = indices(mu.len(),|i| mv.iter().zip(&middle[i]).map(|(&v,x)| x.map_or(0.,|x| distance(net.point(mu[i],v),x))).collect());
+        let worst = eu.iter().chain(&ev).chain(cells.iter().flatten()).fold(0f64,|m,&e| m.max(e));
         if debug() {
             let hist = |ts: &[f64]| (0..20).map(|k| ts.iter().filter(|&&t| t >= k as f64/20. && t < (k+1) as f64/20.).count()).collect::<Vec<_>>();
-            let at = |ts: &[f64],es: &[f64]| { let i = (0..es.len()).max_by(|&i,&j| es[i].total_cmp(&es[j])).unwrap(); (ts[i],es[i]) };
-            eprintln!("graded: {}×{}, worst {worst:e} at u {:?} v {:?}; u {:?} v {:?}",us.len(),vs.len(),at(&us,&eu),at(&vs,&ev),hist(&us),hist(&vs))
+            eprintln!("graded: {}×{}, worst {worst:e}; u {:?} v {:?}",us.len(),vs.len(),hist(&us),hist(&vs))
         }
         if !(worst > bar) { return Some((net,worst)) }
-        let (gu,gv) = (graded(&us,&eu,bar),graded(&vs,&ev,bar));
-        if gu.len() > MOST_GRADED || gv.len() > MOST_GRADED { return None }
+        if worst.is_finite() {
+            // (a cell's miss read apart: along `u` through its middle row, along `v` through its
+            // middle column)
+            let across: Vec<Vec<f64>> = indices(mv.len(),|j| {
+                let Some(c) = crate::nurbs::interpolate(&us.iter().map(|&u| f(u,mv[j])).collect::<Vec<_>>(),&us,degree) else { return vec![f64::INFINITY;mu.len()] };
+                mu.iter().enumerate().map(|(i,&u)| middle[i][j].map_or(0.,|x| distance(c.point(u),x))).collect()
+            });
+            let along: Vec<Vec<f64>> = indices(mu.len(),|i| {
+                let Some(c) = crate::nurbs::interpolate(&vs.iter().map(|&v| f(mu[i],v)).collect::<Vec<_>>(),&vs,degree) else { return vec![f64::INFINITY;mv.len()] };
+                mv.iter().enumerate().map(|(j,&v)| middle[i][j].map_or(0.,|x| distance(c.point(v),x))).collect()
+            });
+            for row in &across { for (e,&m) in eu.iter_mut().zip(row) { *e = e.max(m); } }
+            for col in &along { for (e,&m) in ev.iter_mut().zip(col) { *e = e.max(m); } }
+        }
+        // (only the intervals missing by a share of the worst: where it is not yet met, the
+        // interpolant rings out from it, and a miss some places off is its echo, not the sheet's)
+        let at = bar.max(GRADED_SHARE*worst);
+        if !eu.iter().chain(&ev).any(|&e| e > at) {
+            // (a cell missing neither way alone: its two intervals)
+            for (i,row) in cells.iter().enumerate() { for (j,&m) in row.iter().enumerate() { if m > at { eu[i] = eu[i].max(m); ev[j] = ev[j].max(m); } } }
+        }
+        let (gu,gv) = (graded(&us,&eu,at),graded(&vs,&ev,at));
+        if gu.len() > MOST_GRADED || gv.len() > MOST_GRADED || gu.len() == us.len() && gv.len() == vs.len() { return None }
         (us,vs) = (gu,gv);
     }
 }
