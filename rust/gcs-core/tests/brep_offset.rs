@@ -295,7 +295,7 @@ fn turn(f: impl Fn(f64) -> f64) -> f64 {
 /// angle between its faces' normals, `acos(m / √(1 + m²))`, along half of it, and the ellipse's
 /// angle `acos(n_side · n_top)` along half of it — a convex body's.
 fn steiner_cut_cone(beta: f64,d: f64) -> (f64,f64) {
-    let (r0,m,c,t) = (3f64,-1./3.,3f64,beta.tan());
+    let (r0,m,c,t) = (3f64,-1f64/3.,3f64,beta.tan());
     let w = (1.+m*m).sqrt();
     let zt = |p: f64| (c+r0*t*p.cos())/(1.-m*t*p.cos());
     let dzt = |p: f64| {
