@@ -750,6 +750,11 @@ fn extend<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,high: bo
 #[derive(Clone,Debug,PartialEq)]
 pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>>,pub weights: Option<Vec<Vec<f64>>> }
 
+/// One way of a net's basis at a parameter (`Net::basis`): the span holding it, and the basis
+/// functions (`n[0]`) and their rates (`n[1]`) there, the first `degree + 1` of each.
+#[derive(Clone,Copy,Debug)]
+pub(crate) struct Basis { span: usize,n: [[f64;SMALL];2] }
+
 impl Net {
     /// Refused unless its degrees are from 1 to `MAX_DEGREE`, its net is a grid with more poles each
     /// way than its degree, its knots are non-decreasing and one more than both, and a rational
@@ -777,32 +782,71 @@ impl Net {
         let [[u0,u1],[v0,v1]] = self.domain();
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
         with_basis(self.du,&self.uknots,nu,u.clamp(u0,u1),1,|su,bu|
-        with_basis(self.dv,&self.vknots,nv,v.clamp(v0,v1),1,|sv,bv| {
-            if let Some(w) = &self.weights {
-                let (mut a,mut ws) = ([[0.;3];3],[0.;3]);
-                for i in 0..=self.du {
-                    let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
-                    for j in 0..=self.dv {
-                        let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
-                        let n = [bu[0][i]*bv[0][j]*wq,bu[1][i]*bv[0][j]*wq,bu[0][i]*bv[1][j]*wq];
-                        for k in 0..3 { for c in 0..3 { a[k][c] += n[k]*q[c]; } ws[k] += n[k]; }
-                    }
-                }
-                let s: V = std::array::from_fn(|c| a[0][c]/ws[0]);
-                return (s,std::array::from_fn(|c| (a[1][c]-ws[1]*s[c])/ws[0]),
-                    std::array::from_fn(|c| (a[2][c]-ws[2]*s[c])/ws[0]))
-            }
-            let mut out = [[0.;3];3];
-            for i in 0..=self.du {
-                let row = &self.poles[su-self.du+i];
-                for j in 0..=self.dv {
-                    let q = row[sv-self.dv+j];
-                    let (n,nu_,nv_) = (bu[0][i]*bv[0][j],bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
-                    for c in 0..3 { out[0][c] += n*q[c]; out[1][c] += nu_*q[c]; out[2][c] += nv_*q[c]; }
-                }
-            }
-            (out[0],out[1],out[2])
+        with_basis(self.dv,&self.vknots,nv,v.clamp(v0,v1),1,|sv,bv| self.d1_of(su,[bu[0],bu[1]],sv,[bv[0],bv[1]])))
+    }
+    /// **One way's basis at a parameter, kept to be read again** (`d1_by`): the span holding it and
+    /// its basis functions and their rates there, the parameter clamped into the domain as `d1`
+    /// clamps it — so `d1_by` of two of them is `d1`, to the bit. None for a degree past `SMALL`.
+    /// A cell's rule reads each node across at every node along (`props`'s `Cells`), and the
+    /// basis was most of a read.
+    pub(crate) fn basis(&self,way: usize,t: f64) -> Option<Basis> {
+        let (p,knots,count) = if way == 0 { (self.du,&self.uknots,self.poles.len()) } else { (self.dv,&self.vknots,self.poles[0].len()) };
+        if p >= SMALL { return None }
+        let t = t.clamp(knots[p],knots[count]);
+        Some(with_basis(p,knots,count,t,1,|s,b| {
+            let mut n = [[0.;SMALL];2];
+            n[0][..=p].copy_from_slice(&b[0][..=p]);
+            n[1][..=p].copy_from_slice(&b[1][..=p]);
+            Basis {span:s,n}
         }))
+    }
+    /// `d1` read off the two ways' bases (`basis`).
+    pub(crate) fn d1_by(&self,u: &Basis,v: &Basis) -> (V,V,V) {
+        self.d1_of(u.span,[&u.n[0],&u.n[1]],v.span,[&v.n[0],&v.n[1]])
+    }
+    /// `S_u` and `S_v` read off the two ways' bases of a polynomial net, `d1_by`'s to the bit, the
+    /// point unread.
+    pub(crate) fn rates_by(&self,u: &Basis,v: &Basis) -> (V,V) {
+        debug_assert!(self.weights.is_none(),"a polynomial net's rates");
+        let (su,sv,bu,bv) = (u.span,v.span,&u.n,&v.n);
+        let mut out = [[0.;3];2];
+        for i in 0..=self.du {
+            let row = &self.poles[su-self.du+i];
+            for j in 0..=self.dv {
+                let q = row[sv-self.dv+j];
+                let (nu_,nv_) = (bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
+                for c in 0..3 { out[0][c] += nu_*q[c]; out[1][c] += nv_*q[c]; }
+            }
+        }
+        (out[0],out[1])
+    }
+    /// `d1` from the spans holding `(u, v)` and the bases there, each way's functions and rates.
+    #[inline(always)]
+    fn d1_of(&self,su: usize,bu: [&[f64];2],sv: usize,bv: [&[f64];2]) -> (V,V,V) {
+        if let Some(w) = &self.weights {
+            let (mut a,mut ws) = ([[0.;3];3],[0.;3]);
+            for i in 0..=self.du {
+                let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                for j in 0..=self.dv {
+                    let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
+                    let n = [bu[0][i]*bv[0][j]*wq,bu[1][i]*bv[0][j]*wq,bu[0][i]*bv[1][j]*wq];
+                    for k in 0..3 { for c in 0..3 { a[k][c] += n[k]*q[c]; } ws[k] += n[k]; }
+                }
+            }
+            let s: V = std::array::from_fn(|c| a[0][c]/ws[0]);
+            return (s,std::array::from_fn(|c| (a[1][c]-ws[1]*s[c])/ws[0]),
+                std::array::from_fn(|c| (a[2][c]-ws[2]*s[c])/ws[0]))
+        }
+        let mut out = [[0.;3];3];
+        for i in 0..=self.du {
+            let row = &self.poles[su-self.du+i];
+            for j in 0..=self.dv {
+                let q = row[sv-self.dv+j];
+                let (n,nu_,nv_) = (bu[0][i]*bv[0][j],bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
+                for c in 0..3 { out[0][c] += n*q[c]; out[1][c] += nu_*q[c]; out[2][c] += nv_*q[c]; }
+            }
+        }
+        (out[0],out[1],out[2])
     }
     pub fn point(&self,u: f64,v: f64) -> V { self.d1(u,v).0 }
     /// The curve along `u` through the `j`th column of poles: the iso line at the `v` that column

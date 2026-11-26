@@ -1647,7 +1647,15 @@ cell read whole across it was 1.1e-7 off a face of the crossed forward member.  
 along and stretch is read by ten nodes where their Kronrod extension agrees (`checked`); the
 cost is the cells the face spans and its uses' nodes, where `G` gathered across every span from the
 middle cost each node the spans between — 34 to 50 million integrand reads a face of the crossed
-forward member, its area 78 s, now 3 to 11 million and 18 s.  A face reaching a collapsed row
+forward member, its area 78 s, now 3 to 11 million and 18 s.  **A read costs a sum over the
+poles, not a basis** (`Net::basis`, `Net::d1_by`): each way's basis kept where it is read again —
+a column's nodes across, read at every node along in the same order (`Across`), and its basis along
+once at each — `Surface::d1`'s very bits, and a polynomial net's area off its rates alone
+(`Net::rates_by`).  **And a strip's whole cells are read on every core** (`Cells::columns`, from
+`MANY_CELLS` on), each as one thread reads it, summed in their order, the reads the workers made
+counted as the caller's: the same measure, to the bit, and the same reads
+(`brep::a_nets_area_read_on_every_core_is_one_threads`).  The crossed reverse member's area, its
+faces on nets of some 940 × 850 poles, 297 s to 32 s on four cores, each face's the same.  A face reaching a collapsed row
 (a degenerate use's line, or a row all but collapsed) keeps `integrated`'s reading along the
 parameter collapsed; a stretch is read as there (ten nodes, `checked`), and a use's ends closed
 where its curve arrives; a line in the parameters is cut at every knot line it crosses, in closed

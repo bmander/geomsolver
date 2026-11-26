@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face's area on a large net in a ninth the time, the same to the bit** (brep-bench's
+  `swept/tumbling-torus-crossed-reverse`, whose faces lie on nets of some 940 × 850 poles: its area
+  297 s to 32 s on four cores, each face's area and every integrand read the same):
+  - each way's basis kept where it is read again (`Net::basis`): a column's nodes across, read at
+    every node along, and its basis along once at each, `Surface::d1`'s very bits; a polynomial
+    net's area off its rates alone;
+  - a strip's whole cells read on every core, summed in their order, the integrand's reads the
+    workers made counted as the caller's (`props::reads`).
+
 ## [0.25.0] - 2026-11-25
 
 - **A swept tube's crossed members, and their Boolean, built in a quarter the time** (brep-bench's

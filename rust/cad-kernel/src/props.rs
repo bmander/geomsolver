@@ -15,7 +15,7 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
-use super::nurbs::Net;
+use super::nurbs::{Basis,Net};
 use super::topo::{Brep,EdgeCurve,Face,Pcurve};
 use crate::util::space::{cross,dot,norm};
 
@@ -901,6 +901,10 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
     std::array::from_fn(|k| if !want[k] { 0. } else if k == 0 { sense*area } else { sense*read(k) })
 }
 
+/// The whole cells of one strip read at once on every core (`Cells::columns`) from so many on: a
+/// cell is hundreds of the integrand's reads (structural).
+const MANY_CELLS: usize = 8;
+
 /// **Green's theorem read cell by cell on a net** (#880): `G` taken not from one `u` for the whole
 /// face but, along each stretch of a use, from the knot line `u = k_i` that bounds the stretch's
 /// strip on the side of the face's middle (`base`, the knot nearest it) — `G_i(u, v) = ∫_{k_i}^u g`,
@@ -931,6 +935,10 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
 /// read; each stretch as a use's is (`checked`).
 struct Cells<'a> {
     s: &'a Surface,
+    /// The face's net where its surface is the net itself (`Surface::BSpline`, of a degree
+    /// `Net::basis` keeps): `S` and its rates read off each way's basis, kept where a column reads
+    /// it again — `Surface::d1`'s very bits (an offset's are its own).
+    net: Option<&'a Net>,
     what: What<'a>,
     /// The distinct `u` knots across the net's domain, and the `v` ones.
     us: Vec<f64>,
@@ -943,20 +951,40 @@ struct Cells<'a> {
 
 impl<'a> Cells<'a> {
     /// The net's cells, the face's middle at `u = mid`.
-    fn new(s: &'a Surface,net: &Net,what: What<'a>,mid: f64) -> Cells<'a> {
+    fn new(s: &'a Surface,net: &'a Net,what: What<'a>,mid: f64) -> Cells<'a> {
         let [du,dv] = net.domain();
         let knots = |k: usize,[a,b]: [f64;2]| { let mut x = vec![a]; x.extend(net.breaks(k,[a,b])); x.push(b); x };
         let (us,vs) = (knots(0,du),knots(1,dv));
         let h = (1..us.len()).map(|_| None).collect();
         let base = (0..us.len()).min_by(|&a,&b| (us[a]-mid).abs().total_cmp(&(us[b]-mid).abs())).unwrap_or(0);
-        Cells {s,what,us,vs,base,h}
+        let kept = |n: &&Net| n.basis(0,n.uknots[0]).is_some() && n.basis(1,n.vknots[0]).is_some();
+        let net = matches!(s,Surface::BSpline(..)).then_some(net).filter(kept);
+        Cells {s,net,what,us,vs,base,h}
     }
     /// The knot `G` is read from at `u`: the side of its strip toward the middle.
     fn knot(&self,u: f64) -> usize { let i = span(&self.us,u); if i >= self.base { i } else { i+1 } }
     /// `G_i(u, v)`: `∫ g` from the knot line `u = k_i`, a span at a time between the knots.
-    fn g(&self,i: usize,u: f64,v: f64) -> f64 {
+    fn g(&self,i: usize,u: f64,v: f64) -> f64 { self.g_kept(i,u,v,None) }
+    /// `g`, on a net (`net`) its basis along read once at `v` and each node's across kept in
+    /// `across` where given, to be read again at the column's next `v`: a column reads the same
+    /// nodes across at every node along.  A polynomial net's area reads its rates alone
+    /// (`Net::rates_by`), the point the area does not weigh left unread.
+    fn g_kept(&self,i: usize,u: f64,v: f64,mut across: Option<&mut Across>) -> f64 {
         let (s,what,a) = (self.s,self.what,self.us[i]);
-        let mut at_u = |w: f64| integrand(s,[w,v],what);
+        let along = self.net.and_then(|n| Some((n,n.basis(1,v)?)));
+        let rates = what.area() && self.net.is_some_and(|n| !n.is_rational());
+        if let Some(kept) = across.as_deref_mut() { kept.next = 0 }
+        let mut at_u = |w: f64| {
+            let Some((n,bv)) = &along else { return integrand(s,[w,v],what) };
+            let bu = match across.as_deref_mut() {
+                Some(kept) => kept.basis(n,w),
+                None => n.basis(0,w).expect("a degree `basis` keeps"),
+            };
+            read();
+            if rates { let (su,sv) = n.rates_by(&bu,bv); return norm(cross(su,sv)) }
+            let (x,su,sv) = n.d1_by(&bu,bv);
+            integrand_of(x,su,sv,what)
+        };
         let cuts = s.breaks(0,[a,u]);
         if cuts.is_empty() { return checked_halves(a,u,&mut at_u) }
         let mut at = vec![a];
@@ -968,7 +996,18 @@ impl<'a> Cells<'a> {
     fn column(&self,j: usize,a: f64,b: f64) -> f64 {
         if a == b { return 0. }
         let k = self.us[j+1];
-        checked_halves(a,b,&mut |v| self.g(j,k,v))
+        let mut across = Across::default();
+        checked_halves(a,b,&mut |v| self.g_kept(j,k,v,Some(&mut across)))
+    }
+    /// The columns of strip `j` over the whole cells `ks` along `v`, in their order: on every core
+    /// where they are many (`MANY_CELLS`), each read as one thread reads it, and the integrand's
+    /// reads the workers made counted as this thread's (`reads`).
+    fn columns(&self,j: usize,ks: std::ops::Range<usize>) -> Vec<f64> {
+        let cell = |k: usize| self.column(j,self.vs[k],self.vs[k+1]);
+        if ks.len() < MANY_CELLS || crate::util::par::threads() <= 1 { return ks.map(cell).collect() }
+        let read = crate::util::par::indices(ks.len(),|i| { let r = reads(); let c = cell(ks.start+i); (c,reads()-r) });
+        READS.with(|r| r.set(r.get()+read.iter().map(|x| x.1).sum::<u64>()));
+        read.into_iter().map(|x| x.0).collect()
     }
     /// `H_j(v)`, from the `v` knot its table was started at: the whole cells between, each read once,
     /// and the cell holding `v` by its part `above` `v` or below it, the face's side.
@@ -976,15 +1015,14 @@ impl<'a> Cells<'a> {
         let m = span(&self.vs,v);
         let n = m+usize::from(above);
         let (mut lo,mut vals) = self.h[j].take().unwrap_or((n,vec![0.]));
-        while lo+vals.len() <= n {
-            let k = lo+vals.len()-1;
-            let next = vals[vals.len()-1]+self.column(j,self.vs[k],self.vs[k+1]);
-            vals.push(next);
+        if lo+vals.len() <= n {
+            for c in self.columns(j,lo+vals.len()-1..n) { vals.push(vals[vals.len()-1]+c) }
         }
         if n < lo {
             let mut below: Vec<f64> = Vec::with_capacity(lo-n);
             let mut at = vals[0];
-            for k in (n..lo).rev() { at -= self.column(j,self.vs[k],self.vs[k+1]); below.push(at) }
+            let cells = self.columns(j,n..lo);
+            for k in (n..lo).rev() { at -= cells[k-n]; below.push(at) }
             below.reverse();
             below.extend(vals);
             (lo,vals) = (n,below);
@@ -998,6 +1036,27 @@ impl<'a> Cells<'a> {
     /// `a`, each read on the face's side of `v` (`above` it, or below).
     fn jump(&mut self,a: usize,b: usize,v: f64,above: bool) -> f64 {
         if a > b { (b..a).map(|j| self.h(j,v,above)).sum() } else { -(a..b).map(|j| self.h(j,v,above)).sum::<f64>() }
+    }
+}
+
+/// **The bases across a column's nodes, kept** (`Cells::column`): each node's `u` (its bits) and its
+/// basis, and where the next is looked for first — a column reads its nodes across in the same order
+/// at every node along, so each is found at once.
+#[derive(Default)]
+struct Across { keys: Vec<u64>,bases: Vec<Basis>,next: usize }
+
+impl Across {
+    /// The basis at `u` of the net's first way, kept.
+    fn basis(&mut self,net: &Net,u: f64) -> Basis {
+        let key = u.to_bits();
+        let at = if self.keys.get(self.next) == Some(&key) { Some(self.next) } else { self.keys.iter().position(|&k| k == key) };
+        let at = at.unwrap_or_else(|| {
+            self.keys.push(key);
+            self.bases.push(net.basis(0,u).expect("a degree `basis` keeps"));
+            self.keys.len()-1
+        });
+        self.next = at+1;
+        self.bases[at]
     }
 }
 
