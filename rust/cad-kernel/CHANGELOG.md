@@ -8,6 +8,32 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ball whose radius varies along the edge** (`fillet::roll_varying`, new): at each point of the
+  edge the ball of the radius a law gives there, touching both faces with its centre in the plane
+  square to the edge; its canal fitted as `roll`'s is and the run cut off at its ends. brep-bench's
+  fillet/variable-radius-semicircular-rim, refused before, builds to 7e-11; the straight edges
+  (fillet/variable-radius-edge, -concave-edge, -obtuse-edge), built before round the kernel as
+  sheared cones, build by it to 7e-11.
+- **A side of faces cut from one sheet is one side to the ball** (`fillet::roll`): faces whose
+  B-spline nets go on one into the next along `u` are read together, the ball rolling on the offset
+  of the nets joined, and the side's strip laid one face on each. fillet/nurbs-cylinder-rim, refused
+  before ("a fillet's run cannot be cut off where it ends"), builds to 5e-11. `Net::joined_u` is new.
+- **How nearly flat is too flat is the ball's to say** (`fillet::roll`): faces turning less than a
+  degree were refused whatever the radius; now a round is refused as too flat only where it stands off
+  the edge by no more than a hundred times as far as its centre is read. fillet/nearly-flat-ridge
+  (179°, radius 180) builds to 3e-15.
+- **Rounds together lose what they close to nothing** (`rounds::rounded`): a round whose two
+  corners' balls are one vanishes, and a face its rounds close to no area is gone, its two rounds
+  meeting along the line. fillet/plate-full-round builds to 4e-16; a face rounded away entirely is
+  refused by name.
+- **A face the round swallows** (`rounds::rounded`): where edges cannot be rounded as they stand and a
+  face lies between two of them, the face is deleted, the edge left rounded in their place, and the
+  answer kept where the face is gone from it. fillet/round-swallowing-a-tiny-face, refused before
+  ("larger than `flat` can hold"), builds to 2e-16.
+- **A small cell is a cell by its own measure** (`complex`): a shell under `1e-12` of the whole's
+  cube holds a volume where it holds more than its area times the tolerance. A gap of 2.5e-8 a flat
+  0.0001 wide closes was no cell, and `defeature::deleted` refused the flat.
+
 ## [0.26.0] - 2026-11-26
 
 - **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever

@@ -911,6 +911,49 @@ impl Net {
             out
         }))
     }
+    /// **Two sheets one after another along `u`, as one** (#645's sheets, brep-bench's
+    /// `fillet/nurbs-cylinder-rim`): `self` and `next`, clamped, of one degree each way and one knot
+    /// vector along `v`, where `self`'s last row of poles is `next`'s first (within `tol`), and —
+    /// rational — `next`'s weights are `self`'s along that row times one factor: the net whose
+    /// first part is `self` and whose rest is `next` moved on along `u` to start where `self` ends,
+    /// the knot between them of multiplicity `du` (the two meet with their points continuous, as
+    /// two faces cut from one sheet do), `next`'s weights scaled by that factor (which moves no
+    /// point of it). `None` where they do not so meet.
+    pub fn joined_u(&self,next: &Net,tol: f64) -> Option<Net> {
+        let du = self.du;
+        if next.du != du || next.dv != self.dv || self.weights.is_some() != next.weights.is_some() { return None }
+        let same = |a: &[f64],b: &[f64]| a.len() == b.len() && a.iter().zip(b).all(|(x,y)| (x-y).abs() <= 1e-12*(1.+x.abs()));
+        if !same(&self.vknots,&next.vknots) { return None }
+        let clamped = |k: &[f64]| k.len() > 2*du+2 && k[..=du].iter().all(|&x| x == k[0])
+            && k[k.len()-du-1..].iter().all(|&x| x == k[k.len()-1]);
+        if !clamped(&self.uknots) || !clamped(&next.uknots) { return None }
+        let (last,first) = (self.poles.last()?,&next.poles[0]);
+        let apart = |(p,q): (&V,&V)| crate::util::space::distance(*p,*q) > tol;
+        if last.len() != first.len() || last.iter().zip(first).any(apart) { return None }
+        let factor = match (&self.weights,&next.weights) {
+            (Some(a),Some(b)) => {
+                let (wa,wb) = (a.last()?,&b[0]);
+                let f = wa[0]/wb[0];
+                if wa.iter().zip(wb).any(|(x,y)| (x/y-f).abs() > 1e-12*f) { return None }
+                f
+            }
+            _ => 1.,
+        };
+        let end = self.uknots[self.uknots.len()-1];
+        let shift = end-next.uknots[0];
+        let mut uknots = self.uknots[..self.uknots.len()-1].to_vec();
+        uknots.extend(next.uknots[du+1..].iter().map(|&k| k+shift));
+        let mut poles = self.poles.clone();
+        poles.extend(next.poles[1..].iter().cloned());
+        let weights = self.weights.as_ref().zip(next.weights.as_ref()).map(|(a,b)| {
+            let mut w = a.clone();
+            w.extend(b[1..].iter().map(|row| row.iter().map(|&x| x*factor).collect()));
+            w
+        });
+        let net = Net {du,dv:self.dv,uknots,vknots:self.vknots.clone(),poles,weights};
+        net.check().ok()?;
+        Some(net)
+    }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
     /// the same parameters, only the net that reaches there (`BSpline::segment` is a curve's).
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
