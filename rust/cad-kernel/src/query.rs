@@ -1925,6 +1925,7 @@ pub fn curve_domain(c: &Curve) -> Option<[f64;2]> {
         Curve::Turned(m) => { let [a,b] = m.span; [a.min(b),a.max(b)] }
         Curve::Slid(m) => { use crate::turned::Exact; let [a,b] = m.span(); [a.min(b),a.max(b)] }
         Curve::Trochoid(m) => { let [a,b] = m.span; [a.min(b),a.max(b)] }
+        Curve::Parallel(m) => return curve_domain(&m.of),
     })
 }
 

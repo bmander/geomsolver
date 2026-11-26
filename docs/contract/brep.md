@@ -742,8 +742,9 @@ parameters (`Surface::Offset` holds the sheet's frame and net, and `d`) — its 
 from the sheet's second partials by Weingarten's equations, its distance the sheet's less `d`, its
 gradient the sheet's normal, a point's foot on it the foot on the sheet, warm from the last foot
 read where that settles `d` off (a point on an offset stands too far off the sheet for the sheet's
-own warm start, and every reading searched the whole sheet). It is read, never a face's: STEP and
-the sweep's dump refuse it. Past the sheet's
+own warm start, and every reading searched the whole sheet). It is a face's where a file gives one
+(`OFFSET_SURFACE`, written so again) and where a sheet's face is moved along its normal (a sheet
+thickened, `offset::carried_sweep`); the sweep's dump refuses it. Past the sheet's
 domain it is read on the sheet **carried on by its own polynomials** (`Net::d2_continued`, the end
 spans' polynomials past the knot they end at, and `Surface::continued_inverse`, Newton's foot with
 no domain to hold it), where the sheet's own signed distance runs on along the tangent extension:
@@ -2107,7 +2108,23 @@ along each ruling where its far image crosses that plane, and **a plane meets a 
 whose rails lies in it exactly in that rail and those rulings** (`ssi::rail_in_plane`:
 `(1 − v) α(u) + v β(u)`, the rail's height `α` nothing all along, is `v β(u)`; traced, the rail's
 ends missed its vertices by 4e-6 and the plane's pieces did not close); a cone's or a torus's move is no affine map, and such a face its own
-parameter lines do not bound is refused.  **An extrusion's face is the rectangle its line sweeps
+parameter lines do not bound is refused.  **A spline sheet's face is carried between its moved copies too,
+though its move is no map of space** (`offset::carried_on_sheet`): its offset has no closed form,
+but `S + h N` read over the sheet's own parameters is exact (`Surface::Offset`), so the face moved
+to `h` is the face on it with its own pcurves, each edge the edge's curve carried along the normal
+at its foot with its parameter kept (`Curve::Parallel`, `parallel::Parallel`: `q + (P − B)` at
+the foot, so it stands exactly `h` off `q`; its rate by Weingarten's partials; written to STEP as
+the cubic through it), and the wall an edge sweeps the `Blend` of the edge and its image at one
+parameter — the sheet's normals along the edge, exactly.  The move stretches area by
+`(1 − h κ₁)(1 − h κ₂)`, a quadratic in `h` read exactly from the offset's partials at three
+distances, and where its least over the sweep reaches nothing on a grid of each knot span of the
+face's box of parameters the sweep folds and is refused (`offset::unfolded`); a sweep that runs
+into itself across the face, a fold no point's own curvature shows, is not detected.  Gates:
+`brep_offset::a_spline_sheet_is_thickened_on_its_exact_offset` (brep-bench's parabolic trough,
+its closed forms to 1e-9, and refused past its vertex's radius of curvature),
+`a_sheet_curved_both_ways_is_thickened_to_steiners_volume` (a paraboloid sheet, its ruled walls
+blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` by Gauss's rule), and
+`step_roundtrip::a_spline_sheet_thickened_reads_back`.  **An extrusion's face is the rectangle its line sweeps
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
 stands square to `z` and alike all along each line, so the face's sweep is the face family of four
 lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve

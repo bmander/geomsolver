@@ -2431,6 +2431,9 @@ pub enum Curve {
     /// A point's path under a planar motion of turns and slides (#721 F1d, `trochoid::Trochoid`): a
     /// sum of terms `(a + b t) e^{iωt}` in its frame's plane, the curve's parameter the motion's.
     Trochoid(Arc<super::trochoid::Trochoid>),
+    /// A curve on a sheet carried along the sheet's normal onto its offset (`parallel::Parallel`):
+    /// a face's edge moved with the face (`offset::carried_sweep`), the curve's parameter its own.
+    Parallel(Arc<super::parallel::Parallel>),
 }
 
 impl Curve {
@@ -2438,12 +2441,14 @@ impl Curve {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
             Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
-            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid",Curve::Trochoid(..) => "trochoid" }
+            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid",Curve::Trochoid(..) => "trochoid",
+            Curve::Parallel(..) => "parallel" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
             Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Slid(..) | Curve::Trochoid(..) => None,
             Curve::Turned(ref t) => t.period(),
+            Curve::Parallel(ref m) => m.of.period(),
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             Curve::Affine(m) => m.period(),
@@ -2475,6 +2480,7 @@ impl Curve {
             Curve::Turned(ref m) => m.d2(t),
             Curve::Slid(ref m) => m.d2(t),
             Curve::Trochoid(ref m) => m.d2(t),
+            Curve::Parallel(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -2496,17 +2502,20 @@ impl Curve {
             Curve::Rail(w,_) => w.breaks(1,[a,b]),
             Curve::Rim(w,_) => w.breaks(0,[a,b]),
             Curve::Affine(m) => m.breaks([a,b]),
+            Curve::Parallel(m) => m.of.breaks([a,b]),
             _ => vec![],
         }
     }
     pub fn point(&self,t: f64) -> V {
         // (a traced curve's point by one projection: its derivative takes two more, #798)
-        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),_ => self.d2(t).0 }
+        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),
+            Curve::Parallel(m) => m.point(t),_ => self.d2(t).0 }
     }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
     pub fn d1(&self,t: f64) -> (V,V) {
-        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),_ => { let (x,d,_) = self.d2(t); (x,d) } }
+        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),Curve::Parallel(m) => m.d1(t),
+            _ => { let (x,d,_) = self.d2(t); (x,d) } }
     }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);
     /// exact for a point on a line or circle, and for an ellipse refined by Newton from its
@@ -2557,6 +2566,7 @@ impl Curve {
             Curve::Turned(ref m) => m.inverse(p),
             Curve::Slid(ref m) => m.inverse(p),
             Curve::Trochoid(ref m) => m.inverse(p),
+            Curve::Parallel(ref m) => m.inverse(p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -2637,6 +2647,7 @@ impl Curve {
             Curve::Turned(ref m) => m.speed(),
             Curve::Slid(ref m) => m.speed(),
             Curve::Trochoid(ref m) => m.speed(),
+            Curve::Parallel(ref m) => m.speed(),
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -2677,6 +2688,7 @@ impl Curve {
             Curve::Turned(ref m) => m.bounds([t0,t1]),
             Curve::Slid(ref m) => m.bounds([t0,t1]),
             Curve::Trochoid(ref m) => m.bounds([t0,t1]),
+            Curve::Parallel(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -2711,6 +2723,7 @@ impl Curve {
             Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
             Curve::Slid(ref t) => Curve::Slid(Arc::new(t.moved(m))),
             Curve::Trochoid(ref t) => Curve::Trochoid(Arc::new(t.moved(m))),
+            Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.moved(m))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -2728,6 +2741,7 @@ impl Curve {
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
             // (a slid contact's points are read off its frame, which a reflection carries)
             Curve::Affine(_) | Curve::Slid(_) | Curve::Trochoid(_) => self.moved(m),
+            Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.reflected(m)?)),
             // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
             Curve::Turned(ref t) => match t.moved(m) {
                 Some(t) => Curve::Turned(Arc::new(t)),

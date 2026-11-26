@@ -178,6 +178,7 @@ impl Out {
 fn whose(c: &Curve) -> &'static str {
     match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",Curve::Slid(..) => "a slid torus's",
         Curve::Trochoid(..) => "a point's path's",
+        Curve::Parallel(..) => "a sheet's offset's",
         _ => "a face family's" }
 }
 
@@ -1277,7 +1278,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
             Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..)
-            | Curve::Trochoid(..) => {
+            | Curve::Trochoid(..) | Curve::Parallel(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
             // a traced curve: the cubic through its points and tangents within `fit`'s bar, as
