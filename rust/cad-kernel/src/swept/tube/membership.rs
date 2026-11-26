@@ -243,3 +243,111 @@ pub fn edge_crossings(field: &Depth,patches: &Patches,feature: f64) -> Vec<(Line
     let read = crate::util::par::map(&lines,|l| crossings(field,l,feature));
     lines.into_iter().zip(read).collect()
 }
+
+/// **How a stretch ends** (`stretches`): on a patch's edge (`Patches::edges`' number), on an inner
+/// edge (a fold, a swallowtail point's disc, a hole's rim), where the face across changes, where the
+/// double curve turns back on its own sheet (its covering instant meeting the point's own: a
+/// swallowtail point), closed on itself, or where the trace stopped with the field undefined.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Ending { Edge(usize),Inner,Across,Turn,Closed,Open }
+
+/// **A stretch of a trim** (`docs/tube-trims-by-membership.md` §4): one patch's curve between kept
+/// and covered, along which one face lies across (`across`, the chart `Tube::partner` names) — its
+/// places, each with its far cover, and how each end ends.
+#[derive(Clone,Debug)]
+pub struct Stretch { pub patch: [usize;2],pub uv: Vec<[f64;2]>,pub covers: Vec<Cover>,pub across: Chart,pub ends: [Ending;2] }
+
+/// How many times a stretch's cut (`Ending::Across`, `Ending::Turn`) is halved toward its place.
+const CUT_HALVINGS: usize = 48;
+
+/// **A chart's trims as stretches, patch by patch** (§4): over each patch, the depth's zero set traced
+/// (`round`: the certified search and march the road reads a whole chart by) from the crossings its
+/// four edges were read to have (`edge_crossings`, given), its inner edges the chart's folds (`folds`),
+/// its swallowtail points' discs (`field.holes`) and its holes' rims; each piece cut where the face
+/// across changes (`Tube::partner`'s chart) and where its covering instant passes the point's own
+/// (the double curve turning back on its sheet), each cut halved toward its place along the chord.
+/// A piece's end on the patch's rim is on one of its edges, named.
+pub fn stretches(field: &Depth,folds: &[Vec<[f64;2]>],patches: &Patches,read: &[(Line,Vec<Crossing>)],feature: f64)
+    -> Result<Vec<Stretch>,String> {
+    let (tube,chart,tol) = (field.tube,field.chart,field.within);
+    // (the inner edges and their sides, as `seams` gives them)
+    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(match chart { Chart::Band(k,_) if tube.bands[k].beyond(uv) => 1.,_ => -1. });
+    let rims = tube.hole(chart).map_err(|e| format!("{e:?}"))?;
+    let mut inner: Vec<Vec<[f64;2]>> = folds.to_vec();
+    inner.extend(field.holes.iter().map(|d| d.polygon(super::RIM)));
+    inner.extend(rims.iter().cloned());
+    let discs: Vec<Box<dyn Fn([f64;2]) -> f64 + '_>> = field.holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let rim_sides: Vec<Box<dyn Fn([f64;2]) -> f64 + '_>> = (0..rims.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
+    let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = folds.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
+    sides.extend(discs.iter().map(|d| &**d));
+    sides.extend(rim_sides.iter().map(|s| &**s));
+    let x = |uv: [f64;2]| tube.at(chart,uv).map(|p| p.x);
+    let across = |uv: [f64;2],c: &Cover| x(uv).and_then(|x| tube.partner(x,c)).map(|(ch,_)| ch);
+    let turn = |uv: [f64;2],c: &Cover| (c.at-tube.own(chart,uv)).signum();
+    // (a place between two along a chord, its cover read: halved toward where `same` changes)
+    let cut = |a: ([f64;2],Cover),b: ([f64;2],Cover),same: &dyn Fn(&([f64;2],Cover),&([f64;2],Cover)) -> bool| -> ([f64;2],Cover) {
+        let (mut p,mut q) = (a,b);
+        for _ in 0..CUT_HALVINGS {
+            let m = [0.5*(p.0[0]+q.0[0]),0.5*(p.0[1]+q.0[1])];
+            let Some(c) = (match membership(field,m) { Membership::Covered(c) | Membership::Kept(Some(c)) => Some(c),_ => None }) else { break };
+            let mid = (m,c);
+            if same(&p,&mid) { p = mid } else { q = mid }
+            if x(p.0).zip(x(q.0)).is_some_and(|(s,t)| distance(s,t) <= tol) { break }
+        }
+        p
+    };
+    let [nu,nv] = patches.count();
+    let mut out = Vec::new();
+    for i in 0..nu { for j in 0..nv {
+        let rect = patches.rect(i,j);
+        let sides_of = patches.sides(i,j);
+        let seeds: Vec<[f64;2]> = sides_of.iter().flat_map(|&k| read[k].1.iter().map(|c| c.uv)).collect();
+        let (pieces,_) = super::round(field,rect,[false,false],&seeds,&inner,&sides,tol,feature)?;
+        // (a piece's end on the rim: the patch edge it lies on — the side nearest it)
+        let on_edge = |q: [f64;2]| -> usize {
+            let d = [(q[1]-rect[1][0]).abs(),(q[0]-rect[0][1]).abs(),(q[1]-rect[1][1]).abs(),(q[0]-rect[0][0]).abs()];
+            let k = (0..4).min_by(|&a,&b| d[a].total_cmp(&d[b])).unwrap_or(0);
+            sides_of[k]
+        };
+        let ending = |e: crate::zero_set::End,q: [f64;2]| match e {
+            crate::zero_set::End::Rim => Ending::Edge(on_edge(q)),crate::zero_set::End::Edge(_) => Ending::Inner,
+            crate::zero_set::End::Switch => Ending::Across,crate::zero_set::End::Closed => Ending::Closed,
+            crate::zero_set::End::Undefined => Ending::Open,
+        };
+        for piece in pieces {
+            let n = piece.uv.len();
+            if n < 2 { continue }
+            let start = ending(piece.ends[0],piece.uv[0]);
+            let end = ending(piece.ends[1],piece.uv[n-1]);
+            // each point's face across and sense of turn; cut where either changes
+            let keys: Vec<(Option<Chart>,f64)> = piece.uv.iter().zip(&piece.at).map(|(&q,c)| (across(q,c),turn(q,c))).collect();
+            let mut uv = vec![piece.uv[0]];
+            let mut covers = vec![piece.at[0].clone()];
+            let mut first = start;
+            for k in 1..n {
+                if keys[k] != keys[k-1] {
+                    let across_changes = keys[k].0 != keys[k-1].0;
+                    let same: Box<dyn Fn(&([f64;2],Cover),&([f64;2],Cover)) -> bool> = if across_changes {
+                        Box::new(|p,m| across(p.0,&p.1) == across(m.0,&m.1))
+                    } else {
+                        Box::new(|p,m| turn(p.0,&p.1) == turn(m.0,&m.1))
+                    };
+                    let (q,c) = cut((piece.uv[k-1],piece.at[k-1].clone()),(piece.uv[k],piece.at[k].clone()),&*same);
+                    uv.push(q);
+                    covers.push(c.clone());
+                    let kind = if across_changes { Ending::Across } else { Ending::Turn };
+                    if let Some(a) = keys[k-1].0 {
+                        out.push(Stretch {patch:[i,j],uv:std::mem::take(&mut uv),covers:std::mem::take(&mut covers),across:a,ends:[first,kind]});
+                    } else { uv.clear(); covers.clear(); }
+                    uv.push(q);
+                    covers.push(c);
+                    first = kind;
+                }
+                uv.push(piece.uv[k]);
+                covers.push(piece.at[k].clone());
+            }
+            if let Some(a) = keys[n-1].0 { out.push(Stretch {patch:[i,j],uv,covers,across:a,ends:[first,end]}) }
+        }
+    } }
+    Ok(out)
+}

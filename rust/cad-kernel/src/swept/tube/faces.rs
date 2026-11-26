@@ -87,7 +87,7 @@ impl Tube<'_> {
     /// **What covers the point `x` read at `c`, as a chart's parameters**: an end pose's, where the
     /// covering instant is an end of the roll (to its rounding); else the sheet whose point at the
     /// covering instant and the core circle's angle of the tool's point is the nearer, settled.
-    fn partner(&self,x: V,c: &Cover) -> Option<(Chart,P)> {
+    pub fn partner(&self,x: V,c: &Cover) -> Option<(Chart,P)> {
         let [a,b] = self.roll;
         for (k,e) in [a,b].into_iter().enumerate() {
             if (c.at-e).abs() <= HALF_READ*(b-a) { return Some((Chart::End(k),self.on_end(k,x)?)) }

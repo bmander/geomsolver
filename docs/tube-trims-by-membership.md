@@ -128,10 +128,13 @@ whole torus**, whatever it refuses for.
    crossings are settled to it), a grazing crossing matched by its standing on the zero set. A line
    read past a fold's edge had to be halved toward it: a double curve beside the fold lay between a
    quarter feature's readings.
-3. **Chains to stretches** (§4) over patches, beside the present road (both run; the stretches
-   compared to the present trims on the crossed members and the 12 fuzzed builds: the same
-   curves, ends to the tolerance). Then the end-event rules go: `switched`, `cornered`,
-   `join_holds`, `joined`, `disc`, `windows`.
+3. **Chains to stretches** (§4) over patches, beside the present road — *done*
+   (`membership::stretches`): on the full turn and the crossed forward member (the reverse in the
+   slow tier) the stretches and the present trims are the same curves within four tolerances in
+   space, and change their face across at the same places; the corners, which both reach, are left
+   to step 4. The end-event rules (`switched`, `cornered`, `join_holds`, `joined`, `disc`,
+   `windows`) go with step 4: until faces are built from the stretches, the road still needs them.
+   Still to compare: the 12 fuzzed builds.
 4. **Faces per patch and the merge** (§6). Gate: the crossed members' volumes as pinned
    (16.6109998153, 13.7898471844) to 1e-9; every `swept_tube` gate; then the `swept_tumbles`
    gates flip one by one, each to a build checked against the exact sweep at random points and

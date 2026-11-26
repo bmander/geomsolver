@@ -3249,6 +3249,26 @@ unit across it, the two crossings 5.4e-5 apart), the other within the feature wi
 four tolerances of nought. The crossed members' four sheets: 28 crossings, the worst 1.3e-5 off (the
 tolerance 4.4e-6), each sheet's edges read in about a second.
 
+**The tube road's trims as stretches, patch by patch** (`tube::membership::stretches`, step 3 of
+`docs/tube-trims-by-membership.md`; beside the present road, which builds from none of it yet): over
+each patch the depth's zero set is traced by the road's own certified search and march (`round`, the
+patch its rectangle) from the crossings its four edges were read to have, its inner edges the chart's
+folds, discs and holes' rims; each piece is cut where the face across changes (`Tube::partner`'s
+chart: a sheet, an end pose, the collar, a band) and where its covering instant passes the point's own
+(the double curve turning back on its sheet), each cut halved toward its place along the chord, and
+each end named — a patch edge, an inner edge, a change of the face across, a turn, closed
+(`Ending`). **Gated** by `swept_membership::the_full_turns_stretches_are_its_trims` and
+`…the_crossed_forward_members_stretches_are_its_trims` (the reverse's slow): the stretches and the
+present road's traced pieces each within four tolerances of the other in space — each chord read
+straight in the chart's parameters and mapped, not straight in space, which cuts through the tube (a
+chord 8.8e-3 long stands 3e-5 off the sheet) — or within the feature along a graze with the depth
+within four tolerances of nought between; and the changes of the face across within the feature of
+each other; the corners (a fold's end on the roll's rim, where the sheet and the end pose touch and a
+trace stops at the fold or runs to the rim as a rounding's) left out, both reaching them. The full
+turn: 33 stretches, some 8 500 places, 12 changes of the face across; the crossed forward member: 27
+stretches, 3 475 places, 8 changes. Traced patch by patch the sheets take about half the present
+road's time (the full turn's 4 s against 8 s, the forward's sheet `−` 3.4 s against 4.8 s).
+
 **The tube road's solid is held to the sweep's boundary before it is returned**
 (`tube::faces::held`, gated by
 `swept_tumbles::a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again`): each face read

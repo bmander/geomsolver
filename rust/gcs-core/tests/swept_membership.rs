@@ -11,12 +11,18 @@ use crate::common::bench::tumbling;
 /// The present road's trims of a sheet (its folds, their swallowtail points, the depth's seams,
 /// from no seeds) and the discs about its swallowtail points.
 fn traced(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> (Vec<Vec<[f64;2]>>,Vec<gcs_core::brep::swept::tube::Disc>) {
+    let (pieces,discs,_) = traced_with_folds(tube,chart,tol,feature);
+    (pieces,discs)
+}
+
+/// `traced`, and the sheet's folds.
+fn traced_with_folds(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> (Vec<Vec<[f64;2]>>,Vec<gcs_core::brep::swept::tube::Disc>,Vec<Vec<[f64;2]>>) {
     let Chart::Sheet(side) = chart else { panic!("a sheet") };
     let (folds,_) = edges(tube,chart,tol,feature).unwrap();
     let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();
     let tails: Vec<[f64;2]> = lines.iter().flat_map(|f| swallowtails(tube,side,f)).collect();
     let (pieces,_,discs) = seams(tube,chart,&lines,&tails,&[],tol,feature).unwrap();
-    (pieces.into_iter().map(|p| p.uv).collect(),discs)
+    (pieces.into_iter().map(|p| p.uv).collect(),discs,lines)
 }
 
 /// Where the polylines `pieces` cross the patch edge `line`: each chord's crossing of the line's
@@ -145,4 +151,175 @@ fn the_crossed_members_patch_edges_are_crossed_where_their_trims_cross_them() {
         for chart in [Chart::Sheet(1.),Chart::Sheet(-1.)] { total += agree(&tube,chart,tol,feature,4.*tol).0 }
         assert!(total > 0,"the crossed member's trims cross its patch edges");
     }
+}
+
+/// **Polylines in space, their segments in a tree**: the least distance from a point to them, best
+/// first (`util::bvh`).
+struct Lines { segs: Vec<([f64;3],[f64;3])>,tree: gcs_core::brep::util::bvh::Bvh<3> }
+
+impl Lines {
+    fn new(lines: &[Vec<[f64;3]>]) -> Lines {
+        use gcs_core::brep::util::bvh::{Bounds,Bvh};
+        let segs: Vec<([f64;3],[f64;3])> = lines.iter().flat_map(|l| l.windows(2).map(|w| (w[0],w[1])).chain((l.len() == 1).then(|| (l[0],l[0])))).collect();
+        let tree = Bvh::new(segs.iter().map(|&(a,b)| Bounds {lo:std::array::from_fn(|k| a[k].min(b[k])),hi:std::array::from_fn(|k| a[k].max(b[k]))}));
+        Lines {segs,tree}
+    }
+    fn off(&self,x: [f64;3]) -> f64 {
+        let seg = |(a,b): ([f64;3],[f64;3])| {
+            let d = [b[0]-a[0],b[1]-a[1],b[2]-a[2]];
+            let l = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
+            let f = if l > 0. { (((x[0]-a[0])*d[0]+(x[1]-a[1])*d[1]+(x[2]-a[2])*d[2])/l).clamp(0.,1.) } else { 0. };
+            gcs_core::brep::util::space::distance(x,[a[0]+f*d[0],a[1]+f*d[1],a[2]+f*d[2]])
+        };
+        let gap = |b: gcs_core::brep::util::bvh::Bounds<3>| (0..3).map(|k| (b.lo[k]-x[k]).max(x[k]-b.hi[k]).max(0.).powi(2)).sum::<f64>().sqrt();
+        let best = std::cell::Cell::new(f64::INFINITY);
+        self.tree.query_nearest(gap,|| best.get(),|i| best.set(best.get().min(seg(self.segs[i]))));
+        best.get()
+    }
+}
+
+/// The present road's traced pieces of a sheet with their far covers, and its discs and folds.
+fn traced_covered(tube: &Tube,chart: Chart,tol: f64,feature: f64)
+    -> (Vec<gcs_core::brep::zero_set::Piece<gcs_core::brep::swept::depth::Cover>>,Vec<gcs_core::brep::swept::tube::Disc>,Vec<Vec<[f64;2]>>) {
+    let Chart::Sheet(side) = chart else { panic!("a sheet") };
+    let (folds,_) = edges(tube,chart,tol,feature).unwrap();
+    let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();
+    let tails: Vec<[f64;2]> = lines.iter().flat_map(|f| swallowtails(tube,side,f)).collect();
+    let (pieces,_,discs) = seams(tube,chart,&lines,&tails,&[],tol,feature).unwrap();
+    (pieces,discs,lines)
+}
+
+/// **A chart's stretches are its present trims** (step 3): every place of a stretch within `near`
+/// in space of the present road's traced pieces, and every place of theirs within `near` of a
+/// stretch — or, where the zero set is ill-conditioned (beside the corner where an end pose touches
+/// the sheet, along a graze), within the feature of one with the depth within `near` of nought all
+/// the way between; and every place a stretch ends because the face across changes within the
+/// feature of a place where the present pieces' face across changes, so read — away from the
+/// corners, which both reach. Returns the stretches and the places compared.
+fn stretched(tube: &Tube,chart: Chart,tol: f64,feature: f64,near: f64) -> (usize,usize) {
+    use gcs_core::brep::swept::tube::membership::{Ending,membership,stretches};
+    let begun = std::time::Instant::now();
+    let (pieces,discs,folds) = traced_covered(tube,chart,tol,feature);
+    let present_took = begun.elapsed();
+    let field = Depth {tube,chart,within:tol,holes:&discs};
+    let p: Patches = patches(tube,chart);
+    let clock = std::time::Instant::now();
+    let read = edge_crossings(&field,&p,feature);
+    let st = stretches(&field,&folds,&p,&read,feature).unwrap();
+    let took = clock.elapsed();
+    let compare = std::time::Instant::now();
+    let x = |uv: [f64;2]| tube.at(chart,uv).unwrap().x;
+    // (each chord's image in space: the chord straight in the chart's parameters, mapped in eight —
+    // a chord straight in space cuts through the tube, a chord 8.8e-3 long 3e-5 off the sheet)
+    let flat = |lines: &[Vec<[f64;2]>]| -> Vec<Vec<[f64;3]>> { lines.iter().map(|l| {
+        let mut out: Vec<[f64;3]> = l.first().map(|&q| x(q)).into_iter().collect();
+        for w in l.windows(2) { for k in 1..=8 { let f = k as f64/8.; out.push(x([w[0][0]+(w[1][0]-w[0][0])*f,w[0][1]+(w[1][1]-w[0][1])*f])) } }
+        out
+    }).collect() };
+    let present_uv: Vec<Vec<[f64;2]>> = pieces.iter().map(|p| p.uv.clone()).collect();
+    let ours_uv: Vec<Vec<[f64;2]>> = st.iter().map(|s| s.uv.clone()).collect();
+    let (present,ours) = (Lines::new(&flat(&present_uv)),Lines::new(&flat(&ours_uv)));
+    // (the depth within `near` of nought all the way from `q` to the nearest place of `lines`)
+    let graze = |q: [f64;2],lines: &[Vec<[f64;2]>]| -> bool {
+        let Some(r) = lines.iter().flatten().copied().min_by(|a,b| gcs_core::brep::util::space::distance(x(q),x(*a)).total_cmp(&gcs_core::brep::util::space::distance(x(q),x(*b)))) else { return false };
+        (0..=16).all(|k| { let f = k as f64/16.; let m = [q[0]+(r[0]-q[0])*f,q[1]+(r[1]-q[1])*f];
+            membership(&field,m).depth().is_none_or(|d| d.abs() <= near) })
+    };
+    let held = |q: [f64;2],lines: &Lines,uv: &[Vec<[f64;2]>]| -> (bool,f64) {
+        let d = lines.off(x(q));
+        (d <= near || (d <= feature && graze(q,uv)),d)
+    };
+    // (the corners — a fold's end on the roll's rim, where the sheet and the end pose touch and a
+    // trace stops at the fold short of the rim or runs on to it as a rounding's: settled in step 4 by
+    // the rim's own reading — left out, within the feature of each)
+    let [a,b] = tube.roll;
+    let corners: Vec<[f64;3]> = folds.iter().flat_map(|f| [f[0],f[f.len()-1]]).filter(|q| (q[1]-a).abs() < 1e-6 || (q[1]-b).abs() < 1e-6).map(|q| x(q)).collect();
+    let by_corner = |q: [f64;2]| corners.iter().any(|&c| gcs_core::brep::util::space::distance(x(q),c) <= feature);
+    for &c in &corners {
+        let reach = |lines: &Lines| lines.off(c) <= feature;
+        assert_eq!(reach(&ours),reach(&present),"{chart:?}: the corner {c:?} reached by the stretches and the present trims alike");
+    }
+    let mut compared = 0;
+    for s in &st { for &q in &s.uv {
+        if by_corner(q) { continue }
+        let (ok,d) = held(q,&present,&present_uv);
+        assert!(ok,"{chart:?}: the stretch's place {q:?} {d:e} off the present trims");
+        compared += 1;
+    } }
+    for l in &present_uv { for &q in l {
+        if by_corner(q) { continue }
+        let (ok,d) = held(q,&ours,&ours_uv);
+        assert!(ok,"{chart:?}: the present trim's place {q:?} {d:e} off the stretches");
+        compared += 1;
+    } }
+    // the face across: where it changes along the present pieces, against the stretches' ends so
+    let across = |q: [f64;2],c: &gcs_core::brep::swept::depth::Cover| tube.partner(x(q),c).map(|(ch,_)| ch);
+    let switches: Vec<[f64;2]> = pieces.iter().flat_map(|p| (1..p.uv.len()).filter(|&k| across(p.uv[k-1],&p.at[k-1]) != across(p.uv[k],&p.at[k]))
+        .map(|k| p.uv[k]).collect::<Vec<_>>()).collect();
+    let ends: Vec<[f64;2]> = st.iter().flat_map(|s| s.ends.iter().zip([s.uv[0],s.uv[s.uv.len()-1]]).filter(|(e,_)| **e == Ending::Across).map(|(_,q)| q).collect::<Vec<_>>()).collect();
+    let apart = |q: [f64;2],set: &[[f64;2]]| set.iter().map(|&r| gcs_core::brep::util::space::distance(x(q),x(r))).fold(f64::INFINITY,f64::min);
+    let ends: Vec<[f64;2]> = ends.into_iter().filter(|&q| !by_corner(q)).collect();
+    let switches: Vec<[f64;2]> = switches.into_iter().filter(|&q| !by_corner(q)).collect();
+    for &q in &ends { let d = apart(q,&switches); assert!(d <= feature,"{chart:?}: a stretch's change of the face across at {q:?} {d:e} off the present's"); }
+    for &q in &switches { let d = apart(q,&ends); assert!(d <= feature,"{chart:?}: the present's change of the face across at {q:?} {d:e} off the stretches'"); }
+    eprintln!("{chart:?}: {} stretches in {took:?} (the present traced in {present_took:?}, compared in {:?}), {compared} places within each other's, {} changes of the face across on each",st.len(),compare.elapsed(),switches.len());
+    (st.len(),compared)
+}
+
+/// **The half turn's stretches are its present trims** (step 3, `membership::stretches`): its sheet
+/// `−`'s trims lie mostly beside its corner, which both reach.
+#[test]
+fn the_half_turns_stretches_are_its_trims() {
+    let (tool,path,roll,tol) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let feature = 0.25*ring.thickness;
+    for chart in [Chart::Sheet(1.),Chart::Sheet(-1.)] { stretched(&tube,chart,tol,feature,4.*tol); }
+}
+
+/// The crossed member `observer` (1 forward, −1 reverse): its two sheets' stretches against the
+/// present road's traces, side by side; the places compared.
+fn crossed_stretched(observer: f64) -> usize {
+    let (tool,path,roll,tol) = crate::common::bench::crossed(observer);
+    let ring = Ring::read(&tool).unwrap();
+    let feature = 0.25*ring.thickness;
+    let tube = Tube::pinched(&ring,&path,roll,tol,feature).unwrap();
+    std::thread::scope(|s| {
+        let other = s.spawn(|| stretched(&tube,Chart::Sheet(-1.),tol,feature,4.*tol).1);
+        stretched(&tube,Chart::Sheet(1.),tol,feature,4.*tol).1+other.join().unwrap()
+    })
+}
+
+/// **The crossed forward member's stretches are its present trims** (step 3), as the full turn's,
+/// the pinch's hole the collar's.
+#[test]
+fn the_crossed_forward_members_stretches_are_its_trims() {
+    assert!(crossed_stretched(1.) > 0,"the forward member's trims compared");
+}
+
+/// **The crossed reverse member's stretches are its present trims** (step 3), as the forward's.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, its sheets traced twice over, beside its near pinch")]
+fn the_crossed_reverse_members_stretches_are_its_trims() {
+    assert!(crossed_stretched(-1.) > 0,"the reverse member's trims compared");
+}
+
+
+/// **The full turn's stretches are its present trims** (step 3, `membership::stretches`): its two
+/// sheets' stretches — 33, traced patch by patch in 4 s where the present road traces the sheets in 8
+/// — and the present road's traced pieces within four tolerances of each other in space at some
+/// 8 500 places (or within the feature along a graze, the depth within four tolerances of nought
+/// between), and their 12 changes of the face across the same, the corners left out.
+#[test]
+fn the_full_turns_stretches_are_its_trims() {
+    let (tool,path,roll,tol) = tumbling(180.);
+    let ring = Ring::read(&tool).unwrap();
+    let tube = Tube::new(&ring,&path,roll).unwrap();
+    let feature = 0.25*ring.thickness;
+    // (the two sheets side by side: each traced twice over, by the present road and by patches)
+    let compared: usize = std::thread::scope(|s| {
+        let other = s.spawn(|| stretched(&tube,Chart::Sheet(-1.),tol,feature,4.*tol).1);
+        stretched(&tube,Chart::Sheet(1.),tol,feature,4.*tol).1+other.join().unwrap()
+    });
+    assert!(compared > 0,"the full turn's trims compared");
 }
