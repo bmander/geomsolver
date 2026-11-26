@@ -388,14 +388,81 @@ fn sheets_thickened() {
     close("to its centre",volume(&thickened(&dome,[-5.,0.],Join::Round).unwrap()),2.*PI*125./3.);
 }
 
-/// A sheet with no offset in closed form is refused, not approximated.
+/// `[0, h]` or `[−h, 0]`: a sheet's single face thickened by `h` toward the side `+z` its middle
+/// faces, the focus of each sheet here.
+fn toward_focus(sheet: &Brep,h: f64) -> [f64;2] {
+    let f = &sheet.faces[0];
+    if (f.surface.normal([0.5,0.5]).unwrap()[2] > 0.) != f.reversed { [0.,h] } else { [-h,0.] }
+}
+
+/// The paraboloid `z = (x² + y²)/8` over the square `|x|, |y| ≤ a`, a biquadratic Bézier sheet
+/// (exact: each middle pole where the parabola's end tangents meet, `−a²/8`), thickened by `h`
+/// toward its focus.
+pub(crate) fn thickened_dish(a: f64,h: f64) -> Brep {
+    use gcs_core::brep::nurbs::Net;
+    let z = a*a/8.;
+    let xs = [(-a,z),(0.,-z),(a,z)];
+    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
+        poles:xs.iter().map(|&(x,zx)| xs.iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
+    let dish = gcs_core::brep::build::sheet(net).unwrap();
+    thickened(&dish,toward_focus(&dish,h),Join::Round).unwrap()
+}
+
+/// A spline sheet with no offset in closed form, the parabolic trough (brep-bench's
+/// thicken/parabolic-trough: `z = x²/8` as a quadratic Bézier swept 10 along `y`), thickened by 1
+/// toward its focus on its exact offset (`Surface::Offset`), not a fitted one: its moved face on
+/// the sheet's offset, its edges the sheet's carried along its normal (`Curve::Parallel`), its ends
+/// the plane strips between the parabola and its offset curve, its sides the normals' strips. Its
+/// volume `h (t L − t² θ / 2)`, `L` the parabola's length and `θ` the turn of its tangent, and its
+/// area the four faces' closed forms; thickened past its least radius of curvature, 4 at the
+/// vertex, the sweep folds, and it is refused.
 #[test]
-fn a_spline_sheet_is_not_thickened() {
+fn a_spline_sheet_is_thickened_on_its_exact_offset() {
     use gcs_core::brep::nurbs::Net;
     let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
         poles:vec![vec![[-4.,0.,2.],[-4.,10.,2.]],vec![[0.,0.,-2.],[0.,10.,-2.]],vec![[4.,0.,2.],[4.,10.,2.]]]};
-    let e = thickened(&gcs_core::brep::build::sheet(net).unwrap(),[0.,1.],Join::Round).unwrap_err();
-    assert!(e.contains("no offset in closed form"),"{e}");
+    let trough = gcs_core::brep::build::sheet(net).unwrap();
+    let t = thickened(&trough,toward_focus(&trough,1.),Join::Round).unwrap();
+    t.check(1e-7).unwrap();
+    let mut kinds: Vec<&str> = t.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    assert_eq!(kinds,["bspline","offset","plane","plane","plane","plane"]);
+    let (l,theta) = (4.*2f64.sqrt()+4.*1f64.asinh(),PI/2.);
+    close("volume",volume(&t),10.*(l-theta/2.));
+    close("area",total_area(&t),10.*(2.*l-theta)+2.*(l-theta/2.)+20.);
+    let m = gcs_core::brep::mesh::mesh(&t,1e-3,0.1).unwrap();
+    assert!((mesh_volume(&m)-volume(&t)).abs() < 1e-2*volume(&t),"meshed volume {}",mesh_volume(&m));
+    let e = thickened(&trough,toward_focus(&trough,5.),Join::Round).unwrap_err();
+    assert!(e.contains("folds"),"{e}");
+}
+
+/// A sheet curved both ways, the paraboloid `z = (x² + y²)/8` over the square `|x|, |y| ≤ 3` (a
+/// biquadratic Bézier, exact), thickened by 1 toward its focus: its sides are no planes, each the
+/// ruled wall of the sheet's normals along a parabola (a `Blend` between the edge and its
+/// carried copy), and its volume is Steiner's, `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` over the
+/// sheet — here integrated by Gauss's rule over the square, independently of the solid.
+#[test]
+fn a_sheet_curved_both_ways_is_thickened_to_steiners_volume() {
+    let (a,th) = (3f64,1f64);
+    let t = thickened_dish(a,th);
+    t.check(1e-7).unwrap();
+    let mut kinds: Vec<&str> = t.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    assert_eq!(kinds,["blend","blend","blend","blend","bspline","offset"]);
+    // Gauss–Legendre on 16 panels of 8 points each way
+    let panels = 16;
+    let h = a/panels as f64;
+    let nodes: Vec<(f64,f64)> = (0..panels).flat_map(|k| gcs_core::integral::GAUSS8.map(|(x,w)| (-a+h*(2*k+1) as f64+h*x,h*w))).collect();
+    let mut steiner = 0.;
+    for &(x,wx) in &nodes { for &(y,wy) in &nodes {
+        // `z = f(x, y)`: `f_x = x/4`, `f_xx = f_yy = 1/4`, `f_xy = 0`
+        let (fx,fy) = (x/4.,y/4.);
+        let w = (1.+fx*fx+fy*fy).sqrt();
+        let mean2 = 0.25*((1.+fy*fy)+(1.+fx*fx))/w.powi(3);
+        let gauss = 1./16./w.powi(4);
+        steiner += wx*wy*w*(th-th*th*mean2/2.+th.powi(3)*gauss/3.);
+    } }
+    close("volume",volume(&t),steiner);
 }
 
 /// A plane cutting a rational spline's sweep square to it meets it in the spline carried along

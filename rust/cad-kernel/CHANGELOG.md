@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A spline face is swept along its normal on its exact offset** (`offset::normal_sweep`,
+  `offset::carried_sweep`), so a spline sheet is thickened: the face moved lies on the sheet's offset `S + d N`
+  (`Surface::Offset`, read by Weingarten's equations over the sheet's own parameters, no fitted
+  net), keeping its pcurves; its walls are the sheet's normals along its edges, a `Blend` (a plane
+  where they lie in one). Refused where the sweep folds, past the sheet's least radius of curvature
+  (`(1 − h κ₁)(1 − h κ₂)` read exactly as a quadratic in `h` over each knot span). brep-bench's
+  parabolic trough thickened is its closed forms to 1e-9 in volume and area, and a paraboloid sheet
+  thickened is Steiner's volume.
+- **`Curve::Parallel`** (`parallel::Parallel`): a curve on a sheet carried `d` along the sheet's
+  normal onto its offset, its parameter its own — a face's edge moved with the face. Written to STEP
+  as the cubic through it within the file's bar. **Breaking** for code matching `Curve`
+  exhaustively.
+
 ## [0.26.0] - 2026-11-26
 
 - **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever
