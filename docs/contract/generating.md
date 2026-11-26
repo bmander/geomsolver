@@ -3277,9 +3277,12 @@ crossing settled on the double curve with the angle held (`settle`, as `met_by_c
 swallowtail point's cut), a vertex of both its charts; the cut is then arcs between its vertices in
 order along it. A join crossed is refused by name. A chart whose trims leave an angle free is cut as
 before, so every solid built so is the same to the byte (the crossed members and their
-intersection). The forward member seen from 0.6 off its axis passes the windows so, and is refused a
-stage on, a double curve crossing its sheet's half turn fitted short
-(`swept_tumbles::the_trims_leave_no_angle_free_for_the_windows_cuts`).
+intersection). The forward member seen from 0.6 off its axis passes the windows so; a double curve crossing its
+sheet's half turn, fitted short where its points held square to its polyline's segments jumped along
+it, is fitted again held on a line turning smoothly (`Trim::at_held`); and over the stretched nets
+(#1027) it builds, 15 faces, its volume cadrs's to 1e-6
+(`swept_tumbles::the_trims_leaving_no_angle_free_is_built`, slow; the forward member moved 0.015,
+refused at the sewing before, builds too: `moved_a_hair_is_built`).
 
 **The tube road's solid is held to the sweep's boundary before it is returned**
 (`tube::faces::held`, gated by

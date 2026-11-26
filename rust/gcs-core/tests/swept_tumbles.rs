@@ -25,11 +25,14 @@ fn refused(t: Tumble,why: &str) {
 /// The forward member, its torus's centre moved off `x`.
 fn forward_moved(y: f64) -> Tumble { Tumble {centre:[3.,y,2.],..Tumble::crossed(1.)} }
 
-/// **The forward member with its torus moved 0.015 off its plane: three faces meet along an edge**
-/// when the faces are sewn, near (3.34, 1.76, 1.51). Moved 0.021 it builds, 14 faces.
+/// **The forward member with its torus moved 0.015 off its plane, built**: refused at the sewing,
+/// three faces along the collar's trim beside the pinch's rim (the double curve from the rim ran into
+/// a fold at once and was never traced on the sheet), until the sheets' nets were stretched across the
+/// near miss's line (#1027) — 14 faces, every mesh vertex within 3e-7 of the sweep's boundary. Moved
+/// 0.021 it built before, 14 faces.
 #[test]
-fn moved_a_hair_three_faces_meet_along_an_edge() {
-    refused(forward_moved(0.015),"three or more faces meet along the edge");
+fn moved_a_hair_is_built() {
+    built(forward_moved(0.015),16.5496090184,16.549609);
 }
 
 /// **The forward member moved 0.02: a curve fits only to 1.6e-4**, against 4.4e-7 (0.03: 4.2e-5).
@@ -53,17 +56,17 @@ fn a_double_curve_not_joined_to_its_swallowtail_point() {
         "a double curve not joined to its swallowtail point");
 }
 
-/// **The forward member seen from 0.6 off its axis, not 0.7071, rolled on to 109°**: its trims
-/// leave no angle of its sheet `−` free for the windows' cuts — refused so, until its cuts were read
-/// clear of its points alone and crossed its trims (`faces::crossing_windows`, `cut_across`: one
-/// trim each, split there). Then a double curve crossing the sheet's half turn, bending 0.05 a chord
-/// there, fitted only to 2e-6 against 4.4e-7 — its points held on lines square to its polyline's
-/// segments jumped along it at each corner — and fits held on a line turning smoothly between its
-/// tangents (`Trim::at_held`). Now refused at the sewing, three faces along an edge beside the pinch's
-/// rim: the moved-a-hair members' refusal.
+/// **The forward member seen from 0.6 off its axis, not 0.7071, rolled on to 109°, built**: its trims
+/// left no angle of its sheet `−` free for the windows' cuts — refused so until its cuts were read
+/// clear of its points alone and crossed its trims (`faces::crossing_windows`, `cut_across`); then a
+/// double curve crossing the sheet's half turn fitted short, until a trim fitted short was fitted again
+/// held on a line turning smoothly (`Trim::at_held`); then refused at the sewing, as the forward member
+/// moved a hair was, until the sheets' nets were stretched across the near miss's line (#1027). 15
+/// faces, every mesh vertex within 3e-7 of the sweep's boundary.
 #[test]
-fn the_trims_leave_no_angle_free_for_the_windows_cuts() {
-    refused(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},"three or more faces meet along the edge");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, ~11 s")]
+fn the_trims_leaving_no_angle_free_is_built() {
+    built(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},16.8400036559,16.840004);
 }
 
 /// **The reverse member leaning 52°, not 45°: three instants touch a meridian whole** — refused
