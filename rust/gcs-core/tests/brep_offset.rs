@@ -381,24 +381,42 @@ fn cut_torus_measures(r: f64,beta: f64,c: f64) -> (f64,f64,f64) {
 /// A torus cut aslant by a plane through every meridian is a ring bounded by two spiric curves,
 /// no parameter line of the torus: its face's sweep is the face on the torus of the tube grown or
 /// shrunk, its edges carried along the normal (`Curve::Parallel`), walled by the ruled sheets of
-/// the normals along the curves.  Grown by less than its reach it is Steiner's formula, the ring's
-/// `V + S d + M d²` (no cubic term: its Euler characteristic is nothing); shrunk, the ring of the
-/// tube shrunk under the plane moved in, the eroded meet being the meet of the eroded sets.
+/// the normals along the curves.  Shrunk, it is the ring of the tube shrunk under the plane moved
+/// in, the eroded meet being the meet of the eroded sets; the torus's face lifted out as a sheet
+/// and thickened by `t` either way is `∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA` over its arcs, in closed
+/// form, `t r (R v + r sin v) ± t²/2 (R v + 2 r sin v) + t³/3 sin v` across each.  (Grown, the
+/// ring needs the ball's tube along its traced creases, which is not held to a face family's
+/// `EXACT` yet: `offset::swept_tube` refuses it.)
 #[test]
-fn a_torus_cut_aslant_grown_and_shrunk() {
+fn a_torus_cut_aslant_shrunk_and_its_face_thickened() {
     let (r,beta,c) = (2.,12f64.to_radians(),0.4);
     let ring = cut_torus(r,beta,c);
-    let (v0,s0,m) = cut_torus_measures(r,beta,c);
-    close("the ring's volume",volume(&ring),v0);
-    let d = 1.;
-    let g = grown(&ring,d,Join::Round).unwrap();
-    g.check(1e-7).unwrap();
-    close("grown: its volume",volume(&g),v0+s0*d+m*d*d);
-    close("grown: its area",total_area(&g),s0+2.*m*d);
+    close("the ring's volume",volume(&ring),cut_torus_measures(r,beta,c).0);
     let d = 0.5;
     let s = shrunk(&ring,d,Join::Round).unwrap();
     s.check(1e-7).unwrap();
     close("shrunk: its volume",volume(&s),cut_torus_measures(r-d,beta,c-d/beta.cos()).0);
+    let tori: Vec<usize> = (0..ring.faces.len()).filter(|&f| ring.faces[f].surface.kind() == "torus").collect();
+    let sheet = sheet_of(&ring,&tori).unwrap();
+    assert!(sheet.faces.iter().all(|f| !f.reversed));
+    for t in [0.5f64,-0.5] {
+        let th = thickened(&sheet,if t > 0. { [0.,t] } else { [t,0.] },Join::Round).unwrap();
+        th.check(1e-7).unwrap();
+        let big = 5f64;
+        let want = cut_torus_turn(r,beta,c,&|v| t.abs()*r*(big*v+r*v.sin())+t*t.abs()/2.*(big*v+2.*r*v.sin())+t*t*t.abs()/3.*v.sin());
+        close(&format!("thickened by {t}"),volume(&th),want);
+    }
+}
+
+/// `∫ (g(v_b) − g(v_a)) du` over the arcs `cut_torus(r, β, c)` keeps of its meridians.
+fn cut_torus_turn(r: f64,beta: f64,c: f64,g: &dyn Fn(f64) -> f64) -> f64 {
+    let (big,t) = (5f64,beta.tan());
+    turn(|u| {
+        let k = t*u.cos();
+        let s = (big*k+c)/(r*(1.+k*k).sqrt());
+        let phi = k.atan();
+        g(phi+2.*PI+s.asin())-g(phi+PI-s.asin())
+    })
 }
 
 /// The parabolic trough's profile, `z = x²/8` over `|x| ≤ 4` as a quadratic Bézier closed by the

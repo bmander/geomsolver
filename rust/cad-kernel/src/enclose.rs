@@ -509,14 +509,89 @@ impl Enclosed<1> for Curve {
             Curve::Turned(m) => exact(&**m,t),
             Curve::Slid(m) => exact(&**m,t),
             Curve::Trochoid(m) => exact(&**m,t),
-            // within `|d|` of the curve it is carried from; its rate not read (nothing known)
-            Curve::Parallel(m) => {
-                let e = m.of.enclose([t]);
-                let r = Iv::new(-m.d.abs(),m.d.abs());
-                Patch {at:add3(e.at,[r;3]),d:[[Iv::ANY;3]],proved:e.proved}
-            }
+            Curve::Parallel(m) => parallel_enclosed(m,t),
         }
     }
+}
+
+/// **A curve carried along its surface's normal** (`parallel::Parallel`), `q + d N` and its rate,
+/// within `q` grown by `|d|` (which it is never farther from). On a plane, a cylinder, a cone, a
+/// sphere or a torus (not a lemon) the unit normal is a closed form of the point itself (`normal_at`:
+/// `cos α ρ̂ − sin α z` on a cone, `(q − c)/r` on a torus, `c` the middle circle's point nearest), so
+/// `q + d N(q)` and `q' + d N'(q) q'` are enclosed from `q`'s own enclosure, whatever the face's
+/// pcurve. On any other kind, `q + (P − B)` at its foot and `q' + (P_u − B_u) u' + (P_v − B_v) v'`
+/// where its foot is the face's pcurve (`Foot`), the foot and its rate enclosed from it, and the
+/// two surfaces' points and partials over the box of parameters it reaches. Where its foot is
+/// searched for, or a surface encloses nothing (a sheet's offset), only the grown `q`: its rate not
+/// read.
+fn parallel_enclosed(m: &crate::parallel::Parallel,t: [f64;2]) -> Patch<1> {
+    use crate::parallel::Foot;
+    let e = m.of.enclose([t]);
+    let r = Iv::new(-m.d.abs(),m.d.abs());
+    let near = add3(e.at,[r;3]);
+    let rough = Patch {at:near,d:[[Iv::ANY;3]],proved:e.proved};
+    if !e.bounded() { return rough }
+    if let Some((n,dn)) = normal_at(&m.base,e.at,e.d[0]) {
+        let d = Iv::point(m.d);
+        let (at,rate) = (add3(e.at,scale3(n,d)),add3(e.d[0],scale3(dn,d)));
+        let p = Patch {at:meet3(at,near),d:[rate],proved:e.proved};
+        if p.bounded() { return p }
+    }
+    let (uv,rate): ([Iv;2],[Iv;2]) = match m.foot {
+        Some(Foot::Line {t:[t0,t1],a,b}) => {
+            let k = std::array::from_fn(|i| Iv::point(b[i]-a[i])/(Iv::point(t1)-Iv::point(t0)));
+            let s = iv(t)-Iv::point(t0);
+            (std::array::from_fn(|i| Iv::point(a[i])+k[i]*s),k)
+        }
+        Some(Foot::Curve(ref c)) => { let f = c.enclose([t]); ([f.at[0],f.at[1]],[f.d[0][0],f.d[0][1]]) }
+        None => return rough,
+    };
+    let (Some(us),Some(vs)) = (uv[0].bounds(),uv[1].bounds()) else { return rough };
+    let (b,p) = (m.base.enclose([us,vs]),m.under.enclose([us,vs]));
+    if !(b.bounded() && p.bounded() && e.bounded()) { return rough }
+    let at = add3(e.at,sub3(p.at,b.at));
+    let d = add3(e.d[0],add3(scale3(sub3(p.d[0],b.d[0]),rate[0]),scale3(sub3(p.d[1],b.d[1]),rate[1])));
+    Patch {at:meet3(at,near),d:[d],proved:e.proved && b.proved && p.proved}
+}
+
+/// **The unit normal of an analytic surface at a point of it, and its rate along a curve on it**:
+/// `N(q)` along `S_u × S_v` and `N'(q) q'`, enclosed from the point's and the rate's enclosures —
+/// a plane's `z`; a cylinder's `ρ̂` and a cone's `cos α ρ̂ − sin α z`, `ρ̂` the unit direction from
+/// the axis, its rate `(q' − ρ̂ (ρ̂ · q'))/ρ` in the frame's plane; a sphere's `(q − o)/r`; a
+/// ring torus's `(q − c)/r`, `c = big ρ̂` the middle circle's point nearest. `None` for any other
+/// kind (a lemon's middle circle crosses its axis), and where `ρ` may be nothing.
+fn normal_at(s: &Surface,q: I3,dq: I3) -> Option<(I3,I3)> {
+    use crate::util::fmath::Det;
+    let f = *s.frame();
+    let (l,dl) = (frame_local(&f,q),frame_dir_local(&f,dq));
+    let zero = Iv::point(0.);
+    // the unit direction from the axis in the frame's plane, and its rate
+    let radial = || -> Option<([Iv;2],[Iv;2])> {
+        let sq = |x: Iv| { let m = x.mag(); (x*x).meet(Iv::new(0.,m*m*(1.+4.*f64::EPSILON))) };
+        let rho = (sq(l[0])+sq(l[1])).sqrt();
+        if !(rho.lo() > 0.) { return None }
+        let e = [l[0]/rho,l[1]/rho];
+        let along = e[0]*dl[0]+e[1]*dl[1];
+        Some((e,[(dl[0]-e[0]*along)/rho,(dl[1]-e[1]*along)/rho]))
+    };
+    let (n,dn) = match *s {
+        Surface::Plane(_) => ([zero,zero,Iv::point(1.)],[zero;3]),
+        Surface::Cylinder(..) => { let (e,de) = radial()?; ([e[0],e[1],zero],[de[0],de[1],zero]) }
+        Surface::Cone(_,_,a) => {
+            let (sa,ca) = a.dsin_cos();
+            let (e,de) = radial()?;
+            let c = Iv::point(ca);
+            ([c*e[0],c*e[1],Iv::point(-sa)],[c*de[0],c*de[1],zero])
+        }
+        Surface::Sphere(_,r) => { let k = Iv::point(1.)/Iv::point(r); (l.map(|x| x*k),dl.map(|x| x*k)) }
+        Surface::Torus(_,big,r) if big >= r => {
+            let (e,de) = radial()?;
+            let (b,k) = (Iv::point(big),Iv::point(1.)/Iv::point(r));
+            ([(l[0]-b*e[0])*k,(l[1]-b*e[1])*k,l[2]*k],[(dl[0]-b*de[0])*k,(dl[1]-b*de[1])*k,dl[2]*k])
+        }
+        _ => return None,
+    };
+    Some((frame_dir(&f,n),frame_dir(&f,dn)))
 }
 
 /// An affine map's image of a point, enclosed.

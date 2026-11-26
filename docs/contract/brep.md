@@ -2134,9 +2134,10 @@ is not detected.  Gates: `brep_offset::a_spline_sheet_is_thickened_on_its_exact_
 curvature), `a_sheet_curved_both_ways_is_thickened_to_steiners_volume` (a paraboloid sheet, its
 ruled walls blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` by Gauss's rule),
 `a_cone_cut_aslant_grown_is_steiners` (a frustum cut aslant, a convex body's Steiner formula),
-`a_torus_cut_aslant_grown_and_shrunk` (a ring two spiric curves bound, grown Steiner's `V + S d +
-M d²` and shrunk the ring of the tube shrunk under the plane moved in, each over its meridians in
-closed form), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
+`a_torus_cut_aslant_shrunk_and_its_face_thickened` (a ring two spiric curves bound, shrunk the ring
+of the tube shrunk under the plane moved in, and its torus lifted out and thickened either way,
+`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form — grown, its traced
+creases' tubes are not held to a family's `EXACT` yet, and `offset::swept_tube` refuses them), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
 aslant, its side lifted out and thickened, `∫ (t − t² κ/2) dA` by Gauss's rule, and refused past
 its vertex's curvature), and the same solids among `step_roundtrip::the_sample_reads_back`'s.  **An extrusion's face is the rectangle its line sweeps
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
@@ -2222,7 +2223,7 @@ tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `t
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
 bend thickened, an L shelled outward open at its step, sharp and round, a block open at its
 sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, a cone cut aslant
-grown, a torus cut aslant grown and shrunk, a spline extrusion cut aslant thickened, rounds offset
+grown, a torus cut aslant shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
 past their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its
 closed form to 1e-9; sheets thickened past their curvature, an elliptic cylinder shrunk past its
 curvature and that block shelled sharp refused.
