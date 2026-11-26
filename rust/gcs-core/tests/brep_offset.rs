@@ -272,6 +272,79 @@ fn a_ball_cut_aslant_grown_is_steiners() {
     close("its area",total_area(&g),s0+2.*m*d+4.*PI*d*d);
 }
 
+/// **A surface moved along its normal keeps its parameters** (`Surface::normal_moved`): its point
+/// at `(u, v)` is the surface's there moved `d` along its unit normal, and its normal there the
+/// same — for a plane, a cylinder, a cone (one with its radius at its origin and one placed at
+/// its apex opening against its axis, moved either way, its moved origin past the moved apex), a
+/// sphere, a torus, a B-spline sheet and a spline swept along a line; an ellipse swept along a line
+/// has none.
+#[test]
+fn a_surface_moved_along_its_normal_keeps_its_parameters() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::nurbs::Net;
+    let f = Frame::new([0.3,-0.2,0.5],[0.,0.6,0.8],[1.,0.,0.]);
+    let dish = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
+        poles:[(-3.,1.125),(0.,-1.125),(3.,1.125)].iter().map(|&(x,zx)| [(-3.,1.125),(0.,-1.125),(3.,1.125)].iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
+    let parabola = BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],vec![[-4.,0.,2.],[0.,1.,-2.],[4.,0.,2.]]).unwrap();
+    let (at,across) = ([0.3,2.,4.5],[0.2,0.5,0.8]);
+    let surfaces: Vec<(Surface,Vec<f64>)> = vec![
+        (Surface::Plane(f),vec![-1.,0.,2.]),
+        (Surface::Cylinder(f,2.),vec![-1.,0.,2.]),
+        (Surface::Cone(f,1.5,0.4),vec![0.,1.,2.]),
+        (Surface::Cone(f,0.,-0.5),vec![-3.,-2.,-1.]),
+        (Surface::Sphere(f,3.),vec![-1.,0.,1.]),
+        (Surface::Torus(f,5.,2.),vec![0.5,2.,4.]),
+        (Surface::BSpline(f,Arc::new(dish)),across.to_vec()),
+        (Surface::Extrusion(f,Arc::new(Curve::BSpline(Arc::new(parabola)))),vec![-1.,0.,2.]),
+    ];
+    for (s,vs) in &surfaces {
+        let us: &[f64] = if matches!(s,Surface::BSpline(..) | Surface::Extrusion(..)) { &across } else { &at };
+        for d in [0.7,-0.4] {
+            let moved = s.normal_moved(d).unwrap_or_else(|| panic!("a {} moved by {d}",s.kind()));
+            for &u in us { for &v in vs {
+                let n = s.normal([u,v]).unwrap();
+                let (want,got) = (gcs_core::space::add(s.point([u,v]),n.map(|x| x*d)),moved.point([u,v]));
+                assert!(gcs_core::space::distance(want,got) <= 1e-10,"a {} moved by {d} at {u}, {v}: {got:?} against {want:?}",s.kind());
+                let m = moved.normal([u,v]).unwrap();
+                assert!(gcs_core::space::distance(m,n) <= 1e-9,"a {} moved by {d} at {u}, {v}: its normal {m:?} against {n:?}",s.kind());
+            } }
+        }
+    }
+    let ellipse = Surface::Extrusion(f,Arc::new(Curve::Ellipse(f,3.,2.)));
+    assert!(ellipse.normal_moved(0.5).is_none());
+}
+
+/// The cone of its apex at the origin opening to radius 3 at height 6 (its frame at the apex, its
+/// radius there nothing), cut by the plane `z = 2 + 0.3 x` and kept above it; its side lifted out
+/// and thickened by a half inward, onto the cone moved inward, whose radius at its origin is less
+/// than nothing.  Its volume `∫∫ (t − t² κ / 2) dA`, `κ = cos α / ρ` across the generators and
+/// none along them, `dA = ρ du dv`: `t sin α v²/2 − t² cos α v/2` across each generator, from where
+/// it meets the plane, `v = 2 / (cos α − 0.3 sin α cos u)`, to the rim, `6 / cos α`.
+pub(crate) fn apex_cone_thickened_inward() -> (Brep,f64) {
+    let pointed = cone([0.;3],[0.,0.,1.],0.,3.,6.).unwrap();
+    let n = [-0.3f64,0.,1.];
+    let l = (n[0]*n[0]+n[2]*n[2]).sqrt();
+    let cut = kept(&pointed,[0.,0.,2.],n.map(|x| x/l),0.).unwrap();
+    let sides: Vec<usize> = (0..cut.faces.len()).filter(|&f| cut.faces[f].surface.kind() == "cone").collect();
+    let sheet = sheet_of(&cut,&sides).unwrap();
+    assert!(sheet.faces.iter().all(|f| !f.reversed));
+    let t = 0.5;
+    let solid = thickened(&sheet,[-t,0.],Join::Round).unwrap();
+    let alpha = 0.5f64.atan();
+    let (sa,ca) = alpha.sin_cos();
+    let g = |v: f64| t*sa*v*v/2.-t*t*ca*v/2.;
+    (solid,turn(|u| g(6./ca)-g(2./(ca-0.3*sa*u.cos()))))
+}
+
+/// A cone's face moved inward past where its frame's radius is nothing (`apex_cone_thickened_inward`):
+/// thickened, its volume is its closed form.
+#[test]
+fn a_cone_placed_at_its_apex_is_thickened_inward() {
+    let (solid,want) = apex_cone_thickened_inward();
+    solid.check(1e-7).unwrap();
+    close("volume",volume(&solid),want);
+}
+
 /// The frustum `ρ = R₀ + m z` over `0 ≤ z ≤ 6` (`m = −1/3`, from 3 down to 1), cut by the plane
 /// `z = 3 + x tan β` and kept below it.
 pub(crate) fn cut_cone(beta: f64) -> Brep {

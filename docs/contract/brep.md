@@ -735,6 +735,13 @@ has an offset in closed form at all is its own question (`Surface::has_offset`).
 wants a surface says so (`Offset::surface`, or `Surface::offset_surface`, which refuses a closing
 offset as that), and none reads a collapse as no offset at all (a ball as wide as its cylinder,
 [rounds.md](rounds.md)).
+**The surface moved along its normal with its parameters kept** (`Surface::normal_moved`) is
+what a face carried along its normal lies on (`offset::carried_sweep`): its point at `(u, v)` is
+`S(u, v) + d N(u, v)` exactly, which `offset` and `parallel` do not promise — a cone's offset keeps
+its frame and shifts `v`, so the moved cone is stood `d sin α` back along its axis with its radius
+there grown by `d cos α` (less than nothing where its origin falls past the moved apex, which STEP
+places at its apex, `step::cone_written`), and an ellipse swept along a line is read over its
+rational spline's parameter and has none (`brep_offset::a_surface_moved_along_its_normal_keeps_its_parameters`).
 **A sheet's offset is read by its signed distance** (`Surface::parallel`, `Surface::Offset`): a
 B-spline sheet has no offset in closed form, and a fitted net would be an approximation, so the
 surface standing `d` off it is the level `d` of its signed distance, `S + d N` over the sheet's own

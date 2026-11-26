@@ -1017,6 +1017,7 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
         ("cone cut aslant grown",crate::brep_offset::cone_cut_aslant_grown()),
         ("torus's face cut aslant thickened",crate::brep_offset::torus_face_cut_aslant_thickened()),
         ("spline extrusion cut aslant thickened",crate::brep_offset::spline_extrusion_cut_aslant_thickened()),
+        ("cone at its apex thickened inward",crate::brep_offset::apex_cone_thickened_inward().0),
     ]
 }
 
