@@ -212,7 +212,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
         return Err(format!("the ball between {} rolls, standing nowhere: nothing of it is beside the run going on",
             m.names))
     }
-    let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false};
+    let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false,feet:Default::default()};
     // **about one axis the round is turned**: between surfaces turned about one axis with straight
     // meridians round a loop that closes, the ball's centre runs round a circle about it and the
     // canal is the section — the corner, its legs to the contacts and the ball's arc between them —
@@ -407,7 +407,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
         let reached: Vec<V> = (0..=64).flat_map(|i| { let u = u0+(u1-u0)*i as f64/64.; [net.point(u,v0),net.point(u,v1)] })
             .chain([0.,1.].map(|u| { let (c,e) = frame_at(u); across(c,e,r) })).collect();
         let strips = strips.map(|s| carried_on(&s,&reached));
-        let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false};
+        let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false,feet:Default::default()};
         // the section's plane at `u`: through the ball's centre, square to the spine (the plane of
         // its arc), its normal along `u`; where the faces meet in it, across the ball from its centre
         let section = |u: f64| -> (V,V) {
@@ -891,7 +891,7 @@ fn dome_cut(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,t
             }
             // half round from the tangent end's section, to where its plane crosses the meeting again
             let far = if j == 0 { from+0.5*TAU } else { from+span-0.5*TAU };
-            let meeting = super::geom::Traced {a:surfaces[k].clone(),b:surfaces[o].clone(),pts:Vec::new(),closed:false};
+            let meeting = super::geom::Traced {a:surfaces[k].clone(),b:surfaces[o].clone(),pts:Vec::new(),closed:false,feet:Default::default()};
             let corner = crossing_plane(&meeting,centre,t.keep,add(centre,scale(way(far),r)));
             if dot(sub(corner,centre),t.keep).abs() > near(corner) || distance(corner,t.pv) <= near(corner) {
                 return Err(refused(&format!("the plane of its section where `{}` goes on crosses their meeting nowhere \
@@ -1263,7 +1263,7 @@ fn across_plane(s: &Surface,plane: &Surface,a: V,z: V,tol: f64) -> Result<(Curve
             return Ok((c,[ta,tz],0.))
         }
     }
-    let meeting = super::geom::Traced {a:s.clone(),b:plane.clone(),pts:Vec::new(),closed:false};
+    let meeting = super::geom::Traced {a:s.clone(),b:plane.clone(),pts:Vec::new(),closed:false,feet:Default::default()};
     let (c,err) = fitted(&meeting,a,z,&|t| crate::util::space::lerp(a,z,t),tol)?;
     Ok((c,[0.,1.],err))
 }
@@ -1665,7 +1665,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     let swap = on_a.is_some_and(|q| surfaces[1].implicit(q).abs() < surfaces[0].implicit(q).abs());
     let legs = if swap { [legs[1],legs[0]] } else { legs };
     // the faces' meeting through the edge, closed
-    let meet = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false};
+    let meet = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false,feet:Default::default()};
     let seed = meet.project(p);
     let edge = match super::ssi::intersect(&surfaces[0],&surfaces[1],tol) {
         super::ssi::Ssi::Curves(cs) => cs,
@@ -1899,7 +1899,7 @@ impl Leg {
     #[allow(clippy::too_many_arguments)]
     fn of(on: &Surface,off: &Surface,d: f64,bounds: (V,V),p: V,reach: f64,tol: f64,what: &str) -> Result<Leg,String> {
         match off.parallel(d,tol) {
-            Some(Offset::Surface(s)) => Ok(Leg::Along(super::geom::Traced {a:on.clone(),b:s,pts:Vec::new(),closed:false})),
+            Some(Offset::Surface(s)) => Ok(Leg::Along(super::geom::Traced {a:on.clone(),b:s,pts:Vec::new(),closed:false,feet:Default::default()})),
             Some(Offset::Curve(c)) => match nearest_crossing(&c,on,tol,bounds,reach,p)? {
                 None => Err(format!("{what} shrinks the {} to what the {} closes onto, which lies in it: no one point \
                     ends its sections",on.kind(),off.kind())),
@@ -2276,7 +2276,7 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
         let cap_plane = Surface::Plane(Frame::about(c,nrm));
         let mut cap = vec![arc[j]];
         for k in 0..2 {
-            let on = super::geom::Traced {a:surfaces[k].clone(),b:cap_plane.clone(),pts:Vec::new(),closed:false};
+            let on = super::geom::Traced {a:surfaces[k].clone(),b:cap_plane.clone(),pts:Vec::new(),closed:false,feet:Default::default()};
             let p = ct[k][j];
             let (curve,err) = fitted(&on,p,k_end,&|s| crate::util::space::lerp(p,k_end,s),tol)?;
             worst = worst.max(err);
