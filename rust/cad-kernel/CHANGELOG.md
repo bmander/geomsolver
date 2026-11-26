@@ -16,6 +16,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
     net's area off its rates alone;
   - a strip's whole cells read on every core, summed in their order, the integrand's reads the
     workers made counted as the caller's (`props::reads`).
+- **A swept tube's double curves read more surely beside a fold, and a band's charts readied** (#880
+  T1f; the files a tube's sweep writes change at the rounding only): a double curve's point settled
+  while the gap between its two points still shrinks, not only its steps; a caller's seed on an
+  inner edge, read just past it, traced from that edge (`zero_set`); and on a band's chart, not yet
+  the road's, a trim's stray points settled, a swallowtail point's probe kept on the chart and the
+  seam's arcs fitted paced.
 
 ## [0.25.0] - 2026-11-25
 

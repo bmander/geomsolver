@@ -3146,16 +3146,32 @@ vertex at (1.214, 0.137) — and its double curve running through the band to th
 swallowtail point at (−6.140, 0.004): a swallowtail pair astride the seam. The double curve's
 preimage B is traced on the sheet from the seam to the fold beside S; preimage A leaves the band at
 the tip and no run of the sheet carries it on to S, so B's end on the sheet is a vertex one trim
-reaches (the trim used thrice, the seam's arc there once). And past S's fold the sheet has a third
-layer, onto which `partner` settles B as A nears the tip ((1.474, 0.071), where B's own trace
-ends at (1.452, 0.138)). No tip clears it: ended past S (η −0.47 to −0.50, the width from the
-natural ends) the pair is the band's, and the trim from S's disc misfits its curve near S by
-7e-6 to 1.1e-5 (its partner on the sheet beside the fold, the double curve shallow there); past
-η −0.51 the floor falls again; ended short (η −0.30 to −0.37) the tip still cuts the pair; and a
-band too narrow to hold any swallowtail point (2.5 to 3.5 times the end turn across) is refused
-at other events, its sheets' nets 512 × 645 to 611 × 638 — not the eighth the band is for. The
-probe from a swallowtail point on a band's chart (`build`'s cut, a fiftieth of the band's length)
-also lands past the seam where the point stands nearer it than that.
+reaches (the trim used thrice, the seam's arc there once); and past S's fold the sheet has a third
+layer, onto which `partner` settles B as A nears the tip. Ended short (η −0.30 to −0.37) the tip
+still cuts the pair; a band too narrow to hold any swallowtail point (2.5 to 3.5 turns across) is
+refused at other events, its nets 512 × 645 to 611 × 638. **The band holding S** (ended past it,
+η −0.47 to −0.5025; past −0.505 the floor falls again inside the chart's room) took four repairs,
+each of a defect any band meets: a swallowtail point's probe on a band's chart kept on the chart
+(half the way to the seam where nearer than a fiftieth of the band); a double curve's point settled
+while its gap shrinks too (`settle`: beside a fold the second step is the longer, and stopped there a
+band trim's point stood 4.8e-8 off the curve, its trim's length along its polyline jumping — a
+curve fitted through it 1e-5 off), a band trim's stray points settled and its middles put in only
+on the curve (`refined`); a caller's seed on an inner edge read just past it traced from that edge
+(`zero_set`: the sheet's crossing of the seam at the band's far end, rounded past the seam, dropped,
+and the band's run from it never traced); and a seam's arc fitted paced (`paced`: where it crosses
+the line `τ` swings through nought in a sliver of its turn). The pinched road's files change at the
+rounding only (the crossed forward member's volume 8e-15 of itself), the rest byte for byte.
+**Then the reverse member builds banded** — ended at η −0.50 with the seam ten turns across (or
+−0.5025; or −0.49 with the seam's power 6): its volume 13.7898472007 against the pinched road's
+13.7898471844 (1.2e-9 of itself), its area to 1.6e-10, valid, its sheets' nets 318 × 231 and
+319 × 235 and the band's 257 × 129 (against 944 × 849 and 942 × 853), the bench's measuring of it
+16.7 s against 54 s. **But no rule is found that lands there**: beside each working end its
+neighbours are refused — η −0.48 to −0.495, where preimage B runs from S's disc to the seam within
+the tolerance of the seam's rounded corner (three faces along it), and where a vertex of the seam
+near (2.83, 0.79, 1.79) leaves an edge bounding one face; a seam eight turns across puts B on the
+corner at −0.50 too, nine fits its arcs short of the bar without the pacing. So `closed::ring` still
+builds pinched: the band wants an end chosen against the sheets' swallowtail pairs (traced before it
+is placed) and a crossing of its seam by a double curve that grazes it.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
