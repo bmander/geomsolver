@@ -1046,7 +1046,7 @@ fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     // the face moved to `h`: its image under the move, on the surface's offset
     let moved = |h: f64| -> Result<Brep,String> {
         let d = out*h;
-        if on_sheet { return carried_on_sheet(&sheet,d) }
+        if on_sheet { return Ok(carried_on_sheet(&sheet,d)) }
         let Some(Offset::Surface(surface)) = f.surface.offset(d,tol) else {
             return Err(format!("swept past the centre of its {}: no point stands that far off it",f.surface.kind()))
         };
@@ -1134,10 +1134,10 @@ fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
 /// sheet's offset (`Surface::Offset`, `S + d N` over the sheet's own parameters), so its pcurves
 /// are its own; each edge the curve it lies on carried along the normal (`parallel::Parallel`),
 /// its parameter kept, and each vertex the point it stands on carried so.
-fn carried_on_sheet(sheet: &Brep,d: f64) -> Result<Brep,String> {
-    if d == 0. { return Ok(sheet.clone()) }
+fn carried_on_sheet(sheet: &Brep,d: f64) -> Brep {
+    if d == 0. { return sheet.clone() }
     let surface = &sheet.faces[0].surface;
-    let Some(Offset::Surface(offset)) = surface.parallel(d,0.) else { return Err(format!("a {} is read off no offset",surface.kind())) };
+    let offset = surface.parallel(d,0.).and_then(Offset::surface).expect("a sheet's offset is read");
     let mut c = sheet.clone();
     for v in &mut c.vertices {
         let uv = surface.continued_inverse(v.p);
@@ -1145,11 +1145,11 @@ fn carried_on_sheet(sheet: &Brep,d: f64) -> Result<Brep,String> {
     }
     for e in &mut c.edges {
         let EdgeCurve::Curve(curve) = &e.curve else { continue };
-        let carried = crate::parallel::Parallel::new(curve.clone(),surface,d).ok_or("its edge carried onto no offset")?;
+        let carried = crate::parallel::Parallel::new(curve.clone(),surface.clone(),offset.clone(),d);
         e.curve = EdgeCurve::Curve(Curve::Parallel(Arc::new(carried)));
     }
     c.faces[0].surface = offset;
-    Ok(c)
+    c
 }
 
 /// **Where a sheet's face folds as it moves along its normal** (`carried_sweep`): the move
@@ -1165,8 +1165,7 @@ fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
     let f = &b.faces[fi];
     let (_,[lo,hi]) = samples(b,f);
     let base = &f.surface;
-    let at = |h: f64| base.parallel(h,0.).and_then(Offset::surface).ok_or_else(|| format!("a {} is read off no offset",base.kind()));
-    let ends = [at(s[0])?,at(0.5*(s[0]+s[1]))?,at(s[1])?];
+    let ends = [s[0],0.5*(s[0]+s[1]),s[1]].map(|h| base.parallel(h,0.).and_then(Offset::surface).expect("a sheet's offset is read"));
     let grid = |k: usize| -> Vec<f64> {
         let cuts: Vec<f64> = std::iter::once(lo[k]).chain(base.breaks(k,[lo[k],hi[k]])).chain([hi[k]]).collect();
         let mut out = vec![lo[k]];

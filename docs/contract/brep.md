@@ -2123,8 +2123,8 @@ into itself across the face, a fold no point's own curvature shows, is not detec
 `brep_offset::a_spline_sheet_is_thickened_on_its_exact_offset` (brep-bench's parabolic trough,
 its closed forms to 1e-9, and refused past its vertex's radius of curvature),
 `a_sheet_curved_both_ways_is_thickened_to_steiners_volume` (a paraboloid sheet, its ruled walls
-blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` by Gauss's rule), and
-`step_roundtrip::a_spline_sheet_thickened_reads_back`.  **An extrusion's face is the rectangle its line sweeps
+blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` by Gauss's rule), and the
+same sheet among `step_roundtrip::the_sample_reads_back`'s solids.  **An extrusion's face is the rectangle its line sweeps
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
 stands square to `z` and alike all along each line, so the face's sweep is the face family of four
 lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve
@@ -2197,8 +2197,9 @@ the far side of it: for a sweep in its own right that part mirrored and turned h
 added (a bend thickened past its radius); for an offset's piece it is cut away
 (`Reach::cut_at_axis`), since a point there is nearer the surface on the axis's far side and not
 this face's.  Any other plane's, cylinder's or sphere's face is carried between its moved copies
-(above); a surface with no offset in closed form, or a cone's or a torus's face not bounded by its
-own parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
+(above), and so is a spline sheet's; a surface whose offset is not read (a curve turned, a blend,
+a family's wall, an image), or a cone's or a torus's face not bounded by its own parameter lines,
+is refused naming the face and a point on it — never approximated.  A known limit of
 the Booleans, not a rule of offsets: a meeting through a sphere's pole is read less exactly than one
 clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9e-7 off), so a
 corner's ball is built with its poles along the corner's mean normal, clear of the circles the

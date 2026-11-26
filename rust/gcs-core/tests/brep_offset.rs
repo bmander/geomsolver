@@ -388,6 +388,26 @@ fn sheets_thickened() {
     close("to its centre",volume(&thickened(&dome,[-5.,0.],Join::Round).unwrap()),2.*PI*125./3.);
 }
 
+/// `[0, h]` or `[−h, 0]`: a sheet's single face thickened by `h` toward the side `+z` its middle
+/// faces, the focus of each sheet here.
+fn toward_focus(sheet: &Brep,h: f64) -> [f64;2] {
+    let f = &sheet.faces[0];
+    if (f.surface.normal([0.5,0.5]).unwrap()[2] > 0.) != f.reversed { [0.,h] } else { [-h,0.] }
+}
+
+/// The paraboloid `z = (x² + y²)/8` over the square `|x|, |y| ≤ a`, a biquadratic Bézier sheet
+/// (exact: each middle pole where the parabola's end tangents meet, `−a²/8`), thickened by `h`
+/// toward its focus.
+pub(crate) fn thickened_dish(a: f64,h: f64) -> Brep {
+    use gcs_core::brep::nurbs::Net;
+    let z = a*a/8.;
+    let xs = [(-a,z),(0.,-z),(a,z)];
+    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
+        poles:xs.iter().map(|&(x,zx)| xs.iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
+    let dish = gcs_core::brep::build::sheet(net).unwrap();
+    thickened(&dish,toward_focus(&dish,h),Join::Round).unwrap()
+}
+
 /// A spline sheet with no offset in closed form, the parabolic trough (brep-bench's
 /// thicken/parabolic-trough: `z = x²/8` as a quadratic Bézier swept 10 along `y`), thickened by 1
 /// toward its focus on its exact offset (`Surface::Offset`), not a fitted one: its moved face on
@@ -402,10 +422,7 @@ fn a_spline_sheet_is_thickened_on_its_exact_offset() {
     let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],weights:None,
         poles:vec![vec![[-4.,0.,2.],[-4.,10.,2.]],vec![[0.,0.,-2.],[0.,10.,-2.]],vec![[4.,0.,2.],[4.,10.,2.]]]};
     let trough = gcs_core::brep::build::sheet(net).unwrap();
-    let f = &trough.faces[0];
-    // toward the focus: the side its normal points to, or the other
-    let up = (f.surface.normal([0.5,0.5]).unwrap()[2] > 0.) != f.reversed;
-    let t = thickened(&trough,if up { [0.,1.] } else { [-1.,0.] },Join::Round).unwrap();
+    let t = thickened(&trough,toward_focus(&trough,1.),Join::Round).unwrap();
     t.check(1e-7).unwrap();
     let mut kinds: Vec<&str> = t.faces.iter().map(|f| f.surface.kind()).collect();
     kinds.sort();
@@ -415,7 +432,7 @@ fn a_spline_sheet_is_thickened_on_its_exact_offset() {
     close("area",total_area(&t),10.*(2.*l-theta)+2.*(l-theta/2.)+20.);
     let m = gcs_core::brep::mesh::mesh(&t,1e-3,0.1).unwrap();
     assert!((mesh_volume(&m)-volume(&t)).abs() < 1e-2*volume(&t),"meshed volume {}",mesh_volume(&m));
-    let e = thickened(&trough,if up { [0.,5.] } else { [-5.,0.] },Join::Round).unwrap_err();
+    let e = thickened(&trough,toward_focus(&trough,5.),Join::Round).unwrap_err();
     assert!(e.contains("folds"),"{e}");
 }
 
@@ -426,32 +443,16 @@ fn a_spline_sheet_is_thickened_on_its_exact_offset() {
 /// sheet — here integrated by Gauss's rule over the square, independently of the solid.
 #[test]
 fn a_sheet_curved_both_ways_is_thickened_to_steiners_volume() {
-    use gcs_core::brep::nurbs::Net;
-    let a = 3f64;
-    let z = |x: f64| x*x/8.;
-    // `z` at a Bézier's middle pole: its tangents' meeting, `−a²/8`
-    let xs = [(-a,z(a)),(0.,-z(a)),(a,z(a))];
-    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
-        poles:xs.iter().map(|&(x,zx)| xs.iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
-    let dish = gcs_core::brep::build::sheet(net).unwrap();
-    let f = &dish.faces[0];
-    let up = (f.surface.normal([0.5,0.5]).unwrap()[2] > 0.) != f.reversed;
-    let th = 1.;
-    let t = thickened(&dish,if up { [0.,th] } else { [-th,0.] },Join::Round).unwrap();
+    let (a,th) = (3f64,1f64);
+    let t = thickened_dish(a,th);
     t.check(1e-7).unwrap();
     let mut kinds: Vec<&str> = t.faces.iter().map(|f| f.surface.kind()).collect();
     kinds.sort();
     assert_eq!(kinds,["blend","blend","blend","blend","bspline","offset"]);
     // Gauss–Legendre on 16 panels of 8 points each way
-    let (gx,gw) = ([0.1834346424956498,0.5255324099163290,0.7966664774136267,0.9602898564975363],
-        [0.3626837833783620,0.3137066458778873,0.2223810344533745,0.1012285362903763]);
     let panels = 16;
-    let mut nodes = Vec::new();
-    for k in 0..panels {
-        let (lo,hi) = (-a+2.*a*k as f64/panels as f64,-a+2.*a*(k+1) as f64/panels as f64);
-        let (m,h) = (0.5*(lo+hi),0.5*(hi-lo));
-        for j in 0..4 { for s in [-1.,1.] { nodes.push((m+s*h*gx[j],h*gw[j])); } }
-    }
+    let h = a/panels as f64;
+    let nodes: Vec<(f64,f64)> = (0..panels).flat_map(|k| gcs_core::integral::GAUSS8.map(|(x,w)| (-a+h*(2*k+1) as f64+h*x,h*w))).collect();
     let mut steiner = 0.;
     for &(x,wx) in &nodes { for &(y,wy) in &nodes {
         // `z = f(x, y)`: `f_x = x/4`, `f_xx = f_yy = 1/4`, `f_xy = 0`

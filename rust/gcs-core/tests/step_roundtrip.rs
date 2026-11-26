@@ -934,8 +934,8 @@ fn bench_cross_check() {
 }
 
 /// **A solid read on an offset surface is written again and reads to itself** (the writer's
-/// `OFFSET_SURFACE`; the kernel builds such a face too, a sheet thickened,
-/// `a_spline_sheet_thickened_reads_back`):
+/// `OFFSET_SURFACE`; the kernel builds such a face too, a sheet thickened, among
+/// `kernel_solids`):
 /// brep-bench's trough thickened (OCCT's and kentron's; kentron's grown ball the reader refuses), from
 /// `$STEP_CORPUS`, each solid read written again, verified, and read to the same solid.
 #[test]
@@ -1013,31 +1013,8 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
         ("block with a spherical void",hollow),
         ("cylinder cut aslant",aslant),
         ("two blocks",two),
-        ("spline sheet thickened",thickened_dish()),
+        ("spline sheet thickened",crate::brep_offset::thickened_dish(3.,1.)),
     ]
-}
-
-/// The paraboloid `z = (x² + y²)/8` over `|x|, |y| ≤ 3`, a biquadratic Bézier sheet, thickened by
-/// 1 toward its focus: its moved face on the sheet's offset (`Surface::Offset`), its edges the
-/// sheet's carried along its normal (`Curve::Parallel`), its walls ruled along the normal.
-fn thickened_dish() -> Brep {
-    use gcs_core::brep::nurbs::Net;
-    use gcs_core::brep::offset::{thickened,Join};
-    let xs = [(-3.,9./8.),(0.,-9./8.),(3.,9./8.)];
-    let net = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
-        poles:xs.iter().map(|&(x,zx)| xs.iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
-    let dish = gcs_core::brep::build::sheet(net).unwrap();
-    let f = &dish.faces[0];
-    let up = (f.surface.normal([0.5,0.5]).unwrap()[2] > 0.) != f.reversed;
-    thickened(&dish,if up { [0.,1.] } else { [-1.,0.] },Join::Round).unwrap()
-}
-
-/// **A spline sheet thickened reads back to itself** (`holds`, at the test's tolerance): its face on
-/// the sheet's offset written as `OFFSET_SURFACE` of the sheet's net, its edges carried along the
-/// normal fitted within the file's bar, read to the same solid.
-#[test]
-fn a_spline_sheet_thickened_reads_back() {
-    holds("spline sheet thickened",&thickened_dish(),&[0]).unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// The kernel's own solids (`kernel_solids`) at every tolerance the exports write at, one line a

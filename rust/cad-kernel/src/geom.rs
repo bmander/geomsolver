@@ -311,7 +311,8 @@ pub enum Surface {
     /// over the sheet's parameters: the level `d` of the sheet's signed distance (`implicit`), exact
     /// wherever a point's foot on it is one, nearer than where its normals focus; its frame the
     /// sheet's. What a ball's centre runs on, a sheet's offset having no closed form
-    /// (`Surface::parallel`): read, never a face's. It is read on the sheet's continuation past its
+    /// (`Surface::parallel`), and what a sheet's face moved along its normal lies on (a sheet
+    /// thickened, `offset::carried_sweep`; a file's `OFFSET_SURFACE`). It is read on the sheet's continuation past its
     /// domain (its end spans carried on, `Net::d2_continued`), so the ball rolls on past a face's
     /// edge as smoothly as it rolls within it.
     Offset(Frame,Arc<super::nurbs::Net>,f64),
@@ -639,8 +640,9 @@ impl Blend {
         widen(&mut sections,self.b.bounds(stretch(self.tb)));
         Some(screwed_over(center,axis,angle,advance,[v0,v1],sections))
     }
-    fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
-        (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
+    /// Each section's point and rate at the fraction `u` of its run.
+    fn ends(&self,u: f64) -> ((V,V),(V,V)) {
+        (self.a.d1(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d1(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
     /// **The patch's own size**: the diagonal of the box its two sections fill, before they are
     /// carried — what its sections are one by (`tolerance`), and its foot near by no more than
@@ -676,7 +678,7 @@ impl Blend {
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
-        let ((a,da,_),(b,db,_)) = self.ends(u);
+        let ((a,da),(b,db)) = self.ends(u);
         let p = add(scale(a,1.-v),scale(b,v));
         let pu = add(scale(da,(1.-v)*(self.ta[1]-self.ta[0])),scale(db,v*(self.tb[1]-self.tb[0])));
         let q = self.carry.at(p,v);
@@ -2566,7 +2568,7 @@ impl Curve {
             Curve::Turned(ref m) => m.inverse(p),
             Curve::Slid(ref m) => m.inverse(p),
             Curve::Trochoid(ref m) => m.inverse(p),
-            Curve::Parallel(ref m) => m.inverse(p),
+            Curve::Parallel(ref m) => self.newton(p,m.seed(p),if m.of.period().is_some() { None } else { crate::query::curve_domain(&m.of) }),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -2647,7 +2649,7 @@ impl Curve {
             Curve::Turned(ref m) => m.speed(),
             Curve::Slid(ref m) => m.speed(),
             Curve::Trochoid(ref m) => m.speed(),
-            Curve::Parallel(ref m) => m.speed(),
+            Curve::Parallel(ref m) => m.speed,
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -2667,7 +2669,7 @@ impl Curve {
                 Carry::Line {..} => hull([t0,t1].map(|v| b.d1([u,v]).0)),
                 // before it is carried, the rail is the straight line between its sections
                 Carry::Screw {center,axis,angle,advance} => {
-                    let ((a,_,_),(z,_,_)) = b.ends(u);
+                    let ((a,_),(z,_)) = b.ends(u);
                     screwed_over(center,axis,angle,advance,[t0,t1],hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
                 }
             },
