@@ -233,7 +233,11 @@ enum Shape { Traced,Normal { base: [P;2],d: [P;2],way: f64,through: [Option<usiz
 
 impl Trim {
     /// The trim's point at `s` of `[0, 1]`: its two charts' parameters, settled where it is traced.
-    fn at(&self,tube: &Tube,s: f64) -> Option<[P;2]> {
+    fn at(&self,tube: &Tube,s: f64) -> Option<[P;2]> { self.at_held(tube,s,false) }
+
+    /// `at`, the line a traced point is held on turning smoothly between the polyline's tangents on
+    /// any chart where `smooth` (as on a band's always).
+    fn at_held(&self,tube: &Tube,s: f64,smooth: bool) -> Option<[P;2]> {
         let n = self.uv.len();
         if s <= 0. { return Some([self.uv[0],self.partner[0]]) }
         if s >= 1. { return Some([self.uv[n-1],self.partner[n-1]]) }
@@ -260,7 +264,7 @@ impl Trim {
                 // polyline's tangents at its points: its segments' own ways jump at each point, the
                 // point settled there jumping along the curve by its chord's sag, which beside the
                 // band's line is over the bar — a curve fitted through them missed by 3.1e-6)
-                if let Chart::Band(..) = self.own {
+                if smooth || matches!(self.own,Chart::Band(..)) {
                     let tangent = |m: usize| {
                         let (a,b) = (self.uv[m.saturating_sub(1)],self.uv[(m+1).min(n-1)]);
                         let d = [b[0]-a[0],b[1]-a[1]];
@@ -1526,7 +1530,21 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 // within it of one another, and a corner's join within it of the end pose)
                 let bars = [fit,if let Shape::Traced = t.shape { fit } else { tol }];
                 if debug() { eprintln!("tube: trim {i} on {:?} against {:?}, {:?}, from {:?} to {:?}",t.own,t.other,t.shape,t.uv[0],t.uv[t.uv.len()-1]) }
-                fitted(&f,&at,&bars)?
+                match fitted(&f,&at,&bars) {
+                    Ok(r) => r,
+                    // (a sheet's traced trim fitted short: its points held on lines square to its
+                    // polyline's segments jump along the curve by a chord's sag where it turns — a
+                    // double curve turning 0.05 a chord across a sheet's half turn fitted to 2e-6
+                    // against 4.4e-7 — read again with the line turning smoothly, as on a band)
+                    Err(e) if matches!(t.shape,Shape::Traced) => {
+                        let g = |s: f64| match t.at_held(tube,s,true) {
+                            Some([u,p]) => (tube.at(t.own,u).map_or([f64::NAN;3],|q| q.x),vec![u,p]),
+                            None => ([f64::NAN;3],vec![[f64::NAN;2];2]),
+                        };
+                        fitted(&g,&at,&bars).map_err(|_| e)?
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             Kind::Rim {side,k,th} => {
                 let f = |s: f64| { let t = th[0]+(th[1]-th[0])*s; let x = tube.point(side,t,tube.roll[k]).map_or([f64::NAN;3],|p| p.x);

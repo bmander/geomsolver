@@ -56,12 +56,14 @@ fn a_double_curve_not_joined_to_its_swallowtail_point() {
 /// **The forward member seen from 0.6 off its axis, not 0.7071, rolled on to 109°**: its trims
 /// leave no angle of its sheet `−` free for the windows' cuts — refused so, until its cuts were read
 /// clear of its points alone and crossed its trims (`faces::crossing_windows`, `cut_across`: one
-/// trim each, split there). Now refused a stage on: a double curve crossing the sheet's half turn
-/// (`θ = π`, where the depth's trace is cut in two) bends there faster than its polyline's chords
-/// follow, and its curve fits to 2e-6 against 4.4e-7.
+/// trim each, split there). Then a double curve crossing the sheet's half turn, bending 0.05 a chord
+/// there, fitted only to 2e-6 against 4.4e-7 — its points held on lines square to its polyline's
+/// segments jumped along it at each corner — and fits held on a line turning smoothly between its
+/// tangents (`Trim::at_held`). Now refused at the sewing, three faces along an edge beside the pinch's
+/// rim: the moved-a-hair members' refusal.
 #[test]
 fn the_trims_leave_no_angle_free_for_the_windows_cuts() {
-    refused(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},"a curve fits within");
+    refused(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},"three or more faces meet along the edge");
 }
 
 /// **The reverse member leaning 52°, not 45°: three instants touch a meridian whole** — refused
