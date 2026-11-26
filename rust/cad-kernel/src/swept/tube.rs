@@ -29,6 +29,7 @@
 pub mod band;
 pub mod cover;
 pub mod faces;
+pub mod membership;
 
 use super::closed::Unbuilt;
 use super::depth::{Cover,Reading};

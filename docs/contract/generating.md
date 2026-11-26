@@ -3223,6 +3223,32 @@ nowhere) are now the tube road's to build (`closed::ring` tries it wherever the 
 whole torus, not past a budget nor cut from a blank, the ring road's refusal standing where it
 refuses too), each its volume cadrs's to 1e-6.
 
+**The tube road's membership, and its charts in patches** (`tube::membership`, step 2 of
+`docs/tube-trims-by-membership.md`; beside the present road, which reads none of it yet): a chart's
+point is *kept* (nothing else covers it, or the far cover stands above nought), *covered* (another
+instant holds it below nought: that far cover), *held* (the instants beside its own hold it) or
+*unread* (past a fold, in a swallowtail point's disc, inside a hole's rim — the pinch's, a band's
+seam — another chart's), `membership` over `Depth::reading`. Each chart is cut into **fixed patches**
+(`patches`): a sheet into quarters of `θ` by stretches of the roll each turning the motion at most a
+quarter turn (the rotation between poses summed over 512 steps, then cut evenly), an end pose into
+quarters each way, the collar and a band one patch; their edges are **lines each patch beside them
+shares** (`Patches::edges`, `sides`; a whole turn's last line its first,
+`swept_membership::a_charts_patches_share_their_edges`), and what crosses an edge is **read once on
+it** (`crossings`): the line read at a quarter of the feature in space; a sign change of the depth
+between two readings halved to the tolerance in space, each end on its side, the far cover on the
+covered side kept (the instant across, and so the face); a stretch of one sign halved where the
+depth, 1-Lipschitz, could reach nought between its ends; a stretch with one end held or unread halved
+toward it to the tolerance — a double curve beside the crossed reverse member's fold, a sliver 0.011
+across between a reading nothing else covers and the fold, lay between a quarter feature's readings.
+**Gated** by `swept_membership::the_half_turns_patch_edges_are_crossed_where_its_trims_cross_them` and
+(slow) `…the_crossed_members_patch_edges_…`: every crossing of a patch edge by the present road's
+traced pieces is one membership reads within four tolerances in space, and every one it reads a
+piece's — or, where the zero set grazes the edge (a piece running along `θ = π` crossing it nine
+times where membership reads its one touch; a double curve beside a fold whose depth changes by 4e-3 a
+unit across it, the two crossings 5.4e-5 apart), the other within the feature with its depth within
+four tolerances of nought. The crossed members' four sheets: 28 crossings, the worst 1.3e-5 off (the
+tolerance 4.4e-6), each sheet's edges read in about a second.
+
 **The tube road's solid is held to the sweep's boundary before it is returned**
 (`tube::faces::held`, gated by
 `swept_tumbles::a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again`): each face read

@@ -122,8 +122,12 @@ whole torus**, whatever it refuses for.
    missed by the depth's search (`docs/contract/generating.md`). The three gates build, each volume
    cadrs's to 1e-6; the fourth (a torus's piece facing behind) the tube road refuses too.
 2. **The membership field** (§2) as one type over every chart, and **patches with shared edges**
-   (§3), the edges' crossings read once. Gate: on the crossed members, the patches' edge crossings
-   are the present trims' crossings of the same lines, to the tolerance.
+   (§3), the edges' crossings read once — *done* (`tube::membership`): on the half turn and both
+   crossed members the patches' edge crossings are the present trims' crossings of the same lines,
+   within four tolerances in space (the trims' chords stand within one of the zero set; membership's
+   crossings are settled to it), a grazing crossing matched by its standing on the zero set. A line
+   read past a fold's edge had to be halved toward it: a double curve beside the fold lay between a
+   quarter feature's readings.
 3. **Chains to stretches** (§4) over patches, beside the present road (both run; the stretches
    compared to the present trims on the crossed members and the 12 fuzzed builds: the same
    curves, ends to the tolerance). Then the end-event rules go: `switched`, `cornered`,
