@@ -3269,6 +3269,18 @@ turn: 33 stretches, some 8 500 places, 12 changes of the face across; the crosse
 stretches, 3 475 places, 8 changes. Traced patch by patch the sheets take about half the present
 road's time (the full turn's 4 s against 8 s, the forward's sheet `−` 3.4 s against 4.8 s).
 
+**A chart's windows cut across its trims where they leave no angle free** (`faces::crossing_windows`,
+`cut_across`, `chained`; part of step 4 of `docs/tube-trims-by-membership.md`): a chart whose trims
+leave no angle free (`windows`) is cut at two angles clear of its points alone — its swallowtail
+points, the pinch's hole, every vertex on it — and each trim a cut crosses is split there, the
+crossing settled on the double curve with the angle held (`settle`, as `met_by_cut` settles a
+swallowtail point's cut), a vertex of both its charts; the cut is then arcs between its vertices in
+order along it. A join crossed is refused by name. A chart whose trims leave an angle free is cut as
+before, so every solid built so is the same to the byte (the crossed members and their
+intersection). The forward member seen from 0.6 off its axis passes the windows so, and is refused a
+stage on, a double curve crossing its sheet's half turn fitted short
+(`swept_tumbles::the_trims_leave_no_angle_free_for_the_windows_cuts`).
+
 **The tube road's solid is held to the sweep's boundary before it is returned**
 (`tube::faces::held`, gated by
 `swept_tumbles::a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again`): each face read

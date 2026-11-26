@@ -135,7 +135,14 @@ whole torus**, whatever it refuses for.
    to step 4. The end-event rules (`switched`, `cornered`, `join_holds`, `joined`, `disc`,
    `windows`) go with step 4: until faces are built from the stretches, the road still needs them.
    Still to compare: the 12 fuzzed builds.
-4. **Faces per patch and the merge** (§6). Gate: the crossed members' volumes as pinned
+4. **Faces per patch and the merge** (§6). *Begun*: a chart whose trims leave no angle free is cut
+   at angles clear of its points alone, each trim crossed split at a vertex settled on its double
+   curve (`faces::crossing_windows`, `cut_across`) — the windows' refusal gone, every other build the
+   same to the byte. The rest — faces per patch from the stretches, the end-event rules removed —
+   is not built. Its next blocker, met at once: a double curve crossing a sheet's half turn
+   (`θ = π`, where the depth's trace is cut in two) bends there faster than its polyline follows,
+   and its curve is fitted short (joining the two halves' ends at their middle on the zero set, and
+   refitting with the middles settled, did not mend it). Gate: the crossed members' volumes as pinned
    (16.6109998153, 13.7898471844) to 1e-9; every `swept_tube` gate; then the `swept_tumbles`
    gates flip one by one, each to a build checked against the exact sweep at random points and
    against cadrs's volume.
