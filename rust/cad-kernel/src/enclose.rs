@@ -509,6 +509,12 @@ impl Enclosed<1> for Curve {
             Curve::Turned(m) => exact(&**m,t),
             Curve::Slid(m) => exact(&**m,t),
             Curve::Trochoid(m) => exact(&**m,t),
+            // within `|d|` of the curve it is carried from; its rate not read (nothing known)
+            Curve::Parallel(m) => {
+                let e = m.of.enclose([t]);
+                let r = Iv::new(-m.d.abs(),m.d.abs());
+                Patch {at:add3(e.at,[r;3]),d:[[Iv::ANY;3]],proved:e.proved}
+            }
         }
     }
 }
