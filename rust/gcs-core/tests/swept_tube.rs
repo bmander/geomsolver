@@ -903,7 +903,7 @@ fn the_bands_seam_is_the_sheets_hole() {
     // the window holding the band, fitted with the stand-in held inside the seam
     let (w0,w1) = (5.507489549754588,10.570919415858736);
     let clock = std::time::Instant::now();
-    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol).unwrap();
+    let net = sheet_net(&tube,-1.,(w0,w1),0.1*tol,&[]).unwrap();
     eprintln!("the sheet − over its window: {} × {} poles in {:?}",net.poles.len(),net.poles[0].len(),clock.elapsed());
     assert!(net.poles.len() <= 400 && net.poles[0].len() <= 320,"{} × {}",net.poles.len(),net.poles[0].len());
     let mut inside = 0;
@@ -974,4 +974,48 @@ fn the_bands_chart_is_traced() {
         .filter(|q| { let x = tube.point(-1.,q[0],q[1]).unwrap().x; band_ends.iter().any(|y| gcs_core::brep::util::space::distance(x,*y) < 1e-12) }).count();
     eprintln!("the sheet −'s crossings of the seam read from both charts: {shared}");
     assert!(shared >= 2,"{shared} crossings read from both charts");
+}
+
+/// **A sheet's nets stretched across a near miss's line** (`Band::stretch`, `Tube::stretched`): the
+/// map from a net's parameters to the sheet's place moves a point across the line from `x′` to
+/// `x′ + β (w sinh(x′/λ) − x′)`, `w sinh(X/λ) = X` at the reach `X`, `β` a smooth bump — a smooth map
+/// of the plane onto itself, the identity outside the band. On a straight band as the crossed
+/// reverse member's (its turn 5.4e-4 wide, its reach 0.28): `unstretch` undoes `stretch` to the
+/// rounding over a grid holding the band and beyond; the stretch rises across the line at every
+/// `η`, within the band and past its ends; it is the identity beyond the reach and past the ends'
+/// room; and about the line it reads the turn's width `w` stretched to `λ` (`w sinh(x′/λ)`).
+#[test]
+fn a_bands_stretch_is_a_smooth_map_of_the_plane_onto_itself() {
+    use gcs_core::brep::swept::tube::band::Band;
+    let (at,ex,w,reach,eta) = ([1.07,0.46],[0.8,0.6],5.4e-4,0.28,[-0.35,0.47]);
+    let b = Band::straight(at,ex,w,reach,eta);
+    let ey = [-ex[1],ex[0]];
+    let place = |x: f64,e: f64| [at[0]+x*ex[0]+e*ey[0],at[1]+x*ex[1]+e*ey[1]];
+    let across = |p: [f64;2]| (p[0]-at[0])*ex[0]+(p[1]-at[1])*ex[1];
+    let mut worst = 0f64;
+    for i in 0..=60 {
+        for j in 0..=60 {
+            let p = place(-0.4+0.8*i as f64/60.,-0.5+1.1*j as f64/60.);
+            let q = b.unstretch(b.stretch(p));
+            worst = worst.max((q[0]-p[0]).hypot(q[1]-p[1]));
+        }
+    }
+    assert!(worst <= 1e-12,"unstretch undoes stretch to {worst:e}");
+    for e in [-0.44,-0.35,0.,0.3,0.47,0.52] {
+        let mut last = f64::NEG_INFINITY;
+        for k in 0..=4000 {
+            let x = across(b.stretch(place(-0.35+0.7*k as f64/4000.,e)));
+            assert!(x > last,"at η {e} the stretch turns back at {k}: {x} after {last}");
+            last = x;
+        }
+    }
+    let room = 0.125*(eta[1]-eta[0]);
+    for p in [place(0.29,0.),place(-0.3,0.2),place(0.1,eta[0]-room-1e-3),place(0.,eta[1]+room+1e-3)] {
+        assert_eq!(b.stretch(p),p,"moved outside the band");
+    }
+    let l = reach/(reach/w).asinh();
+    for x1 in [0.,0.2*l,l,3.*l] {
+        let x = across(b.stretch(place(x1,0.1)));
+        assert!((x-w*(x1/l).sinh()).abs() <= 1e-12*reach,"at x′ {x1}: {x}, w sinh(x′/λ) {}",w*(x1/l).sinh());
+    }
 }

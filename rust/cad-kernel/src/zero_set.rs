@@ -261,7 +261,11 @@ fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::A
         t.from_seed(uv,Some(end))?;
     }
     for &s in q.seeds {
-        if let Some(uv) = t.pulled(s,q.feature) { t.from_seed(uv,None)?; }
+        if let Some(uv) = t.pulled(s,q.feature) { t.from_seed(uv,None)?; continue }
+        // (a seed on an inner edge, read just past it: traced from that edge, as the edge's own
+        // sign changes are — a sheet's crossing of a band's seam, its seed on the seam, read past it
+        // by the seam's rounding and dropped, and the band's run from it never traced)
+        if let Some((uv,i)) = t.on_edge(s,q.feature) { t.from_seed(uv,Some(End::Edge(i)))?; }
     }
     let search = if complete { Search {sought:true,..t.search()?} } else { Search::default() };
     Ok(Traced {pieces:t.pieces,search})
@@ -471,6 +475,19 @@ impl<'a,F: Field> Tracer<'a,F> {
         // a point found twice (a rectangle's corner, on two sides) is one seed
         if self.seeds.iter().any(|s| distance(self.point(s.uv),x) <= 2.*self.q.tol) { return }
         self.seeds.push(Seed {uv,end,used:false});
+    }
+
+    /// `uv` pulled onto the zero set (`pulled`'s) where it lies past one inner edge of the domain by no
+    /// more than the half digits of the edge's side function, inside the rectangle and every other
+    /// edge, and is undercut by no other branch: the point and the edge, to be traced from it.
+    fn on_edge(&self,uv: Uv,limit: f64) -> Option<(Uv,usize)> {
+        let l = self.least(uv)?;
+        let (q,_) = self.correct(uv,&l.at,limit)?;
+        let Some(Side::Edge(i)) = self.outside(q) else { return None };
+        if !((self.q.edges[i].side)(q) >= -HALF_READ) { return None }
+        if self.q.edges.iter().enumerate().any(|(j,e)| j != i && (e.side)(q) < 0.) { return None }
+        let lq = self.least(q)?;
+        (!self.undercut(q,&lq)).then_some((q,i))
     }
 
     /// `uv` pulled onto the zero set along the least's branch, kept where it moved no farther than

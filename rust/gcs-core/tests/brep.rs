@@ -3794,6 +3794,35 @@ fn a_nets_face_is_read_cell_by_cell() {
         "the folded sheet's reads {reads:?}, the knots doubled in u then in v: more than twice as many each time");
 }
 
+/// **A net's area read on every core is one thread's, to the bit** (`props::Cells`): a strip's
+/// whole cells along `v` are read side by side where they are many, each as one thread reads it,
+/// and the integrand's reads the workers made are counted as the caller's (`props::reads`).  The
+/// annulus of the paraboloid read here and on a worker of `par::indices` (one thread there,
+/// `par::threads`) gives the same area and flux to the bit, and the same reads; a rational net's
+/// too.  Each node across a column is read off its basis kept from the column's first node along
+/// (`Net::basis`, `Net::d1_by`), `Surface::d1`'s very bits, and a polynomial net's area off its
+/// rates alone (`Net::rates_by`): the face's measures are the ones every node read afresh gave.
+#[test]
+fn a_nets_area_read_on_every_core_is_one_threads() {
+    let paraboloid = |n: usize,m: usize,w: Option<f64>| {
+        let mut net = cells::net(cells::knots(-1.,1.,n,0.4),cells::knots(-1.,1.,m,0.3),|t,_,s,_| [t,s,0.],w);
+        let (ku,kv) = (net.uknots.clone(),net.vknots.clone());
+        for (i,row) in net.poles.iter_mut().enumerate() {
+            for (j,p) in row.iter_mut().enumerate() { p[2] = (cells::polar(&ku,i).1+cells::polar(&kv,j).1)/2. }
+        }
+        net
+    };
+    for w in [None,Some(2.)] {
+        let b = cells::face(cells::surface(paraboloid(96,64,w)),
+            vec![vec![(cells::circle([0.,0.],0.9),false,false)],vec![(cells::circle([0.,0.],0.35),true,false)]]);
+        let here = cells::measured(&b);
+        let there = gcs_core::par::indices(2,|_| cells::measured(&b)).remove(0);
+        assert_eq!((here.0.to_bits(),here.1.to_bits()),(there.0.to_bits(),there.1.to_bits()),
+            "weights {w:?}: the area and flux {:?} on every core, {:?} on one thread",(here.0,here.1),(there.0,there.1));
+        assert_eq!(here.2,there.2,"weights {w:?}: {} reads on every core, {} on one thread",here.2,there.2);
+    }
+}
+
 /// **A polygon with a hole on a net, its sides along knot lines** (#880): `z = x²/2` on a cubic
 /// net of uniform knots (`1/64`s of `[−1, 1]`), a pentagon two of whose sides lie on a `u` and a
 /// `v` knot line, a square hole likewise; the area `∬ √(1 + x²)` and the flux `∬ −x²/2` read round

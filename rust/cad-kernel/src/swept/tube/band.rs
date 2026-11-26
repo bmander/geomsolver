@@ -85,6 +85,19 @@ pub struct Band {
     bend: Vec<f64>,
 }
 
+/// Bisections the stretch's inverse takes at most (`Band::unstretch`; to the rounding of its reach).
+const STRETCH_SECTIONS: usize = 64;
+
+/// **A smooth step**: nought at and below nought, one at and above one, `e^(−1/ρ)` against
+/// `e^(−1/(1−ρ))` between — smooth to every order.
+fn smooth_step(rho: f64) -> f64 {
+    if !(rho > 0.) { return 0. }
+    if !(rho < 1.) { return 1. }
+    let f = |t: f64| (-1./t).dexp();
+    let (a,b) = (f(rho),f(1.-rho));
+    a/(a+b)
+}
+
 /// `sinh` and `cosh` by `Det::dexp` (the same bits on every target), and `asinh` by `Det::dln`.
 fn sinh(x: f64) -> f64 { let e = x.dexp(); 0.5*(e-1./e) }
 fn cosh(x: f64) -> f64 { let e = x.dexp(); 0.5*(e+1./e) }
@@ -191,6 +204,91 @@ impl Band {
 }
 
 impl Band {
+    /// **A band about a straight line** through `at` across `ex` (a unit way in `(θ, t)`), its turn
+    /// `w` wide, its reach `across` and its ends `eta` along the line, its bend nought: what a gate
+    /// reads a stretch on (`stretch`), the floor's own readings aside.
+    pub fn straight(at: [f64;2],ex: [f64;2],w: f64,across: f64,eta: [f64;2]) -> Band {
+        Band {at,least:w,ex,ey:[-ex[1],ex[0]],w,across,tau:asinh(across/w),eta,delta:w,span:[0.5*(eta[0]+eta[1]),0.5*(eta[1]-eta[0])],bend:vec![0.]}
+    }
+
+    /// **A sheet's parameters stretched across the band's line** (the sheets' nets' own parameters,
+    /// `Tube::stretched`): the place `(θ, t)` of the net's point `p`, `p` moved along `e_x` from
+    /// `x′` to `x = x′ + β (w sinh(x′/λ) − x′)` across the line (`x′` from the bent line `mid(η)`,
+    /// `η` along it kept), `λ` such that `w sinh(X/λ) = X` at the seam's reach `X` across
+    /// (`across`), and `β` a smooth bump, one about the line and nought beyond `X` across and past
+    /// the band's ends by `ROOM_ALONG` of its length (`stretch_weight`). The sinh lies under the
+    /// identity across `(0, X)` and `β` falls outward, so `x` rises with `x′`: a smooth map of the
+    /// plane onto itself, the identity outside the band. Read in `p`, a sheet bends across the line
+    /// at the turn's width `w` stretched to `λ`: its net follows it in a few dozen knots where in
+    /// `(θ, t)` it asked hundreds, each way, a tensor grid carrying them over the whole window.
+    pub fn stretch(&self,[th,t]: [f64;2]) -> [f64;2] {
+        let (x1,eta) = self.across_along([th,t]);
+        let b = self.stretch_weight(x1,eta);
+        if b == 0. { return [th,t] }
+        let l = self.across/self.tau;
+        let x = x1+b*(self.w*sinh(x1/l)-x1);
+        [th+(x-x1)*self.ex[0],t+(x-x1)*self.ex[1]]
+    }
+
+    /// **The net's parameters of the place `(θ, t)`** (`stretch`'s inverse): `η` kept, `x′` the root
+    /// of the rising `x(x′)` across `[−X, X]` by bisection to its rounding; the place itself outside
+    /// the stretch.
+    pub fn unstretch(&self,[th,t]: [f64;2]) -> [f64;2] {
+        let (x,eta) = self.across_along([th,t]);
+        if !(x.abs() < self.across) || self.along(eta) == 0. { return [th,t] }
+        let l = self.across/self.tau;
+        let s = |x1: f64| x1+self.stretch_weight(x1,eta)*(self.w*sinh(x1/l)-x1);
+        let (mut lo,mut hi) = (-self.across,self.across);
+        for _ in 0..STRETCH_SECTIONS {
+            let m = 0.5*(lo+hi);
+            if m == lo || m == hi { break }
+            if s(m) < x { lo = m } else { hi = m }
+        }
+        let x1 = 0.5*(lo+hi);
+        [th+(x1-x)*self.ex[0],t+(x1-x)*self.ex[1]]
+    }
+
+    /// **The outline of where the stretch moves anything**, `n` places along each of its four sides
+    /// (`(θ, t)`, `θ` unwrapped about the band's least): the reach across, `±X`, from past one end
+    /// by `ROOM_ALONG` of the band's length to past the other.
+    pub fn stretch_outline(&self,n: usize) -> Vec<[f64;2]> {
+        let [e0,e1] = self.eta;
+        let room = ROOM_ALONG*(e1-e0);
+        let (lo,hi) = (e0-room,e1+room);
+        let at = |x1: f64,eta: f64| { let x = self.mid(eta).0+x1; [self.at[0]+x*self.ex[0]+eta*self.ey[0],self.at[1]+x*self.ex[1]+eta*self.ey[1]] };
+        let f = |i: usize| i as f64/n as f64;
+        let mut out = Vec::with_capacity(4*n);
+        for i in 0..n { out.push(at(-self.across,lo+(hi-lo)*f(i))) }
+        for i in 0..n { out.push(at(-self.across+2.*self.across*f(i),hi)) }
+        for i in 0..n { out.push(at(self.across,hi-(hi-lo)*f(i))) }
+        for i in 0..n { out.push(at(self.across-2.*self.across*f(i),lo)) }
+        out
+    }
+
+    /// How far across the bent line and along it the place `(θ, t)` stands, `θ` read within half a
+    /// turn of the band's least.
+    fn across_along(&self,[th,t]: [f64;2]) -> (f64,f64) {
+        let d = [(th-self.at[0]+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI,t-self.at[1]];
+        let eta = d[0]*self.ey[0]+d[1]*self.ey[1];
+        (d[0]*self.ex[0]+d[1]*self.ex[1]-self.mid(eta).0,eta)
+    }
+
+    /// The stretch's weight `β` at `x′` across and `η` along: one within half the reach across and
+    /// within the band's ends, nought beyond the reach and past the ends by `ROOM_ALONG` of its
+    /// length, a smooth step between (`smooth_step`).
+    fn stretch_weight(&self,x1: f64,eta: f64) -> f64 {
+        let r = (x1/self.across).abs();
+        let across = if r <= 0.5 { 1. } else { smooth_step(2.*(1.-r)) };
+        across*self.along(eta)
+    }
+
+    /// The stretch's weight along the line (`stretch_weight`'s).
+    fn along(&self,eta: f64) -> f64 {
+        let [e0,e1] = self.eta;
+        let room = ROOM_ALONG*(e1-e0);
+        if eta < e0 { smooth_step((eta-(e0-room))/room) } else if eta > e1 { smooth_step(((e1+room)-eta)/room) } else { 1. }
+    }
+
     /// **Whether `(τ, η)` lies deep in the band**: farther inside the seam than `RIM_LAYER` of its
     /// measure (`seam` under −`RIM_LAYER`), where a sheet is not read (`Tube::side`) — the pinch's rule
     /// (`Pinch::deep`), a sheet read on past the rim only as far as a tracer's exit asks; but a thin
@@ -401,6 +499,16 @@ impl Tube<'_> {
             out.push(band);
         }
         Ok(out)
+    }
+
+    /// **A tube whose sheets' nets are stretched across its near misses** (`Tube::pinched`, then
+    /// `bands` as its `stretches`, none where they are refused): its charts, traces and faces the
+    /// pinched tube's, only its sheets' nets read in stretched parameters (`Band::stretch`).
+    pub fn stretched<'a>(ring: &'a super::super::rings::Ring,path: &'a crate::trajectory::Trajectory,roll: [f64;2],tol: f64,feature: f64)
+        -> Result<Tube<'a>,Unbuilt> {
+        let mut tube = Tube::pinched(ring,path,roll,tol,feature)?;
+        tube.stretches = tube.bands().unwrap_or_default();
+        Ok(tube)
     }
 
     /// **A sheet built round its near misses** (`Tube::pinched`, then `bands`): the sheets' hole is

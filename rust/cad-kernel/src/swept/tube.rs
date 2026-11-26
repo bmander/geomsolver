@@ -58,7 +58,9 @@ pub struct Tube<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64
     pub pinch: Option<Pinch<'a>>,
     /// The bands about its near misses of a whole-touch, where a tube is built round them
     /// (`Tube::banded`; none otherwise).
-    pub bands: Vec<band::Band> }
+    pub bands: Vec<band::Band>,
+    /// The near misses its sheets' nets are stretched across (`Tube::stretched`; none otherwise).
+    pub stretches: Vec<band::Band> }
 
 /// **How fast the motion carries the core circle over the roll**, bounded: its rotation's spin
 /// (`Trajectory::spin_bound`) and the first four rates of the circle's points
@@ -100,7 +102,7 @@ impl<'a> Tube<'a> {
             }).map(|i| i.ok()).map(|i| i.unwrap_or(crate::util::interval::Interval::ZERO));
             Some(Rates {spin:path.spin_bound().ok()?,jet:path.point_jet_bound_over(boxed,domain,true).ok()?})
         })();
-        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None,bands:Vec::new()})
+        Ok(Tube {ring,path,roll,radius:c[0],height:c[1],r,rates,pinch:None,bands:Vec::new(),stretches:Vec::new()})
     }
 
     /// The core circle's point at `θ` in the tool's coordinates, and its first and second rates.

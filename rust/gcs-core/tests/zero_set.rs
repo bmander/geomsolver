@@ -5,7 +5,8 @@
 //! two corners, returned exactly at the circles' crossings), a curve touching a given edge
 //! tangentially and a cusp ending on one, a curve run rim to rim and one touching the rim, and the
 //! depth of a plane's points under a ball moved along a line and round a circle (a stadium's and an
-//! annulus's outlines), `f = min over t of |P − c(t)| − r`, the nearest thing to the real callers.
+//! annulus's outlines), `f = min over t of |P − c(t)| − r`, the nearest thing to the real callers;
+//! and a caller's seed on an inner edge, read just past it, traced from that edge.
 //! Each asserts every returned point's and chord middle's distance in space from the true zero set,
 //! the count and the ends of the pieces, and the corners' places.
 use gcs_core::brep::zero_set::{through,trace,Bound,Edge,End,Field,Piece,Question,Rect,Traced,Value};
@@ -582,6 +583,32 @@ fn the_pieces_through_a_callers_seeds_alone() {
     let mut xs = [p.uv[0][0],p.uv[p.uv.len()-1][0]];
     xs.sort_by(f64::total_cmp);
     assert_eq!(xs,[-1.,1.]);
+}
+
+/// **A caller's seed on an inner edge, read just past it, is traced from that edge** (#880 T1f): the
+/// line `u = 0.3` below the edge `v = 0.5` (the domain `v ≤ 0.5`), the edge's side read a hair below
+/// nought on the edge itself, as a band's seam reads the place a sheet's crossing of it was settled
+/// at; the seed there is pulled onto the line and found outside, and is traced from the edge — one
+/// piece, from the edge to the rim, below the edge. A seed past the edge by more than the half digits
+/// of its side is still not traced.
+#[test]
+fn a_callers_seed_on_an_inner_edge_is_traced_from_it() {
+    let plane = Plane::new([1.,1.],vec![Box::new(|p: [f64;2]| (p[0]-0.3,Some([1.,0.]),0.))]);
+    let at = |t: f64| [-1.+2.*t,0.5];
+    let side = |uv: Uv| (0.5-uv[1])-1e-12;
+    let edges = [Edge {at:&at,side:&side}];
+    let seeds = [[0.3,0.5]];
+    let q = Question {rect:[[-1.,1.],[-1.,1.]],edges:&edges,seeds:&seeds,tol:TOL,feature:0.1};
+    let t = through(&plane,&q).unwrap();
+    assert_eq!(t.pieces.len(),1,"{:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>());
+    let p = &t.pieces[0];
+    let mut ends = p.ends;
+    ends.sort_by_key(|e| matches!(e,End::Edge(_)));
+    assert_eq!(ends,[End::Rim,End::Edge(0)]);
+    assert!(p.uv.iter().all(|uv| (uv[0]-0.3).abs() <= TOL && uv[1] <= 0.5),"the line below the edge: {:?}",p.uv);
+    let far = [[0.3,0.501]];
+    let t = through(&plane,&Question {seeds:&far,..q}).unwrap();
+    assert!(t.pieces.is_empty(),"a seed past the edge traced: {:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>());
 }
 
 /// **A cell spanning a whole turn is halved across it** (#880 T1f): on a cylinder over `θ` in a

@@ -3139,6 +3139,68 @@ operands with nets of a quarter the poles took 18 s against 20 s — the time is
 and the members' traces, not the nets' size; the band is for the sheets' fit, not the bench's clock.
 **Next**: the tip's crossing joined on the sheet as a corner is (or the seam's tip placed clear of
 the cuspidal edge), and `closed::ring` calling `Tube::banded`, `Tube::pinched` where it refuses.
+**Why the tip will not close** (measured, `closed::ring` switched to `Tube::banded` by hand): the
+sheet `−` holds a swallowtail point just past the tip, S at (1.4383, 0.1616), `(τ, η)` (−6.379,
+−0.454), its cuspidal edge crossing the seam twice — at the tip, (1.360, 0.245), and beside the seam
+vertex at (1.214, 0.137) — and its double curve running through the band to the band's own
+swallowtail point at (−6.140, 0.004): a swallowtail pair astride the seam. The double curve's
+preimage B is traced on the sheet from the seam to the fold beside S; preimage A leaves the band at
+the tip and no run of the sheet carries it on to S, so B's end on the sheet is a vertex one trim
+reaches (the trim used thrice, the seam's arc there once); and past S's fold the sheet has a third
+layer, onto which `partner` settles B as A nears the tip. Ended short (η −0.30 to −0.37) the tip
+still cuts the pair; a band too narrow to hold any swallowtail point (2.5 to 3.5 turns across) is
+refused at other events, its nets 512 × 645 to 611 × 638. **The band holding S** (ended past it,
+η −0.47 to −0.5025; past −0.505 the floor falls again inside the chart's room) took four repairs,
+each of a defect any band meets: a swallowtail point's probe on a band's chart kept on the chart
+(half the way to the seam where nearer than a fiftieth of the band); a double curve's point settled
+while its gap shrinks too (`settle`: beside a fold the second step is the longer, and stopped there a
+band trim's point stood 4.8e-8 off the curve, its trim's length along its polyline jumping — a
+curve fitted through it 1e-5 off), a band trim's stray points settled and its middles put in only
+on the curve (`refined`); a caller's seed on an inner edge read just past it traced from that edge
+(`zero_set`: the sheet's crossing of the seam at the band's far end, rounded past the seam, dropped,
+and the band's run from it never traced); and a seam's arc fitted paced (`paced`: where it crosses
+the line `τ` swings through nought in a sliver of its turn). The pinched road's files change at the
+rounding only (the crossed forward member's volume 8e-15 of itself), the rest byte for byte.
+**Then the reverse member builds banded** — ended at η −0.50 with the seam ten turns across (or
+−0.5025; or −0.49 with the seam's power 6): its volume 13.7898472007 against the pinched road's
+13.7898471844 (1.2e-9 of itself), its area to 1.6e-10, valid, its sheets' nets 318 × 231 and
+319 × 235 and the band's 257 × 129 (against 944 × 849 and 942 × 853), the bench's measuring of it
+16.7 s against 54 s. **But no rule is found that lands there**: beside each working end its
+neighbours are refused — η −0.48 to −0.495, where preimage B runs from S's disc to the seam within
+the tolerance of the seam's rounded corner (three faces along it), and where a vertex of the seam
+near (2.83, 0.79, 1.79) leaves an edge bounding one face; a seam eight turns across puts B on the
+corner at −0.50 too, nine fits its arcs short of the bar without the pacing. So `closed::ring` still
+builds pinched: the band wants an end chosen against the sheets' swallowtail pairs (traced before it
+is placed) and a crossing of its seam by a double curve that grazes it.
+**The sheets' nets stretched across the line instead** (`Tube::stretched`, `Band::stretch`; gated
+by `swept_tube::a_bands_stretch_is_a_smooth_map_of_the_plane_onto_itself`; not yet the road's): no
+band chart, no seam — the pinched tube's charts, traces and faces, only each sheet's window's net
+read in stretched parameters, the place moved across the line from `x′` to `x′ + β (w sinh(x′/λ) − x′)`
+(`w sinh(X/λ) = X` at the seam's reach `X`; `β` a smooth bump, one about the line, nought beyond the
+reach and past the band's ends by `ROOM_ALONG`), a smooth map of the plane onto itself, the
+identity outside the band; the sheet's uses' pcurves fitted in the nets' parameters
+(`Band::unstretch`, its inverse by bisection across), and a stretch read on a sheet only where its
+outline lies whole in one of the sheet's windows, inside the roll (`faces`). **Measured**: the
+crossed reverse member builds stretched with nothing chosen for it, volume to 1.3e-8 of the pinched
+road's and area to 3.5e-10, valid, its sheets' windows' nets 518 × 367 and 530 × 371 (against
+944 × 849 and 942 × 853: a single tensor grid carries the band's knots across the window, the
+sheet's and the band's each way, where the band's own patch carried them apart — a reach of 1.5
+or 2 seams only adds knots), the bench's measuring of it 19.8 s against 54 s; every tumbling torus
+builds as before. **But the crossed members' Boolean is refused** (their union, intersection and
+difference: "a bspline's pieces do not close"): on a stretched sheet's face two of the Boolean's
+meetings leave a node of its walk tangent to 8e-6 however far along they are read (`TANGENT_TIE`),
+a sliver between them — the meetings of operands within 1e-7 of the pinched ones, read in other
+parameters. Measured further: the forward member's faces A1, A2 and A3 meet where they cross the
+reverse member's face B8 — each pair traced from the same six seeds by [3.157, 0.913, 1.746] — and
+B8's arrangement takes 15 cut edges stretched where it took 9 pinched (its meetings with A1–A3 in
+18, 27 and 35 curves, against 20, 22 and 24), two of them one curve split twice. A milder stretch,
+`a sinh(x′/λ)` with `a` ten or thirty times `w` (its parameters' speed across the line ten and a
+hundred times evener), changes the nets little (534 × 402, 584 × 467) and the union's refusal
+only in kind: a shell kept on one side of a sheet's face and dropped on another, then a face with
+a hole in no piece. So the Boolean of the crossed members is held by the pinched nets' own
+parameters, not by the geometry: a reading of B8 in any other parameters meets a refusal there,
+and the stretch waits on a Boolean whose arrangement stands where three faces of one operand cross
+a face of the other.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

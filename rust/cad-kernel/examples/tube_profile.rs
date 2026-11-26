@@ -194,7 +194,7 @@ fn main() {
         let (w0,w1) = (th-2.,th+1.);
         for side in [1.,-1.] {
             let clock = Instant::now();
-            let net = tube::faces::sheet_net(&tb,side,(w0,w1),0.1*tol).unwrap();
+            let net = tube::faces::sheet_net(&tb,side,(w0,w1),0.1*tol,&[]).unwrap();
             let el = clock.elapsed();
             let mut worst = 0f64;
             let n = 600;

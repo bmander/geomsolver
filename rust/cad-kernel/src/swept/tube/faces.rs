@@ -1020,8 +1020,20 @@ fn fitted(f: &dyn Fn(f64) -> (V,Vec<P>),at: &dyn Fn(usize,P) -> Option<V>,bars: 
 fn refined(tube: &Tube,t: &Trim,bar: f64) -> Option<Trim> {
     if !matches!((t.own,&t.shape),(Chart::Band(..),Shape::Traced)) { return None }
     let x = |q: P| tube.at(t.own,q).map(|p| p.x);
+    let on = |u: P,w: P| x(u).zip(tube.at(t.other,w).map(|p| p.x)).is_some_and(|(a,b)| distance(a,b) <= 1e-3*bar);
     let mut out = t.clone();
     let mut more = false;
+    // (each point between its ends settled on the double curve first, held square to its neighbours'
+    // chord, where its two charts' points stand apart by more than a thousandth of the bar: a point
+    // whose partner was read beside a fold stood 2e-5 across the curve on the band's chart, and the
+    // trim read by its length along the polyline jumped along the curve there)
+    let n = out.uv.len();
+    for j in 1..n.saturating_sub(1) {
+        if on(out.uv[j],out.partner[j]) { continue }
+        let (p,q) = (out.uv[j-1],out.uv[j+1]);
+        let Some([u,w]) = settle(tube,(t.own,t.other),[out.uv[j],out.partner[j]],[q[0]-p[0],q[1]-p[1]]) else { continue };
+        if on(u,w) && crate::plane2::dist(u,out.uv[j]) <= 0.25*crate::plane2::dist(p,q) { (out.uv[j],out.partner[j]) = (u,w); more = true }
+    }
     for _ in 0..REFINED {
         let (mut uv,mut partner) = (vec![out.uv[0]],vec![out.partner[0]]);
         let mut put = false;
@@ -1032,10 +1044,11 @@ fn refined(tube: &Tube,t: &Trim,bar: f64) -> Option<Trim> {
             if let (Some(xa),Some(xb),Some([u,w])) = (x(a),x(b),settle(tube,(t.own,t.other),[u,w],[b[0]-a[0],b[1]-a[1]])) {
                 if let Some(xm) = x(u) {
                     // (a middle settled on the curve beside its chord: within a quarter of the chord
-                    // of its middle, in the parameters and in space — none settled on another branch)
+                    // of its middle, in the parameters and in space — none settled on another branch —
+                    // and its two charts' points one to a thousandth of the bar)
                     let off = distance(xm,crate::util::space::scale(crate::util::space::add(xa,xb),0.5));
                     let (m0,c) = (mid(a,b),crate::plane2::dist(a,b));
-                    if off > bar && off <= 0.25*distance(xa,xb) && crate::plane2::dist(u,m0) <= 0.25*c { uv.push(u); partner.push(w); put = true }
+                    if off > bar && off <= 0.25*distance(xa,xb) && crate::plane2::dist(u,m0) <= 0.25*c && on(u,w) { uv.push(u); partner.push(w); put = true }
                 }
             }
             uv.push(b);
@@ -1054,21 +1067,25 @@ const REFINED: usize = 6;
 
 /// **A double curve's point**: its two charts' parameters, from `guess`, settled by Newton's method
 /// on `X₁(u₁) = X₂(u₂)` with `u₁` held on the line square to `dir` through the guess, while the
-/// steps shrink. None where it does not settle.
+/// steps or the gap between the two points shrink. None where it does not settle. (Beside a sheet's
+/// fold the first step mostly carries a partner guessed off the curve onto it and the next is the
+/// longer before they shrink: stopped at the first step that did not, a band's trim's point beside
+/// a swallowtail point was left 4.8e-8 off the curve, where the next three steps settle it.)
 fn settle(tube: &Tube,(c1,c2): (Chart,Chart),guess: [P;2],dir: P) -> Option<[P;2]> {
     let [mut u1,mut u2] = guess;
     let value = dir[0]*u1[0]+dir[1]*u1[1];
-    let mut prev = f64::INFINITY;
+    let (mut prev,mut gap) = (f64::INFINITY,f64::INFINITY);
     for _ in 0..CORRECTIONS {
         let (x1,x2) = (tube.at(c1,u1)?,tube.at(c2,u2)?);
         let r = sub(x1.x,x2.x);
+        let off = crate::util::space::norm(r);
         let f = [r[0],r[1],r[2],dir[0]*u1[0]+dir[1]*u1[1]-value];
         let m = [[x1.x_th[0],x1.x_t[0],-x2.x_th[0],-x2.x_t[0]],[x1.x_th[1],x1.x_t[1],-x2.x_th[1],-x2.x_t[1]],
             [x1.x_th[2],x1.x_t[2],-x2.x_th[2],-x2.x_t[2]],[dir[0],dir[1],0.,0.]];
         let d = solve4(m,f)?;
         let step = d.iter().map(|x| x*x).sum::<f64>().sqrt();
-        if !(step < prev) { break }
-        prev = step;
+        if !(step < prev) && !(off < gap) { break }
+        (prev,gap) = (step.min(prev),off.min(gap));
         u1 = [u1[0]-d[0],u1[1]-d[1]];
         u2 = [u2[0]-d[2],u2[1]-d[3]];
     }
@@ -1115,10 +1132,13 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
         // (on a band's chart, along the line from the point to its seam, the way it opens away from)
         if let Chart::Band(kb,side) = chart {
             let band = &tube.bands[kb];
-            let step = 0.02*(band.eta[1]-band.eta[0]);
+            // (each way's probe a fiftieth of the band's length, or half the way to its seam that way
+            // where the point stands nearer it: a probe past the seam reads no band — a swallowtail
+            // point 0.016 inside the seam was refused both ways)
+            let step = |dir: f64| (0.02*(band.eta[1]-band.eta[0])).min(0.5*(band.seam_eta(p[0],dir)-p[1]).abs());
             let field = Depth {tube,chart,within:tol,holes:&[]};
             let kept = |eta: f64| match field.reading([p[0],eta]) { Some((_,Reading::Alone)) => true,Some((_,Reading::Far(c))) => c.depth >= 0.,_ => false };
-            let dir = if kept(p[1]-step) { -1. } else if kept(p[1]+step) { 1. } else {
+            let dir = if kept(p[1]-step(-1.)) { -1. } else if kept(p[1]+step(1.)) { 1. } else {
                 return Err(failed(format!("neither way from the swallowtail point {p:?} on {chart:?} is kept")))
             };
             let target = band.seam_eta(p[0],dir);
@@ -1356,10 +1376,34 @@ fn placed(tube: &Tube,chart: Chart,line: &[P],w0: f64,target: Option<f64>) -> Op
 /// point bounds the sweep, sewn.
 fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(Chart,[f64;2])],tol: f64) -> Result<Brep,Unbuilt> {
     let fit = FIT*tol;
+    // **the stretches each sheet's nets are read through** (`Tube::stretches`): those whose outline
+    // lies whole inside one of the sheet's windows, so its cuts and its rims are read unstretched and
+    // its windows are rectangles in the nets' parameters as in the sheet's
+    let held = |side: f64,s: &super::band::Band| {
+        let [c0,c1] = cuts_of(cuts,Chart::Sheet(side));
+        let outline = s.stretch_outline(64);
+        let [a,b] = tube.roll;
+        outline.iter().all(|q| q[1] > a && q[1] < b) && [(c0,c1),(c1,c0+TAU)].iter().any(|&(w0,w1)| outline.iter().all(|q| {
+            let th = w0+(q[0]-w0).rem_euclid(TAU);
+            th > w0 && th < w1
+        }))
+    };
+    let plus: Vec<&super::band::Band> = tube.stretches.iter().filter(|s| held(1.,s)).collect();
+    let minus: Vec<&super::band::Band> = tube.stretches.iter().filter(|s| held(-1.,s)).collect();
+    let stretched_of = |side: f64| -> &[&super::band::Band] { if side > 0. { &plus } else { &minus } };
+    if debug() { eprintln!("tube: stretched sheets: + {}, − {}",plus.len(),minus.len()) }
+    // (a use on a sheet read in its nets' parameters, and back)
+    let to_net = |c: Chart,q: P| match c { Chart::Sheet(s) => stretched_of(s).iter().rev().fold(q,|q,b| b.unstretch(q)),_ => q };
+    let from_net = |c: Chart,q: P| match c { Chart::Sheet(s) => stretched_of(s).iter().fold(q,|q,b| b.stretch(q)),_ => q };
     // each arc's curve in space and its uses' pcurves, in the uses' own parameters
     let mut curves: Vec<(Arc<Curve>,Vec<BSpline>)> = Vec::new();
     for arc in arcs {
-        let at = |u: usize,p: P| tube.at(arc.uses[u].0,p).map(|q| q.x);
+        let at = |u: usize,p: P| tube.at(arc.uses[u].0,from_net(arc.uses[u].0,p)).map(|q| q.x);
+        // (each use's pcurve fitted in its surface's parameters: a stretched sheet's nets')
+        let fitted = |f: &dyn Fn(f64) -> (V,Vec<P>),at: &dyn Fn(usize,P) -> Option<V>,bars: &[f64]| fitted(&|s: f64| {
+            let (x,ps) = f(s);
+            (x,ps.iter().enumerate().map(|(u,&p)| to_net(arc.uses[u].0,p)).collect())
+        },at,bars);
         let (c,pcs) = match arc.kind {
             Kind::Trim(i) => {
                 let refined = refined(tube,&trims[i],fit);
@@ -1397,8 +1441,13 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
             }
             Kind::Seam {k,side,f} => {
                 let (b,chart,near) = (&tube.bands[k],Chart::Band(k,side),arc.uses[1].1[0][0]);
+                // (read paced, slowly where it crosses the line: there `τ` swings through nought in a
+                // sliver of the seam's turn, `asinh` of the way across over the turn's width, and an
+                // arc read evenly in its fraction met it in two of a fit's points — its pcurve 4.8e-7
+                // off on a band nine turns wide)
+                let paced = paced(f);
                 let g = |s: f64| {
-                    let q = b.seam_at(f[0]+(f[1]-f[0])*s);
+                    let q = b.seam_at(paced(s));
                     let p = b.place(q);
                     (tube.at(chart,q).map_or([f64::NAN;3],|x| x.x),vec![q,[unwrap(p[0],near),p[1]]])
                 };
@@ -1481,11 +1530,30 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 if !keep { continue }
                 if debug() { eprintln!("tube: kept {chart:?} window {w}: {:?}",l.iter().map(|&(e,_)| lines[e].0).collect::<Vec<_>>()) }
                 let ls: Vec<&[(usize,bool)]> = std::iter::once(&l[..]).chain(holes[i].iter().map(|&j| &loops[j].0[..])).collect();
-                pieces.push(face(tube,chart,(w0,w1),&lines,&ls,arcs,&curves,vertices,&mut nets,tol)?);
+                let st: &[&super::band::Band] = match chart { Chart::Sheet(s) => stretched_of(s),_ => &[] };
+                pieces.push(face(tube,chart,(w0,w1),&lines,&ls,arcs,&curves,vertices,&mut nets,st,tol)?);
             }
         }
     }
     crate::sew::sewn(&pieces,tol).map_err(|e| failed(format!("the faces sewn: {e}")))
+}
+
+/// **A seam's arc paced** over its fractions `[a, b]`: `[0, 1]` mapped to the fraction whose polar
+/// angle is `φ(σ) = σ + ½ sin 2σ`, `σ` even along the arc — `φ` smooth and rising, its rate `1 +
+/// cos 2σ` nought at the seam's two ends on the line (`φ` a quarter and three quarters of a turn),
+/// where `τ` swings through nought, so the swing is spread over a stretch of `σ` and every reading
+/// of the arc stays smooth in it.
+fn paced([a,b]: [f64;2]) -> impl Fn(f64) -> f64 {
+    // (`σ` of the fraction `f`, within its turn: `φ` rises with `σ`, so by bisection to the rounding)
+    let sigma = |f: f64| {
+        let k = f.floor();
+        let phi = TAU*(f-k);
+        let (mut lo,mut hi) = (0.,TAU);
+        for _ in 0..80 { let m = 0.5*(lo+hi); if m+0.5*(2.*m).sin() < phi { lo = m } else { hi = m } }
+        TAU*k+0.5*(lo+hi)
+    };
+    let (s0,s1) = (sigma(a),sigma(b));
+    move |s: f64| { let x = s0+(s1-s0)*s; (x+0.5*(2.*x).sin())/TAU }
 }
 
 /// A point inside a polygon with holes (`rings`, the outer first; even and odd crossings): the
@@ -1578,8 +1646,8 @@ fn walk(lines: &[(usize,usize,Vec<P>)],arcs: &[Arc2],vertices: &[Vertex]) -> Res
 /// torus; its loop's edges each the arc's curve and its use's pcurve, in the surface's parameters.
 #[allow(clippy::too_many_arguments)]
 fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>)],loops: &[&[(usize,bool)]],arcs: &[Arc2],
-    curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],nets: &mut Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)>,tol: f64)
-    -> Result<Brep,Unbuilt> {
+    curves: &[(Arc<Curve>,Vec<BSpline>)],vertices: &[Vertex],nets: &mut Vec<(f64,(f64,f64),Arc<crate::nurbs::Net>)>,
+    stretches: &[&super::band::Band],tol: f64) -> Result<Brep,Unbuilt> {
     let [a,b] = tube.roll;
     // the surface, and the map from the chart's parameters (placed) to the surface's
     let (surface,map): (Surface,Box<dyn Fn(P) -> P>) = match chart {
@@ -1604,7 +1672,7 @@ fn face(tube: &Tube,chart: Chart,(w0,w1): (f64,f64),lines: &[(usize,usize,Vec<P>
         Chart::Sheet(side) => {
             let net = match nets.iter().find(|(s,w,_)| *s == side && *w == (w0,w1)) {
                 Some((_,_,net)) => net.clone(),
-                None => { let net = Arc::new(sheet_net(tube,side,(w0,w1),FIT*tol)?); nets.push((side,(w0,w1),net.clone())); net }
+                None => { let net = Arc::new(sheet_net(tube,side,(w0,w1),FIT*tol,stretches)?); nets.push((side,(w0,w1),net.clone())); net }
             };
             (Surface::BSpline(Frame::WORLD,net),Box::new(move |p: P| [(p[0]-w0)/(w1-w0),(p[1]-a)/(b-a)]))
         }
@@ -1681,18 +1749,21 @@ const MOST_GRADED: usize = 4096;
 /// bends at the scale of `ρ₀` (its normal turns half round across the hole), which a uniform grid
 /// over the whole roll meets only with `ρ₀` past the swallowtail points (measured: the bar held
 /// outside the hole from `ρ₀` 0.14 forward and 0.12 reverse at 1024 × 512).
-pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64) -> Result<crate::nurbs::Net,Unbuilt> {
+pub fn sheet_net(tube: &Tube,side: f64,(w0,w1): (f64,f64),bar: f64,stretches: &[&super::band::Band]) -> Result<crate::nurbs::Net,Unbuilt> {
     let [a,b] = tube.roll;
     let within = |th: f64| { let th = w0+(th-w0).rem_euclid(TAU); th < w1 };
+    // (the place of the net's parameters: through each stretch, the identity outside them all)
+    let place = |q: P| stretches.iter().fold(q,|q,s| s.stretch(q));
     // (a window holding a band's seam graded as one holding the pinch's hole, its stand-in read and
     // held to the bar inside the seam as outside: the stand-in is smooth, and a net held to it
     // strays nowhere a Boolean reads it)
     let holds = tube.pinch.as_ref().is_some_and(|p| within(p.collar.at.1))
-        || tube.bands.iter().any(|b| b.rim(64).iter().any(|q| within(q[0])));
+        || tube.bands.iter().any(|b| b.rim(64).iter().any(|q| within(q[0])))
+        || stretches.iter().any(|s| s.stretch_outline(16).iter().any(|q| within(q[0])));
     let fit = if holds {
-        let f = |u: f64,v: f64| tube.net_point(side,w0+(w1-w0)*u,a+(b-a)*v).unwrap_or([f64::NAN;3]);
+        let f = |u: f64,v: f64| { let q = place([w0+(w1-w0)*u,a+(b-a)*v]); tube.net_point(side,q[0],q[1]).unwrap_or([f64::NAN;3]) };
         // (read against the sheet where the net is kept: outside the hole, the faces' rim)
-        let kept = |u: f64,v: f64| tube.pinch.as_ref().is_none_or(|p| p.side([w0+(w1-w0)*u,a+(b-a)*v]) >= 0.);
+        let kept = |u: f64,v: f64| tube.pinch.as_ref().is_none_or(|p| p.side(place([w0+(w1-w0)*u,a+(b-a)*v])) >= 0.);
         fit_graded(&f,&kept,DEGREE,32,16,bar)
     } else {
         let f = |u: f64,v: f64| tube.point(side,w0+(w1-w0)*u,a+(b-a)*v).map_or([f64::NAN;3],|p| p.x);
