@@ -829,6 +829,59 @@ and its strips exact, no canal fitted. A fitted canal round a circle was a net o
 that every later Boolean cut and every measure integrated: brep-bench's fillet/boss-s-curve took
 8.7 s, most of it its area, and now takes milliseconds, its volume and area to 1e-15
 (`brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori`; the hole's waist too).
+
+**How nearly flat is too flat is the ball's to say** (`fillet::flat_enough`, brep-bench's
+fillet/nearly-flat-ridge): two faces turning through `τ` meet at a ball's centre read within `tol /
+sin τ`, and a ball of radius `r` stands its round `r (1 / sin(θ/2) − 1)` off their edge; the round is
+refused as too nearly flat only where that is no more than a hundred times the first. Faces turning
+less than a degree were refused whatever the ball: a ridge of 179° rounded 180 stands 0.0069 off its
+edge, its centre read within 6e-7, and is rounded as any other; a crease of a ten-millionth of a
+degree rounded 1 is not (`brep::a_nearly_flat_ridge_is_rounded_by_a_ball_wide_enough`). A flat
+between faces turning less than a degree is still refused, none being asked for.
+
+**Rounds together lose what they close to nothing** (`rounds::rounded`, brep-bench's
+fillet/plate-full-round): where a round's two corners' balls are one, the round has no length — it
+vanishes, its arc at either end one edge, its faces' loops going straight on past it — and a face
+whose loop closes on itself with no area, two contact lines between the same two vertices, is gone,
+the two rounds either side of it meeting along that line. A plate rounded to half its thickness is
+its sides' half cylinders, each in two faces, and its corners' balls, each in two, `4896 + 558π` to
+1e-16; a face rounded away to nothing, no loop left (a cube rounded to half its side), is refused by
+name (`rounds_together::a_plate_rounded_to_half_its_thickness_loses_its_sides`). **A face the round
+swallows** (`rounds::swallowed`, fillet/round-swallowing-a-tiny-face): where the edges cannot be
+rounded as they stand and a face lies between two of them that stand nearer each other than the
+ball is wide (`rounds::narrow_face`), the face is deleted
+(`defeature::deleted`), the edge where the faces beside it now meet rounded in place of its two, and
+the answer kept only where every point read along the face's edges stands clear of the result's
+boundary, all on one side — a corner broken by a flat 0.0001 wide, rounded 1, is the corner rounded
+(`rounds_together::a_flat_thinner_than_the_ball_is_swallowed_by_its_round`; a flat wide enough to
+hold the ball keeps its rounds and itself). **A cell is a cell by its own measure**
+(`complex::cells_found`): a shell holds a volume past `1e-12` of the whole's cube, or, under that,
+past its own area times the tolerance (its faces' areas read only then); the flat's gap, 2.5e-8 of
+a complex 40 across, was read as no cell and the flat as closing no gap.
+
+**A side of faces cut from one sheet** (`fillet::ring`, brep-bench's fillet/nurbs-cylinder-rim): a
+face on a B-spline sheet, and every face across an edge from it whose net goes on where its own ends
+along `u` (`Net::joined_u`: clamped, one degree and `v` knots, the last row of poles the next's
+first, rational weights in one ratio), are one side to the ball, which rolls on the offset of the
+nets joined — no face's own net, carried on by its polynomials, is the sheet past its edge. The run
+round them is one closed loop; the canal starts where its contact crosses an edge between them, its
+contact is cut where it crosses each other one, and the side's strip is one face on each of them,
+on that face's own surface, between the run, the contact and the edges up from the run to it
+(`fillet::build_ring`), so the Boolean meets each strip on the surface of the face it lies on. A
+cylinder whose side is the rational circle carried up in two faces is the analytic cylinder's
+rounded rim to 5e-11 (`sheet_rounds::a_rim_on_a_side_cut_from_one_sheet_rolls_round_it`).
+
+**A ball whose radius varies along the edge** (`fillet::roll_varying`, brep-bench's
+fillet/variable-radius-*): at each point `p` of a run that ends, the ball of radius `radius(p)`
+touching both faces with its centre in the plane square to the edge there — the centre on both
+faces' offsets by that radius and in that plane, by Newton's method from `r` off each face — its arc
+between its contacts the section. The run is its edges in order from one end to the other, each
+end cut off as `roll` cuts one, the ball rolled on past it by the edge's own curve carried on; the
+canal and the spine are fitted within `roll`'s bar, and the strips and caps are `roll`'s
+(`build_open`). A cube's edge rounded by a radius growing along it, an L's inside edge, a hexagon's
+obtuse edge and a half cylinder's rim rounded by a radius growing round it are their closed forms
+to 1e-10 (`varying_rounds`). Refused: a radius of no size anywhere along the edge, a run that closes,
+a face's offset that is no surface, a face that cannot hold the ball (`holds_ball_by`).
 **Edges rounded together, the kernel placing every piece** (`rounds::rounded(b, edges, r, tol)`,
 brep-bench's fillet/box-all-edges): a set of edges rounded in one call. Where they are straight,
 between planes, and each vertex they reach has three edges, all of them among the set and all

@@ -123,3 +123,50 @@ fn rounds_it_cannot_close_are_refused_by_name() {
     let why = rounded(&cube,&all(&cube),5.5,tol).unwrap_err();
     assert!(why.contains("larger than the face"),"{why}");
 }
+
+/// **A plate rounded to half its thickness** (brep-bench's fillet/plate-full-round): each side's top
+/// and bottom rounds meet on its middle, so the side is gone and the two are one half cylinder; each
+/// corner's two balls are one, so the upright edges keep no round. The plate made 3 smaller on
+/// every side is the rectangle 34 × 24 at mid-height, and the solid that rectangle swelled by 3:
+/// `4896 + 558π` and `1632 + 384π`. Rounded to half its side a cube would be rounded away to
+/// nothing, a face with no loop left: refused by name.
+#[test]
+fn a_plate_rounded_to_half_its_thickness_loses_its_sides() {
+    let plate = block([0.;3],[40.,30.,6.]);
+    let round = rounded(&plate,&all(&plate),3.,tolerance(plate.size())).unwrap();
+    round.check(1e-9).unwrap();
+    assert_eq!(kinds(&round),BTreeMap::from([("cylinder",8),("plane",2),("sphere",8)]));
+    close("the plate's volume",volume(&round),4896.+558.*PI);
+    close("the plate's area",total_area(&round),1632.+384.*PI);
+    let cube = block([0.;3],[10.;3]);
+    let e = rounded(&cube,&all(&cube),5.,tolerance(cube.size())).unwrap_err();
+    assert!(e.contains("rounded away to nothing"),"{e}");
+}
+
+/// **A round swallowing a flat thinner than its ball** (brep-bench's
+/// fillet/round-swallowing-a-tiny-face): a block's upright edge broken by a flat 0.0001 back along
+/// each side, the flat's two edges rounded 1 together. No ball of radius 1 touches so narrow a flat:
+/// the round runs from side to side, a quarter cylinder about x = y = 9, and the flat is gone —
+/// `5(100 − (1 − π/4))` and `2(100 − (1 − π/4)) + 5(38 + π/2)`. A flat wide enough to hold the ball
+/// keeps its two rounds and itself.
+#[test]
+fn a_flat_thinner_than_the_ball_is_swallowed_by_its_round() {
+    let broken = |flat: f64| {
+        let mut floor = Profile {names:vec![],origin:[0.;3],normal:[0.,0.,1.],
+            loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,10.-flat,0.],[10.-flat,10.,0.],[0.,10.,0.]])]};
+        floor.names = vec![["front","right","flat","back","left"].map(String::from).to_vec()];
+        let b = prism(&floor,0.,5.).unwrap();
+        let edges = edges_where(&b,|p| (p[2]-2.5).abs() < 1e-9 && p[0] > 1. && p[1] > 1.);
+        assert_eq!(edges.len(),2);
+        rounded(&b,&edges,1.,tolerance(b.size())).unwrap()
+    };
+    let corner = 1.-PI/4.;
+    let swallowed = broken(1e-4);
+    swallowed.check(1e-9).unwrap();
+    assert!(swallowed.faces.iter().all(|f| f.name != "flat"));
+    close("the block's volume",volume(&swallowed),5.*(100.-corner));
+    close("the block's area",total_area(&swallowed),2.*(100.-corner)+5.*(38.+PI/2.));
+    let kept = broken(3.);
+    assert!(kept.faces.iter().any(|f| f.name == "flat"));
+    assert_eq!(kinds(&kept).get("cylinder"),Some(&2));
+}
