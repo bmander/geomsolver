@@ -930,14 +930,17 @@ impl Net {
         let (last,first) = (self.poles.last()?,&next.poles[0]);
         let apart = |(p,q): (&V,&V)| crate::util::space::distance(*p,*q) > tol;
         if last.len() != first.len() || last.iter().zip(first).any(apart) { return None }
-        let factor = match (&self.weights,&next.weights) {
+        // (`next`'s weights scaled to meet `self`'s along the row they share)
+        let weights = match (&self.weights,&next.weights) {
             (Some(a),Some(b)) => {
                 let (wa,wb) = (a.last()?,&b[0]);
                 let f = wa[0]/wb[0];
                 if wa.iter().zip(wb).any(|(x,y)| (x/y-f).abs() > 1e-12*f) { return None }
-                f
+                let mut w = a.clone();
+                w.extend(b[1..].iter().map(|row| row.iter().map(|&x| x*f).collect()));
+                Some(w)
             }
-            _ => 1.,
+            _ => None,
         };
         let end = self.uknots[self.uknots.len()-1];
         let shift = end-next.uknots[0];
@@ -945,11 +948,6 @@ impl Net {
         uknots.extend(next.uknots[du+1..].iter().map(|&k| k+shift));
         let mut poles = self.poles.clone();
         poles.extend(next.poles[1..].iter().cloned());
-        let weights = self.weights.as_ref().zip(next.weights.as_ref()).map(|(a,b)| {
-            let mut w = a.clone();
-            w.extend(b[1..].iter().map(|row| row.iter().map(|&x| x*factor).collect()));
-            w
-        });
         let net = Net {du,dv:self.dv,uknots,vknots:self.vknots.clone(),poles,weights};
         net.check().ok()?;
         Some(net)

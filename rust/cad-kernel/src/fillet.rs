@@ -96,8 +96,7 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     // sheet whole, its faces one side to the ball (`ring`)
     let mut joined: [Option<Surface>;2] = [None,None];
     for k in 0..2 {
-        let other = sides_faces[1-k].clone();
-        if let Some((faces,sheet)) = ring(b,&uses,&sides_faces[k],&other,tol) {
+        if let Some((faces,sheet)) = ring(b,&uses,&sides_faces[k],&sides_faces[1-k],tol) {
             sides_faces[k] = faces;
             joined[k] = Some(sheet);
         }
@@ -169,16 +168,16 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
 fn ring(b: &Brep,uses: &[Vec<(usize,usize,usize)>],side: &[usize],other: &[usize],tol: f64) -> Option<(Vec<usize>,Surface)> {
     let Surface::BSpline(frame,net) = &b.faces[side[0]].surface else { return None };
     let net_of = |f: usize| match &b.faces[f].surface { Surface::BSpline(g,n) if g == frame => Some(n.clone()),_ => None };
+    let (bar,reversed) = (1e3*tol.max(1e-12),b.faces[side[0]].reversed);
     let mut faces: Vec<usize> = side.to_vec();
     let mut sheet: Net = (**net).clone();
     loop {
         // a face across an edge of the ring so far, not yet in it
         let next = faces.iter().flat_map(|&f| b.faces[f].loops.iter().flatten().map(|c| c.edge as usize))
             .flat_map(|e| uses[e].iter().map(|u| u.0))
-            .filter(|&g| !faces.contains(&g) && !other.contains(&g) && b.faces[g].reversed == b.faces[side[0]].reversed)
+            .filter(|&g| !faces.contains(&g) && !other.contains(&g) && b.faces[g].reversed == reversed)
             .find_map(|g| {
                 let n = net_of(g)?;
-                let bar = 1e3*tol.max(1e-12);
                 sheet.joined_u(&n,bar).or_else(|| n.joined_u(&sheet,bar)).map(|s| (g,s))
             });
         let Some((g,s)) = next else { break };
@@ -198,9 +197,10 @@ fn ring(b: &Brep,uses: &[Vec<(usize,usize,usize)>],side: &[usize],other: &[usize
 /// thousandth of a degree.
 fn flat_enough(m: &Meeting,r: f64,tol: f64) -> Result<(),String> {
     let turn = std::f64::consts::PI-m.theta;
+    if turn >= MIN_TURN { return Ok(()) }
     let read = tol/turn.dsin().max(f64::MIN_POSITIVE);
     let stands = r*(1./(0.5*m.theta).dsin()-1.);
-    if turn < MIN_TURN && !(stands > 100.*read) {
+    if !(stands > 100.*read) {
         return Err(format!("{} meet too nearly flat to round: a ball of radius {r} stands {stands:e} off their edge, \
             and its centre is read only to {read:e}",m.names));
     }
@@ -264,6 +264,7 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
     // the run's edges in order from its first stop, each with its curve and the way it is walked;
     // the run read at `s` over `[0, n]`, edge `k` over `[k, k + 1]`, its first and last run on
     // past the run's ends by their own curves
+    // (`meeting` holds the run a chain from one stop to the other)
     let mut walk: Vec<(&Curve,[f64;2],bool)> = Vec::new();
     let mut tip = m.stops[0];
     let mut left = m.chain.clone();
@@ -274,7 +275,6 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
         walk.push((c,ed.t,back));
         tip = ed.v[usize::from(!back)];
     }
-    if !left.is_empty() || tip != m.stops[1] { return Err(format!("the run of {names} is no chain from end to end")) }
     let n = walk.len() as f64;
     let piece_of = |s: f64| -> (&Curve,f64,f64) {
         let k = (s.floor().max(0.) as usize).min(walk.len()-1);
@@ -284,7 +284,6 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
     };
     let point_at = |s: f64| { let (c,t,_) = piece_of(s); c.point(t) };
     let tangent_at = |s: f64| { let (c,t,w) = piece_of(s); scale(unit(c.tangent(t)),w) };
-    let (t0,t1) = (0.,n);
     let rad = |t: f64| radius(point_at(t));
     // the radius along the run, positive; the flat test at its least
     let along: Vec<f64> = (0..=64*walk.len()).map(|k| rad(k as f64/64.)).collect();
@@ -306,27 +305,19 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
     // radius — the centre on both offsets by the radius there, in the plane square to the edge
     let ball = |t: f64| -> Result<(V,[V;2],f64),String> {
         let (p,d,r) = (point_at(t),tangent_at(t),rad(t));
-        let o = offsets(r)?;
-        let toward = |k: usize,c: V| scale(unit(o[k].gradient(c)),-sides[k]);
-        let mut c = sub(p,scale(add(toward(0,p),toward(1,p)),r));
-        let scale_of = r+norm(p);
-        for _ in 0..64 {
-            let f = [o[0].implicit(c),o[1].implicit(c),dot(sub(c,p),d)];
-            let step = super::ssi::solve3([o[0].gradient(c),o[1].gradient(c),d],f);
-            if !step.iter().all(|x| x.is_finite()) { break }
-            c = sub(c,step);
-            if norm(step) <= 1e-15*scale_of { break }
-        }
-        let off = o[0].implicit(c).abs().max(o[1].implicit(c).abs()).max(dot(sub(c,p),d).abs());
-        if !(off <= tol) {
-            return Err(format!("the ball between {names} of radius {r} finds no centre square to the edge at {p:?}"))
-        }
-        Ok((c,[toward(0,c),toward(1,c)],r))
+        let [oa,ob] = offsets(r)?;
+        let toward = |s: &Surface,k: usize,c: V| scale(unit(s.gradient(c)),-sides[k]);
+        // from `r` off each face, Newton on both offsets and the plane
+        let guess = sub(p,scale(add(toward(&oa,0,p),toward(&ob,1,p)),r));
+        let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false};
+        let c = onto.across(guess,d,dot(d,p)).map(|(c,_)| c)
+            .filter(|&c| onto.a.implicit(c).abs().max(onto.b.implicit(c).abs()).max(dot(sub(c,p),d).abs()) <= tol)
+            .ok_or_else(|| format!("the ball between {names} of radius {r} finds no centre square to the edge at {p:?}"))?;
+        Ok((c,[toward(&onto.a,0,c),toward(&onto.b,1,c)],r))
     };
     // **the run's ends**: each cut off where the faces there cut it, the ball rolled on past
-    let mut ends: Vec<Trim> = Vec::new();
-    let mut end_faces: Vec<Vec<usize>> = Vec::new();
-    for (v,t) in [(m.stops[0],t0),(m.stops[1],t1)] {
+    let mut stops: Vec<Stop> = Vec::new();
+    for (v,t) in [(m.stops[0],0.),(m.stops[1],n)] {
         let p = b.vertices[v as usize].p;
         // the faces' normals at the vertex, away from the ball's side
         let o = offsets(rad(t))?;
@@ -336,20 +327,20 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
                 a tangent chain is not rolled with a varying radius"))
         };
         let (trim,faces) = end_at(b,&m.by,&m.sides_faces,&m.chain,v,normals,tol,&names,r_most,&section)?;
-        ends.push(trim);
-        end_faces.push(faces);
+        stops.push(Stop {trim,t,faces});
     }
+    let trims: Vec<Trim> = stops.iter().map(|s| s.trim.clone()).collect();
     // on past each end until the whole section there (its centre, arc and corner) lies beyond it
     let past = |t: f64,trim: &Trim| -> Result<bool,String> {
         let (c,e,r) = ball(t)?;
         let corner = across(c,e,r);
         Ok(trim.past((0..=8).map(|k| add(c,scale(slerp(e[0],e[1],k as f64/8.),r))).chain([c,corner]),0.1*r))
     };
-    let (mut lo,mut hi) = (t0,t1);
-    let step = (t1-t0)/256.;
-    while !past(lo,&ends[0])? { lo -= step; if t0-lo > t1-t0 { return Err(format!("the ball of {names} rolls on past \
+    let (mut lo,mut hi) = (0.,n);
+    let step = n/256.;
+    while !past(lo,&trims[0])? { lo -= step; if -lo > n { return Err(format!("the ball of {names} rolls on past \
         its start and is never cut off")) } }
-    while !past(hi,&ends[1])? { hi += step; if hi-t1 > t1-t0 { return Err(format!("the ball of {names} rolls on past \
+    while !past(hi,&trims[1])? { hi += step; if hi-n > n { return Err(format!("the ball of {names} rolls on past \
         its end and is never cut off")) } }
     let t_of = |u: f64| lo+(hi-lo)*u.clamp(0.,1.);
     // each `u` the fit asks for read once
@@ -365,36 +356,26 @@ pub fn roll_varying(b: &Brep,at: V,radius: &dyn Fn(V) -> f64,tol: f64) -> Result
     let frame_at = |u: f64| { let (c,e,_) = ball_at(u); (c,e) };
     let r_at = |u: f64| ball_at(u).2;
     let canal = |u: f64,v: f64| { let (c,e,r) = ball_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
+    // (a ball not found at some `u` said before anything is fitted to the stand-in read there)
+    let found = || failed.borrow().clone().map_or(Ok(()),Err);
     let reach = corner_reach_by(&frame_at,&r_at,&names)?;
-    let stops: Vec<Stop> = ends.iter().zip(end_faces).map(|(trim,faces)| Stop {trim:trim.clone(),t:0.,faces}).collect();
+    found()?;
     holds_ball_by(b,&m.uses,&m.sides_faces,&m.chain,&stops,&frame_at,&surfaces,sides,&r_at,r_most,reach,tol,&names,&[])?;
     let bar = tol.max(1e-7*b.size());
     let (net,net_err) = fit_net(&canal,3,3,64,4,tol).ok_or("the canal could not be fitted")?;
-    if let Some(e) = failed.borrow().clone() { return Err(e) }
+    found()?;
     if net_err > bar { return Err(format!("the canal between {names} misses its fit by {net_err:e}")) }
     let (spine_fit,spine_err) = fit_curve(&|u| frame_at(u).0,3,64,tol).ok_or("the spine could not be fitted")?;
     if spine_err > bar { return Err(format!("the spine between {names} misses its fit by {spine_err:e}")) }
     // the strips, the faces' meeting and the sections, as `roll` builds a run that ends
     let loop_pts: Vec<V> = (0..16*walk.len()).map(|k| point_at(k as f64/16.)).collect();
     let strips = [0,1].map(|k| reframed(&surfaces[k],&loop_pts));
-    let [[u0,u1],[v0,v1]] = net.domain();
-    let reached: Vec<V> = (0..=64).flat_map(|i| { let u = u0+(u1-u0)*i as f64/64.; [net.point(u,v0),net.point(u,v1)] })
-        .chain([0.,1.].map(|u| { let (c,e,r) = ball_at(u); across(c,e,r) })).collect();
-    let strips = strips.map(|s| carried_on(&s,&reached));
-    let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false};
-    let section = |u: f64| -> (V,V) {
-        let (c,e) = frame_at(u);
-        let n = unit(cross(e[0],e[1]));
-        (c,if dot(n,tangent_at(t_of(u))) < 0. { scale(n,-1.) } else { n })
-    };
-    let corner = |u: f64| { let (c,e,r) = ball_at(u); crossing_plane(&meeting,c,section(u).1,across(c,e,r)) };
     let reversed = [m.faces[0].reversed,m.faces[1].reversed];
-    let run = build_open(b,&m.chain,&net,&strips,&meeting,&section,&corner,[m.stops[0],m.stops[1]],reversed,m.concave,tol,
-        net_err,None)?;
-    if let Some(e) = failed.borrow().clone() { return Err(e) }
-    let piece = trimmed(run,&ends)?;
+    let piece = open_run(b,&m.chain,&net,net_err,strips,&frame_at,&r_at,&|u| tangent_at(t_of(u)),&trims,reversed,m.concave,
+        tol)?;
+    found()?;
     let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
-    Ok(Rolled {piece,chain:m.chain.clone(),spine:spine_fit,contacts,concave:m.concave,r:r_most,reach,trims:ends})
+    Ok(Rolled {piece,chain:m.chain.clone(),spine:spine_fit,contacts,concave:m.concave,r:r_most,reach,trims})
 }
 
 /// `roll_across`, or (`beside`) `roll_beside`'s part.
@@ -497,6 +478,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
     // a side of faces cut from one sheet (`ring`): the edges between them the run reaches, each
     // with where along the sheet's `u` it stands, and the sheet's period round
     let joints: [Vec<(usize,f64)>;2] = [0,1].map(|k| {
+        // (an analytic side's faces, one surface to the ball by `one_surface`, need not be equal)
         if !matches!(surfaces[k],Surface::BSpline(..)) { return Vec::new() }
         if sides_faces[k].iter().all(|&f| b.faces[f].surface == b.faces[sides_faces[k][0]].surface) { return Vec::new() }
         let on_run = |e: usize| b.edges[e].v.iter().any(|v| chain.iter().any(|&c| b.edges[c].v.contains(v)));
@@ -505,11 +487,8 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
             .map(|e| { let ed = &b.edges[e]; (e,surfaces[k].inverse(ed.point(0.5*(ed.t[0]+ed.t[1]),&b.vertices))[0]) })
             .collect()
     });
-    // (the sheet's `u` round, whole)
-    let round_of = |k: usize| match &surfaces[k] {
-        Surface::BSpline(_,net) => { let [a,z] = net.domain()[0]; z-a }
-        _ => TAU,
-    };
+    // (the sheet's `u` round, whole: a ring's side is a sheet)
+    let round_of = |k: usize| match &surfaces[k] { Surface::BSpline(_,net) => { let [a,z] = net.domain()[0]; z-a } _ => TAU };
     if (0..2).any(|k| !joints[k].is_empty() && (winding[0] || winding[1] || !ends.is_empty())) {
         return Err(format!("the fillet of {}: a side of faces cut from one sheet is rounded along a loop that closes, \
             winding round no other side",names()))
@@ -523,15 +502,15 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
         // — or where its contact with a side of faces of one sheet crosses an edge between them
         let mut t0 = spine.inverse(seed);
         let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
+        let contact = |k: usize,t: f64| { let c = spine.point(t); add(c,scale(toward(k,c),r)) };
         if let Some(k) = (0..2).find(|&k| !joints[k].is_empty()) {
             let s = &surfaces[k];
-            let contact = |t: f64| { let c = spine.point(t); add(c,scale(toward(k,c),r)) };
-            t0 = crossing(&|t| s.inverse(contact(t))[0],joints[k][0].1,round_of(k),t0,period)
+            t0 = crossing(&|t| s.inverse(contact(k,t))[0],joints[k][0].1,round_of(k),t0,period)
                 .ok_or_else(|| format!("the fillet of {}: its contact never crosses an edge of its side's sheet",names()))?;
         } else if let Some(k) = (0..2).find(|&k| winding[k]) {
             let s = &strips[k];
             let target = s.inverse(vertex)[0];
-            let contact = |t: f64| { let c = spine.point(t); add(c,scale(toward(k,c),r)) };
+            let contact = |t: f64| contact(k,t);
             t0 = crossing(&|t| s.inverse(contact(t))[0],target,s.periods()[0].unwrap_or(TAU),t0,period)
                 .ok_or_else(|| format!("the fillet of {}: its contact never crosses the strip's seam",names()))?;
         }
@@ -641,39 +620,48 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
             .filter(|&u| u > 1e-9 && u < 1.-1e-9)
     } else { None };
     // a ring's contact cut where it crosses each edge between its faces: the canal's `u` there
-    let cuts: [Vec<(f64,usize)>;2] = [0,1].map(|k| joints[k].iter().filter_map(|&(e,target)| {
-        let contact = |u: f64| canal(u,[0.,1.][k]);
-        let u = crossing(&|u| surfaces[k].inverse(contact(u))[0],target,round_of(k),0.,1.)?;
+    let cut = |k: usize| joints[k].iter().map(|&(e,target)| {
+        let u = crossing(&|u| surfaces[k].inverse(canal(u,k as f64))[0],target,round_of(k),0.,1.)?;
         Some((if u < 1e-9 || u > 1.-1e-9 { 0. } else { u },e))
-    }).collect());
-    if (0..2).any(|k| cuts[k].len() != joints[k].len()) {
-        return Err(format!("the fillet of {}: its contact misses an edge of its side's sheet",names()))
-    }
+    }).collect::<Option<Vec<_>>>()
+        .ok_or_else(|| format!("the fillet of {}: its contact misses an edge of its side's sheet",names()));
+    let cuts: [Vec<(f64,usize)>;2] = [cut(0)?,cut(1)?];
     let piece = if ends.is_empty() && cuts.iter().any(|c| !c.is_empty()) {
-        build_ring(b,&chain,&net,&strips,[face_a.reversed,face_b.reversed],concave,tol,net_err,&cuts)?
+        build_ring(b,&chain,&net,&strips,reversed,concave,tol,net_err,&cuts)?
     } else if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err,split)? } else {
-        // a sheet's strip runs on past its face's edge where the run does (a round cut off by a cap
-        // the sheet ends at): on the sheet carried on by its own polynomials, as the ball rolled
-        // there, and the faces met there likewise
-        let [[u0,u1],[v0,v1]] = net.domain();
-        let reached: Vec<V> = (0..=64).flat_map(|i| { let u = u0+(u1-u0)*i as f64/64.; [net.point(u,v0),net.point(u,v1)] })
-            .chain([0.,1.].map(|u| { let (c,e) = frame_at(u); across(c,e,r) })).collect();
-        let strips = strips.map(|s| carried_on(&s,&reached));
-        let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false};
-        // the section's plane at `u`: through the ball's centre, square to the spine (the plane of
-        // its arc), its normal along `u`; where the faces meet in it, across the ball from its centre
-        let section = |u: f64| -> (V,V) {
-            let (c,e) = frame_at(u);
-            let n = unit(cross(e[0],e[1]));
-            (c,if dot(n,guide.d2(u.clamp(0.,1.)).1) < 0. { scale(n,-1.) } else { n })
-        };
-        let corner = |u: f64| { let (c,e) = frame_at(u); crossing_plane(&meeting,c,section(u).1,across(c,e,r)) };
-        let run = build_open(b,&chain,&net,&strips,&meeting,&section,&corner,[ends[0].trim.vertex,ends[1].trim.vertex],
-            reversed,concave,tol,net_err,None)?;
-        trimmed(run,&trims)?
+        open_run(b,&chain,&net,net_err,strips,&frame_at,&|_| r,&|u| guide.d2(u.clamp(0.,1.)).1,&trims,reversed,concave,tol)?
     };
     let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
     Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach,trims})
+}
+
+/// **A run that ends, its canal `net` fitted** (`roll`'s and `roll_varying`'s): the ball's centre
+/// and the directions to its contacts at `u` (`frame_at`), its radius there (`r_at`) and the way
+/// the run goes (`along`); built between the run's edges `chain`, cut off on past each end by
+/// `trims`. A sheet's strip runs on past its face's edge where the run does (a round cut off by a
+/// cap the sheet ends at): on the sheet carried on by its own polynomials, as the ball rolled there,
+/// and the faces met there likewise.
+#[allow(clippy::too_many_arguments)]
+fn open_run(b: &Brep,chain: &[usize],net: &Net,net_err: f64,strips: [Surface;2],frame_at: &dyn Fn(f64) -> (V,[V;2]),
+    r_at: &dyn Fn(f64) -> f64,along: &dyn Fn(f64) -> V,trims: &[Trim],reversed: [bool;2],concave: bool,tol: f64)
+    -> Result<Brep,String> {
+    let corner_of = |u: f64| { let (c,e) = frame_at(u); (c,e,across(c,e,r_at(u))) };
+    let [[u0,u1],[v0,v1]] = net.domain();
+    let reached: Vec<V> = (0..=64).flat_map(|i| { let u = u0+(u1-u0)*i as f64/64.; [net.point(u,v0),net.point(u,v1)] })
+        .chain([0.,1.].map(|u| corner_of(u).2)).collect();
+    let strips = strips.map(|s| carried_on(&s,&reached));
+    let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false};
+    // the section's plane at `u`: through the ball's centre, square to its arc's plane, its normal
+    // the way the run goes; where the faces meet in it, across the ball from its centre
+    let section = |u: f64| -> (V,V) {
+        let (c,e) = frame_at(u);
+        let n = unit(cross(e[0],e[1]));
+        (c,if dot(n,along(u)) < 0. { scale(n,-1.) } else { n })
+    };
+    let corner = |u: f64| { let (c,_,k) = corner_of(u); crossing_plane(&meeting,c,section(u).1,k) };
+    let run = build_open(b,chain,net,&strips,&meeting,&section,&corner,[trims[0].vertex,trims[1].vertex],reversed,concave,tol,
+        net_err,None)?;
+    trimmed(run,trims)
 }
 
 /// **A ball whose centre stands still**: where one face's offset by the ball's radius closes onto
@@ -1926,13 +1914,10 @@ impl<'a> Band<'a> {
 /// the face inside the loop. Between two planes the flat is a plane, and about one axis
 /// (`coaxial`) it is the section's triangle turned: both exact, no net fitted.
 pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Result<Brep,String> {
-    let m = meeting(b,at,tol)?;
+    let Meeting {uses,by,faces:[face_a,face_b],sides_faces,chain,stops,p,theta,sides,surfaces,concave,names,..} = meeting(b,at,tol)?;
     // (a flat between faces turning less than `MIN_TURN` is not built: its legs' offsets meet no
     // better than a ball's centre does, `flat_enough`, and none is asked for)
-    if std::f64::consts::PI-m.theta < MIN_TURN {
-        return Err(format!("{} meet too nearly flat or too sharply to round",m.names));
-    }
-    let Meeting {uses,by,faces:[face_a,face_b],sides_faces,chain,stops,p,sides,surfaces,concave,names,..} = m;
+    if std::f64::consts::PI-theta < MIN_TURN { return Err(format!("{names} meet too nearly flat to round")) }
     // which face is `a`
     let swap = on_a.is_some_and(|q| surfaces[1].implicit(q).abs() < surfaces[0].implicit(q).abs());
     let legs = if swap { [legs[1],legs[0]] } else { legs };
@@ -2738,8 +2723,8 @@ fn build_ring(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
     let mut out = Brep::default();
     let last_v = net.poles[0].len()-1;
     let starts = [out.vertex(net.point(u0,v0)),out.vertex(net.point(u0,v1))];
-    // each contact, cut at its crossings; the vertex where it crosses each edge
-    let mut crossed: std::collections::BTreeMap<usize,u32> = std::collections::BTreeMap::new();
+    // each contact, cut at its crossings; each edge it crosses, with the vertex where it does
+    let mut crossed: [Vec<(usize,u32)>;2] = [Vec::new(),Vec::new()];
     let mut contact: [Vec<(u32,[f64;2])>;2] = [Vec::new(),Vec::new()];
     for k in 0..2 {
         let mut stations: Vec<(f64,u32)> = vec![(u0,starts[k])];
@@ -2747,10 +2732,10 @@ fn build_ring(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
         at.sort_by(|x,y| x.0.total_cmp(&y.0));
         for (u,e) in at {
             let u = u0+(u1-u0)*u;
-            if u == u0 { crossed.insert(e,starts[k]); continue }
+            if u == u0 { crossed[k].push((e,starts[k])); continue }
             let w = out.vertex(net.point(u,[v0,v1][k]));
             stations.push((u,w));
-            crossed.insert(e,w);
+            crossed[k].push((e,w));
         }
         stations.push((u1,starts[k]));
         for w in stations.windows(2) {
@@ -2770,9 +2755,8 @@ fn build_ring(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
             continue
         }
         // each edge between the ring's faces, from the run up to the contact, on its own curve
-        let mut up: std::collections::BTreeMap<usize,usize> = std::collections::BTreeMap::new();
-        for (&e,&w) in &crossed {
-            if !cuts[k].iter().any(|c| c.1 == e) { continue }
+        let mut up: Vec<(usize,usize)> = Vec::new();
+        for &(e,w) in &crossed[k] {
             let ed = &b.edges[e];
             let EdgeCurve::Curve(c) = &ed.curve else { return Err("an edge of a sheet's faces is degenerate".into()) };
             let v = *ed.v.iter().find(|v| copied.contains_key(v)).ok_or("an edge of a sheet's faces leaves the run")?;
@@ -2780,24 +2764,19 @@ fn build_ring(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
             let mut t_up = c.inverse(out.vertices[w as usize].p);
             if let Some(p) = c.period() { t_up = around(t_up,ed.t[0],p); }
             let (t,vs) = if t_run <= t_up { ([t_run,t_up],[copied[&v],w]) } else { ([t_up,t_run],[w,copied[&v]]) };
-            up.insert(e,out.edge(EdgeCurve::Curve(c.clone()),t,vs) as usize);
+            up.push((e,out.edge(EdgeCurve::Curve(c.clone()),t,vs) as usize));
         }
-        // a strip on each face of the ring the run bounds
-        let faces: std::collections::BTreeSet<usize> = chain.iter().flat_map(|&e| (0..b.faces.len())
-            .filter(move |&f| b.faces[f].loops.iter().flatten().any(|c| c.edge as usize == e))).collect();
+        // a strip on each face of the ring the run bounds and the contact crosses an edge of
         let uses_edge = |f: usize,e: usize| b.faces[f].loops.iter().flatten().any(|c| c.edge as usize == e);
-        for f in faces.into_iter().filter(|&f| cuts[k].iter().any(|&(_,e)| uses_edge(f,e))) {
-            let face = &b.faces[f];
-            let used = |e: usize| uses_edge(f,e);
-            let mut es: Vec<usize> = chain.iter().zip(&edge_of).filter(|(&e,_)| used(e)).map(|(_,&o)| o).collect();
-            es.extend(up.iter().filter(|(&e,_)| used(e)).map(|(_,&o)| o));
+        let faces = (0..b.faces.len()).filter(|&f| chain.iter().any(|&e| uses_edge(f,e)) && up.iter().any(|&(e,_)| uses_edge(f,e)));
+        for f in faces {
+            let mut es: Vec<usize> = chain.iter().zip(&edge_of).filter(|(&e,_)| uses_edge(f,e)).map(|(_,&o)| o).collect();
+            es.extend(up.iter().filter(|&&(e,_)| uses_edge(f,e)).map(|&(_,o)| o));
             for &(e,[a,z]) in &contact[k] {
                 let mid = net.point(0.5*(a+z),[v0,v1][k]);
                 if located.face_place(f,mid) == super::query::Place::In { es.push(e as usize); }
             }
-            let l = closed_loop(&out,&es,&face.surface)?;
-            out.faces.push(Face {surface:face.surface.clone(),reversed,loops:vec![turned(l.coedges,(l.area > 0.) == reversed)],
-                name:["a","b"][k].into()});
+            strip(&mut out,&[],&es,&b.faces[f].surface,reversed,["a","b"][k])?;
         }
     }
     out.measure_tolerances();

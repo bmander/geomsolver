@@ -847,7 +847,8 @@ its sides' half cylinders, each in two faces, and its corners' balls, each in tw
 1e-16; a face rounded away to nothing, no loop left (a cube rounded to half its side), is refused by
 name (`rounds_together::a_plate_rounded_to_half_its_thickness_loses_its_sides`). **A face the round
 swallows** (`rounds::swallowed`, fillet/round-swallowing-a-tiny-face): where the edges cannot be
-rounded as they stand and a face lies between two of them, the face is deleted
+rounded as they stand and a face lies between two of them that stand nearer each other than the
+ball is wide (`rounds::narrow_face`), the face is deleted
 (`defeature::deleted`), the edge where the faces beside it now meet rounded in place of its two, and
 the answer kept only where every point read along the face's edges stands clear of the result's
 boundary, all on one side — a corner broken by a flat 0.0001 wide, rounded 1, is the corner rounded
