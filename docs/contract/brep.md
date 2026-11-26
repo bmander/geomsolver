@@ -2146,7 +2146,9 @@ of the tube shrunk under the plane moved in, and its torus lifted out and thicke
 `∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form — grown, its traced
 creases' tubes are not held to a family's `EXACT` yet, and `offset::swept_tube` refuses them), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
 aslant, its side lifted out and thickened, `∫ (t − t² κ/2) dA` by Gauss's rule, and refused past
-its vertex's curvature), and the same solids among `step_roundtrip::the_sample_reads_back`'s.  **An extrusion's face is the rectangle its line sweeps
+its vertex's curvature), `a_cone_placed_at_its_apex_is_thickened_inward` (onto a cone whose radius
+at its origin is less than nothing), and the same solids among
+`step_roundtrip::the_sample_reads_back`'s.  **An extrusion's face is the rectangle its line sweeps
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
 stands square to `z` and alike all along each line, so the face's sweep is the face family of four
 lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve
