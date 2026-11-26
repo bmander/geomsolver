@@ -372,30 +372,40 @@ fn cut_across(tube: &Tube,chart: Chart,c: f64,[v0,v1]: [f64;2],trims: &mut Vec<T
             }
         }
         let Some((i,mine,j,f)) = found else { break };
-        let t = &trims[i];
-        if !matches!(t.shape,Shape::Traced) { return Err(failed(format!("a window's cut at {c} on {chart:?} meets a join"))) }
-        let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
-        let (u,w) = (lerp(&t.uv),lerp(&t.partner));
-        let [u,w] = if mine {
-            let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("a window's cut at {c} not settled on a trim")))?; [u,w]
-        } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("a window's cut at {c} not settled on a trim")))? };
-        let x = tube.at(t.own,u).ok_or_else(|| failed("no chart at a cut's crossing of a trim".into()))?.x;
-        vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
-        let k = vertices.len()-1;
-        let mut first = t.clone();
-        let mut second = t.clone();
-        first.uv.truncate(j+1); first.uv.push(u);
-        first.partner.truncate(j+1); first.partner.push(w);
-        first.ends[1] = k;
-        second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
-        second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
-        second.ends[0] = k;
-        trims[i] = first;
-        trims.push(second);
+        if !matches!(trims[i].shape,Shape::Traced) { return Err(failed(format!("a window's cut at {c} on {chart:?} meets a join"))) }
+        let (k,u,w) = split_trim(tube,trims,vertices,(i,mine,j,f),&format!("a window's cut at {c}"))?;
         out.push((if mine { w[1] } else { u[1] },k));
     }
-    out.sort_by(|p,q| p.0.total_cmp(&q.0));
     Ok(out)
+}
+
+/// **Trim `i` split where a cut crosses it**: at the fraction `f` of segment `j` of its polyline on
+/// the cut's chart (its own, or its partner's where `mine`), the crossing settled on the double curve
+/// with the angle held on that chart (`settle`), a vertex of both its charts, and the trim split there
+/// into two (the second pushed). The vertex and the crossing's places on the trim's own chart and its
+/// partner's; `what` names the cut in a refusal.
+fn split_trim(tube: &Tube,trims: &mut Vec<Trim>,vertices: &mut Vec<Vertex>,(i,mine,j,f): (usize,bool,usize,f64),what: &str)
+    -> Result<(usize,P,P),Unbuilt> {
+    let t = &trims[i];
+    let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
+    let (u,w) = (lerp(&t.uv),lerp(&t.partner));
+    let [u,w] = if mine {
+        let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("{what} not settled on a trim")))?; [u,w]
+    } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("{what} not settled on a trim")))? };
+    let x = tube.at(t.own,u).ok_or_else(|| failed(format!("no chart where {what} meets a trim")))?.x;
+    vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
+    let k = vertices.len()-1;
+    let mut first = t.clone();
+    let mut second = t.clone();
+    first.uv.truncate(j+1); first.uv.push(u);
+    first.partner.truncate(j+1); first.partner.push(w);
+    first.ends[1] = k;
+    second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
+    second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
+    second.ends[0] = k;
+    trims[i] = first;
+    trims.push(second);
+    Ok((k,u,w))
 }
 
 /// The charts, in the order their faces are read.
@@ -1439,27 +1449,9 @@ fn met_by_cut(tube: &Tube,chart: Chart,p: P,e: f64,tail: usize,trims: &mut Vec<T
         }
     }
     let Some((i,mine,j,f,_)) = best else { return Ok(None) };
-    let t = &trims[i];
-    if !matches!(t.shape,Shape::Traced) { return Err(failed(format!("the cut from the swallowtail point {p:?} meets a join"))) }
-    let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
-    let (u,w) = (lerp(&t.uv),lerp(&t.partner));
+    if !matches!(trims[i].shape,Shape::Traced) { return Err(failed(format!("the cut from the swallowtail point {p:?} meets a join"))) }
     // (the angle held on the cut's own chart: its place on the polyline crossed)
-    let [u,w] = if mine {
-        let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))?; [u,w]
-    } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))? };
-    let x = tube.at(t.own,u).ok_or_else(|| failed("no chart at a cut's foot on a trim".into()))?.x;
-    vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
-    let v = vertices.len()-1;
-    let mut first = t.clone();
-    let mut second = t.clone();
-    first.uv.truncate(j+1); first.uv.push(u);
-    first.partner.truncate(j+1); first.partner.push(w);
-    first.ends[1] = v;
-    second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
-    second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
-    second.ends[0] = v;
-    trims[i] = first;
-    trims.push(second);
+    let (v,u,w) = split_trim(tube,trims,vertices,(i,mine,j,f),&format!("the cut from {p:?}"))?;
     let foot = if mine { w } else { u };
     Ok(Some((v,foot[1])))
 }
@@ -1991,8 +1983,13 @@ pub fn held(tube: &Tube,built: &Brep,tol: f64) -> Result<(),Unbuilt> {
         let f = &built.faces[fi];
         (1..5).flat_map(move |i| (1..5).map(move |j| [u0+(u1-u0)*(i as f64-0.5)/4.,v0+(v1-v0)*(j as f64-0.5)/4.]))
             .map(move |uv| (fi,f.surface.point(uv)))
-    }).filter(|&(fi,p)| solid.face_place(fi,p) == Place::In).collect();
-    let off = crate::util::par::map(&points,|&(fi,p)| { let v = depth(p); (v.abs() > hair).then_some((fi,p,v)) });
+    }).collect();
+    // (each point read on the cores: placed in its face, then its depth)
+    let off = crate::util::par::map(&points,|&(fi,p)| {
+        if solid.face_place(fi,p) != Place::In { return None }
+        let v = depth(p);
+        (v.abs() > hair).then_some((fi,p,v))
+    });
     if let Some((fi,p,v)) = off.into_iter().flatten().next() {
         if debug() { eprintln!("tube: face {fi} at {p:?} stands {v:e} from the sweep's boundary, past {hair:e}") }
         return Err(Unbuilt::Wrong {at:p,held:v < 0.})

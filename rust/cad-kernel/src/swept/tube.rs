@@ -704,9 +704,8 @@ impl Disc {
 /// sheet's swing across the line is read at its quarters by the nine points.
 const BAND_BOUNDED: f64 = 1.;
 
-/// The most grid lines a side `unexplained` reads a chart on, and the points each length is read at.
+/// The most grid lines a side `unexplained` reads a chart on.
 const GRID_MOST: usize = 256;
-const GRID_LINE: usize = 64;
 /// How many times a grid edge's crossing is halved (`unexplained`): to a part in 2⁴⁰ of the edge.
 const GRID_HALVINGS: usize = 40;
 
@@ -764,21 +763,8 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
         (0..RIM).all(|k| matches!(field.reading(d.rim(k as f64/RIM as f64)),Some((_,Reading::Far(c))) if c.depth < -tol))
     };
     let holes: Vec<Disc> = tails.iter().filter(|&&at| !held(at)).map(|&at| disc(tube,chart,at,tol,feature)).collect::<Result<_,_>>()?;
-    // (each inner edge with its own side: a fold the chart's `side`, a disc its rim's, the pinch's
-    // hole its rim's)
-    let mut inner: Vec<Vec<[f64;2]>> = edges.to_vec();
-    inner.extend(holes.iter().map(|d| d.polygon(RIM)));
-    let rim = tube.hole(chart)?;
-    inner.extend(rim.iter().cloned());
-    // (a fold's side where the chart is not read: outside it — but beyond a band's seam the seam's
-    // own edge says so, and read there first the fold's took every exit past the seam, settled on its
-    // jump to 1e-5 of the seam's measure instead of on the seam)
-    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(match chart { Chart::Band(k,_) if tube.bands[k].beyond(uv) => 1.,_ => -1. });
-    let discs: Vec<Box<dyn Fn([f64;2]) -> f64>> = holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let rims: Vec<Box<dyn Fn([f64;2]) -> f64>> = (0..rim.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = edges.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
-    sides.extend(discs.iter().map(|d| &**d));
-    sides.extend(rims.iter().map(|s| &**s));
+    let (inner,boxed) = inner_edges(tube,chart,edges,&holes)?;
+    let sides: Vec<&dyn Fn([f64;2]) -> f64> = boxed.iter().map(|b| &**b as &dyn Fn([f64;2]) -> f64).collect();
     let mut seeds = seeds.to_vec();
     seeds.extend(beside_edges(tube,chart,edges,tol,feature));
     let clock = std::time::Instant::now();
@@ -803,6 +789,28 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
     Ok((pieces,search,holes))
 }
 
+/// A side of a chart's inner edge: positive on the side the chart is read.
+pub(crate) type Side<'t> = Box<dyn Fn([f64;2]) -> f64 + Sync + 't>;
+
+/// **A chart's inner edges, each with its side** (`seams`, `membership::stretches`): its folds (the
+/// chart's `side`), its swallowtail points' discs (`holes`, their rims) and its holes' rims (`hole`,
+/// the pinch's and a band's seam), in that order.
+pub(crate) fn inner_edges<'t>(tube: &'t Tube<'_>,chart: Chart,folds: &[Vec<[f64;2]>],holes: &[Disc]) -> Result<(Vec<Vec<[f64;2]>>,Vec<Side<'t>>),Unbuilt> {
+    let mut inner: Vec<Vec<[f64;2]>> = folds.to_vec();
+    inner.extend(holes.iter().map(|d| d.polygon(RIM)));
+    let rim = tube.hole(chart)?;
+    let rims = rim.len();
+    inner.extend(rim);
+    // (a fold's side where the chart is not read: outside it — but beyond a band's seam the seam's
+    // own edge says so, and read there first the fold's took every exit past the seam, settled on its
+    // jump to 1e-5 of the seam's measure instead of on the seam)
+    let mut sides: Vec<Side<'t>> = folds.iter().map(|_| Box::new(move |uv: [f64;2]| tube.side(chart,uv)
+        .unwrap_or(match chart { Chart::Band(k,_) if tube.bands[k].beyond(uv) => 1.,_ => -1. })) as Side<'t>).collect();
+    sides.extend(holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Side<'t>));
+    sides.extend((0..rims).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Side<'t>));
+    Ok((inner,sides))
+}
+
 /// **The grid's crossings of a chart's depth that no traced piece crosses**, each settled on the
 /// zero set: the chart read on a grid of about the feature in space (its lengths along each
 /// parameter read on five lines, `GRID_MOST` a side at most), and each grid edge between a place a
@@ -812,13 +820,7 @@ pub fn seams(tube: &Tube,chart: Chart,edges: &[Vec<[f64;2]>],tails: &[[f64;2]],s
 /// edges' and discs' to bound, not read.
 fn unexplained(field: &Depth,rect: crate::zero_set::Rect,pieces: &[crate::zero_set::Piece<Cover>],feature: f64) -> Vec<[f64;2]> {
     let [[u0,u1],[v0,v1]] = rect;
-    let at = |uv: [f64;2]| field.tube.at(field.chart,uv).map(|p| p.x);
-    let length = |line: &dyn Fn(f64) -> [f64;2]| -> f64 {
-        let mut last: Option<V> = None;
-        let mut l = 0.;
-        for k in 0..=GRID_LINE { if let Some(x) = at(line(k as f64/GRID_LINE as f64)) { if let Some(y) = last { l += crate::util::space::distance(x,y) } last = Some(x) } }
-        l
-    };
+    let length = |line: &dyn Fn(f64) -> [f64;2]| membership::length(field.tube,field.chart,line);
     let lines = |k: usize| (k as f64+0.5)/5.;
     let lu = (0..5).map(|k| length(&|f: f64| [u0+(u1-u0)*f,v0+(v1-v0)*lines(k)])).fold(0.,f64::max);
     let lv = (0..5).map(|k| length(&|f: f64| [u0+(u1-u0)*lines(k),v0+(v1-v0)*f])).fold(0.,f64::max);
@@ -827,11 +829,7 @@ fn unexplained(field: &Depth,rect: crate::zero_set::Rect,pieces: &[crate::zero_s
     let node = |i: usize,j: usize| [u0+(u1-u0)*i as f64/nu as f64,v0+(v1-v0)*j as f64/nv as f64];
     // (below nought covered; `Alone` clear; none not read — nor inside a hole's rim, the pinch's or
     // a band's seam, where the pieces stop on the rim and another chart reads on)
-    let rims = field.tube.hole(field.chart).map_or(0,|r| r.len());
-    let value = |uv: [f64;2]| -> Option<f64> {
-        if (0..rims).any(|k| !(field.tube.hole_side(field.chart,k,uv) > 0.)) { return None }
-        match field.reading(uv)?.1 { Reading::Far(c) => Some(c.depth),Reading::Alone => Some(f64::INFINITY),Reading::Near => None }
-    };
+    let value = |uv: [f64;2]| membership::membership(field,uv).depth();
     let grid: Vec<Vec<Option<f64>>> = crate::util::par::indices(nu+1,|i| (0..=nv).map(|j| value(node(i,j))).collect());
     let crosses = |p: [f64;2],q: [f64;2]| -> bool {
         let orient = |a: [f64;2],b: [f64;2],c: [f64;2]| (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
@@ -867,14 +865,7 @@ fn unexplained(field: &Depth,rect: crate::zero_set::Rect,pieces: &[crate::zero_s
             // (a piece ending on the chart's rim, or a hair short of the edge it crosses, beside the
             // zero settled: within a hundredth of a cell of it, the crossing is that piece's)
             let cell = ((u1-u0)/nu as f64).min((v1-v0)/nv as f64);
-            if settled && near(q,0.01*cell) { continue }
-            if settled {
-                if std::env::var_os("SOLVENT_TUBE_DEBUG").is_some() {
-                    let near = pieces.iter().enumerate().flat_map(|(n,pc)| pc.uv.iter().map(move |u| (n,*u))).min_by(|x,y| crate::plane2::dist(x.1,q).total_cmp(&crate::plane2::dist(y.1,q)));
-                    eprintln!("  missed: edge {:?} ({a:e}) to {:?} ({b:e}), zero at {q:?}; nearest piece point {near:?}; rims {rims}, hole side {:?}",node(i,j),node(k,l),(0..rims).map(|k| field.tube.hole_side(field.chart,k,q)).collect::<Vec<_>>())
-                }
-                out.push(q)
-            }
+            if settled && !near(q,0.01*cell) { out.push(q) }
         }
     } }
     out
@@ -1055,6 +1046,12 @@ impl<'a> Tube<'a> {
         // (and each band's seam, `band::Band::rim`)
         out.extend(self.bands.iter().map(|b| b.rim(HOLE_RIM)));
         Ok(out)
+    }
+
+    /// How many rims `hole` lists for `chart`, read without building them: a sheet's pinch's and each
+    /// band's seam, a band's chart its own seam.
+    pub fn rims(&self,chart: Chart) -> usize {
+        match chart { Chart::Band(..) => 1,Chart::Sheet(_) => self.pinch.is_some() as usize+self.bands.len(),_ => 0 }
     }
 
     /// **Which side of the hole's rim `k` (as `hole` lists them) a chart's point lies**: positive on

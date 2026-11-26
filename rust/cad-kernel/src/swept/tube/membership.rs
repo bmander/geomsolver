@@ -36,11 +36,6 @@ pub enum Membership {
 }
 
 impl Membership {
-    /// Whether it is inside the sweep (covered or held); none where unread.
-    pub fn inside(&self) -> Option<bool> {
-        match self { Membership::Kept(_) => Some(false),Membership::Covered(_) | Membership::Held => Some(true),Membership::Unread => None }
-    }
-
     /// The far cover's depth where there is one, `+∞` where nothing else covers the point: the
     /// field whose zero set the trims are. None where held or unread.
     pub fn depth(&self) -> Option<f64> {
@@ -54,7 +49,7 @@ impl Membership {
 
 /// **The membership of the chart's point at `uv`** (`Depth::reading`; inside a hole's rim unread).
 pub fn membership(field: &Depth,uv: [f64;2]) -> Membership {
-    let rims = field.tube.hole(field.chart).map_or(0,|r| r.len());
+    let rims = field.tube.rims(field.chart);
     if (0..rims).any(|k| !(field.tube.hole_side(field.chart,k,uv) > 0.)) { return Membership::Unread }
     match field.reading(uv) {
         None => Membership::Unread,
@@ -175,11 +170,7 @@ pub fn crossings(field: &Depth,line: &Line,feature: f64) -> Vec<Crossing> {
     let tol = field.within;
     let at = |s: f64| field.tube.at(field.chart,line.place(s)).map(|p| p.x);
     let [s0,s1] = line.span;
-    let mut length = 0.;
-    let mut last: Option<V> = None;
-    for k in 0..=LINE_STEPS {
-        if let Some(x) = at(s0+(s1-s0)*k as f64/LINE_STEPS as f64) { if let Some(y) = last { length += distance(x,y) } last = Some(x) }
-    }
+    let length = length(field.tube,field.chart,&|f: f64| line.place(s0+(s1-s0)*f));
     let n = ((length/(LINE_READ*feature)).ceil() as usize).max(8);
     let read = |s: f64| -> (f64,Option<f64>,Option<V>,Membership) {
         let m = membership(field,line.place(s));
@@ -233,8 +224,19 @@ pub fn crossings(field: &Depth,line: &Line,feature: f64) -> Vec<Crossing> {
     out
 }
 
-/// Chords a line's length is read on (`crossings`).
+/// Chords a line's length is read on (`length`).
 const LINE_STEPS: usize = 64;
+
+/// **The length in space of the chart's line `line`** (its places over `[0, 1]`), read on
+/// `LINE_STEPS` chords, a place the chart does not hold skipped.
+pub(super) fn length(tube: &Tube,chart: Chart,line: &dyn Fn(f64) -> [f64;2]) -> f64 {
+    let mut l = 0.;
+    let mut last: Option<V> = None;
+    for k in 0..=LINE_STEPS {
+        if let Some(x) = tube.at(chart,line(k as f64/LINE_STEPS as f64)).map(|p| p.x) { if let Some(y) = last { l += distance(x,y) } last = Some(x) }
+    }
+    l
+}
 
 /// The chart's patches' every edge with its crossings, each edge read once (`crossings`), on every
 /// core.
@@ -271,16 +273,7 @@ pub fn stretches(field: &Depth,folds: &[Vec<[f64;2]>],patches: &Patches,read: &[
     -> Result<Vec<Stretch>,String> {
     let (tube,chart,tol) = (field.tube,field.chart,field.within);
     // (the inner edges and their sides, as `seams` gives them)
-    let fold = |uv: [f64;2]| tube.side(chart,uv).unwrap_or(match chart { Chart::Band(k,_) if tube.bands[k].beyond(uv) => 1.,_ => -1. });
-    let rims = tube.hole(chart).map_err(|e| format!("{e:?}"))?;
-    let mut inner: Vec<Vec<[f64;2]>> = folds.to_vec();
-    inner.extend(field.holes.iter().map(|d| d.polygon(super::RIM)));
-    inner.extend(rims.iter().cloned());
-    let discs: Vec<Box<dyn Fn([f64;2]) -> f64 + '_>> = field.holes.iter().map(|&d| Box::new(move |uv: [f64;2]| d.side(uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let rim_sides: Vec<Box<dyn Fn([f64;2]) -> f64 + '_>> = (0..rims.len()).map(|k| Box::new(move |uv: [f64;2]| tube.hole_side(chart,k,uv)) as Box<dyn Fn([f64;2]) -> f64>).collect();
-    let mut sides: Vec<&dyn Fn([f64;2]) -> f64> = folds.iter().map(|_| &fold as &dyn Fn([f64;2]) -> f64).collect();
-    sides.extend(discs.iter().map(|d| &**d));
-    sides.extend(rim_sides.iter().map(|s| &**s));
+    let (inner,boxed) = super::inner_edges(tube,chart,folds,field.holes).map_err(|e| format!("{e:?}"))?;
     let x = |uv: [f64;2]| tube.at(chart,uv).map(|p| p.x);
     let across = |uv: [f64;2],c: &Cover| x(uv).and_then(|x| tube.partner(x,c)).map(|(ch,_)| ch);
     let turn = |uv: [f64;2],c: &Cover| (c.at-tube.own(chart,uv)).signum();
@@ -297,9 +290,12 @@ pub fn stretches(field: &Depth,folds: &[Vec<[f64;2]>],patches: &Patches,read: &[
         p
     };
     let [nu,nv] = patches.count();
-    let mut out = Vec::new();
-    for i in 0..nu { for j in 0..nv {
+    // (each patch traced on its own, on every core, read in order)
+    let each = crate::util::par::indices(nu*nv,|n| -> Result<Vec<Stretch>,String> {
+        let (i,j) = (n/nv,n%nv);
+        let mut out = Vec::new();
         let rect = patches.rect(i,j);
+        let sides: Vec<&dyn Fn([f64;2]) -> f64> = boxed.iter().map(|b| &**b as &dyn Fn([f64;2]) -> f64).collect();
         let sides_of = patches.sides(i,j);
         let seeds: Vec<[f64;2]> = sides_of.iter().flat_map(|&k| read[k].1.iter().map(|c| c.uv)).collect();
         let (pieces,_) = super::round(field,rect,[false,false],&seeds,&inner,&sides,tol,feature)?;
@@ -327,12 +323,8 @@ pub fn stretches(field: &Depth,folds: &[Vec<[f64;2]>],patches: &Patches,read: &[
             for k in 1..n {
                 if keys[k] != keys[k-1] {
                     let across_changes = keys[k].0 != keys[k-1].0;
-                    let same: Box<dyn Fn(&([f64;2],Cover),&([f64;2],Cover)) -> bool> = if across_changes {
-                        Box::new(|p,m| across(p.0,&p.1) == across(m.0,&m.1))
-                    } else {
-                        Box::new(|p,m| turn(p.0,&p.1) == turn(m.0,&m.1))
-                    };
-                    let (q,c) = cut((piece.uv[k-1],piece.at[k-1].clone()),(piece.uv[k],piece.at[k].clone()),&*same);
+                    let same = |p: &([f64;2],Cover),m: &([f64;2],Cover)| if across_changes { across(p.0,&p.1) == across(m.0,&m.1) } else { turn(p.0,&p.1) == turn(m.0,&m.1) };
+                    let (q,c) = cut((piece.uv[k-1],piece.at[k-1].clone()),(piece.uv[k],piece.at[k].clone()),&same);
                     uv.push(q);
                     covers.push(c.clone());
                     let kind = if across_changes { Ending::Across } else { Ending::Turn };
@@ -348,6 +340,9 @@ pub fn stretches(field: &Depth,folds: &[Vec<[f64;2]>],patches: &Patches,read: &[
             }
             if let Some(a) = keys[n-1].0 { out.push(Stretch {patch:[i,j],uv,covers,across:a,ends:[first,end]}) }
         }
-    } }
+        Ok(out)
+    });
+    let mut out = Vec::new();
+    for e in each { out.extend(e?) }
     Ok(out)
 }

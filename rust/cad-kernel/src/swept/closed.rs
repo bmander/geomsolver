@@ -1215,7 +1215,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         Err(Unbuilt::Curved {at}) if blank.is_none() && !twice => {
             let ring = super::rings::Ring::read(tool)?;
             if ring.touched_once(path,[a,b])?.is_empty() { return Err(Unbuilt::Curved {at}) }
-            return tube_road(tool,path,[a,b],tol)
+            return tube_road(&ring,path,[a,b],tol)
         }
         entered => entered.and_then(|e| entered_built(tool,path,[a,b],bar,tol,blank,e)),
     };
@@ -1226,7 +1226,10 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     // refuses too, this road's refusal stands. Not past a budget (the build is stopped), and not cut
     // from a blank.
     match built {
-        Err(why) if blank.is_none() && !matches!(why,Unbuilt::Budget {..}) => tube_road(tool,path,[a,b],tol).map_err(|_| why),
+        Err(why) if blank.is_none() && !matches!(why,Unbuilt::Budget {..}) => match super::rings::Ring::read(tool) {
+            Ok(ring) => tube_road(&ring,path,[a,b],tol).map_err(|_| why),
+            Err(_) => Err(why),
+        },
         built => built,
     }
 }
@@ -1239,20 +1242,18 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
 /// the feature (`Tube::completed`): the depth's search clears a cell nothing else covers by its nine
 /// readings, evidence a pocket between them escapes — the tumble seen from its own axis kept its
 /// folded sheet 0.15 inside the solid so, every check of its own passed.
-fn tube_road(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Brep,Unbuilt> {
-    let ring = super::rings::Ring::read(tool)?;
-    let mut tube = super::tube::Tube::pinched(&ring,path,[a,b],tol,0.25*ring.thickness)?;
-    let built = super::tube::faces::solid(&tube,tol)?;
-    match super::tube::faces::held(&tube,&built,tol) {
-        Ok(()) => Ok(built),
-        Err(Unbuilt::Wrong {..}) => {
-            tube.completed = true;
-            let built = super::tube::faces::solid(&tube,tol)?;
-            super::tube::faces::held(&tube,&built,tol)?;
-            Ok(built)
+fn tube_road(ring: &super::rings::Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Brep,Unbuilt> {
+    let mut tube = super::tube::Tube::pinched(ring,path,[a,b],tol,0.25*ring.thickness)?;
+    for completed in [false,true] {
+        tube.completed = completed;
+        let built = super::tube::faces::solid(&tube,tol)?;
+        match super::tube::faces::held(&tube,&built,tol) {
+            Ok(()) => return Ok(built),
+            Err(Unbuilt::Wrong {..}) if !completed => continue,
+            Err(e) => return Err(e),
         }
-        Err(e) => Err(e),
     }
+    unreachable!("the second build returns")
 }
 
 /// **A ring's sweep built from what its road entered** (`ring_entered`), as `ring` builds it: so a

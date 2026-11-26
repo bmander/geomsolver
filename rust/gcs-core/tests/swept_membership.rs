@@ -11,18 +11,8 @@ use crate::common::bench::tumbling;
 /// The present road's trims of a sheet (its folds, their swallowtail points, the depth's seams,
 /// from no seeds) and the discs about its swallowtail points.
 fn traced(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> (Vec<Vec<[f64;2]>>,Vec<gcs_core::brep::swept::tube::Disc>) {
-    let (pieces,discs,_) = traced_with_folds(tube,chart,tol,feature);
-    (pieces,discs)
-}
-
-/// `traced`, and the sheet's folds.
-fn traced_with_folds(tube: &Tube,chart: Chart,tol: f64,feature: f64) -> (Vec<Vec<[f64;2]>>,Vec<gcs_core::brep::swept::tube::Disc>,Vec<Vec<[f64;2]>>) {
-    let Chart::Sheet(side) = chart else { panic!("a sheet") };
-    let (folds,_) = edges(tube,chart,tol,feature).unwrap();
-    let lines: Vec<Vec<[f64;2]>> = folds.into_iter().map(|p| p.uv).collect();
-    let tails: Vec<[f64;2]> = lines.iter().flat_map(|f| swallowtails(tube,side,f)).collect();
-    let (pieces,_,discs) = seams(tube,chart,&lines,&tails,&[],tol,feature).unwrap();
-    (pieces.into_iter().map(|p| p.uv).collect(),discs,lines)
+    let (pieces,discs,_) = traced_covered(tube,chart,tol,feature);
+    (pieces.into_iter().map(|p| p.uv).collect(),discs)
 }
 
 /// Where the polylines `pieces` cross the patch edge `line`: each chord's crossing of the line's
@@ -165,15 +155,10 @@ impl Lines {
         Lines {segs,tree}
     }
     fn off(&self,x: [f64;3]) -> f64 {
-        let seg = |(a,b): ([f64;3],[f64;3])| {
-            let d = [b[0]-a[0],b[1]-a[1],b[2]-a[2]];
-            let l = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
-            let f = if l > 0. { (((x[0]-a[0])*d[0]+(x[1]-a[1])*d[1]+(x[2]-a[2])*d[2])/l).clamp(0.,1.) } else { 0. };
-            gcs_core::brep::util::space::distance(x,[a[0]+f*d[0],a[1]+f*d[1],a[2]+f*d[2]])
-        };
-        let gap = |b: gcs_core::brep::util::bvh::Bounds<3>| (0..3).map(|k| (b.lo[k]-x[k]).max(x[k]-b.hi[k]).max(0.).powi(2)).sum::<f64>().sqrt();
+        use gcs_core::brep::util::bvh::Bounds;
+        let gap = |b: Bounds<3>| b.gap(Bounds {lo:x,hi:x});
         let best = std::cell::Cell::new(f64::INFINITY);
-        self.tree.query_nearest(gap,|| best.get(),|i| best.set(best.get().min(seg(self.segs[i]))));
+        self.tree.query_nearest(gap,|| best.get(),|i| { let (a,b) = self.segs[i]; best.set(best.get().min(gcs_core::brep::util::space::segment_distance(x,a,b))) });
         best.get()
     }
 }
