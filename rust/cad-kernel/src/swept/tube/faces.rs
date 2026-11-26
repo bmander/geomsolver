@@ -87,7 +87,7 @@ impl Tube<'_> {
     /// **What covers the point `x` read at `c`, as a chart's parameters**: an end pose's, where the
     /// covering instant is an end of the roll (to its rounding); else the sheet whose point at the
     /// covering instant and the core circle's angle of the tool's point is the nearer, settled.
-    fn partner(&self,x: V,c: &Cover) -> Option<(Chart,P)> {
+    pub fn partner(&self,x: V,c: &Cover) -> Option<(Chart,P)> {
         let [a,b] = self.roll;
         for (k,e) in [a,b].into_iter().enumerate() {
             if (c.at-e).abs() <= HALF_READ*(b-a) { return Some((Chart::End(k),self.on_end(k,x)?)) }
@@ -233,7 +233,11 @@ enum Shape { Traced,Normal { base: [P;2],d: [P;2],way: f64,through: [Option<usiz
 
 impl Trim {
     /// The trim's point at `s` of `[0, 1]`: its two charts' parameters, settled where it is traced.
-    fn at(&self,tube: &Tube,s: f64) -> Option<[P;2]> {
+    fn at(&self,tube: &Tube,s: f64) -> Option<[P;2]> { self.at_held(tube,s,false) }
+
+    /// `at`, the line a traced point is held on turning smoothly between the polyline's tangents on
+    /// any chart where `smooth` (as on a band's always).
+    fn at_held(&self,tube: &Tube,s: f64,smooth: bool) -> Option<[P;2]> {
         let n = self.uv.len();
         if s <= 0. { return Some([self.uv[0],self.partner[0]]) }
         if s >= 1. { return Some([self.uv[n-1],self.partner[n-1]]) }
@@ -260,7 +264,7 @@ impl Trim {
                 // polyline's tangents at its points: its segments' own ways jump at each point, the
                 // point settled there jumping along the curve by its chord's sag, which beside the
                 // band's line is over the bar — a curve fitted through them missed by 3.1e-6)
-                if let Chart::Band(..) = self.own {
+                if smooth || matches!(self.own,Chart::Band(..)) {
                     let tangent = |m: usize| {
                         let (a,b) = (self.uv[m.saturating_sub(1)],self.uv[(m+1).min(n-1)]);
                         let d = [b[0]-a[0],b[1]-a[1]];
@@ -313,15 +317,95 @@ fn windows(trims: &[Trim],points: &[(Chart,P)],chart: Chart) -> Result<[f64;2],U
     let mut ths: Vec<f64> = trims.iter().flat_map(|t| [(t.own,&t.uv),(t.other,&t.partner)])
         .filter(|(c,_)| *c == chart).flat_map(|(_,l)| l.iter().map(|p| p[0].rem_euclid(TAU))).collect();
     ths.extend(points.iter().filter(|(c,_)| *c == chart).map(|(_,p)| p[0].rem_euclid(TAU)));
-    if ths.is_empty() { return Ok([0.5*PI,1.5*PI]) }
+    widest(ths).ok_or_else(|| failed(format!("the trims leave no angle of {chart:?} free for the windows' cuts")))
+}
+
+/// **Two angles at the thirds of the widest gap `ths` (angles within a turn) leave**, in order within
+/// the turn; a quarter and three quarters where there are none; none where no gap is wider than a
+/// hundredth of a turn (structural).
+fn widest(mut ths: Vec<f64>) -> Option<[f64;2]> {
+    if ths.is_empty() { return Some([0.5*PI,1.5*PI]) }
     ths.sort_by(f64::total_cmp);
     let n = ths.len();
     let (gap,at) = (0..n).map(|i| { let next = if i+1 < n { ths[i+1] } else { ths[0]+TAU }; (next-ths[i],ths[i]) })
         .max_by(|p,q| p.0.total_cmp(&q.0)).expect("some angles");
-    if gap < 0.01*TAU { return Err(failed(format!("the trims leave no angle of {chart:?} free for the windows' cuts"))) }
+    if gap < 0.01*TAU { return None }
     // (in order within the turn: the windows run from the first to the second and on round)
     let (x,y) = ((at+gap/3.).rem_euclid(TAU),(at+2.*gap/3.).rem_euclid(TAU));
-    Ok([x.min(y),x.max(y)])
+    Some([x.min(y),x.max(y)])
+}
+
+/// **A chart's windows' cuts where its trims leave no angle free** (`docs/tube-trims-by-membership.md`
+/// §3, the windows' refusal gone): two angles clear of its points alone — its swallowtail points, the
+/// pinch's hole and every vertex on it — the cuts then crossing trims, each crossing a vertex
+/// (`cut_across`).
+fn crossing_windows(points: &[(Chart,P)],vertices: &[Vertex],chart: Chart) -> Result<[f64;2],Unbuilt> {
+    let mut ths: Vec<f64> = points.iter().filter(|(c,_)| *c == chart).map(|(_,p)| p[0].rem_euclid(TAU)).collect();
+    ths.extend(vertices.iter().flat_map(|v| v.on.iter()).filter(|(c,_)| *c == chart).map(|(_,p)| p[0].rem_euclid(TAU)));
+    widest(ths).ok_or_else(|| failed(format!("the points leave no angle of {chart:?} free for the windows' cuts")))
+}
+
+/// **Every trim crossing the cut at `θ = c` on `chart` between `v0` and `v1`, split there** (as
+/// `met_by_cut` splits one): each crossing of a trim's polyline on the chart (its own, or its
+/// partner's) settled on the double curve with the angle held (`settle`), a vertex of both its
+/// charts, the trim split into two. The crossings' places along the cut and their vertices, in order.
+/// A join crossed is refused by name.
+fn cut_across(tube: &Tube,chart: Chart,c: f64,[v0,v1]: [f64;2],trims: &mut Vec<Trim>,vertices: &mut Vec<Vertex>) -> Result<Vec<(f64,usize)>,Unbuilt> {
+    let mut out: Vec<(f64,usize)> = Vec::new();
+    let (lo,hi) = (v0.min(v1),v0.max(v1));
+    loop {
+        // (the first crossing found strictly inside a segment: its trim, polyline, segment, fraction)
+        let mut found: Option<(usize,bool,usize,f64)> = None;
+        'search: for (i,t) in trims.iter().enumerate() {
+            for (mine,line,ch) in [(false,&t.uv,t.own),(true,&t.partner,t.other)] {
+                if ch != chart { continue }
+                for j in 0..line.len()-1 {
+                    let (u,w) = (line[j],line[j+1]);
+                    let cc = wrap(chart,c,u[0]);
+                    if (u[0]-cc).abs() <= 1e-12 || (w[0]-cc).abs() <= 1e-12 || (u[0]-cc)*(w[0]-cc) > 0. { continue }
+                    let f = (cc-u[0])/(w[0]-u[0]);
+                    let v = u[1]+(w[1]-u[1])*f;
+                    if !(v > lo && v < hi) { continue }
+                    found = Some((i,mine,j,f));
+                    break 'search
+                }
+            }
+        }
+        let Some((i,mine,j,f)) = found else { break };
+        if !matches!(trims[i].shape,Shape::Traced) { return Err(failed(format!("a window's cut at {c} on {chart:?} meets a join"))) }
+        let (k,u,w) = split_trim(tube,trims,vertices,(i,mine,j,f),&format!("a window's cut at {c}"))?;
+        out.push((if mine { w[1] } else { u[1] },k));
+    }
+    Ok(out)
+}
+
+/// **Trim `i` split where a cut crosses it**: at the fraction `f` of segment `j` of its polyline on
+/// the cut's chart (its own, or its partner's where `mine`), the crossing settled on the double curve
+/// with the angle held on that chart (`settle`), a vertex of both its charts, and the trim split there
+/// into two (the second pushed). The vertex and the crossing's places on the trim's own chart and its
+/// partner's; `what` names the cut in a refusal.
+fn split_trim(tube: &Tube,trims: &mut Vec<Trim>,vertices: &mut Vec<Vertex>,(i,mine,j,f): (usize,bool,usize,f64),what: &str)
+    -> Result<(usize,P,P),Unbuilt> {
+    let t = &trims[i];
+    let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
+    let (u,w) = (lerp(&t.uv),lerp(&t.partner));
+    let [u,w] = if mine {
+        let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("{what} not settled on a trim")))?; [u,w]
+    } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("{what} not settled on a trim")))? };
+    let x = tube.at(t.own,u).ok_or_else(|| failed(format!("no chart where {what} meets a trim")))?.x;
+    vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
+    let k = vertices.len()-1;
+    let mut first = t.clone();
+    let mut second = t.clone();
+    first.uv.truncate(j+1); first.uv.push(u);
+    first.partner.truncate(j+1); first.partner.push(w);
+    first.ends[1] = k;
+    second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
+    second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
+    second.ends[0] = k;
+    trims[i] = first;
+    trims.push(second);
+    Ok((k,u,w))
 }
 
 /// The charts, in the order their faces are read.
@@ -1122,8 +1206,34 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     let mut points: Vec<(Chart,P)> = tails.iter().map(|t| (t.0,t.1)).collect();
     // (the sheets' windows clear of the pinch's hole, which lies whole in one of them)
     for side in [1.,-1.] { points.extend(tube.hole(Chart::Sheet(side))?.into_iter().flatten().map(|p| (Chart::Sheet(side),p))) }
-    let mut cuts: Vec<(Chart,[f64;2])> = CHARTS.iter().map(|&c| windows(trims,&points,c).map(|w| (c,w))).collect::<Result<_,_>>()?;
-    if tube.pinch.is_some() { cuts.push((Chart::Collar,windows(trims,&points,Chart::Collar)?)) }
+    // (each chart's cuts clear of its trims where they leave an angle free; else clear of its points
+    // alone, each cut then crossing trims, split there: `crossed` holds each such cut's crossings —
+    // the chart, the angle, and the crossings' places along it with their vertices)
+    let mut charts_cut = CHARTS.to_vec();
+    if tube.pinch.is_some() { charts_cut.push(Chart::Collar) }
+    let mut cuts: Vec<(Chart,[f64;2])> = Vec::new();
+    let mut crossed: Vec<(Chart,f64,Vec<(f64,usize)>)> = Vec::new();
+    for &c in &charts_cut {
+        match windows(trims,&points,c) {
+            Ok(w) => cuts.push((c,w)),
+            Err(why) => {
+                let w = crossing_windows(&points,vertices,c).map_err(|_| why)?;
+                for th in w {
+                    let span = match c {
+                        Chart::Sheet(_) => [a,b],
+                        Chart::Collar => { let r = tube.pinch.as_ref().map_or(0.,|p| p.rho); [-r,r] }
+                        Chart::End(k) => { let (plus,way,width) = band(tube,k,th).ok_or_else(|| failed("no band on an end pose".into()))?; [plus,plus+way*width] }
+                        Chart::Band(..) => unreachable!("a band's chart is not cut"),
+                    };
+                    let at = cut_across(tube,c,th,span,trims,vertices)?;
+                    if debug() { eprintln!("tube: {c:?}'s cut at {th} crosses {} trims",at.len()) }
+                    crossed.push((c,th,at));
+                }
+                cuts.push((c,w));
+            }
+        }
+    }
+    let crossings_of = |chart: Chart,th: f64| -> Vec<(f64,usize)> { crossed.iter().find(|(c,t,_)| *c == chart && *t == th).map_or(Vec::new(),|x| x.2.clone()) };
     let collar_cuts = if tube.pinch.is_some() { cuts_of(&cuts,Chart::Collar) } else { [0.;2] };
     // the cuts from each swallowtail point toward the rim it opens away from (the way whose point a
     // disc's span beside it is kept), each to the first trim it meets or else that rim
@@ -1239,8 +1349,7 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
         for &c in &collar_cuts {
             let at = |rho: f64| vertices.iter().position(|v| v.on.iter().any(|(ch,q)| *ch == Chart::Collar && q[0] == c && q[1] == rho));
             let (Some(v0),Some(v1)) = (at(-p.rho),at(p.rho)) else { return Err(failed("a collar's cut with no vertex on its rim".into())) };
-            let line: Vec<P> = (0..=32).map(|j| [c,-p.rho+2.*p.rho*j as f64/32.]).collect();
-            arcs.push(Arc2 {kind:Kind::Across {chart:Chart::Collar,th:c,v:[-p.rho,p.rho]},v:[v0,v1],uses:vec![(Chart::Collar,line.clone()),(Chart::Collar,line)]});
+            chained(&mut arcs,Chart::Collar,c,(-p.rho,v0),&crossings_of(Chart::Collar,c),(p.rho,v1));
         }
     }
     // each band's seam, on both sheets, split at every vertex on it (at its half turns where fewer
@@ -1280,8 +1389,7 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
         let chart = Chart::Sheet(side);
         for c in cuts_of(&cuts,chart) {
             let (v0,v1) = (at_rim(vertices,chart,[c,a]).expect("a rim's cut"),at_rim(vertices,chart,[c,b]).expect("a rim's cut"));
-            let line: Vec<P> = (0..=32).map(|j| [c,a+(b-a)*j as f64/32.]).collect();
-            arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[a,b]},v:[v0,v1],uses:vec![(chart,line.clone()),(chart,line)]});
+            chained(&mut arcs,chart,c,(a,v0),&crossings_of(chart,c),(b,v1));
         }
     }
     for k in 0..2 {
@@ -1289,11 +1397,27 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
         for c in cuts_of(&cuts,chart) {
             let (plus,way,width) = band(tube,k,c).ok_or_else(|| failed("no band on an end pose".into()))?;
             let (v0,v1) = (at_rim(vertices,Chart::Sheet(1.),[c,tube.roll[k]]).expect("a rim's cut"),at_rim(vertices,Chart::Sheet(-1.),[c,tube.roll[k]]).expect("a rim's cut"));
-            let line: Vec<P> = (0..=32).map(|j| [c,plus+way*width*j as f64/32.]).collect();
-            arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[plus,plus+way*width]},v:[v0,v1],uses:vec![(chart,line.clone()),(chart,line)]});
+            // (the crossings along the band's way, each read within a turn of its start)
+            let along: Vec<(f64,usize)> = crossings_of(chart,c).into_iter().map(|(psi,v)| (plus+way*(way*(psi-plus)).rem_euclid(TAU),v)).collect();
+            chained(&mut arcs,chart,c,(plus,v0),&along,(plus+way*width,v1));
         }
     }
     faces(tube,vertices,&arcs,trims,&cuts,tol)
+}
+
+/// **A window's cut across `chart` at `θ = c`** from `(v₀, its vertex)` to `(v₁, its vertex)`, as arcs:
+/// one, or — where it crosses trims (`crossed`, their places along it and vertices) — one between
+/// each two of its vertices in order along it.
+fn chained(arcs: &mut Vec<Arc2>,chart: Chart,c: f64,start: (f64,usize),crossed: &[(f64,usize)],end: (f64,usize)) {
+    let dir = (end.0-start.0).signum();
+    let mut stops: Vec<(f64,usize)> = crossed.to_vec();
+    stops.sort_by(|p,q| (dir*p.0).total_cmp(&(dir*q.0)));
+    let chain: Vec<(f64,usize)> = std::iter::once(start).chain(stops).chain(std::iter::once(end)).collect();
+    for w in chain.windows(2) {
+        let ((s0,k0),(s1,k1)) = (w[0],w[1]);
+        let line: Vec<P> = (0..=32).map(|j| [c,s0+(s1-s0)*j as f64/32.]).collect();
+        arcs.push(Arc2 {kind:Kind::Across {chart,th:c,v:[s0,s1]},v:[k0,k1],uses:vec![(chart,line.clone()),(chart,line)]});
+    }
 }
 
 /// **Where the cut from the swallowtail point `p` (its vertex `tail`) toward the roll's end `e`
@@ -1325,27 +1449,9 @@ fn met_by_cut(tube: &Tube,chart: Chart,p: P,e: f64,tail: usize,trims: &mut Vec<T
         }
     }
     let Some((i,mine,j,f,_)) = best else { return Ok(None) };
-    let t = &trims[i];
-    if !matches!(t.shape,Shape::Traced) { return Err(failed(format!("the cut from the swallowtail point {p:?} meets a join"))) }
-    let lerp = |l: &Vec<P>| [l[j][0]+(l[j+1][0]-l[j][0])*f,l[j][1]+(l[j+1][1]-l[j][1])*f];
-    let (u,w) = (lerp(&t.uv),lerp(&t.partner));
+    if !matches!(trims[i].shape,Shape::Traced) { return Err(failed(format!("the cut from the swallowtail point {p:?} meets a join"))) }
     // (the angle held on the cut's own chart: its place on the polyline crossed)
-    let [u,w] = if mine {
-        let [w,u] = settle(tube,(t.other,t.own),[w,u],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))?; [u,w]
-    } else { settle(tube,(t.own,t.other),[u,w],[1.,0.]).ok_or_else(|| failed(format!("the cut from {p:?} not settled on a trim")))? };
-    let x = tube.at(t.own,u).ok_or_else(|| failed("no chart at a cut's foot on a trim".into()))?.x;
-    vertices.push(Vertex {x,on:vec![(t.own,u),(t.other,w)]});
-    let v = vertices.len()-1;
-    let mut first = t.clone();
-    let mut second = t.clone();
-    first.uv.truncate(j+1); first.uv.push(u);
-    first.partner.truncate(j+1); first.partner.push(w);
-    first.ends[1] = v;
-    second.uv = std::iter::once(u).chain(t.uv[j+1..].iter().copied()).collect();
-    second.partner = std::iter::once(w).chain(t.partner[j+1..].iter().copied()).collect();
-    second.ends[0] = v;
-    trims[i] = first;
-    trims.push(second);
+    let (v,u,w) = split_trim(tube,trims,vertices,(i,mine,j,f),&format!("the cut from {p:?}"))?;
     let foot = if mine { w } else { u };
     Ok(Some((v,foot[1])))
 }
@@ -1416,7 +1522,21 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
                 // within it of one another, and a corner's join within it of the end pose)
                 let bars = [fit,if let Shape::Traced = t.shape { fit } else { tol }];
                 if debug() { eprintln!("tube: trim {i} on {:?} against {:?}, {:?}, from {:?} to {:?}",t.own,t.other,t.shape,t.uv[0],t.uv[t.uv.len()-1]) }
-                fitted(&f,&at,&bars)?
+                match fitted(&f,&at,&bars) {
+                    Ok(r) => r,
+                    // (a sheet's traced trim fitted short: its points held on lines square to its
+                    // polyline's segments jump along the curve by a chord's sag where it turns — a
+                    // double curve turning 0.05 a chord across a sheet's half turn fitted to 2e-6
+                    // against 4.4e-7 — read again with the line turning smoothly, as on a band)
+                    Err(e) if matches!(t.shape,Shape::Traced) => {
+                        let g = |s: f64| match t.at_held(tube,s,true) {
+                            Some([u,p]) => (tube.at(t.own,u).map_or([f64::NAN;3],|q| q.x),vec![u,p]),
+                            None => ([f64::NAN;3],vec![[f64::NAN;2];2]),
+                        };
+                        fitted(&g,&at,&bars).map_err(|_| e)?
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             Kind::Rim {side,k,th} => {
                 let f = |s: f64| { let t = th[0]+(th[1]-th[0])*s; let x = tube.point(side,t,tube.roll[k]).map_or([f64::NAN;3],|p| p.x);
@@ -1829,3 +1949,53 @@ fn graded(ts: &[f64],errors: &[f64],bar: f64) -> Vec<f64> {
     }
     out
 }
+
+/// **The built solid's faces held to the sweep's boundary** (the design bible's fourth principle:
+/// built right or refused with a witness): each face read at the points of a 4 × 4 grid over its
+/// parameters that lie in it (`query::Located::face_place`), and at each the tool's least depth over
+/// the roll — sampled at `HELD_SAMPLES`, each least refined by golden sections — within a hair of
+/// nought (`1e-4` of the solid's size, or 64 tolerances). A face read deeper lies inside the sweep
+/// or off it, and the solid is refused there (`Unbuilt::Wrong`): a chart whose depth's search missed
+/// a pocket beside a fold kept its folded sheet, 0.15 inside the solid, every check of its own passed.
+pub fn held(tube: &Tube,built: &Brep,tol: f64) -> Result<(),Unbuilt> {
+    use crate::query::{Located,Place};
+    let solid = Located::new(built,tol);
+    let size = { let (lo,hi) = built.bounds(); distance(lo,hi) };
+    let hair = (1e-4*size).max(64.*tol);
+    let [a,b] = tube.roll;
+    let depth = |x: V| -> f64 {
+        let d = |t: f64| tube.depth_at(x,t).map_or(f64::INFINITY,|r| r.0);
+        let n = HELD_SAMPLES;
+        let h = (b-a)/n as f64;
+        let vals: Vec<f64> = (0..=n).map(|k| d(a+h*k as f64)).collect();
+        let mut best = vals.iter().copied().fold(f64::INFINITY,f64::min);
+        for k in 0..=n {
+            let (l,r) = (if k > 0 { vals[k-1] } else { f64::INFINITY },if k < n { vals[k+1] } else { f64::INFINITY });
+            if vals[k] <= l && vals[k] <= r && vals[k] <= best+hair {
+                let t = super::golden(&d,(a+h*(k as f64-1.)).max(a),(a+h*(k as f64+1.)).min(b));
+                best = best.min(d(t));
+            }
+        }
+        best
+    };
+    let points: Vec<(usize,V)> = (0..built.faces.len()).flat_map(|fi| {
+        let [[u0,u1],[v0,v1]] = crate::boolean::face_parameters(built,fi);
+        let f = &built.faces[fi];
+        (1..5).flat_map(move |i| (1..5).map(move |j| [u0+(u1-u0)*(i as f64-0.5)/4.,v0+(v1-v0)*(j as f64-0.5)/4.]))
+            .map(move |uv| (fi,f.surface.point(uv)))
+    }).collect();
+    // (each point read on the cores: placed in its face, then its depth)
+    let off = crate::util::par::map(&points,|&(fi,p)| {
+        if solid.face_place(fi,p) != Place::In { return None }
+        let v = depth(p);
+        (v.abs() > hair).then_some((fi,p,v))
+    });
+    if let Some((fi,p,v)) = off.into_iter().flatten().next() {
+        if debug() { eprintln!("tube: face {fi} at {p:?} stands {v:e} from the sweep's boundary, past {hair:e}") }
+        return Err(Unbuilt::Wrong {at:p,held:v < 0.})
+    }
+    Ok(())
+}
+
+/// The instants of the roll `held` reads a point's depth at before refining each least.
+const HELD_SAMPLES: usize = 512;

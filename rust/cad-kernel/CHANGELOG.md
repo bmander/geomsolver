@@ -8,6 +8,35 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A whole ring the ring road refuses is built by the tube road** (`swept::closed::ring`): whatever
+  the ring road refuses a whole torus for (not past a budget, not cut from a blank), the tube road is
+  tried, and the ring road's refusal stands where it refuses too. Three fuzzed tumbles so refused
+  build, each volume cadrs's to 1e-6.
+- **The tube road's solid is held to the sweep's boundary** (`swept::tube::faces::held`): each face
+  read at points over it against the tool's least depth over the roll, a face off the boundary
+  refused with its point (`Unbuilt::Wrong`). A build so refused is built again with each chart's
+  depth held to a grid at the feature (`Tube::completed`), the crossings no traced piece crosses
+  seeding its trace. A tumble seen from its own axis was built with its folded sheet kept 0.15 inside
+  the solid (volume 18.0825371883, every check of its own passed): it builds at 18.0818507296.
+  `Tube` gains `completed`.  **Breaking** for code building `Tube` as a literal.
+- **The tube road's membership over its charts, and its charts cut into patches**
+  (`swept::tube::membership`, not yet the road's): a chart's point kept, covered (with the instant
+  that covers it), held or unread; each chart cut into fixed patches whose edges are lines the patches
+  beside them share, and what crosses each edge read once on it — on the crossed members, the present
+  road's trims' crossings of those lines.
+- **The tube road's trims as stretches, patch by patch** (`swept::tube::membership::stretches`, not
+  yet the road's): each patch's zero set traced from its edges' crossings and cut where the face
+  across changes or the double curve turns back, each end named; on the full turn and the crossed
+  forward member the present road's trims, in about half its time. `Tube::partner` is public.
+- **A tube's chart whose trims leave no angle free is cut across them** (`swept::tube::faces`): its
+  windows' cuts read clear of its points alone, each trim crossed split at a vertex on its double
+  curve; no longer refused "the trims leave no angle … free for the windows' cuts". Every other
+  build the same.
+- **A sheet's trim fitted short is fitted again held smoothly** (`swept::tube::faces`): its points
+  held on a line turning between its polyline's tangents, as a band's are, where held square to its
+  segments they jumped along the curve at each corner (a double curve crossing a sheet's half turn
+  fitted to 2e-6 against 4.4e-7). Every build that fitted before the same.
+
 ## [0.26.0] - 2026-11-26
 
 - **A face's area on a large net in a ninth the time, the same to the bit** (brep-bench's

@@ -3202,6 +3202,111 @@ parameters, not by the geometry: a reading of B8 in any other parameters meets a
 and the stretch waits on a Boolean whose arrangement stands where three faces of one operand cross
 a face of the other.
 
+**What the tube road refuses, each as plain as it refuses** (`swept_tumbles`): brep-bench's
+crossed members fuzzed — their ten numbers jittered by a seed, each sweep built by `closed::ring` as
+the runner builds it and, where built, held against the exact sweep at random points (a point is in
+it where some pose of the roll holds it within the tube) — built only one time in four, and never
+wrong: 52 sweeps, 12 built, each checked and placing every point it was asked as the exact sweep
+does; 40 refused, none panicking. Within 5 % of the ranges three of eight built: the forward member
+moved 0.015 off its plane is refused when its faces are sewn (three faces along an edge), 0.02 for
+a curve fitted to 1.6e-4, 0.025 for a rim crossing not settled — 0.021 builds. Each refusal's class
+(its words, its numbers dropped) shrunk to the fewest numbers moved off the member, those rounded
+while it holds, is a gate of what is **not yet** built: a trim not joined to its corner or ending
+beside one, a double curve not joined to its swallowtail point, a swallowtail point's depth within
+the tolerance on no disc, no angle free for the windows' cuts, a switch's crossing off its partner
+or its rim crossing not settled, three instants touching a meridian whole (refused at once); and
+past the road, slow, a ring's contact's sheet fitted short along the roll, the boundary open along a
+sheet's edge or a torus's piece facing behind, a sheet's pieces ending nowhere. The day one builds,
+its test fails and becomes its build's. Three have: the ring road's refusals of a whole torus
+(a contact sheet fitted short along the roll, the boundary left open, a sheet's pieces ending
+nowhere) are now the tube road's to build (`closed::ring` tries it wherever the ring road refuses a
+whole torus, not past a budget nor cut from a blank, the ring road's refusal standing where it
+refuses too), each its volume cadrs's to 1e-6.
+
+**The tube road's membership, and its charts in patches** (`tube::membership`, step 2 of
+`docs/tube-trims-by-membership.md`; beside the present road, which reads none of it yet): a chart's
+point is *kept* (nothing else covers it, or the far cover stands above nought), *covered* (another
+instant holds it below nought: that far cover), *held* (the instants beside its own hold it) or
+*unread* (past a fold, in a swallowtail point's disc, inside a hole's rim — the pinch's, a band's
+seam — another chart's), `membership` over `Depth::reading`. Each chart is cut into **fixed patches**
+(`patches`): a sheet into quarters of `θ` by stretches of the roll each turning the motion at most a
+quarter turn (the rotation between poses summed over 512 steps, then cut evenly), an end pose into
+quarters each way, the collar and a band one patch; their edges are **lines each patch beside them
+shares** (`Patches::edges`, `sides`; a whole turn's last line its first,
+`swept_membership::a_charts_patches_share_their_edges`), and what crosses an edge is **read once on
+it** (`crossings`): the line read at a quarter of the feature in space; a sign change of the depth
+between two readings halved to the tolerance in space, each end on its side, the far cover on the
+covered side kept (the instant across, and so the face); a stretch of one sign halved where the
+depth, 1-Lipschitz, could reach nought between its ends; a stretch with one end held or unread halved
+toward it to the tolerance — a double curve beside the crossed reverse member's fold, a sliver 0.011
+across between a reading nothing else covers and the fold, lay between a quarter feature's readings.
+**Gated** by `swept_membership::the_half_turns_patch_edges_are_crossed_where_its_trims_cross_them` and
+(slow) `…the_crossed_members_patch_edges_…`: every crossing of a patch edge by the present road's
+traced pieces is one membership reads within four tolerances in space, and every one it reads a
+piece's — or, where the zero set grazes the edge (a piece running along `θ = π` crossing it nine
+times where membership reads its one touch; a double curve beside a fold whose depth changes by 4e-3 a
+unit across it, the two crossings 5.4e-5 apart), the other within the feature with its depth within
+four tolerances of nought. The crossed members' four sheets: 28 crossings, the worst 1.3e-5 off (the
+tolerance 4.4e-6), each sheet's edges read in about a second.
+
+**The tube road's trims as stretches, patch by patch** (`tube::membership::stretches`, step 3 of
+`docs/tube-trims-by-membership.md`; beside the present road, which builds from none of it yet): over
+each patch the depth's zero set is traced by the road's own certified search and march (`round`, the
+patch its rectangle) from the crossings its four edges were read to have, its inner edges the chart's
+folds, discs and holes' rims; each piece is cut where the face across changes (`Tube::partner`'s
+chart: a sheet, an end pose, the collar, a band) and where its covering instant passes the point's own
+(the double curve turning back on its sheet), each cut halved toward its place along the chord, and
+each end named — a patch edge, an inner edge, a change of the face across, a turn, closed
+(`Ending`). **Gated** by `swept_membership::the_full_turns_stretches_are_its_trims` and
+`…the_crossed_forward_members_stretches_are_its_trims` (the reverse's slow): the stretches and the
+present road's traced pieces each within four tolerances of the other in space — each chord read
+straight in the chart's parameters and mapped, not straight in space, which cuts through the tube (a
+chord 8.8e-3 long stands 3e-5 off the sheet) — or within the feature along a graze with the depth
+within four tolerances of nought between; and the changes of the face across within the feature of
+each other; the corners (a fold's end on the roll's rim, where the sheet and the end pose touch and a
+trace stops at the fold or runs to the rim as a rounding's) left out, both reaching them. The full
+turn: 33 stretches, some 8 500 places, 12 changes of the face across; the crossed forward member: 27
+stretches, 3 475 places, 8 changes. Traced patch by patch the sheets take about half the present
+road's time (the full turn's 4 s against 8 s, the forward's sheet `−` 3.4 s against 4.8 s).
+
+**A chart's windows cut across its trims where they leave no angle free** (`faces::crossing_windows`,
+`cut_across`, `chained`; part of step 4 of `docs/tube-trims-by-membership.md`): a chart whose trims
+leave no angle free (`windows`) is cut at two angles clear of its points alone — its swallowtail
+points, the pinch's hole, every vertex on it — and each trim a cut crosses is split there, the
+crossing settled on the double curve with the angle held (`settle`, as `met_by_cut` settles a
+swallowtail point's cut), a vertex of both its charts; the cut is then arcs between its vertices in
+order along it. A join crossed is refused by name. A chart whose trims leave an angle free is cut as
+before, so every solid built so is the same to the byte (the crossed members and their
+intersection). The forward member seen from 0.6 off its axis passes the windows so; a double curve crossing its
+sheet's half turn, fitted short where its points held square to its polyline's segments jumped along
+it, is fitted again held on a line turning smoothly (`Trim::at_held`); and over the stretched nets
+(#1027) it builds, 15 faces, its volume cadrs's to 1e-6
+(`swept_tumbles::the_trims_leaving_no_angle_free_is_built`, slow; the forward member moved 0.015,
+refused at the sewing before, builds too: `moved_a_hair_is_built`).
+
+**The tube road's solid is held to the sweep's boundary before it is returned**
+(`tube::faces::held`, gated by
+`swept_tumbles::a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again`): each face read
+at the points of a 4 × 4 grid over its parameters that lie in it, and at each the tool's least depth
+over the roll (sampled 512 times, each least refined by golden sections) within a hair of nought —
+`1e-4` of the solid's size, or 64 tolerances — else the build is refused there (`Unbuilt::Wrong`).
+The tumble seen from its own axis was built with its folded sheet 0.15 inside the solid, every check
+of its own passed and its volume 7e-4 off cadrs's: its sheet `+` folds from the roll's end back to
+it, and the pocket beside the fold (covered by the end pose on one side, by an instant near its own
+on the other) lay inside cells the depth's bound clears by nine readings where nothing else covers
+the middle (`Depth::bound`, `Reading::Alone` — evidence, as it says, not proof), so the search traced
+nothing on the sheet. A build so refused is **built again with each chart's depth held to the grid at
+the feature** (`Tube::completed`, `seams`'s `unexplained`): the chart read on a grid of about the
+feature in space (256 a side at most), and each grid edge between a place a far cover holds below
+nought and one clear of it whose zero (halved to it) no traced piece crosses or stands within a
+hundredth of a cell of seeds the trace again. Only so: a crossing no piece of the chart crosses may
+be bounded all the same — a sliver beside a fold whose double curve is traced on its other preimage
+and bounds this one as its partner (the crossed reverse member's sheet `−` has two, 3.3e-4 deep and
+0.014 across, its solid right without them) — and halving the cells such evidence clears to the
+feature everywhere instead fragmented the crossed members' traces (the forward refused, the reverse
+9.8 s to 15.7 s). Built so it is 18.0818507296 against cadrs's 18.081851, every mesh vertex of it
+within 1.5e-7 of the sweep's boundary; the crossed members, held, are their files to the byte.
+
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,
 `depth::cover`'s certified march is the reading): the sweep is the union of
