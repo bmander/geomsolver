@@ -37,8 +37,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   segments they jumped along the curve at each corner (a double curve crossing a sheet's half turn
   fitted to 2e-6 against 4.4e-7). Every build that fitted before the same.
 
-## [0.26.0] - 2026-11-26
-
 - **A face's area on a large net in a ninth the time, the same to the bit** (brep-bench's
   `swept/tumbling-torus-crossed-reverse`, whose faces lie on nets of some 940 × 850 poles: its area
   297 s to 32 s on four cores, each face's area and every integrand read the same):
