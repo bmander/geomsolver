@@ -63,7 +63,7 @@ fn curves() -> Vec<(&'static str,Curve,[f64;2])> {
     let turned = gcs_core::brep::turned::Turned::meridian(Frame::WORLD,contact,[-1.,1.]);
     let slid = gcs_core::brep::slid::halves(Frame::WORLD,3.,1.,unit([1.,0.,0.3]),1.,true)[0];
     let ring: Vec<V> = (0..=48).map(|k| { let a = TAU*k as f64/48.; [2.*a.cos(),2.*a.sin(),0.] }).collect();
-    let traced = Traced {a:Surface::Plane(Frame::WORLD),b:Surface::Cylinder(Frame::WORLD,2.),pts:ring,closed:true};
+    let traced = Traced {a:Surface::Plane(Frame::WORLD),b:Surface::Cylinder(Frame::WORLD,2.),pts:ring,closed:true,feet:Default::default()};
     let wall = Arc::new(family());
     vec![
         ("a line",Curve::Line {p:[1.,2.,3.],d:unit([0.3,-0.5,0.8])},[-5.,7.]),
