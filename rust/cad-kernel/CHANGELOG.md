@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.27.0] - 2026-11-27
+
 - **A traced meeting is a smooth curve, its rates exact and its enclosure proved** (#1034,
   `traced`, new). Between two of its points a trace is the quintic of the arc length through both
   with the meeting's tangent `∇a × ∇b` and curvature vector in closed form there
@@ -107,6 +109,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   inward lies on) is written to STEP placed at its apex. A carried edge is enclosed
   (`enclose::normal_at`: on the analytic kinds the unit normal a closed form of the point), so the
   Booleans prove its meetings and a grown cone's sweep unites.
+- **A face's wall is read only past its fold** (#1037, `swept::general::candidates`): where a
+  plane face's second rate by the roll along its characteristic line is negative, the face at its
+  neighbouring instants holds the point inside, and past that fold its wall doubles back over
+  itself. Each face's wall is read from its fold to its reach's end on the side kept, a chord
+  holding the fold ending there; read whole, the hypoid tooth's flank folded inside its face and a
+  crossing traced on it ran 3.8e-2 off both walls. An edge's fan and the wall of a face of it are
+  always given their meeting, seeded only where they cross past a least sine, and a crossing beside
+  the path that passes near a corner is marched on to it in both walls' parameters.
+- **Cut from a blank, a general sweep is trimmed within the blank's reach first**
+  (`swept::closed`): seen from a turn, a cylinder about its axis past the blank's radial reach (a
+  cone about the axis read by its edges), otherwise a box, then cut from the blank; trimmed whole
+  where that fails. The hypoid gear's tooth space is cut by its pinion (a slow-tier test, 70 s).
 
 ## [0.26.0] - 2026-11-26
 
