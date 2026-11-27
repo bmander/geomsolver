@@ -2134,19 +2134,24 @@ within `REACHED` of the tool's size cut where it passes nearest (what runs on be
 path, traced again) and marched on to the corner in both walls' parameters, Newton from pair to
 pair, each pair within both walls' stretches of `u` (past them lies the path carried on over the
 buried sheet, which leaves the corner the branch's way), laid as a polyline halved until each
-chord's middle stands within a quarter of the tolerance of the meeting. **Where the whole sweep's
-trim refuses and the sweep is cut from a blank** (`closed::general_built`), it is trimmed within the
-blank's reach — seen from a turn, a cylinder about the turn's axis `HUGGED` past the blank's
-`radial_reach` (which reads a cone about the axis by its edges), else the blank's box — the hypoid's
-heel, past the blank, left unasked. **Membership's stretch** (`member::Swept::member`): a stretch of
+chord's middle stands within a quarter of the tolerance of the meeting. The pairs of bearers are
+met across the cores, as are each fan's stretches for where it passes back through itself
+(`crossed`), and gathered in order. **Cut from a blank, the sweep is trimmed within the blank's
+reach first** (`closed::general_built`) — seen from a turn, a cylinder about the turn's axis
+`HUGGED` past the blank's `radial_reach` (which reads a cone about the axis by its edges) and its
+span along it, else the blank's box grown `REACH` — and the whole only where that refuses: the
+hypoid's heel, past the blank, where the whole's trim refused, left unasked. **A trim's judge reads
+its solid's sense off a coarse mesh** (`closed::inside_out`): the triangles' signed volume, off by
+at most the sag across the area, settles the sign where it stands four times clear of that, a mesh
+a third as coarse as the last tried three times, else the exact volume (23 of the hypoid's 104 s). **Membership's stretch** (`member::Swept::member`): a stretch of
 half-width `h` about `m` reaches at most `min(L h, |v(m)| h + ½ A h²)`, `L` the trajectory's speed
 bound, `v(m)` the carried point's own velocity and `A` its acceleration bound where there is one
 (the hypoid's `L` 85 where the point moves at 30, and a quadratic dip a hair outside ran past
 `MOST_READS`). Gates: `swept_general::a_flanks_wall_is_read_only_past_its_fold_and_its_crossing_is_given`,
 `membership_settles_a_hair_outside_where_the_tool_passes_close_by`; brep-bench's
 `hypoid-gear-cut-by-its-pinion` is built (`the_hypoid_gears_tooth_space_is_cut_by_its_pinion`, slow:
-its volume and area cadrs's within 7e-10 and 2e-9), in about four minutes — past the bench's two at
-one core. **A ring's fold pair born partway**
+its volume and area cadrs's within 7e-10 and 2e-9), in 59 s on four cores (156 before the trim within
+the reach first, the judge's mesh and the pairs across the cores), within the bench's two minutes. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

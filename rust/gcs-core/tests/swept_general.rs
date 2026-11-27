@@ -454,7 +454,7 @@ fn membership_settles_a_hair_outside_where_the_tool_passes_close_by() {
 /// area cadrs builds, within 7e-10 and 2e-9 (11792.246457828824 and 5510.2842692069335), at a
 /// hundred-millionth.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 4 min: the hypoid's tooth space cut from its blank")]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 70 s: the hypoid's tooth space cut from its blank")]
 fn the_hypoid_gears_tooth_space_is_cut_by_its_pinion() {
     let (tooth,path) = hypoid_tooth();
     let blank = hypoid_blank();

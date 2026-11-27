@@ -1033,9 +1033,12 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         None => vec![(&breps[x],&surfaces[x])],
         Some(w) => w.iter().map(|(b,s)| (b,s)).collect(),
     } };
-    let mut given: Vec<Given> = Vec::new();
-    let mut per_run: Vec<Given> = Vec::new();
-    for x in 0..held.len() { for y in x+1..held.len() {
+    // (each two bearers met on their own, across the cores — their crossings beside a path traced a
+    // second or more a pair, 28 s of the hypoid's build one after another — and gathered in the
+    // pairs' order, as they were)
+    let pairs: Vec<(usize,usize)> = (0..held.len()).flat_map(|x| (x+1..held.len()).map(move |y| (x,y))).collect();
+    let met_pairs = crate::util::par::map_in_order(&pairs,|&(x,y)| -> Result<(Option<Given>,Vec<Given>),Unbuilt> {
+        let mut per_run: Vec<Given> = Vec::new();
         let (bi,bj) = (held[x],held[y]);
         let mut curves = Vec::new();
         let mut births: Vec<V> = Vec::new();
@@ -1113,8 +1116,16 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
             }
         }
         if crate::debug() { for c in &curves { eprintln!("general: given between bearers {bi} and {bj}: {} from {:?} to {:?}",c.kind(),crate::query::curve_domain(c).map(|d| c.point(d[0])),crate::query::curve_domain(c).map(|d| c.point(d[1]))) } }
-        if !curves.is_empty() || of_face { given.push(Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves,touches:Vec::new()}) }
-    } }
+        let given = (!curves.is_empty() || of_face).then(|| Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves,touches:Vec::new()});
+        Ok((given,per_run))
+    });
+    let mut given: Vec<Given> = Vec::new();
+    let mut per_run: Vec<Given> = Vec::new();
+    for met in met_pairs {
+        let (g,runs) = met?;
+        given.extend(g);
+        per_run.extend(runs);
+    }
     // **each bearer's whole meeting with each face of the tool at either end**
     let ends = [posed(a)?,posed(b)?];
     let poses: Vec<Brep> = ends.iter().map(|m| tool.moved(m)).collect();
@@ -1206,14 +1217,17 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
         let rim = |i: usize,j: usize| -> Vec<Curve> {
             if stretches[i][1] == stretches[j][0] { vec![Curve::Rim(sheet.clone(),stretches[i][1])] } else { Vec::new() }
         };
+        // (each two stretches met on their own, across the cores, gathered in order: a hundred and
+        // more pairs a fan, 9 s of the hypoid's build one after another)
+        let ij: Vec<(usize,usize)> = (0..stretches.len()).flat_map(|i| (i+1..stretches.len()).map(move |j| (i,j))).collect();
+        let met = crate::util::par::map_in_order(&ij,|&(i,j)| beside_rails(&pieces[i],&alone[i],&pieces[j],&alone[j],&rim(i,j),0.,tol));
         let mut crossing: Vec<(usize,usize,Vec<Curve>)> = Vec::new();
-        for i in 0..stretches.len() { for j in i+1..stretches.len() {
-            let met = beside_rails(&pieces[i],&alone[i],&pieces[j],&alone[j],&rim(i,j),0.,tol);
+        for (&(i,j),met) in ij.iter().zip(met) {
             if !met.is_empty() {
                 if crate::debug() { eprintln!("general: a fan crossing itself: its stretches over {:?} and {:?}, {} curves",stretches[i],stretches[j],met.len()) }
                 crossing.push((i,j,met));
             }
-        } }
+        }
         if crossing.is_empty() { continue }
         // the fewest cuts parting every two crossing stretches: each pair's first cut at its later
         // stretch where no cut already parts it (the earliest-ending first)
