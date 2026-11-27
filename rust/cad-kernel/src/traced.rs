@@ -153,10 +153,11 @@ pub(crate) struct Read {
 /// it. (Its parameter counted its points before: where they stood unevenly, its speed had to
 /// change within a stretch however smoothly it was laid, and a stretch two-thirds its neighbour's
 /// length swayed it by a quarter, which a ruled wall's net could not follow to the file's 1e-6.) A
-/// trace carried from another (`Traced::carried`, moved or mapped) keeps that one's parameters at
-/// its points, so whatever was placed on it is where it was: a map that is no similarity changes
-/// its stretches' lengths unevenly, and its speed steps at a point there. A point is a kink where
-/// a stretch either side has no smooth reading, or where its speed steps.
+/// trace carried from another (`Traced::carried`, moved, reflected or mapped by a similarity, which
+/// scales every stretch alike) keeps that one's parameters at its points, so whatever was placed on
+/// it is where it was (under any other map a trace's image is no trace, `Curve::mapped`). A point is
+/// a kink where a stretch either side has no smooth reading, or where its speed steps (carried
+/// parameters that do not fit, which none of those do but by rounding).
 pub(crate) fn read(tr: &Traced) -> Read {
     let n = tr.pts.len();
     if n < 2 { return Read::default() }

@@ -68,12 +68,12 @@ wrote it over a length of its own, `Along`, `C¹` across the points; and where n
 polyline within the stated uncertainty.) **The pieces follow the bar, not the march**: held to 1e-7
 mm and cut at every marched point, the issue's tube with one cross-hole was 3.3 MB, each of its
 curves some 3,370 poles, the same at every tolerance. Where no cubic of `MOST` pieces holds a trace
-the file is refused, as for any curve it fits — but for a trace with a kink in the edge's stretch
-(beside a touch, where its point is read no nearer than the two surfaces part), whose polyline is
-written, within the stated uncertainty where no tolerance is stated and within the bar where one is
-(a rim rounded at a reflex corner off tangent, two cylinders all but tangent there,
-`rim_rounds::a_reflex_corner_off_tangent_rounds_its_rim`); `step_roundtrip`'s trip refuses a smooth
-traced edge read back as a polyline. A meeting with a closed form STEP carries — a line, a
+within the fit's bar — a trace with a kink in the edge's stretch, beside a touch, where its point is
+read no nearer than the two surfaces part — the cubic within the least bar `MOST` pieces hold, from
+the stated uncertainty doubled, is written, and the file states it (a rim rounded at a reflex corner
+off tangent, two cylinders all but tangent there,
+`rim_rounds::a_reflex_corner_off_tangent_rounds_its_rim`); no trace is written as a polyline, and
+`step_roundtrip`'s trip refuses a traced edge read back as one. A meeting with a closed form STEP carries — a line, a
 circle, an ellipse, a conic as a rational quadratic — is written so and fitted nowhere (a plane
 cutting a cone in a hyperbola or a parabola is traced yet). `tests/step_curves.rs` (the file read
 back and every traced cubic and pcurve sampled 64 times a knot span: within the bar of the curve, of
@@ -1681,9 +1681,11 @@ change its speed within a stretch wherever they stood unevenly, however smoothly
 closing stretch two-thirds its neighbours' length swayed a quintic spline of the lengths by a
 quarter, and the ruled wall of the torus's face thickened could not be fitted to the file's 1e-6
 (nor by a cubic spline, nor by a quintic over each stretch). A trace moved, reflected or mapped keeps
-its parameter at each point (`Traced::carried`), so what was placed on it is where it was; under a
-map that is no similarity its speed then steps at its points, which are its kinks there
-(`Traced::kinks`). Whatever reads a trace by its points' indices converts (`index_at`,
+its parameter at each point (`Traced::carried`), so what was placed on it is where it was — by a
+similarity, which scales every stretch alike; under any other affine map, which changes their
+lengths unevenly, a trace's image is the image of the curve, `Curve::Affine`, smooth in its
+parameter as the trace is (carried, its speed stepped at every point, and a ruled wall between two
+such rails needed a net broken at each, `fit_net_broken`, gone). Whatever reads a trace by its points' indices converts (`index_at`,
 `parameter_at_index`): `ssi`'s fit, a cut of a trace in `swept::general`, a bound's chords.
 Its rates are the meeting's own at the point read (`Traced::d1`, `d2`): `C' = T (T · g')`, `g` the
 guess the projection pulled, and `C'' = K v² + T (v K · g' + T · g'')` — not differenced, and not
@@ -2481,8 +2483,8 @@ written in more than `3 MOST + 1` points** (`step::MOST`, 4096 pieces): held to 
 edge stood 1e-7 off its net, a toolpath's pcurve never closed in and fell to a polyline of
 millions of points (a screw's whole turn 3.1 GB and 227 s, now 0.14 s). Past the bound a pcurve
 is left out, a seam's two written both or neither — an edge needs only its curve in space, and
-the reader walks a face without them — and a traced curve's polyline is written within what
-`MOST` points hold, the file stating it. **The representation a curve on a surface prefers is the
+the reader walks a face without them — and a traced curve's cubic is written within what `MOST`
+pieces hold, the file stating it. **The representation a curve on a surface prefers is the
 exact one**: `.CURVE_3D.` wherever the curve in space is written as itself, `.PCURVE_Sk.` only
 where that curve is a fit and the `k`-th pcurve is the kernel's own spline in the parameters of a
 surface written exactly. **A face family's wall and its rails, turning at their stations' joints,

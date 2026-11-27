@@ -1063,42 +1063,6 @@ fn net_misses(net: &Net,f: &dyn Fn(f64,f64) -> V,us: &[f64],tv: &[f64]) -> (Vec<
     (across,along)
 }
 
-/// **`fit_net` across breaks**: the net of degrees `du`, `dv` through `f` over `[0, 1]²` whose
-/// knots along `u` hold each of `breaks` (in `(0, 1)`, increasing) `du` times over, so it may turn
-/// its rate there as `f` does — a surface ruled between two traced rails, whose parameter's pace
-/// jumps at each of their points, which no net smooth across them follows within a fit's
-/// tolerance. Each stretch between breaks gets its own count of even spans along `u` (2 to start),
-/// each row interpolated at its knots' Greville abscissae (`interpolate_on`), the rows' poles along
-/// `v` as `fit_net`'s; a stretch's count doubled while the net misses `f` within it by more than
-/// `tol` midway between knots, up to 64, and the rows' while it misses between them, up to 512.
-/// With how far it misses.
-pub fn fit_net_broken(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,breaks: &[f64],mut nv: usize,tol: f64) -> Option<(Net,f64)> {
-    let ends: Vec<f64> = std::iter::once(0.).chain(breaks.iter().copied().filter(|&b| b > 0. && b < 1.)).chain([1.]).collect();
-    let mut spans = vec![2usize;ends.len()-1];
-    loop {
-        // the knots, and each distinct knot's stretch
-        let (mut knots,mut us,mut of) = (vec![0.;du+1],vec![0.],Vec::new());
-        for (k,w) in ends.windows(2).enumerate() {
-            let inner = (1..spans[k]).map(|i| w[0]+(w[1]-w[0])*i as f64/spans[k] as f64);
-            knots.extend(inner.clone());
-            us.extend(inner.chain([w[1]]));
-            of.extend(std::iter::repeat(k).take(spans[k]));
-            knots.extend(std::iter::repeat(w[1]).take(if k+2 == ends.len() { du+1 } else { du }));
-        }
-        let tv: Vec<f64> = (0..=nv).map(|j| j as f64/nv as f64).collect();
-        let rows: Vec<BSpline> = tv.iter().map(|&v| interpolate_on(&|u| f(u,v),du,knots.clone())).collect::<Option<_>>()?;
-        let net = net_of_rows(&rows,&tv,dv)?;
-        let (across,ev) = net_misses(&net,f,&us,&tv);
-        let mut missed = vec![false;spans.len()];
-        for (i,&e) in across.iter().enumerate() { if e > tol { missed[of[i]] = true; } }
-        let mut grow_u = false;
-        for (k,n) in spans.iter_mut().enumerate() { if missed[k] && *n < 64 { *n *= 2; grow_u = true; } }
-        let grow_v = ev > tol && nv < 512;
-        if !grow_u && !grow_v { return Some((net,across.into_iter().fold(ev,f64::max))) }
-        if grow_v { nv *= 2; }
-    }
-}
-
 /// The curve of degree `d` through `f` on a uniform grid of `[0, 1]`, refined as `fit_net` is.
 pub fn fit_curve(f: &dyn Fn(f64) -> V,d: usize,mut n: usize,tol: f64) -> Option<(BSpline,f64)> {
     loop {

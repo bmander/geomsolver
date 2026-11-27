@@ -24,12 +24,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A trace's parameter runs evenly along its length** (#1034): its `m` stretches still run over
   `[0, m]`, but each point stands where the length run to it puts it (`Traced::parameter_of`,
   `parameter_at_index`, `index_at`), not at a whole number, so the speed is the same everywhere.
-  A trace moved, reflected or mapped keeps its parameters at its points (`Traced::carried`).
+  A trace moved, reflected or mapped by a similarity keeps its parameters at its points
+  (`Traced::carried`); under any other affine map its image is a `Curve::Affine` of it.
 - **STEP writes a trace as a cubic over its own parameter**, as any smooth curve: `Along` and the
-  polyline written where no cubic closed in are gone but for a trace with a kink there (beside a
-  touch), and a smooth trace no cubic holds is refused (`Traced::kinks` is public). A loft
-  face between traced rails is fitted as a smooth net; `fit_net_broken` is kept for a rail whose
-  rate steps (`Traced::kinks`).
+  polyline written where no cubic closed in are gone. Where no cubic holds a trace within the fit's
+  bar (a kink beside a touch, `Traced::kinks`, now public), the cubic within the least bar `MOST`
+  pieces hold, which the file states. A loft face between traced rails is fitted as a smooth net,
+  and `nurbs::fit_net_broken` is gone.
 - **Two meetings' crossing is polished by Gauss–Newton** (`meeting::crossings`): after alternating
   feet, which close in by only `cos² θ` a step where the two cross at a shallow angle, a coupled
   step on both parameters. The ball-end mill screwed keeps every cell, and the cube tumbling 10°
@@ -89,9 +90,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   inward lies on) is written to STEP placed at its apex. A carried edge is enclosed
   (`enclose::normal_at`: on the analytic kinds the unit normal a closed form of the point), so the
   Booleans prove its meetings and a grown cone's sweep unites.
-- **A loft face ruled between traced rails is written within `FIT`** (`nurbs::fit_net_broken`):
-  its net breaks along `u` where a rail's parameter turns its pace, each of a trace's points, not
-  fitted smooth across them (a thickened torus's wall was 8.4e-6 off).
 
 ## [0.26.0] - 2026-11-26
 

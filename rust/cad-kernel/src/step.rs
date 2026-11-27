@@ -275,10 +275,10 @@ fn samples(c: &Curve,t: [f64;2],tol: f64,off: &dyn Fn(f64,f64) -> f64) -> Option
 /// three poles a piece) or a polyline's (`samples`, a point a piece). So no edge's curve, in space
 /// or in a face's parameters, is written in more than `3 MOST + 1` points: past it a pcurve is
 /// left out (a reader puts the edge on the face itself, as it does where a file writes none), and a
-/// traced curve no cubic of `MOST` pieces holds is refused, as any fitted curve is — but for one
-/// with a kink there (`Traced::kinks`, beside a touch), whose polyline is written within the bar
-/// its `MOST` points hold, which the file then states (`write_stating`). (#1034: every trace's
-/// fell to that, its parameter stepping its pace at every point; it runs evenly along it now.)
+/// traced curve no cubic of `MOST` pieces holds within the fit's bar — one with a kink beside a
+/// touch — is written as the cubic within the least bar `MOST` pieces hold, which the file then
+/// states (`write_stating`). (#1034: it was a polyline there, and every trace fell to that while
+/// its parameter stepped its pace at every point; it runs evenly along it now.)
 pub const MOST: usize = 4096;
 
 /// How near its exact surface or curve a loft's face or rail is written (millimetres): the file
@@ -298,12 +298,9 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
     };
     let f = |u,v| b.d1([u,v]).0;
-    // where a rail's rate steps (a traced rail's at a point beside a stretch it reads on a
-    // parabola, `Traced::kinks`), the net breaks at its breaks too; a trace read smoothly through
-    // its points is fitted as any smooth rail is (#1034)
-    let breaks = if rough(&b.a,b.ta) || rough(&b.b,b.tb) { b.breaks() } else { Vec::new() };
-    let fit = |dv: usize| if breaks.is_empty() { super::nurbs::fit_net(&f,3,dv,8,nv,FIT) }
-        else { super::nurbs::fit_net_broken(&f,3,dv,&breaks,nv,FIT) };
+    // (a traced rail as any smooth rail, #1034: its parameter runs evenly along it, so no net
+    // breaks at its points, as one did while its pace stepped at each)
+    let fit = |dv: usize| super::nurbs::fit_net(&f,3,dv,8,nv,FIT);
     let fitted = match fit(dv) {
         Some((_,err)) if err > FIT && dv == 3 => fit(5),
         other => other,
@@ -312,20 +309,6 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         Some((net,err)) if err <= FIT => Ok((net,err)),
         Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
         None => Err("a loft face could not be fitted (its surface is degenerate)".into()),
-    }
-}
-
-/// Whether a curve's rate steps over `[t0, t1]` where a net through it fitted smooth cannot follow
-/// it: a trace with a kink there (`Traced::kinks`, a point beside a stretch read on a parabola),
-/// and a curve carried along a normal from one or mapped from one. A trace read smoothly through
-/// its points is not (#1034: its pace stepped at every point before).
-fn rough(c: &Curve,[t0,t1]: [f64;2]) -> bool {
-    let w = 1e-9*(t1-t0).abs();
-    match c {
-        Curve::Traced(t) => !t.kinks([t0-w,t1+w]).is_empty(),
-        Curve::Parallel(m) => rough(&m.of,[t0,t1]),
-        Curve::Affine(m) => rough(&m.of,[m.local(t0),m.local(t1)]),
-        _ => false,
     }
 }
 
@@ -1232,28 +1215,22 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
             }
             // a traced curve: the cubic through its points and tangents within `fit`'s bar, as
             // its pcurves are (`bezier_pcurve`), over its own parameter, as any smooth curve
-            // (#1034: its parameter runs evenly along it). Where none holds it, refused — but for a
-            // trace with a kink in the stretch (a point beside a stretch read on a parabola, where
-            // two surfaces all but touch and its point is read no nearer than they part): the
-            // polyline through it within `Fit::polyline`, or the bar `MOST` points hold where
-            // that is past them
-            Curve::Traced(tr) => match bezier_curve(c,e.t,fit.bar()) {
-                Some((poles,knots,miss)) => {
-                    let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                    (spline(o,3,&ids,&knots,None),miss)
-                }
-                None if !tr.kinks(e.t).is_empty() => {
-                    let sag = |a: f64,z: f64| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5));
-                    let mut within = fit.polyline(tol);
-                    let ts = loop {
-                        if let Some(ts) = samples(c,e.t,within,&sag) { break ts }
-                        within *= 2.;
-                    };
-                    let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
-                    (bspline(o,&ids,&ts),within)
-                }
-                None => return Err(format!("a traced curve could not be fitted within {:e} mm in {MOST} pieces",fit.bar())),
-            },
+            // (#1034: its parameter runs evenly along it); where none holds it — a trace with a
+            // kink beside a touch, where its point is read no nearer than the two surfaces part —
+            // the cubic within the least bar from `Fit::polyline` on, doubled, a cubic of `MOST`
+            // pieces holds, which the file then states (it was a polyline there)
+            Curve::Traced(_) => {
+                let mut within = fit.bar();
+                let (poles,knots,miss) = loop {
+                    if let Some(fitted) = bezier_curve(c,e.t,within) { break fitted }
+                    within = if within < fit.polyline(tol) { fit.polyline(tol) } else { 2.*within };
+                    if !(within <= 1e-2*e.tol.max(tol).max(1.)) {
+                        return Err(format!("a traced curve could not be fitted in {MOST} pieces"))
+                    }
+                };
+                let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                (spline(o,3,&ids,&knots,None),miss)
+            }
         };
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()

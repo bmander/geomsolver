@@ -2590,9 +2590,9 @@ impl Traced {
         scale(sub(b,a),1./(hi-lo))
     }
     /// **Where, strictly inside `[a, b]`, the curve may stop being smooth**: its points beside a
-    /// stretch with no smooth reading (`traced`), read on the parabola through its chords, or where
-    /// its speed steps (a trace carried under a map that is no similarity, `traced::read`); across
-    /// every other point it runs on smoothly (#1034).
+    /// stretch with no smooth reading (`traced`), read on the parabola through its chords — beside
+    /// a touch — or where its speed steps (`traced::read`); across every other point it runs on
+    /// smoothly (#1034).
     pub fn kinks(&self,[a,b]: [f64;2]) -> Vec<f64> {
         let kinks = &self.read().kinks;
         self.points_within([a,b]).into_iter().filter(|&(_,j)| kinks[j]).map(|(t,_)| t).collect()

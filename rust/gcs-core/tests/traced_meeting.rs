@@ -206,7 +206,7 @@ fn a_boolean_through_a_traced_meeting_is_proved() {
 /// the ruled sheets of the normals along its spiric edges, each a loft between a trace and the trace
 /// carried along the normal. Each is written as a net fitted smooth across the traces' points within
 /// the file's `FIT` — no knot of the degree's multiplicity anywhere inside it — where, while the
-/// trace's pace stepped at every point, the net broke at each (`nurbs::fit_net_broken`).
+/// trace's pace stepped at every point, the net broke at each (`nurbs::fit_net_broken`, gone).
 #[test]
 fn a_wall_between_traced_rails_is_a_smooth_net() {
     use gcs_core::brep::step::{blend_net,FIT};
