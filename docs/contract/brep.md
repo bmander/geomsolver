@@ -111,7 +111,11 @@ over the parameters it reaches, poles mapped (`step::face_net`, the net a sheet,
 a sphere's or a torus's meridian, a cylinder's or a cone's generator, a revolution's spline, an
 extrusion's spline by its step; a blend's or a family wall's fitted net), its pcurves fitted in the
 net's parameters (`nurbs::arc_parameter`, a quarter arc reaching the angle `θ` at the fraction `τ`
-where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. `affine::every_kind_of_face_maps_to_its_image`
+where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. A sheet's face is
+written on the net cut to its parameter box grown by a sixteenth, and on the whole net where that
+box reaches the net's ends — within a part in 10⁹ of its domain, so a net fitted over the box its
+face was read to and read to again a rounding inside is not cut a sliver short of its end (the
+drill's flute, `step_roundtrip::a_drill_is_written_within_a_minute`, #1034). `affine::every_kind_of_face_maps_to_its_image`
 (every kind under a shear, a skew stretch, a reversing map and a similarity: valid, `|det M|`
 times the volume, mapped back itself, its nets its surfaces, read back from STEP, meshed closed),
 `affine::a_boolean_of_images_is_the_image_of_the_boolean`, `face_family::a_family_mapped_is_its_image`
@@ -1670,7 +1674,11 @@ Its rates are the meeting's own at the point read (`Traced::d1`, `d2`): `C' = T 
 guess the projection pulled, and `C'' = K v² + T (v K · g' + T · g'')` — not differenced, and not
 nothing (`traced_meeting::a_traced_meetings_rates_are_its_closed_forms`: a spiric section's and two
 crossed cylinders' tangent and curvature to 1e-9 against their closed forms, the speed with no step
-at any point). A stretch with an end within `traced::CLEAR` of a touch, or turning too far for its
+at any point). A point's foot on it (`Curve::inverse`) is sought by Newton from the chord nearest
+the point, at the fraction of the stretch where its pace has run as far as the foot on the chord
+has (`traced::Read::fraction`): taken as the parameter's own fraction, it started a step off where
+a stretch nine times its neighbour's length bulged its pace, and Newton stopped 3e-3 short
+(`meeting::a_cylinders_meeting_with_every_kind_is_complete`). A stretch with an end within `traced::CLEAR` of a touch, or turning too far for its
 chord (its ends' tangents past 25° from it, or its curvature times its length past one), is
 **read between its points on a parabola**
 (`Traced::between`: through the two and a neighbour, by their chords' lengths, where the three run

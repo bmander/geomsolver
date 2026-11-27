@@ -2693,7 +2693,7 @@ impl Curve {
                     let d = sub(b,a);
                     let s = (dot(sub(p,a),d)/dot(d,d).max(1e-300)).clamp(0.,1.);
                     let dist = crate::util::space::distance(p,crate::util::space::lerp(a,b,s));
-                    if dist < best.0 { best = (dist,i as f64+s); }
+                    if dist < best.0 { best = (dist,i as f64+c.read().fraction(i,s)); }
                 }
                 // (each step kept only where it comes no farther from `p`: where the trace stands all
                 // but still — points crowded where it set out past a patch's end — its derivative is

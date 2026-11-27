@@ -505,10 +505,16 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
         // one sheet wrote the whole net: a swept sheet's is some 55 MB, and the crossed tori's
         // union was a 2.4 GB file no reader could measure. Not one surface shared by the faces on
         // a net: an edge between two of them on two layers of it (a sheet's double curve) has a
-        // pcurve on each, and only their surfaces tell a reader which is whose
+        // pcurve on each, and only their surfaces tell a reader which is whose. A box reaching within
+        // a rounding of the domain's end (a part in 10⁹ of it) reaches the end: a net fitted over
+        // the box its face was read to then, and read to again over edges read anew, is cut no
+        // sliver of a span short of its end (#1034: the drill's flute, a knot 1.5e-11 inside it)
         Surface::BSpline(g,n) => {
             let [u,v] = super::boolean::parameters(b,fi,true);
             let [du,dv] = n.domain();
+            let slack = |d: [f64;2]| 1e-9*(d[1]-d[0]);
+            let reach = |r: [f64;2],d: [f64;2]| [if r[0] <= d[0]+slack(d) { d[0] } else { r[0] },if r[1] >= d[1]-slack(d) { d[1] } else { r[1] }];
+            let (u,v) = (reach(u,du),reach(v,dv));
             let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
             if !(u[1] > u[0] && v[1] > v[0]) || !(within(u,du) || within(v,dv)) {
                 return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.}))

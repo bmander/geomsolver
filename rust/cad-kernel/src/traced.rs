@@ -147,6 +147,21 @@ impl Smooth {
         let x = s/l;
         std::array::from_fn(|k| quintic_over(&self.curve.map(|v| v[k]),x).1*ds/l)
     }
+    /// The fraction of the stretch at which its pace has run `x` of its length (`x ∈ [0, 1]`): the
+    /// pace's quintic inverted, by bisection kept to Newton's steps where they stay inside.
+    fn fraction(&self,x: f64) -> f64 {
+        let want = x.clamp(0.,1.)*self.len;
+        let (mut lo,mut hi,mut f) = (0.,1.,x.clamp(0.,1.));
+        for _ in 0..60 {
+            let (s,ds,_) = quintic(&self.pace,f);
+            if s < want { lo = f } else { hi = f }
+            let next = f-(s-want)/ds;
+            let next = if next > lo && next < hi { next } else { 0.5*(lo+hi) };
+            if (next-f).abs() <= 1e-15 { return next }
+            f = next;
+        }
+        f
+    }
     /// The pace's greatest rate over the stretch, sampled.
     fn fastest(&self) -> f64 { (0..=32).map(|j| quintic(&self.pace,j as f64/32.).1).fold(0.,f64::max) }
 }
@@ -214,6 +229,12 @@ impl Read {
     /// stretch's quintic where it has one, the parabola through the chords where not.
     pub(crate) fn guess(&self,tr: &Traced,i: usize,f: f64) -> (V,V,V) {
         match self.smooth.get(i) { Some(Some(s)) => s.at(f),_ => tr.between(i,f) }
+    }
+    /// The fraction of stretch `i` at which the curve has run the fraction `x` of its length along
+    /// it: where its pace has (a stretch with no smooth reading runs at its chord's, `x` itself).
+    /// What a search along the curve starts from, given where along a chord it stands.
+    pub(crate) fn fraction(&self,i: usize,x: f64) -> f64 {
+        match self.smooth.get(i) { Some(Some(s)) => s.fraction(x),_ => x }
     }
     /// The guess's rate in the curve's parameter over the fractions `f` of stretch `i`, enclosed:
     /// the stretch's quintics in intervals, or the parabola's rate, linear in `f` (its value at the
