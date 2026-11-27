@@ -144,8 +144,12 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
-/// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None,0.) }
+/// across planes) — sought first from `seed` where one is given, a foot found just behind along
+/// the edge, and again from the line between the ends where that stands off the surface, the
+/// nearer kept (`inverse_from`).
+pub(crate) fn inverse_carried(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
+    inverse_from(a,b,t,x,edge,surface,seed,0.)
+}
 
 /// How far from a pole an inverse curve's end at `t` is read as on it: its vertex's tolerance
 /// there (a file's curve may pass its vertex at a pole on the pole's far side, #993), none
@@ -247,7 +251,7 @@ fn off_surface(uv: Uv,gap: V,su: V,sv: V,d: V,surface: &Surface) -> Option<Uv> {
 /// lies within that. Differences across a joint read the two sides' mean — or, across a crease,
 /// its jump over two millionths — and the rate of a foot a millionth past a quadratic net's knot
 /// was read 0.92 where the feet run at 0.99 (`step_read::a_foot_just_past_a_joint_runs_at_its_own_rate`).
-fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
+pub(crate) fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
     if let Surface::BSpline(_,n) = surface { let [_,_,_,suu,suv,svv] = n.d2(uv[0],uv[1]); return (suu,suv,svv) }
     let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
     // along `k`: the rates of `(S_u, S_v)`, by a central difference, or a one-sided one on `uv`'s

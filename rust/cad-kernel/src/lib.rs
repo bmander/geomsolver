@@ -50,6 +50,7 @@ pub mod turned;
 pub mod slid;
 pub mod trochoid;
 pub mod parallel;
+pub mod traced;
 pub mod zero_set;
 
 use std::sync::OnceLock;

@@ -8,14 +8,41 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A traced meeting is a smooth curve, its rates exact and its enclosure proved** (#1034,
+  `traced`, new). Between two of its points a trace is the quintic of the arc length through both
+  with the meeting's tangent `∇a × ∇b` and curvature vector in closed form there
+  (`Surface::bend`, new: a surface's normal curvature along a tangent), pulled onto both surfaces;
+  its pace runs on through every point. `Curve::d1` of a trace is `T (T · g')` at the point, not a
+  difference of two projections, and `Curve::d2` its second rate, no longer nothing: a spiric
+  section's and two crossed cylinders' curvature agree with their closed forms to 1e-9. Its
+  enclosure is proved where both surfaces bound how fast their normals turn
+  (`ssi::curvature_bound`), so a Boolean through a traced meeting of analytic surfaces is proved,
+  not measured. A torus cut aslant grows (`offset::grown`), refused before: its volume and area
+  are Steiner's to 1e-9. `Traced`'s fields are as they were, but it is built by `Traced::new`
+  (it keeps what it reads at its points, once).
+  `Meter::crossings` is new.
+- **A trace's parameter runs evenly along its length** (#1034): its `m` stretches still run over
+  `[0, m]`, but each point stands where the length run to it puts it (`Traced::parameter_of`,
+  `parameter_at_index`, `index_at`), not at a whole number, so the speed is the same everywhere.
+  A trace moved, reflected or mapped by a similarity keeps its parameters at its points
+  (`Traced::carried`); under any other affine map its image is a `Curve::Affine` of it.
+- **STEP writes a trace as a cubic over its own parameter**, as any smooth curve: `Along` and the
+  polyline written where no cubic closed in are gone. Where no cubic holds a trace within the fit's
+  bar (a kink beside a touch, `Traced::kinks`, now public), the cubic within the least bar `MOST`
+  pieces hold, which the file states. A loft face between traced rails is fitted as a smooth net,
+  and `nurbs::fit_net_broken` is gone.
+- **Two meetings' crossing is polished by Gauss–Newton** (`meeting::crossings`): after alternating
+  feet, which close in by only `cos² θ` a step where the two cross at a shallow angle, a coupled
+  step on both parameters. The ball-end mill screwed keeps every cell, and the cube tumbling 10°
+  either way, refused in its trim before, builds.
 - **A traced meeting is read on the layers its march walked** (`geom::Traced::feet`): a point of a
   traced curve between its marched points is pulled onto each B-spline sheet from the foot of its
   nearest marched point, those feet read once and carried along the curve, where it was pulled from
   the thread's last foot on the sheet — on a sheet that comes back near itself, whatever layer the
   thread had read last. The crossed tumbling tori's Booleans were right, wrong or refused as their
   cores' order fell; they now hold inclusion–exclusion to 1e-8, the same on one core or four, in
-  about half the time. `Traced` gains `feet: Feet` (`Feet::default()` where one is made).
-  **Breaking** for code building `Traced` as a literal.
+  about half the time. `Traced` keeps them beside it (`Feet`), built by `Traced::new`; every
+  reading of the curve (its point, rates and the points read once) takes each sheet so.
 - **The faces on one sheet's net that share no edge are written on one surface** (`step::face_nets`,
   public; `step_check` reads it too): each face's own stretch of its net (#1013) wrote the poles
   where the stretches overlap once a face. Faces are taken in the order written into the first
@@ -80,9 +107,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   inward lies on) is written to STEP placed at its apex. A carried edge is enclosed
   (`enclose::normal_at`: on the analytic kinds the unit normal a closed form of the point), so the
   Booleans prove its meetings and a grown cone's sweep unites.
-- **A loft face ruled between traced rails is written within `FIT`** (`nurbs::fit_net_broken`):
-  its net breaks along `u` where a rail's parameter turns its pace, each of a trace's points, not
-  fitted smooth across them (a thickened torus's wall was 8.4e-6 off).
 
 ## [0.26.0] - 2026-11-26
 

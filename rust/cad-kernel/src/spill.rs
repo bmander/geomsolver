@@ -177,7 +177,7 @@ fn carried_past(ends: [V; 2], halves: &[(V, V)], margin: f64, hull: &dyn Fn(V) -
 /// middle stands nearer theirs.
 fn sections<'a>(b: &'a Beyond, through: [V; 2], tol: f64) -> Result<Sections<'a>, String> {
     let face = &b.face;
-    let meet = Traced { a: face.clone(), b: b.wall.clone(), pts: Vec::new(), closed: false, feet: Default::default() };
+    let meet = Traced::new(face.clone(), b.wall.clone(), Vec::new(), false);
     let feet = through.map(|q| meet.project(q));
     let size = distance(b.ends[0], b.ends[1]) + b.section.size();
     let (curves, exact) = match super::ssi::intersect(face, &b.wall, tol) {
@@ -296,7 +296,7 @@ fn in_plane(out: &mut Brep, s: &Surface, o: V, n: V, [a, z]: [V; 2], [va, vz]: [
     if let Some(e) = exact_meeting(out, s, &cap, [a, z], [va, vz], mid, tol) {
         return Ok((e, 0.0));
     }
-    let on = Traced { a: s.clone(), b: cap, pts: Vec::new(), closed: false, feet: Default::default() };
+    let on = Traced::new(s.clone(), cap, Vec::new(), false);
     let at = |t: f64| if t <= 0.0 { a } else if t >= 1.0 { z } else { on.project(crate::util::space::lerp(a, z, t)) };
     let (curve, err) = fit_curve(&at, 3, 16, tol).ok_or("an edge of a piece beyond a seam could not be fitted")?;
     let e = out.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(curve))), [0.0, 1.0], [va, vz]) as usize;
@@ -328,10 +328,8 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // each where the face meets the other's offset, crossing the section's plane, from the edge's
     // point stepped out along each face
     let leg_meetings = [
-        Traced { a: b.chain.clone(), b: b.wall.offset_surface(sw * lc, tol, "a leg", "the wall")?, pts: Vec::new(),
-            closed: false, feet: Default::default() },
-        Traced { a: b.wall.clone(), b: b.chain.offset_surface(sc * lw, tol, "a leg", "the chain")?, pts: Vec::new(),
-            closed: false, feet: Default::default() },
+        Traced::new(b.chain.clone(), b.wall.offset_surface(sw * lc, tol, "a leg", "the wall")?, Vec::new(), false),
+        Traced::new(b.wall.clone(), b.chain.offset_surface(sc * lw, tol, "a leg", "the chain")?, Vec::new(), false),
     ];
     let legs_in = |p: V, n: V| -> [V; 2] {
         let along_chain = scale(unit(b.wall.gradient(p)), sw);
@@ -563,11 +561,11 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<(Brep, Vec<(V, V)>), String>
     let [sc, sw] = b.sides;
     // the ball's centre in each section: where the wall's offset meets the chain's, from the edge's
     // point stepped off both faces
-    let spine = Traced {
-        a: b.wall.offset_surface(sw * r, tol, "a ball", "the wall")?,
-        b: b.chain.offset_surface(sc * r, tol, "a ball", "the chain's face")?,
-        pts: Vec::new(), closed: false, feet: Default::default(),
-    };
+    let spine = Traced::new(
+        b.wall.offset_surface(sw * r, tol, "a ball", "the wall")?,
+        b.chain.offset_surface(sc * r, tol, "a ball", "the chain's face")?,
+        Vec::new(), false,
+    );
     let toward = |s: &Surface, side: f64, p: V| scale(unit(s.gradient(p)), -side);
     let ball_in = |p: V, n: V| -> (V, [V; 2]) {
         let guess = add(add(p, scale(scale(unit(b.wall.gradient(p)), sw), r)), scale(b.toward, r));

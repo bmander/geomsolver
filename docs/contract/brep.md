@@ -44,8 +44,8 @@ and a cubic fitted to 5e-5 mm in space took the half torus to 2e-6, the lens of 
 to 7e-6 and the grazing cylinders to 1.2e-4, where the fit before #961 (a piece at every marched
 point, each within 1e-7 mm) read them 1.6e-9, 6e-9 and 6.1e-9 off, and `Fit::Exact` reads them
 3.7e-11, 1.3e-10 and 6.1e-10 off (no brep-bench case graded worse). So `step::write` takes two numbers apart: the uncertainty the file states (`tol`, what a reader may
-take two points to be one within, and the bar of the polyline written where no cubic closes in) and
-how near its fitted curves are held (`Fit`). **No tolerance stated is no licence**: `Fit::Exact`
+take two points to be one within, and the bar of a pcurve's polyline written where no cubic closes
+in) and how near its fitted curves are held (`Fit`). **No tolerance stated is no licence**: `Fit::Exact`
 holds every fitted curve within `step::EXACT` (a thousandth of `step::FIT`, 1e-9 mm), whatever the
 stated uncertainty (1e-4 mm). **A tolerance stated is one** (`Fit::stated`): the curves within
 half the uncertainty the export states for it (`export::step_accuracy`), and the file is the
@@ -59,18 +59,21 @@ there), so the cubic and each pcurve's image stand within twice the bar of each 
 parameter, and their ends are the edge's vertices. The pieces are marched along the curve as long
 as the bar allows (a cubic's miss goes as the fourth power of its length, so each is shortened
 where it misses and the next lengthened by the fourth root of the bar over the miss), stopping at
-every break of the curve (a spline's knots); joints where the curve is smooth share their rate and
-are double knots. **A traced curve is written over the length along it** (`Along`), not its own
-parameter: that counts the march's points, and its speed steps at each (each stretch is a parabola
-through a neighbour behind on one side of a point and ahead on the other), so no cubic over several
-points follows it and every piece ended at a point. Over each stretch `s` is the cubic rising by
-the stretch's length (Gauss–Legendre on the curve's speed) at the curve's own speed at either end,
-so the curve in `s` is `C¹` across the points, and the curve and its pcurves are written over it
-alike. **The pieces follow the bar, not the march**: held to 1e-7 mm and cut at every marched point,
-the issue's tube with one cross-hole was 3.3 MB, each of its curves some 3,370 poles, the same at
-every tolerance. Only where the fit does not close in (a piece shortened to `2⁻³⁰` of the edge, 4096
-pieces) is the polyline through the curve written, within the stated uncertainty where no tolerance
-is stated and within the bar where one is. A meeting with a closed form STEP carries — a line, a
+every break of the curve (a spline's knots; a trace's kinks, `Traced::kinks`, its points beside a
+stretch read on a parabola); joints where the curve is smooth share their rate and are double
+knots. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
+points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
+wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a
+polyline within the stated uncertainty.) **The pieces follow the bar, not the march**: held to 1e-7
+mm and cut at every marched point, the issue's tube with one cross-hole was 3.3 MB, each of its
+curves some 3,370 poles, the same at every tolerance. Where no cubic of `MOST` pieces holds a trace
+within the fit's bar — a trace with a kink in the edge's stretch, beside a touch, where its point is
+read no nearer than the two surfaces part — the cubic within the least bar `MOST` pieces hold, from
+the stated uncertainty doubled, is written, and the file states it (a rim rounded at a reflex corner
+off tangent, two cylinders all but tangent there,
+`rim_rounds::a_reflex_corner_off_tangent_rounds_its_rim`); no trace is written as a polyline, and
+`step_roundtrip`'s trip refuses a traced edge read back as one. A meeting with a closed form STEP carries — a line, a
 circle, an ellipse, a conic as a rational quadratic — is written so and fitted nowhere (a plane
 cutting a cone in a hyperbola or a parabola is traced yet). `tests/step_curves.rs` (the file read
 back and every traced cubic and pcurve sampled 64 times a knot span: within the bar of the curve, of
@@ -111,7 +114,11 @@ over the parameters it reaches, poles mapped (`step::face_net`, the net a sheet,
 a sphere's or a torus's meridian, a cylinder's or a cone's generator, a revolution's spline, an
 extrusion's spline by its step; a blend's or a family wall's fitted net), its pcurves fitted in the
 net's parameters (`nurbs::arc_parameter`, a quarter arc reaching the angle `θ` at the fraction `τ`
-where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. `affine::every_kind_of_face_maps_to_its_image`
+where `τ / (1 − τ) = sin(θ/2) / sin((d − θ)/2)`) and measured on the net. A sheet's face is
+written on the net cut to its parameter box grown by a sixteenth, and on the whole net where that
+box reaches the net's ends — within a part in 10⁹ of its domain, so a net fitted over the box its
+face was read to and read to again a rounding inside is not cut a sliver short of its end (the
+drill's flute, `step_roundtrip::a_drill_is_written_within_a_minute`, #1034). `affine::every_kind_of_face_maps_to_its_image`
 (every kind under a shear, a skew stretch, a reversing map and a similarity: valid, `|det M|`
 times the volume, mapped back itself, its nets its surfaces, read back from STEP, meshed closed),
 `affine::a_boolean_of_images_is_the_image_of_the_boolean`, `face_family::a_family_mapped_is_its_image`
@@ -500,8 +507,15 @@ a swap made without its callers knowing:
   lines, conics, quadrics, the torus, extrusions, revolutions, blends and their carries, a face
   family's runs by their own formulas in intervals; affine images through the map; turned and slid
   contacts by their own jets; a plane's cut of a screwed sheet by `−α/β` and, beside a ruling the
-  plane holds, by divided differences enclosed by the mean value; a trace by its own error bound,
-  its points grown by its chords — measured, not proved, and said so (`Patch::proved`). Each is held
+  plane holds, by divided differences enclosed by the mean value; a trace proved (#1034,
+  `enclose::traced_piece`) where both its surfaces bound how fast their normals turn
+  (`ssi::curvature_bound`): within `ℓ` of a piece's start each normal stands within `κℓ` of its
+  value there, so the meeting's tangent within a cone of `asin(ε / sin θ)` about its own; turned
+  to the piece's chord it climbs it at `c` at least, so the arc reaches the plane through the
+  piece's end within `|chord| / c ≤ ℓ` and, the system of both surfaces and that plane having no
+  singular Jacobian there, reaches it at the end itself — the arc in the ball, its tangent in the
+  cone, its point by the mean value; halved where `ℓ` is not shown, and only where no certificate
+  holds (a sheet, a touch) by its own error bound, measured and said so (`Patch::proved`). Each is held
   to samples of itself over random boxes
   (`enclosures::every_kind_of_curve_is_held_by_its_enclosure`, `…::every_kind_of_surface_is_held_by_its_enclosure`).
   No reading depends on a bound written by hand for a pair of types: `Net::second_bounds`,
@@ -1027,7 +1041,10 @@ inclusion–exclusion to 1e-8 — and with the members' sheets fitted otherwise,
 the thread's last foot built a wrong union — the same with one core or four, each in about half the
 time (no search of the whole sheet a point).
 Read from a cold search's foot, or the nearest one, a chord's point beside the double curve went
-onto the other layer wherever that was nearer, and every Boolean refused.
+onto the other layer wherever that was nearer, and every Boolean refused. Every reading of the
+curve is so (#1034): its point, its rates (`Traced::d1`, `d2`, the gradients read on the same
+layers) and its points pulled onto both sheets once (`traced::read`), each from the feet of the
+point nearest (`Traced::hint`).
 `swept_tube::the_crossed_members_combine` is the gate.
 **An edge's gap is measured as a reader measures it** (`Brep::measure_tolerances`, read as
 `standing`: 64 places, the knots and the ends, and halfway between each two). Read at 33, the
@@ -1443,7 +1460,11 @@ crossed by search (`meeting::crossings`: polished from each curve's own ends fir
 on the other curve is the meeting exactly, then from chords standing within reach and their sags,
 where they may cross within those or stand at a least of the chords' distance — #780 C2, whose
 contact ruling's foot a polish from chords crawled toward along two tangent curves and stopped
-4e-4 short of, after three thousand polishes) and the point polished onto all three surfaces
+4e-4 short of, after three thousand polishes; each polish alternating feet, then Gauss–Newton on
+`a(s) − b(t)` over both parameters, which closes in at a shallow crossing where alternating feet
+gain only `cos² θ` a step — #1034, a trace setting out from a touch beside a pipe's rail, its
+polish stopped 2e-3 along it from its start and cut there, the ball-end mill screwed then missing
+a cell) and the point polished onto all three surfaces
 (`shared_point`); and a cell too thin to mesh is read inside at its faces' points stepped in
 (`Complex::inside_points`). **Points along a shallow meeting are one by its reach** (A3): a
 crossing with a meeting is read to that meeting's `on_meeting` reach at the point, not the pool's
@@ -1671,7 +1692,36 @@ along one another, their middle circles at one height and touching, their tubes 
 torus at an end pose of a turn about an axis along its own, and the torus a meridian of it turns
 into): the meridian, and in each level the one pair of the two tori's circles that crosses, as the
 rim's branches are (`branches`), drawn in toward the tube's top and bottom, where they reach the
-meridian tangent to the level circle. **A traced curve is read between its points on a parabola**
+meridian tangent to the level circle. **A traced curve is the meeting read smoothly** (#1034,
+`traced`): at each of its points the meeting's unit tangent `T = ∇a × ∇b / |∇a × ∇b|` and its
+curvature vector `K` in closed form (`n_a · K = κ_a`, `n_b · K = κ_b`, `T · K = 0`, each surface's
+normal curvature along `T` its distance's Hessian on the analytic surfaces and its second
+fundamental form on any other, `Surface::bend`); between two, the quintic of the arc length
+through both with their `T` and `K`, its length the fixed point of `L = ∫ |P'|`, pulled onto both
+surfaces. **Its parameter runs evenly along its length** (`traced::read`): its `m` stretches over
+`[0, m]` as before, but each point where the length run to it puts it (`Traced::parameter_of`), so
+its speed is the same everywhere, through every point. A parameter that counted the points had to
+change its speed within a stretch wherever they stood unevenly, however smoothly it was laid: a
+closing stretch two-thirds its neighbours' length swayed a quintic spline of the lengths by a
+quarter, and the ruled wall of the torus's face thickened could not be fitted to the file's 1e-6
+(nor by a cubic spline, nor by a quintic over each stretch). A trace moved, reflected or mapped keeps
+its parameter at each point (`Traced::carried`), so what was placed on it is where it was — by a
+similarity, which scales every stretch alike; under any other affine map, which changes their
+lengths unevenly, a trace's image is the image of the curve, `Curve::Affine`, smooth in its
+parameter as the trace is (carried, its speed stepped at every point, and a ruled wall between two
+such rails needed a net broken at each, `fit_net_broken`, gone). Whatever reads a trace by its points' indices converts (`index_at`,
+`parameter_at_index`): `ssi`'s fit, a cut of a trace in `swept::general`, a bound's chords.
+Its rates are the meeting's own at the point read (`Traced::d1`, `d2`): `C' = T (T · g')`, `g` the
+guess the projection pulled, and `C'' = K v² + T (v K · g' + T · g'')` — not differenced, and not
+nothing (`traced_meeting::a_traced_meetings_rates_are_its_closed_forms`: a spiric section's and two
+crossed cylinders' tangent and curvature to 1e-9 against their closed forms, the speed with no step
+at any point, the same all along it to a part in a million). A point's foot on it
+(`Curve::inverse`) is sought by Newton from the chord nearest the point, at the parameter its foot
+on the chord stands at: with a pace swaying within a stretch, it started a step off where a stretch
+nine times its neighbour's length bulged it, and Newton stopped 3e-3 short
+(`meeting::a_cylinders_meeting_with_every_kind_is_complete`). A stretch with an end within `traced::CLEAR` of a touch, or turning too far for its
+chord (its ends' tangents past 25° from it, or its curvature times its length past one), is
+**read between its points on a parabola**
 (`Traced::between`: through the two and a neighbour, by their chords' lengths, where the three run
 smoothly — chords within `SMOOTH_RATIO` of each other's length, turning by less than
 `acos(SMOOTH_COS)`), then pulled onto both surfaces: a chord's sag, quadratic in it, stood off the
@@ -1771,7 +1821,7 @@ screwed four turns, its sheets leaning so without folding, was read by columns a
 trim made, its build eight times as long.)
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
-own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
+own parameter — which counts its points (its rate stepped at each before #1034), every stretch a rule of its own
 and each node three projections onto both surfaces — but over spans of its points whose chords
 turn within 15° of the first, each by its distance `σ` along its chord `n`: a node is where the
 curve crosses the plane `n·x = σ` (`Traced::across`, Newton on both surfaces and the plane), its
@@ -1787,7 +1837,12 @@ stretch by stretch as before. A canal's
 meeting with an end disc, a thousand stretches, measured in 9 s and does in 30 ms, and the same
 whichever way the solid is moved, where the stretches' central differences moved it by 2e-10
 (`brep::a_rod_grooved_by_a_balls_helix_is_measured_along_its_traced_meetings`, brep-bench's
-swept/ball-thread-groove, its volume and areas in under 5 s, its end discs one area).
+swept/ball-thread-groove, its volume and areas in under 5 s, its end discs one area). Each node's
+foot on the face is sought from the last node's, carried along the edge, and again from the line
+between the edge's ends where that stands off the face (`topo::inverse_carried`): from the line
+alone a foot on a screwed rim's thin ramp was read 1.7e-7 off it once the trace's parameter ran
+evenly along it, the ramp's cut 1.5e-8 of its volume off
+(`swept_closed::planes_through_the_axis_cut_a_screwed_rims_ramp_in_closed_form`).
 **A sheet a line square to a screw's axis screws into meets what the screw keeps in closed form**
 (`ssi`'s screwed meetings, a `Blend` of a line and itself carried by a screw): a coaxial cylinder
 in the helices of the line's points at its radius (`Curve::Iso`), one where the line passes at it
@@ -2217,8 +2272,11 @@ ruled walls blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ
 `a_cone_cut_aslant_grown_is_steiners` (a frustum cut aslant, a convex body's Steiner formula),
 `a_torus_cut_aslant_shrunk_and_its_face_thickened` (a ring two spiric curves bound, shrunk the ring
 of the tube shrunk under the plane moved in, and its torus lifted out and thickened either way,
-`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form — grown, its traced
-creases' tubes are not held to a family's `EXACT` yet, and `offset::swept_tube` refuses them), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
+`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form),
+`a_torus_cut_aslant_grown_is_steiners` (the ring grown, its tube formula `V + S d + M d²` — its
+Euler characteristic nought — and its area `S + 2 M d`: the ball's tubes along its traced creases,
+refused by `offset::swept_tube` while a trace's pace stepped at each of its points, built since it
+runs on smoothly through them, #1034), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
 aslant, its side lifted out and thickened, `∫ (t − t² κ/2) dA` by Gauss's rule, and refused past
 its vertex's curvature), `a_cone_placed_at_its_apex_is_thickened_inward` (onto a cone whose radius
 at its origin is less than nothing), and the same solids among
@@ -2306,7 +2364,7 @@ tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `t
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
 bend thickened, an L shelled outward open at its step, sharp and round, a block open at its
 sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, a cone cut aslant
-grown, a torus cut aslant shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
+grown, a torus cut aslant grown, shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
 past their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its
 closed form to 1e-9; sheets thickened past their curvature, an elliptic cylinder shrunk past its
 curvature and that block shelled sharp refused.
@@ -2467,8 +2525,8 @@ written in more than `3 MOST + 1` points** (`step::MOST`, 4096 pieces): held to 
 edge stood 1e-7 off its net, a toolpath's pcurve never closed in and fell to a polyline of
 millions of points (a screw's whole turn 3.1 GB and 227 s, now 0.14 s). Past the bound a pcurve
 is left out, a seam's two written both or neither — an edge needs only its curve in space, and
-the reader walks a face without them — and a traced curve's polyline is written within what
-`MOST` points hold, the file stating it. **The representation a curve on a surface prefers is the
+the reader walks a face without them — and a traced curve's cubic is written within what `MOST`
+pieces hold, the file stating it. **The representation a curve on a surface prefers is the
 exact one**: `.CURVE_3D.` wherever the curve in space is written as itself, `.PCURVE_Sk.` only
 where that curve is a fit and the `k`-th pcurve is the kernel's own spline in the parameters of a
 surface written exactly. **A face family's wall and its rails, turning at their stations' joints,

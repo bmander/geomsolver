@@ -465,9 +465,8 @@ fn cut_torus_measures(r: f64,beta: f64,c: f64) -> (f64,f64,f64) {
 /// the normals along the curves.  Shrunk, it is the ring of the tube shrunk under the plane moved
 /// in, the eroded meet being the meet of the eroded sets; the torus's face lifted out as a sheet
 /// and thickened by `t` either way is `∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA` over its arcs, in closed
-/// form, `t r (R v + r sin v) ± t²/2 (R v + 2 r sin v) + t³/3 sin v` across each.  (Grown, the
-/// ring needs the ball's tube along its traced creases, which is not held to a face family's
-/// `EXACT` yet: `offset::swept_tube` refuses it.)
+/// form, `t r (R v + r sin v) ± t²/2 (R v + 2 r sin v) + t³/3 sin v` across each.  (Grown, it is
+/// `a_torus_cut_aslant_grown_is_steiners`.)
 #[test]
 fn a_torus_cut_aslant_shrunk_and_its_face_thickened() {
     let (r,beta,c) = (2.,12f64.to_radians(),0.4);
@@ -487,6 +486,25 @@ fn a_torus_cut_aslant_shrunk_and_its_face_thickened() {
         let want = cut_torus_turn(r,beta,c,&|v| t.abs()*r*(big*v+r*v.sin())+t*t.abs()/2.*(big*v+2.*r*v.sin())+t*t*t.abs()/3.*v.sin());
         close(&format!("thickened by {t}"),volume(&th),want);
     }
+}
+
+/// **A torus cut aslant, grown, is Steiner's** (#1034): the ring `cut_torus(2, 12°, 0.4)` grown
+/// by a half, well within its reach (its inner equator's concave radius, 3), is its tube formula
+/// `V + S d + M d² + (4π/3) χ d³` — its Euler characteristic `χ` nought, a ring's, so no ball's
+/// worth at its corners — and its area `S + 2 M d`, `V`, `S` and `M` in closed form over its
+/// meridians (`cut_torus_measures`).  Its edges are the plane's spiric curves, traced: the ball's
+/// tube along each is a face family read over the trace, which `offset::swept_tube` refused while
+/// a trace's pace stepped at every one of its points (#1030 dropped this gate for that), and builds
+/// now that it runs on smoothly through them.
+#[test]
+fn a_torus_cut_aslant_grown_is_steiners() {
+    let (r,beta,c) = (2.,12f64.to_radians(),0.4);
+    let (v,s,m) = cut_torus_measures(r,beta,c);
+    let d = 0.5;
+    let g = grown(&cut_torus(r,beta,c),d,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    close("grown: its volume",volume(&g),v+s*d+m*d*d);
+    close("grown: its area",total_area(&g),s+2.*m*d);
 }
 
 /// The arc `cut_torus(r, β, c)` keeps of its meridian at `u`, `[v_a, v_b]` (`cut_torus_measures`),

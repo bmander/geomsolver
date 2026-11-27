@@ -326,6 +326,13 @@ impl MappedCurve {
     }
     fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
     fn global(&self,s: f64) -> f64 { self.at[0]*s+self.at[1] }
+    /// `C` at `t`: the preimage's point mapped.
+    pub fn point(&self,t: f64) -> V { self.map.point(self.of.point(self.local(t))) }
+    /// `C` and `C'` at `t`, read without the preimage's second rate.
+    pub fn d1(&self,t: f64) -> (V,V) {
+        let (x,d) = self.of.d1(self.local(t));
+        (self.map.point(x),scale(self.map.vector(d),1./self.at[0]))
+    }
     pub fn d2(&self,t: f64) -> (V,V,V) {
         let (x,d,dd) = self.of.d2(self.local(t));
         let a = self.at[0];
@@ -476,8 +483,14 @@ impl Curve {
                 let poles = b.poles.iter().map(|&p| a.point(p)).collect();
                 (Curve::BSpline(Arc::new(super::nurbs::BSpline {poles,..(**b).clone()})),[1.,0.])
             }
-            Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced {a:c.a.mapped(a).0,b:c.b.mapped(a).0,
-                pts:c.pts.iter().map(|&p| a.point(p)).collect(),closed:c.closed,feet:Default::default()})),[1.,0.]),
+            // (its parameter at each point carried with it, `Traced::carried`, under a similarity,
+            // which scales every stretch alike; under any other map, which changes their lengths
+            // unevenly, the trace's image, smooth in its own parameter as the trace is)
+            Curve::Traced(ref c) => match a.similarity() {
+                Some(_) => (Curve::Traced(Arc::new(Traced::carried(c.a.mapped(a).0,c.b.mapped(a).0,
+                    c.pts.iter().map(|&p| a.point(p)).collect(),c))),[1.,0.]),
+                None => wrapped(),
+            },
             Curve::Iso(ref b,u) => match b.mapped(a) { Some(b) => (Curve::Iso(Arc::new(b),u),[1.,0.]),None => wrapped() },
             Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) | Curve::Trochoid(..)
             | Curve::Parallel(..) => match a.similarity() {

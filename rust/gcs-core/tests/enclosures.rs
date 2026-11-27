@@ -63,7 +63,7 @@ fn curves() -> Vec<(&'static str,Curve,[f64;2])> {
     let turned = gcs_core::brep::turned::Turned::meridian(Frame::WORLD,contact,[-1.,1.]);
     let slid = gcs_core::brep::slid::halves(Frame::WORLD,3.,1.,unit([1.,0.,0.3]),1.,true)[0];
     let ring: Vec<V> = (0..=48).map(|k| { let a = TAU*k as f64/48.; [2.*a.cos(),2.*a.sin(),0.] }).collect();
-    let traced = Traced {a:Surface::Plane(Frame::WORLD),b:Surface::Cylinder(Frame::WORLD,2.),pts:ring,closed:true,feet:Default::default()};
+    let traced = Traced::new(Surface::Plane(Frame::WORLD),Surface::Cylinder(Frame::WORLD,2.),ring,true);
     let wall = Arc::new(family());
     vec![
         ("a line",Curve::Line {p:[1.,2.,3.],d:unit([0.3,-0.5,0.8])},[-5.,7.]),
@@ -97,7 +97,8 @@ fn family() -> Sheet {
 
 /// **Every kind of curve is held by its enclosure** (#814 P2): over random stretches — narrow,
 /// whole, a point — its point and derivative at samples across each lie in the enclosure. A
-/// trace's is its own measured bound, and says so.
+/// trace's is proved too (#1034), by the meeting's tangent turning within a cone over the ball its
+/// arc stays in.
 #[test]
 fn every_kind_of_curve_is_held_by_its_enclosure() {
     let mut rng = Rng::new(814);
@@ -106,7 +107,7 @@ fn every_kind_of_curve_is_held_by_its_enclosure() {
             let [a,b] = stretch(&mut rng,span);
             let e = c.enclose([[a,b]]);
             assert!(e.bounded(),"{what} over [{a}, {b}]: no enclosure {e:?}");
-            assert_eq!(e.proved,!matches!(c,Curve::Traced(_)),"{what}: proved");
+            assert!(e.proved,"{what}: proved");
             for k in 0..=16 {
                 let t = a+(b-a)*k as f64/16.;
                 let (p,d) = c.d1(t);

@@ -502,19 +502,19 @@ fn sixteenths(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface) -> bool
 /// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
 /// parameters on the face and their rate. Green's integral does not depend on how its curve is
 /// parameterised, only on the curve, so it is read not by the edge's own parameter — which counts
-/// the trace's points, its rate stepping at every one, so that each stretch between two was a rule
-/// of its own, each node of it three projections onto both surfaces (a canal's meeting with an end
-/// disc, a thousand stretches, measured in seconds) — but over spans of the points turning a little
-/// (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's point at each node is
-/// where it crosses the plane `n·x = σ` (`Traced::across`), and its rate `T / (T·n)` read there,
-/// both as exact as the trace, so each span is one smooth integrand. It is read by Gauss–Legendre on
-/// cells of its stretches, doubled until two readings agree to rounding or each cell is one stretch:
-/// the march sets its points closer where the curve turns faster, and nodes spread evenly along the
-/// chord read a turn at a span's end too coarsely to settle (the tip of the sliver a plane through
-/// its axis cuts from a screwed rim's ramp, 2e-5 of the span). A span the curve does not cross as
-/// a graph over its chord (its
-/// rate turned past 60° from it, or a crossing found off the stretch it was sought in) is read by
-/// the edge's parameter, stretch by stretch, as before.
+/// the trace's points (its rate stepped at every one before #1034), so that each stretch between
+/// two was a rule of its own, each node of it three projections onto both surfaces (a canal's
+/// meeting with an end disc, a thousand stretches, measured in seconds) — but over spans of the
+/// points turning a little (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's
+/// point at each node is where it crosses the plane `n·x = σ` (`Traced::across`), and its rate
+/// `T / (T·n)` read there, both as exact as the trace, so each span is one smooth integrand. It is
+/// read by Gauss–Legendre on cells of its stretches, doubled until two readings agree to rounding or
+/// each cell is one stretch: the march sets its points closer where the curve turns faster, and
+/// nodes spread evenly along the chord read a turn at a span's end too coarsely to settle (the tip
+/// of the sliver a plane through its axis cuts from a screwed rim's ramp, 2e-5 of the span). A span
+/// the curve does not cross as a graph over its chord (its rate turned past 60° from it, or a
+/// crossing found off the stretch it was sought in) is read by the edge's parameter, stretch by
+/// stretch, as before.
 fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,[ua,ub]: [Uv;2],s: &Surface,vertices: &[super::topo::Vertex],
     f: &mut dyn FnMut(Uv,Uv) -> f64) -> f64 {
     use crate::util::space::{norm,normalised,scale,sub};
@@ -561,6 +561,10 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
     let stretches = at.len()-1;
     let mut read = |cells: usize| -> Option<(f64,f64)> {
         let (mut size,mut failed) = (0.,false);
+        // (each node's foot on the face sought from the last one's, carried along the edge, and
+        // from the line between its ends where that stands off: from the line alone, a foot on a
+        // screwed rim's thin ramp was read 1.7e-7 off it, its cut's volume 1.5e-8 of itself)
+        let mut last: Option<Uv> = None;
         let mut integrand = |x: f64| {
             if failed { return 0. }
             // the stretch holding `x`, and the parabola's point there to start from
@@ -571,7 +575,8 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
             let q = tr.guess(t);
             let Some((p,rate)) = tr.across(q,n,h0+x).filter(|&(p,rate)| norm(rate) <= 2. && distance(p,q) <= distance(at[a].1,at[a+1].1))
                 else { failed = true; return 0. };
-            let uv = super::topo::inverse_at(ua,ub,t,p,e,s);
+            let uv = super::topo::inverse_carried(ua,ub,t,p,e,s,last);
+            last = Some(uv);
             let y = f(uv,super::topo::in_parameters(s,uv,rate));
             size += y.abs();
             y

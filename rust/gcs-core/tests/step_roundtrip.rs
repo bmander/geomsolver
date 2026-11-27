@@ -165,14 +165,15 @@ fn size(b: &Brep) -> (f64,f64) {
 /// How far the file's curve of `b`'s edge `ei` may stand from the edge built (millimetres): none
 /// where the writer writes it as itself, else the bar it fits it to. (`stated` is the uncertainty
 /// the file states, which covers what it holds.)
-fn edge_fit(b: &Brep,ei: usize,fit: Fit,stated: f64,polyline: bool) -> f64 {
+fn edge_fit(b: &Brep,ei: usize,fit: Fit,stated: f64) -> f64 {
     match &b.edges[ei].curve {
         EdgeCurve::Degenerate => 0.,
         EdgeCurve::Curve(c) => match c {
             Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => 0.,
-            // (the polyline a traced curve is written as where no cubic closes in: within the
-            // uncertainty the file states, which covers it)
-            Curve::Traced(_) if polyline => stated,
+            // (a cubic, as any curve the writer fits; where none holds it within the bar — a trace
+            // with a kink there, beside a touch — within the uncertainty the file states, which
+            // covers it, #1034)
+            Curve::Traced(t) if !t.kinks(b.edges[ei].t).is_empty() => stated.max(fit.bar()),
             Curve::Traced(_) => fit.bar(),
             _ => FIT,
         },
@@ -205,7 +206,7 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 /// * an edge whose written curve stands up to `δ` off the built one moves the face's trim by as
 ///   much along it: `2 δ L` (twice, as a fitted cubic's miss keeps its sign along a piece); and
 ///   so does a pcurve the writer fits (`Fit::bar` on the face, or the edge's own tolerance where
-///   that is past it, or the uncertainty the file states where it writes a polyline), which a
+///   that is past it, or the uncertainty the file states where it writes a pcurve as a polyline), which a
 ///   reader may trim by;
 /// * a surface written within `δₛ` of the built one moves the face along its normal: its area by
 ///   `δₛ ∬ 2H`, held as `20 δₛ A / s` (its radius of curvature no less than a tenth of the solid's
@@ -232,9 +233,9 @@ fn polyline_faces(text: &str) -> BTreeSet<usize> {
         .filter(|(_,l)| refs(l).iter().rev().nth(0).is_some_and(|s| surfaces.contains(s))).map(|(k,_)| k).collect()
 }
 
-fn bars(b: &Brep,m: &Measured,fit: Fit,stated: f64,polylines: &BTreeSet<usize>,polyline_faces: &BTreeSet<usize>) -> Bars {
+fn bars(b: &Brep,m: &Measured,fit: Fit,stated: f64,polyline_faces: &BTreeSet<usize>) -> Bars {
     let (s,far) = size(b);
-    let edges: Vec<f64> = (0..b.edges.len()).map(|ei| edge_fit(b,ei,fit,stated,polylines.contains(&ei))).collect();
+    let edges: Vec<f64> = (0..b.edges.len()).map(|ei| edge_fit(b,ei,fit,stated)).collect();
     let mut out = Bars {area:Vec::new(),flux:Vec::new(),volume:0.,total:0.};
     for (fi,f) in b.faces.iter().enumerate() {
         let ds = surface_fit(b,fi);
@@ -387,7 +388,8 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         let off = distance(r.vertices[i].p,b.vertices[vertex_of[&id]].p);
         if off > 1e-12*s { return Err(format!("vertex #{id} read {off:.2e} from where it was written")) }
     }
-    let polys = polylines(b,given,&edge_ids);
+    // a traced edge is written as a cubic, as any smooth curve, never a polyline (#1034)
+    if let Some(&ei) = polylines(b,given,&edge_ids).first() { return Err(format!("traced edge {ei} written as a polyline")) }
     let mut laid_degenerate = 0;
     for (i,&id) in given.edges.iter().enumerate() {
         let e = &r.edges[i];
@@ -408,7 +410,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         if ends != built { return Err(format!("edge #{id} read between #{} and #{}, written between #{} and #{}",ends[0],ends[1],built[0],built[1])) }
         let EdgeCurve::Curve(c) = &e.curve else { continue };
         let EdgeCurve::Curve(oc) = &o.curve else { continue };
-        let bar = 2.*edge_fit(b,ei,fit,stated,polys.contains(&ei))+1e-8*s;
+        let bar = 2.*edge_fit(b,ei,fit,stated)+1e-8*s;
         for k in 1..4 {
             let m = c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/4.);
             let off = distance(oc.point(oc.inverse(m)),m);
@@ -489,7 +491,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     let started = Instant::now();
     let mr = measured(r);
     found.measure += started.elapsed();
-    let bar = bars(b,mb,fit,stated,&polys,&polyline_faces(text));
+    let bar = bars(b,mb,fit,stated,&polyline_faces(text));
     let mut worst: Option<(f64,usize,f64,f64)> = None;
     for fi in 0..b.faces.len() {
         let (da,df) = ((mr.area[fi]-mb.area[fi]).abs(),(mr.flux[fi]-mb.flux[fi]).abs());

@@ -250,12 +250,13 @@ fn spline(o: &mut Out,degree: usize,ids: &[String],knots: &[f64],weights: Option
 
 /// The parameters of a stretch of a curve at which `at` (a point, in space or in a face's
 /// parameters) may be joined by chords whose middles map within `tol` of the curve (`off`
-/// measures that): a traced curve's own points between the ends, and more wherever a chord strays.
+/// measures that): a traced curve's own points between the ends (`Curve::breaks`), and more
+/// wherever a chord strays.
 /// `None` past `MOST` points: a polyline the file would carry in millions of points (a pcurve on
 /// a toolpath's net within 1e-7 mm, 2.5 million) is not written.
 fn samples(c: &Curve,t: [f64;2],tol: f64,off: &dyn Fn(f64,f64) -> f64) -> Option<Vec<f64>> {
     let mut ts: Vec<f64> = vec![t[0]];
-    if let Curve::Traced(_) = c { ts.extend((t[0].floor() as i64+1..=t[1].ceil() as i64-1).map(|k| k as f64)); }
+    if let Curve::Traced(_) = c { ts.extend(c.breaks(t)); }
     else { ts.extend((1..8).map(|k| t[0]+(t[1]-t[0])*k as f64/8.)); }
     ts.push(t[1]);
     let mut out = vec![t[0]];
@@ -273,9 +274,11 @@ fn samples(c: &Curve,t: [f64;2],tol: f64,off: &dyn Fn(f64,f64) -> f64) -> Option
 /// **The most pieces a curve the file fits is written in** (#993 stage 1): a cubic's (`hermite_fit`,
 /// three poles a piece) or a polyline's (`samples`, a point a piece). So no edge's curve, in space
 /// or in a face's parameters, is written in more than `3 MOST + 1` points: past it a pcurve is
-/// left out (a reader puts the edge on the face itself, as it does where a file writes none) and a
-/// traced curve's polyline is written within the bar its `MOST` pieces hold, which the file then
-/// states (`write_stating`).
+/// left out (a reader puts the edge on the face itself, as it does where a file writes none), and a
+/// traced curve no cubic of `MOST` pieces holds within the fit's bar — one with a kink beside a
+/// touch — is written as the cubic within the least bar `MOST` pieces hold, which the file then
+/// states (`write_stating`). (#1034: it was a polyline there, and every trace fell to that while
+/// its parameter stepped its pace at every point; it runs evenly along it now.)
 pub const MOST: usize = 4096;
 
 /// How near its exact surface or curve a loft's face or rail is written (millimetres): the file
@@ -295,11 +298,9 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
     };
     let f = |u,v| b.d1([u,v]).0;
-    // where a rail's parameter turns its pace (a traced rail's, at each of its points), the net
-    // breaks there too
-    let breaks = if rough(&b.a) || rough(&b.b) { b.breaks() } else { Vec::new() };
-    let fit = |dv: usize| if breaks.is_empty() { super::nurbs::fit_net(&f,3,dv,8,nv,FIT) }
-        else { super::nurbs::fit_net_broken(&f,3,dv,&breaks,nv,FIT) };
+    // (a traced rail as any smooth rail, #1034: its parameter runs evenly along it, so no net
+    // breaks at its points, as one did while its pace stepped at each)
+    let fit = |dv: usize| super::nurbs::fit_net(&f,3,dv,8,nv,FIT);
     let fitted = match fit(dv) {
         Some((_,err)) if err > FIT && dv == 3 => fit(5),
         other => other,
@@ -309,13 +310,6 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
         None => Err("a loft face could not be fitted (its surface is degenerate)".into()),
     }
-}
-
-/// Whether a curve's pace jumps where its parameter breaks (`Curve::breaks`), a net through it
-/// being fitted across them: a trace's, and a curve carried along a normal from one or mapped
-/// from one.
-fn rough(c: &Curve) -> bool {
-    match c { Curve::Traced(_) => true,Curve::Parallel(m) => rough(&m.of),Curve::Affine(m) => rough(&m.of),_ => false }
 }
 
 /// A face family's wall as the file writes it (#243 L2): the net through it fitted within `FIT` as
@@ -579,11 +573,18 @@ fn stretch_box(b: &Brep,fi: usize) -> Option<[[f64;2];2]> {
 
 /// The net `n` on frame `g` written over the box `at` (`Net::segment`, which keeps the parameters,
 /// so the faces' pcurves are still theirs), or whole where no box is given or it reaches past the
-/// net both ways.
+/// net both ways. A box reaching within a rounding of the domain's end (a part in 10⁹ of it)
+/// reaches the end: a net fitted over the box its face was read to then, and read to again over
+/// edges read anew, is cut no sliver of a span short of its end (#1034: the drill's flute, a knot
+/// 1.5e-11 inside it).
 fn stretch(g: Frame,n: &Arc<super::nurbs::Net>,at: Option<[[f64;2];2]>) -> OnNet {
     let [du,dv] = n.domain();
+    let reach = |r: [f64;2],d: [f64;2]| {
+        let slack = 1e-9*(d[1]-d[0]);
+        [if r[0] <= d[0]+slack { d[0] } else { r[0] },if r[1] >= d[1]-slack { d[1] } else { r[1] }]
+    };
     let within = |r: [f64;2],d: [f64;2]| r[0] > d[0] || r[1] < d[1];
-    match at {
+    match at.map(|[u,v]| [reach(u,du),reach(v,dv)]) {
         Some([u,v]) if within(u,du) || within(v,dv) => {
             let net = Arc::new(n.segment(u,v));
             OnNet {surface:Surface::BSpline(g,net.clone()),net,arcs:[None,None],fit:0.}
@@ -661,11 +662,11 @@ const LEAST_UNCERTAINTY: f64 = 1e-7;
 
 /// **How near the exact geometry a curve the file fits is held** (#961): a traced edge's cubic and
 /// every cubic pcurve. Two things the file says are kept apart here: the uncertainty it states
-/// (`write`'s `tol`, what a reader may take two points to be one within, and the bar of a polyline
-/// written where no cubic closes in), and how near its fitted curves stand to the exact ones.
-/// Where no tolerance was asked, the second is no licence of the first's size: the curves are held
-/// to `EXACT`, so a reader measures the solid the kernel built (only a polyline written where no
-/// cubic closes in, the last resort, stands as far off as the stated uncertainty).
+/// (`write`'s `tol`, what a reader may take two points to be one within, and the bar of a pcurve's
+/// polyline written where no cubic closes in), and how near its fitted curves stand to the exact
+/// ones. Where no tolerance was asked, the second is no licence of the first's size: the curves are
+/// held to `EXACT`, so a reader measures the solid the kernel built (only a pcurve's polyline
+/// written where no cubic closes in, the last resort, stands as far off as the stated uncertainty).
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Fit {
     /// No tolerance stated: every fitted curve within `EXACT` of the exact one, on each face it
@@ -784,141 +785,50 @@ fn hermite_fit<const N: usize>(at: &dyn Fn(f64) -> [f64;N],rate: &dyn Fn(f64) ->
     Some((poles,knots,most))
 }
 
-/// **The parameter the file writes an edge's curve over**: the curve's own, except a traced
-/// curve's. That counts its points, and its speed steps at each: the stretch between two points
-/// is the parabola through them and a neighbour pulled onto both surfaces, the neighbour behind
-/// on one side of a point and ahead on the other, so the rate at a point differs either side by
-/// some `(κh)²` of the speed (the march's step `h` against the curvature) — the curve is smooth,
-/// its parameter is not, and no cubic over several points follows that parameter within a bar
-/// finer than that step times a chord: every piece would end at a point. The file writes a
-/// traced curve over `s` instead, which runs over each stretch `[i, i + 1]` as the cubic in `t`
-/// rising by the stretch's length at the curve's own speed at each end, read on the stretch's
-/// side (`speeds`): so `dC/ds` is the unit tangent at every point from either side, and the
-/// curve in `s` is `C¹` across its points, its speed one but for the speed's departure from a
-/// quadratic within a stretch. (Rising by the chord instead, the speed was off by the chord's
-/// shortfall, and each piece drifted along the curve by that times its length.) A closed trace's
-/// `s` runs on round its period. Every curve of the edge, in space and in each face, is written
-/// over the same `s`.
-struct Along { chords: Option<Chords> }
-
-/// A traced curve's `s` (`Along`): where it stands at each point, and each stretch's speed in `t`
-/// at its start and its end.
-struct Chords { at: Vec<f64>,speeds: Vec<[f64;2]>,closed: bool }
-
-impl Along {
-    fn of(c: &Curve) -> Along {
-        let Curve::Traced(t) = c else { return Along {chords:None} };
-        let m = t.pts.len()-1;
-        // the speed at a point, from the side `toward` (one-sided, second order, a ten-thousandth
-        // of a stretch)
-        let speed = |x: f64,toward: f64| {
-            let h = 1e-4*(toward-x);
-            let (p,q,r) = (c.point(x),c.point(x+h),c.point(x+2.*h));
-            norm(std::array::from_fn(|k| (-3.*p[k]+4.*q[k]-r[k])/(2.*h)))
-        };
-        let mut at = vec![0.];
-        let mut speeds = Vec::with_capacity(m);
-        for i in 0..m {
-            // the stretch's length, by ten-point Gauss–Legendre (its nodes inside it, where the
-            // rate is the stretch's own)
-            let (a,z) = (i as f64,i as f64+1.);
-            let length = super::props::gauss(a,z,1,&mut |x| norm(c.d1(x).1));
-            let v = [speed(a,z),speed(z,a)];
-            // (a stretch of no length, or a speed not read, or one the cubic would turn back
-            // under: nothing to write it over)
-            if !(length > 0. && v.iter().all(|&v| v.is_finite() && v > 0. && v < 3.*length)) { return Along {chords:None} }
-            at.push(at[i]+length);
-            speeds.push(v);
-        }
-        Along {chords:Some(Chords {at,speeds,closed:t.closed})}
-    }
-    /// `s` at the curve's parameter `t`.
-    fn s(&self,t: f64) -> f64 {
-        let Some(c) = &self.chords else { return t };
-        let m = c.speeds.len();
-        let turns = if c.closed { (t/m as f64).floor() } else { 0. };
-        let i = ((t-turns*m as f64).floor().max(0.) as usize).min(m-1);
-        let f = t-turns*m as f64-i as f64;
-        turns*c.at[m]+c.at[i]+c.rise(i,f).0
-    }
-    /// The curve's parameter at `s`, and its rate `dt/ds` there.
-    fn t(&self,x: f64) -> (f64,f64) {
-        let Some(c) = &self.chords else { return (x,1.) };
-        let m = c.speeds.len();
-        let turns = if c.closed { (x/c.at[m]).floor() } else { 0. };
-        let r = x-turns*c.at[m];
-        let i = c.at.partition_point(|&k| k <= r).clamp(1,m)-1;
-        let goal = r-c.at[i];
-        // Newton on the stretch's cubic, which rises throughout, kept within the stretch's ends
-        // by halving the bracket where a step leaves it
-        let (mut lo,mut hi) = (0f64,1f64);
-        let mut f = (goal/(c.at[i+1]-c.at[i])).clamp(0.,1.);
-        for _ in 0..60 {
-            let (h,dh) = c.rise(i,f);
-            if h < goal { lo = f } else { hi = f }
-            let next = f-(h-goal)/dh;
-            let next = if next > lo && next < hi { next } else { 0.5*(lo+hi) };
-            if (next-f).abs() <= 4.*f64::EPSILON { f = next; break }
-            f = next;
-        }
-        (turns*m as f64+i as f64+f,1./c.rise(i,f).1)
-    }
-    /// The edge's stretch `[t0, t1]` in `s`.
-    fn span(&self,[t0,t1]: [f64;2]) -> [f64;2] { [self.s(t0),self.s(t1)] }
-    /// Where, over `[t0, t1]`, the curve may stop being smooth in `s`, its ends among them where
-    /// they are such points, as `hermite_fit` reads them: a curve's own `breaks`, but none of a
-    /// traced curve's points, across which it is smooth in `s`.
-    fn breaks(&self,c: &Curve,[t0,t1]: [f64;2]) -> Vec<f64> {
-        if self.chords.is_some() { return vec![] }
-        let w = 1e-9*(t1-t0).abs();
-        let mut out = c.breaks([t0-w,t1+w]);
-        for end in [t0,t1] { if out.iter().any(|&k| (k-end).abs() <= w) && !out.contains(&end) { out.push(end); } }
-        out
-    }
+/// **Where, over `[t0, t1]`, a curve the file fits may stop being smooth**, its ends among them
+/// where they are such points, as `hermite_fit` reads them: its own breaks — a traced curve's the
+/// points beside a stretch it reads on a parabola (`Traced::kinks`), across every other of which
+/// it runs on smoothly, its pace too (#1034), so a cubic over several of them follows it.
+fn breaks_of(c: &Curve,[t0,t1]: [f64;2]) -> Vec<f64> {
+    let w = 1e-9*(t1-t0).abs();
+    let mut out = match c { Curve::Traced(tr) => tr.kinks([t0-w,t1+w]),_ => c.breaks([t0-w,t1+w]) };
+    for end in [t0,t1] { if out.iter().any(|&k| (k-end).abs() <= w) && !out.contains(&end) { out.push(end); } }
+    out
 }
 
-impl Chords {
-    /// How far `s` has risen from point `i` at the fraction `f` of its stretch, and its rate:
-    /// the cubic from nought to the stretch's length, its slopes the speeds at the ends.
-    fn rise(&self,i: usize,f: f64) -> (f64,f64) {
-        let (l,[v0,v1]) = (self.at[i+1]-self.at[i],self.speeds[i]);
-        let (f2,f3) = (f*f,f*f*f);
-        (l*(3.*f2-2.*f3)+v0*(f-2.*f2+f3)+v1*(f3-f2),l*(6.*f-6.*f2)+v0*(1.-4.*f+3.*f2)+v1*(3.*f2-2.*f))
-    }
-}
-
-/// A use's pcurve `uv(t)` as a cubic over `along`'s `s` within `bar` of the edge (`hermite_fit`),
+/// A use's pcurve `uv(t)` as a cubic over the edge's parameter within `bar` of the edge (`hermite_fit`),
 /// measured on `surface` against the edge's foot there, not the edge: a fitted intersection curve
 /// stands off each of its surfaces by its own fit, which no pcurve can close. With the poles,
 /// knots and miss, the most the edge was found standing off its foot.
-fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,along: &Along,
+fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,
     c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<[f64;2]>,Vec<f64>,f64,f64)> {
-    let at = |s: f64| uv(along.t(s).0);
-    let rate = |s: f64| { let (t,r) = along.t(s); let d = duv(t); [d[0]*r,d[1]*r] };
     // (and the most the edge stands off the surface at every point the fit reads: what a reader
     // measures it standing off the face by, at the pieces' joints among others)
     let gap = std::cell::Cell::new(0f64);
     let off = |q: [f64;2],s: f64| {
-        let foot = surface.point(at(s));
-        gap.set(gap.get().max(distance(foot,c.point(along.t(s).0))));
+        let foot = surface.point(uv(s));
+        gap.set(gap.get().max(distance(foot,c.point(s))));
         distance(surface.point(q),foot)
     };
-    let (poles,knots,miss) = hermite_fit(&at,&rate,&off,along.span(t),&along.breaks(c,t),bar)?;
+    let (poles,knots,miss) = hermite_fit(uv,duv,&off,t,&breaks_of(c,t),bar)?;
     Some((poles,knots,miss,gap.get()))
 }
 
-/// **A traced intersection as a cubic** over `along`'s `s` (`hermite_fit`), which no entity of the
-/// standard writes: within `bar` of the curve at the same `s`, and — what a reader measures, which
+/// **A traced intersection as a cubic** over its own parameter (`hermite_fit`), which no entity
+/// of the standard writes: within `bar` of the curve at the same parameter, and — what a reader measures, which
 /// puts each loop on its face by the feet of the edge's curve there — the foot of each of its
 /// points on either surface within `bar` of the meeting, along that surface. Where the two
 /// surfaces meet at an angle `θ`, a point `δ` off the meeting in space has a foot as much as
 /// `δ / sin θ` along the surface from it: two cylinders grazing at a few degrees, their cubic
 /// held to `5e-5` in space, trimmed a face 1e-3 off its meeting (brep-bench's grazing cylinders,
 /// their cushion's volume 1.2e-4 off). `None` for any other curve.
-fn bezier_curve(c: &Curve,along: &Along,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>,f64)> {
+fn bezier_curve(c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>,f64)> {
     let Curve::Traced(tr) = c else { return None };
-    let at = |s: f64| c.point(along.t(s).0);
-    let rate = |s: f64| { let (t,r) = along.t(s); scale(c.d1(t).1,r) };
+    // (a point and its rate read by one projection: the fit asks both of each parameter in turn)
+    let last: std::cell::Cell<Option<(f64,(V,V))>> = std::cell::Cell::new(None);
+    let d1 = |s: f64| match last.get() { Some((x,r)) if x == s => r,_ => { let r = c.d1(s); last.set(Some((s,r))); r } };
+    let at = |s: f64| d1(s).0;
+    let rate = |s: f64| d1(s).1;
     // the foot of `q` on `surface`, by Newton along its gradient (the surfaces' sides are signed
     // distances, so a step or two)
     let foot = |surface: &Surface,q: V| {
@@ -936,13 +846,12 @@ fn bezier_curve(c: &Curve,along: &Along,t: [f64;2],bar: f64) -> Option<(Vec<V>,V
         for surface in [&tr.a,&tr.b] { let p = foot(surface,q); d = d.max(distance(p,tr.project(p))); }
         d
     };
-    hermite_fit(&at,&rate,&off,along.span(t),&along.breaks(c,t),bar)
+    hermite_fit(&at,&rate,&off,t,&breaks_of(c,t),bar)
 }
 
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
 /// where a plane's edge is one turning the plane's way, otherwise the cubic within `fit`'s bar
-/// of the edge (`bezier_pcurve`), over the parameter the edge's curve is written over (`Along`);
-/// and where that does not close in, the degree-one B-spline through its parameters at points
+/// of the edge (`bezier_pcurve`), over the edge's parameter; and where that does not close in, the degree-one B-spline through its parameters at points
 /// chosen so each chord's middle maps within `Fit::polyline` of the edge. **A fitted pcurve is
 /// held no nearer the edge's foot than the edge stands off the face** (its tolerance, where that
 /// is past the bar): the foot of an edge standing off is the kernel's search, which a cubic held
@@ -972,15 +881,13 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     };
     let (a,z) = (at(e.t[0]),at(e.t[1]));
     // a reader places a closed curve's vertices within its first period: the pcurve's parameter is
-    // the edge's moved there too (a traced curve is written over its chords' length, unmoved)
+    // the edge's moved there too (a traced curve's is unmoved)
     let shift = match c { Curve::Circle(..) | Curve::Ellipse(..) => (e.t[0]/std::f64::consts::TAU).floor()*std::f64::consts::TAU,_ => 0. };
-    // the parameter the edge's curve is written over (a traced curve's chords, `Along`)
-    let along = Along::of(c);
     // affine in the edge's parameter (a coaxial circle on a cylinder, a line along its axis),
     // read at sixteen fractions spread unevenly: at the eighths of a turn a net's arc parameter
     // equals the angle by symmetry, and a line read only there was written for a sheared torus's
     // circles 0.075 mm off between them
-    let affine = along.chords.is_none() && (0..16).all(|k| {
+    let affine = (0..16).all(|k| {
         let s = (k as f64+0.381966)/16.;
         let q = at(e.t[0]+(e.t[1]-e.t[0])*s);
         (q[0]-(a[0]+s*(z[0]-a[0]))).abs().max((q[1]-(a[1]+s*(z[1]-a[1]))).abs()) <= 1e-12*(1.+a[0].abs().max(a[1].abs()))
@@ -1031,9 +938,9 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
                 let rate = n.uv(uv).1;
                 [rate[0]*d[0],rate[1]*d[1]]
-            },&n.surface,&along,c,e.t,bar),
+            },&n.surface,c,e.t,bar),
             None => bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
-                &f.surface,&along,c,e.t,bar).map(|(poles,knots,miss,off)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots,miss,off)),
+                &f.surface,c,e.t,bar).map(|(poles,knots,miss,off)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots,miss,off)),
         } => {
             let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
@@ -1052,7 +959,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {middle:?}",c.kind(),f.surface.kind(),ts.len());
             }
             let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();
-            let knots: Vec<f64> = ts.iter().map(|&t| along.s(t)-shift).collect();
+            let knots: Vec<f64> = ts.iter().map(|&t| t-shift).collect();
             (bspline(o,&ids,&knots),within)
         }
     };
@@ -1395,26 +1302,23 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
                 fitted(o,c,e.t,whose(c))?
             }
             // a traced curve: the cubic through its points and tangents within `fit`'s bar, as
-            // its pcurves are (`bezier_pcurve`); where that does not close in, the polyline
-            // through it within `Fit::polyline`, or the bar `MOST` points hold where that is
-            // past them (over the length of its chords, `Along`, as its pcurves are)
-            Curve::Traced(_) => match bezier_curve(c,&Along::of(c),e.t,fit.bar()) {
-                Some((poles,knots,miss)) => {
-                    let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                    (spline(o,3,&ids,&knots,None),miss)
-                }
-                None => {
-                    let sag = |a: f64,z: f64| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5));
-                    let mut within = fit.polyline(tol);
-                    let ts = loop {
-                        if let Some(ts) = samples(c,e.t,within,&sag) { break ts }
-                        within *= 2.;
-                    };
-                    let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
-                    let along = Along::of(c);
-                    (bspline(o,&ids,&ts.iter().map(|&t| along.s(t)).collect::<Vec<_>>()),within)
-                }
-            },
+            // its pcurves are (`bezier_pcurve`), over its own parameter, as any smooth curve
+            // (#1034: its parameter runs evenly along it); where none holds it — a trace with a
+            // kink beside a touch, where its point is read no nearer than the two surfaces part —
+            // the cubic within the least bar from `Fit::polyline` on, doubled, a cubic of `MOST`
+            // pieces holds, which the file then states (it was a polyline there)
+            Curve::Traced(_) => {
+                let mut within = fit.bar();
+                let (poles,knots,miss) = loop {
+                    if let Some(fitted) = bezier_curve(c,e.t,within) { break fitted }
+                    within = if within < fit.polyline(tol) { fit.polyline(tol) } else { 2.*within };
+                    if !(within <= 1e-2*e.tol.max(tol).max(1.)) {
+                        return Err(format!("a traced curve could not be fitted in {MOST} pieces"))
+                    }
+                };
+                let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                (spline(o,3,&ids,&knots,None),miss)
+            }
         };
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()

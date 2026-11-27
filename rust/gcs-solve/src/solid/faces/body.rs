@@ -328,7 +328,7 @@ impl BodyFaces {
                 EdgeCurve::Curve(Curve::Line { .. } | Curve::Circle(..)) => {}
                 EdgeCurve::Curve(c @ Curve::Traced(t)) => {
                     let sag = t.pts.windows(2).enumerate().map(|(i, w)| {
-                        distance(c.point(i as f64 + 0.5), lerp(w[0], w[1], 0.5))
+                        distance(c.point(t.parameter_at_index(i as f64 + 0.5)), lerp(w[0], w[1], 0.5))
                     }).fold(0.0, f64::max);
                     out.push((k as u32, (4.0 * sag + 2.0 * e.tol) / self.mm));
                 }
