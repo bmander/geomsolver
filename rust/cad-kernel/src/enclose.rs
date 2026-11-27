@@ -34,10 +34,13 @@
 //!   rate, the unit normal of a plane, cylinder, cone, sphere or torus a closed form of the point
 //!   (`normal_at`); on a sheet, through the face's pcurve and the surfaces' enclosures; within
 //!   `|d|` of `q`, its rate unread, where neither is known.
-//! * **Traced curves** (`Traced`): a trace is points pulled onto two surfaces by Newton, with no
-//!   closed form to read in intervals; its enclosure is its own error bound — its points over the
-//!   stretch, grown by the chords between them — measured, not proved, and said so (`Patch::proved`
-//!   false), so a reading through it is profiled as measured.
+//! * **Traced curves** (`Traced`, #1034): a trace is the meeting of two surfaces, whose tangent
+//!   `∇a × ∇b` is a closed form of the point: over a piece of it, the ball its arc cannot leave
+//!   and the cone its tangent cannot leave, from how fast each surface's normal turns
+//!   (`ssi::curvature_bound`), proved by the arc's climb along its chord (`traced_piece`). Where no
+//!   bound is known (a sheet) or the two all but touch, its own error bound — its points over the
+//!   stretch, grown by the chords between them — measured, not proved, and said so
+//!   (`Patch::proved` false), so a reading through it is profiled as measured.
 use crate::geom::{Blend,Carry,Curve,Frame,SheetCut,Surface,Traced,V};
 use crate::geom::{include,widen,Box3,EMPTY};
 use crate::nurbs::{blossom,span,BSpline,Net,MAX_DEGREE};
@@ -629,39 +632,170 @@ impl<E: crate::turned::Exact> ExactJets for E {
 }
 
 impl Enclosed<1> for Traced {
-    /// **A trace's own error bound** (the module's): its points at five places across the stretch
-    /// and its own points within it (each already on both surfaces), hulled and grown by the
-    /// longest chord between them — what a curve between two points pulled onto both surfaces can
-    /// stray by — and its derivative the hull of its rates at those five places and, over a stretch
-    /// reaching past one segment, of the chords of every segment it reaches (its parameter counts
-    /// its points, so a chord is its mean rate over its segment), grown by twice their spread.
-    /// Measured: `proved` false.
+    /// **A trace's stretch, proved** (#1034, the module's): a stretch within one of its stretches
+    /// between points by its own certificate (`traced_piece`), one reaching across points the hull
+    /// of its two end pieces and the whole stretches between (each certified once,
+    /// `traced_wholes`); any piece no certificate holds read by the trace's own error bound
+    /// (`traced_measured`), and the whole then said measured (`proved` false).
     fn enclose(&self,[t]: [[f64;2];1]) -> Patch<1> {
         let (a,b) = (t[0].min(t[1]),t[0].max(t[1]));
         let m = self.pts.len()-1;
-        // (a point read once: its five places are one)
-        let samples: Vec<(f64,(V,V))> = (0..if b > a { 5 } else { 1 }).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,self.d1_at(s))).collect();
-        let at_point = |k: i64| -> V { self.pts[if self.closed { k.rem_euclid(m as i64) as usize } else { k.clamp(0,m as i64) as usize }] };
-        let (lo,hi) = (a.ceil() as i64,b.floor() as i64);
-        let mut pts: Vec<(f64,V)> = samples.iter().map(|e| (e.0,e.1.0)).collect();
-        pts.extend((lo..=hi).filter(|&k| (k as f64) > a && (k as f64) < b).map(|k| (k as f64,at_point(k))));
-        pts.sort_by(|x,y| x.0.total_cmp(&y.0));
-        let mut rates: Vec<V> = samples.iter().map(|e| e.1.1).collect();
-        if b.floor() > a.floor() {
-            rates.extend((a.floor() as i64..=b.ceil() as i64-1).map(|k| crate::util::space::sub(at_point(k+1),at_point(k))));
+        // (a surface whose normal's turning has no bound in closed form, a sheet's, proves no piece:
+        // the whole stretch measured at once, not piece by piece)
+        let bounded = |s: &Surface| match s {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => true,
+            Surface::Affine(m) => m.quadric.is_some(),
+            _ => false,
+        };
+        if m == 0 || !(a.is_finite() && b.is_finite()) || !bounded(&self.a) || !bounded(&self.b) { return traced_measured(self,[a,b]) }
+        // a closed trace's stretch reaching once round or more is every stretch
+        if self.closed && b-a >= m as f64 { return traced_wholes(self).iter().copied().reduce(Patch::hull).unwrap() }
+        // the pieces: `[a, b]` cut at the points between, each piece within one stretch
+        let first = a.floor();
+        let mut cuts = vec![a];
+        cuts.extend((first as i64+1..=b.ceil() as i64-1).map(|k| k as f64).filter(|&k| k > a && k < b));
+        cuts.push(b);
+        if !self.closed && cuts.len() > 2 {
+            // an open trace's parameter runs on past its ends on its end stretches: no cut there
+            cuts.retain(|&k| k == a || k == b || (k > 0. && k < m as f64));
         }
-        let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
-        let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);
-        let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
-        // (a point of it its projected point, to a few units of the coordinates' rounding: a wider
-        // margin, read through a quartic's cancelling terms, proved no sign anywhere near nought)
-        let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+16.*f64::EPSILON*(1.+scale)));
-        let d: I3 = std::array::from_fn(|k| {
-            let h = Iv::of_all(rates.iter().map(|r| r[k]));
-            grow(h,(2.*(h.hi()-h.lo())).max(1e-9*h.mag()))
-        });
-        Patch {at,d:[d],proved:false}
+        let wholes = (cuts.len() > 3).then(|| traced_wholes(self));
+        let mut out: Option<Patch<1>> = None;
+        for (j,w) in cuts.windows(2).enumerate() {
+            let interior = j > 0 && j+2 < cuts.len();
+            let p = match (interior,wholes) {
+                (true,Some(ws)) => ws[self.locate(0.5*(w[0]+w[1])).0],
+                _ => traced_piece(self,[w[0],w[1]],4).unwrap_or_else(|| traced_measured(self,[w[0],w[1]])),
+            };
+            out = Some(match out { Some(o) => o.hull(p),None => p });
+        }
+        out.unwrap_or_else(|| traced_measured(self,[a,b]))
     }
+}
+
+/// Each whole stretch of a trace between two of its points, enclosed once (`traced_piece` from its
+/// points as the trace holds them, `traced::Read::nodes`), its measured bound where no certificate
+/// holds.
+fn traced_wholes(tr: &Traced) -> &Vec<Patch<1>> {
+    tr.read().wholes.get_or_init(|| (0..tr.pts.len()-1).map(|i| {
+        let w = [i as f64,i as f64+1.];
+        traced_piece(tr,w,4).unwrap_or_else(|| traced_measured(tr,w))
+    }).collect())
+}
+
+/// **A surface's unit normal at `p` and how far it can turn within `r` of `p`**: the unit gradient
+/// of its signed distance there, and the bound on that distance's Hessian over the ball
+/// (`ssi::curvature_bound`: a plane, a cylinder, a cone, a sphere, a torus, a quadric's affine
+/// image) times `r` — by the mean value, no gradient within the ball stands farther from it.
+/// `None` on any other surface, or where the ball reaches an axis, a centre or a focus.
+fn turn_within(s: &Surface,p: V,r: f64) -> Option<(V,f64)> {
+    let k = crate::ssi::curvature_bound(s,p,r)?;
+    let n = crate::util::space::normalised(s.side(p).1)?;
+    let w = k*r+4.*f64::EPSILON;
+    w.is_finite().then_some((n,w))
+}
+
+/// **A piece `[a, b]` of a trace within one stretch between its points, proved** (#1034): its
+/// ends `p₀ = C(a)` and `p₁ = C(b)` read, `u` the unit chord between, and an arc length `ℓ`
+/// guessed. Within `ℓ` of `p₀` each surface's gradient stands within `δ = κ ℓ` of its unit
+/// normal at `p₀` (`turn_within`), so their cross product `W` within `ε = δ_a + δ_b + δ_a δ_b` of
+/// `W₀ = n_a × n_b`, `|W₀| = sin θ₀`: the meeting's tangent `T = W / |W|` there is within the
+/// angle `φ = asin(ε / sin θ₀)` of `T₀`, and turned to `u`, `u · T ≥ c = cos(∠(u, T₀) + φ)`. Where
+/// `c > 0` no two gradients there stand square to `u` — the system of both surfaces and a plane
+/// square to `u` has a Jacobian no point of the ball makes singular, and holds one solution in it
+/// at most — and the meeting run from `p₀` along `T` climbs `u` at a rate of `c` at least while it
+/// is within `ℓ` of `p₀`, so it reaches `u · x = u · p₁` within `|p₁ − p₀| / c` of arc; where that
+/// is at most `ℓ` it never left the ball on the way, and the point it reached is `p₁`, the one
+/// solution there. So the arc from `p₀` to `p₁` is no longer than `ℓ`, lies within `ℓ` of both,
+/// and by the mean value in `p₀ + [0, ℓ] T` and `p₁ − [0, ℓ] T`, `T` within `2 sin(φ/2)` of `T₀`;
+/// its rate is `T` times the guess's speed along it, `T · g'`, `g'` the guess's rate enclosed over
+/// the piece (`traced::Read::rate_over`). Each is grown by what the two ends stand off the
+/// surfaces over the sine between them, and the rate by a part in 10⁸ for the projection's own turn
+/// off `T Tᵀ`. Halved, `depth` times at most, where `ℓ` is not shown; `None` where it is not shown
+/// then, where a surface's turning has no bound in closed form, or where the two stand within
+/// `traced::CLEAR` of tangent (its rate there is differenced: `Traced::d1`).
+fn traced_piece(tr: &Traced,[a,b]: [f64;2],depth: usize) -> Option<Patch<1>> {
+    use crate::util::space::{cross,distance,dot,norm,scale,sub};
+    let (i,f0) = tr.locate(a);
+    let f1 = f0+(b-a);
+    let whole = a == a.floor() && b == a.floor()+1.;
+    let (p0,p1) = if whole { let n = &tr.read().nodes; (n[i],n[i+1]) } else { (tr.at(a),tr.at(b)) };
+    let chord = distance(p0,p1);
+    let scale_of = p0.iter().chain(p1.iter()).fold(0f64,|m,x| m.max(x.abs()));
+    let off = [p0,p1].iter().map(|&p| tr.a.implicit(p).abs().max(tr.b.implicit(p).abs())).fold(0.,f64::max);
+    let round = 16.*f64::EPSILON*(1.+scale_of);
+    let split = |depth: usize| -> Option<Patch<1>> {
+        if depth == 0 || !(b > a) { return None }
+        let m = 0.5*(a+b);
+        Some(traced_piece(tr,[a,m],depth-1)?.hull(traced_piece(tr,[m,b],depth-1)?))
+    };
+    let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
+    let ball = |p: V,r: f64| -> I3 { std::array::from_fn(|k| Iv::new(p[k]-r,p[k]+r)) };
+    // a point's piece: the box of its rounding
+    let (u,mut len) = if chord > round {
+        (scale(sub(p1,p0),1./chord),chord*(1.+1e-9)+round)
+    } else if b == a {
+        ([0.;3],round)
+    } else { return split(depth) };
+    for _ in 0..6 {
+        let (Some((na,da)),Some((nb,db))) = (turn_within(&tr.a,p0,len),turn_within(&tr.b,p0,len)) else { return None };
+        let w0 = cross(na,nb);
+        let sin0 = norm(w0);
+        let eps = da+db+da*db+4.*f64::EPSILON;
+        // (the two surfaces clear of tangent all over the ball: the rate is read in closed form)
+        if !(sin0-eps >= crate::traced::CLEAR) { return split(depth) }
+        let phi = (eps/sin0).asin()*(1.+1e-12);
+        let t0 = scale(w0,if b > a && dot(w0,u) < 0. { -1./sin0 } else { 1./sin0 });
+        let c = if b > a { (dot(u,t0).clamp(-1.,1.).acos()*(1.+1e-12)+phi).cos() } else { 1. };
+        if !(c > 0.) { return split(depth) }
+        let need = chord/c;
+        // (grown past what it needs by twice what `c` falls short of one: the ball grows with it,
+        // and `c` falls with the ball by about as much again)
+        if need > len { len = need*(1.+2.*(1.-c))+round; continue }
+        let t = ball(t0,2.*(0.5*phi).sin()+4.*f64::EPSILON);
+        let margin = round+2.*off/(sin0-eps);
+        let reach = Iv::new(0.,len);
+        let at = meet3(meet3(ball(p0,len),ball(p1,len)),meet3(add3(c3(p0),scale3(t,reach)),sub3(c3(p1),scale3(t,reach))))
+            .map(|x| grow(x,margin));
+        // the rate: `T (T · g')`
+        let g = tr.read().rate_over(tr,i,[f0,f1]);
+        let d = scale3(t,dot3(t,g)).map(|x| grow(x,1e-8*x.mag()+round*norm(g.map(|y| y.mag()))));
+        let p = Patch {at,d:[d],proved:true};
+        return p.bounded().then_some(p).or_else(|| split(depth))
+    }
+    split(depth)
+}
+
+/// **A trace's own error bound**, where no certificate holds (`traced_piece`): its points at five
+/// places across the stretch and its own points within it (each already on both surfaces), hulled
+/// and grown by the longest chord between them — what a curve between two points pulled onto both
+/// surfaces can stray by — and its derivative the hull of its rates at those five places and, over
+/// a stretch reaching past one segment, of the chords of every segment it reaches, grown by twice
+/// their spread. Measured: `proved` false.
+fn traced_measured(tr: &Traced,[a,b]: [f64;2]) -> Patch<1> {
+    let m = tr.pts.len()-1;
+    // (a point read once: its five places are one)
+    let samples: Vec<(f64,(V,V))> = (0..if b > a { 5 } else { 1 }).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,tr.d1(s))).collect();
+    let at_point = |k: i64| -> V { tr.pts[if tr.closed { k.rem_euclid(m as i64) as usize } else { k.clamp(0,m as i64) as usize }] };
+    let (lo,hi) = (a.ceil() as i64,b.floor() as i64);
+    let mut pts: Vec<(f64,V)> = samples.iter().map(|e| (e.0,e.1.0)).collect();
+    pts.extend((lo..=hi).filter(|&k| (k as f64) > a && (k as f64) < b).map(|k| (k as f64,at_point(k))));
+    pts.sort_by(|x,y| x.0.total_cmp(&y.0));
+    let mut rates: Vec<V> = samples.iter().map(|e| e.1.1).collect();
+    if b.floor() > a.floor() {
+        rates.extend((a.floor() as i64..=b.ceil() as i64-1).map(|k| crate::util::space::sub(at_point(k+1),at_point(k))));
+    }
+    let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
+    let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);
+    let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
+    // (a point of it its projected point, to a few units of the coordinates' rounding: a wider
+    // margin, read through a quartic's cancelling terms, proved no sign anywhere near nought)
+    let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+16.*f64::EPSILON*(1.+scale)));
+    let d: I3 = std::array::from_fn(|k| {
+        let h = Iv::of_all(rates.iter().map(|r| r[k]));
+        grow(h,(2.*(h.hi()-h.lo())).max(1e-9*h.mag()))
+    });
+    Patch {at,d:[d],proved:false}
 }
 
 impl Enclosed<1> for SheetCut {

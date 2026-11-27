@@ -476,8 +476,7 @@ impl Curve {
                 let poles = b.poles.iter().map(|&p| a.point(p)).collect();
                 (Curve::BSpline(Arc::new(super::nurbs::BSpline {poles,..(**b).clone()})),[1.,0.])
             }
-            Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced {a:c.a.mapped(a).0,b:c.b.mapped(a).0,
-                pts:c.pts.iter().map(|&p| a.point(p)).collect(),closed:c.closed})),[1.,0.]),
+            Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced::new(c.a.mapped(a).0,c.b.mapped(a).0,c.pts.iter().map(|&p| a.point(p)).collect(),c.closed))),[1.,0.]),
             Curve::Iso(ref b,u) => match b.mapped(a) { Some(b) => (Curve::Iso(Arc::new(b),u),[1.,0.]),None => wrapped() },
             Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) | Curve::Trochoid(..)
             | Curve::Parallel(..) => match a.similarity() {

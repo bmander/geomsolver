@@ -194,6 +194,12 @@ impl Meter {
     pub fn measured(&self) -> u64 {
         self.profile.lock().unwrap_or_else(|e| e.into_inner()).crossings.values().map(|c| c[1]).sum()
     }
+    /// The searches of a `curve`'s crossings with a `surface` (their kinds, `Curve::kind` and
+    /// `Surface::kind`): how many were proved and how many measured.
+    pub fn crossings(&self,curve: &str,surface: &str) -> [u64;2] {
+        let p = self.profile.lock().unwrap_or_else(|e| e.into_inner());
+        p.crossings.iter().filter(|((c,s),_)| *c == curve && *s == surface).fold([0;2],|[x,y],(_,c)| [x+c[0],y+c[1]])
+    }
 }
 
 /// `f` run with `meter` counting this thread's work (and every worker's a parallel map starts

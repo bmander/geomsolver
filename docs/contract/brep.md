@@ -500,8 +500,15 @@ a swap made without its callers knowing:
   lines, conics, quadrics, the torus, extrusions, revolutions, blends and their carries, a face
   family's runs by their own formulas in intervals; affine images through the map; turned and slid
   contacts by their own jets; a plane's cut of a screwed sheet by `−α/β` and, beside a ruling the
-  plane holds, by divided differences enclosed by the mean value; a trace by its own error bound,
-  its points grown by its chords — measured, not proved, and said so (`Patch::proved`). Each is held
+  plane holds, by divided differences enclosed by the mean value; a trace proved (#1034,
+  `enclose::traced_piece`) where both its surfaces bound how fast their normals turn
+  (`ssi::curvature_bound`): within `ℓ` of a piece's start each normal stands within `κℓ` of its
+  value there, so the meeting's tangent within a cone of `asin(ε / sin θ)` about its own; turned
+  to the piece's chord it climbs it at `c` at least, so the arc reaches the plane through the
+  piece's end within `|chord| / c ≤ ℓ` and, the system of both surfaces and that plane having no
+  singular Jacobian there, reaches it at the end itself — the arc in the ball, its tangent in the
+  cone, its point by the mean value; halved where `ℓ` is not shown, and only where no certificate
+  holds (a sheet, a touch) by its own error bound, measured and said so (`Patch::proved`). Each is held
   to samples of itself over random boxes
   (`enclosures::every_kind_of_curve_is_held_by_its_enclosure`, `…::every_kind_of_surface_is_held_by_its_enclosure`).
   No reading depends on a bound written by hand for a pair of types: `Net::second_bounds`,
@@ -1650,7 +1657,22 @@ along one another, their middle circles at one height and touching, their tubes 
 torus at an end pose of a turn about an axis along its own, and the torus a meridian of it turns
 into): the meridian, and in each level the one pair of the two tori's circles that crosses, as the
 rim's branches are (`branches`), drawn in toward the tube's top and bottom, where they reach the
-meridian tangent to the level circle. **A traced curve is read between its points on a parabola**
+meridian tangent to the level circle. **A traced curve is the meeting read smoothly** (#1034,
+`traced`): at each of its points the meeting's unit tangent `T = ∇a × ∇b / |∇a × ∇b|` and its
+curvature vector `K` in closed form (`n_a · K = κ_a`, `n_b · K = κ_b`, `T · K = 0`, each surface's
+normal curvature along `T` its distance's Hessian on the analytic surfaces and its second
+fundamental form on any other, `Surface::bend`); between two, the quintic of the arc length
+through both with their `T` and `K`, its length the fixed point of `L = ∫ |P'|`, pulled onto both
+surfaces; the parameter still counts the points, and its pace over a stretch is a quintic rising
+from nought to the stretch's length with the harmonic mean of the two lengths either side as its
+rate at each point and no second rate there, so the speed and its rate run on through every point.
+Its rates are the meeting's own at the point read (`Traced::d1`, `d2`): `C' = T (T · g')`, `g` the
+guess the projection pulled, and `C'' = K v² + T (v K · g' + T · g'')` — not differenced, and not
+nothing (`traced_meeting::a_traced_meetings_rates_are_its_closed_forms`: a spiric section's and two
+crossed cylinders' tangent and curvature to 1e-9 against their closed forms, the speed with no step
+at any point). A stretch with an end within `traced::CLEAR` of a touch, or turning too far for its
+chord (its ends' tangents past 25° from it, or its curvature times its length past one), is
+**read between its points on a parabola**
 (`Traced::between`: through the two and a neighbour, by their chords' lengths, where the three run
 smoothly — chords within `SMOOTH_RATIO` of each other's length, turning by less than
 `acos(SMOOTH_COS)`), then pulled onto both surfaces: a chord's sag, quadratic in it, stood off the
@@ -1750,7 +1772,7 @@ screwed four turns, its sheets leaning so without folding, was read by columns a
 trim made, its build eight times as long.)
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
-own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
+own parameter — which counts its points (its rate stepped at each before #1034), every stretch a rule of its own
 and each node three projections onto both surfaces — but over spans of its points whose chords
 turn within 15° of the first, each by its distance `σ` along its chord `n`: a node is where the
 curve crosses the plane `n·x = σ` (`Traced::across`, Newton on both surfaces and the plane), its
@@ -2196,8 +2218,11 @@ ruled walls blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ
 `a_cone_cut_aslant_grown_is_steiners` (a frustum cut aslant, a convex body's Steiner formula),
 `a_torus_cut_aslant_shrunk_and_its_face_thickened` (a ring two spiric curves bound, shrunk the ring
 of the tube shrunk under the plane moved in, and its torus lifted out and thickened either way,
-`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form — grown, its traced
-creases' tubes are not held to a family's `EXACT` yet, and `offset::swept_tube` refuses them), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
+`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form),
+`a_torus_cut_aslant_grown_is_steiners` (the ring grown, its tube formula `V + S d + M d²` — its
+Euler characteristic nought — and its area `S + 2 M d`: the ball's tubes along its traced creases,
+refused by `offset::swept_tube` while a trace's pace stepped at each of its points, built since it
+runs on smoothly through them, #1034), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
 aslant, its side lifted out and thickened, `∫ (t − t² κ/2) dA` by Gauss's rule, and refused past
 its vertex's curvature), `a_cone_placed_at_its_apex_is_thickened_inward` (onto a cone whose radius
 at its origin is less than nothing), and the same solids among
@@ -2285,7 +2310,7 @@ tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `t
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
 bend thickened, an L shelled outward open at its step, sharp and round, a block open at its
 sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, a cone cut aslant
-grown, a torus cut aslant shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
+grown, a torus cut aslant grown, shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
 past their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its
 closed form to 1e-9; sheets thickened past their curvature, an elliptic cylinder shrunk past its
 curvature and that block shelled sharp refused.

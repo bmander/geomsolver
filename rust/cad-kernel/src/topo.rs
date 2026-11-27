@@ -247,7 +247,7 @@ fn off_surface(uv: Uv,gap: V,su: V,sv: V,d: V,surface: &Surface) -> Option<Uv> {
 /// lies within that. Differences across a joint read the two sides' mean — or, across a crease,
 /// its jump over two millionths — and the rate of a foot a millionth past a quadratic net's knot
 /// was read 0.92 where the feet run at 0.99 (`step_read::a_foot_just_past_a_joint_runs_at_its_own_rate`).
-fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
+pub(crate) fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
     if let Surface::BSpline(_,n) = surface { let [_,_,_,suu,suv,svv] = n.d2(uv[0],uv[1]); return (suu,suv,svv) }
     let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
     // along `k`: the rates of `(S_u, S_v)`, by a central difference, or a one-sided one on `uv`'s

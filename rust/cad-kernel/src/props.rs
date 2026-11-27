@@ -502,19 +502,19 @@ fn sixteenths(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface) -> bool
 /// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
 /// parameters on the face and their rate. Green's integral does not depend on how its curve is
 /// parameterised, only on the curve, so it is read not by the edge's own parameter — which counts
-/// the trace's points, its rate stepping at every one, so that each stretch between two was a rule
-/// of its own, each node of it three projections onto both surfaces (a canal's meeting with an end
-/// disc, a thousand stretches, measured in seconds) — but over spans of the points turning a little
-/// (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's point at each node is
-/// where it crosses the plane `n·x = σ` (`Traced::across`), and its rate `T / (T·n)` read there,
-/// both as exact as the trace, so each span is one smooth integrand. It is read by Gauss–Legendre on
-/// cells of its stretches, doubled until two readings agree to rounding or each cell is one stretch:
-/// the march sets its points closer where the curve turns faster, and nodes spread evenly along the
-/// chord read a turn at a span's end too coarsely to settle (the tip of the sliver a plane through
-/// its axis cuts from a screwed rim's ramp, 2e-5 of the span). A span the curve does not cross as
-/// a graph over its chord (its
-/// rate turned past 60° from it, or a crossing found off the stretch it was sought in) is read by
-/// the edge's parameter, stretch by stretch, as before.
+/// the trace's points (its rate stepped at every one before #1034), so that each stretch between
+/// two was a rule of its own, each node of it three projections onto both surfaces (a canal's
+/// meeting with an end disc, a thousand stretches, measured in seconds) — but over spans of the
+/// points turning a little (`SPAN_COS`), each by its distance `σ` along its chord `n`: the curve's
+/// point at each node is where it crosses the plane `n·x = σ` (`Traced::across`), and its rate
+/// `T / (T·n)` read there, both as exact as the trace, so each span is one smooth integrand. It is
+/// read by Gauss–Legendre on cells of its stretches, doubled until two readings agree to rounding or
+/// each cell is one stretch: the march sets its points closer where the curve turns faster, and
+/// nodes spread evenly along the chord read a turn at a span's end too coarsely to settle (the tip
+/// of the sliver a plane through its axis cuts from a screwed rim's ramp, 2e-5 of the span). A span
+/// the curve does not cross as a graph over its chord (its rate turned past 60° from it, or a
+/// crossing found off the stretch it was sought in) is read by the edge's parameter, stretch by
+/// stretch, as before.
 fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,[ua,ub]: [Uv;2],s: &Surface,vertices: &[super::topo::Vertex],
     f: &mut dyn FnMut(Uv,Uv) -> f64) -> f64 {
     use crate::util::space::{norm,normalised,scale,sub};

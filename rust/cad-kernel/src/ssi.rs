@@ -1140,7 +1140,7 @@ fn tori_touching(a: &Surface,b: &Surface,(t,big,small): (&Frame,f64,f64),(u,bog,
             add(add(t.o,scale(z,h)),scale(add(scale(x,cs),scale(y,sn)),big+s1*q))
         };
         out.extend(circle_branches(&coefficients,&[],&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(
-            super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed}))));
+            super::geom::Traced::new(a.clone(),b.clone(),pts,closed)))));
     }
     Some(out)
 }
@@ -1366,7 +1366,7 @@ fn cylinder_loops(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
         }
         Some(done)
     };
-    let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
+    let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced::new(a.clone(),b.clone(),pts,true)));
     if roots.is_empty() {
         if bd(0.).1 < 0. { return Some(Vec::new()) }
         // right through: two loops, each a whole turn
@@ -1729,7 +1729,7 @@ fn screwed_line_cone(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blend>,
     let mut out: Vec<Curve> = held.iter().map(|&v| Curve::Line {p:blend.carry.at(p0,v),d:unit(blend.carry.dir(run,v))}).collect();
     let roots = |v: f64| quadratic(coefficients(v));
     out.extend(branches(&Branches {roots:&roots,real:&|v| roots(v).is_some(),point:&point,apart:&apart,coincide:&held,limit:&limit,hair},
-        &|pts,closed| Curve::Traced(std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}))));
+        &|pts,closed| Curve::Traced(std::sync::Arc::new(Traced::new(sheet.clone(),other.clone(),pts,closed)))));
     Some(out)
 }
 
@@ -1874,7 +1874,7 @@ fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blen
     if ok.iter().all(|&o| o) {
         let mut pts: Vec<V> = us.iter().map(|&u| point(u)).collect();
         pts[N] = pts[0];
-        return Some(vec![Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),b:Surface::Plane(*pl),pts,closed:true}))])
+        return Some(vec![Curve::Traced(std::sync::Arc::new(super::geom::Traced::new(sheet.clone(),Surface::Plane(*pl),pts,true)))])
     }
     // runs of `u` (round the circle, from where it leaves the sheet), each end refined
     let start = (0..N).find(|&i| !ok[i])?;
@@ -1906,7 +1906,7 @@ fn screwed_circle_level(sheet: &Surface,blend: &std::sync::Arc<super::geom::Blen
         run.dedup();
         let pts: Vec<V> = run.iter().map(|&u| point(u.rem_euclid(1.))).collect();
         if pts.len() >= 2 && norm(sub(pts[0],pts[pts.len()-1])) > tol || pts.len() > 2 {
-            out.push(Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),b:Surface::Plane(*pl),pts,closed:false})));
+            out.push(Curve::Traced(std::sync::Arc::new(super::geom::Traced::new(sheet.clone(),Surface::Plane(*pl),pts,false))));
         }
     }
     Some(out)
@@ -2005,8 +2005,7 @@ fn plane_branches(sheet: &Surface,blend: &super::geom::Blend,f: &Frame,r: f64,pl
     let circle_at = |v: f64| (carry.at(f.o,v),carry.dir(f.x,v),carry.dir(f.y,v));
     let coefficients = |v: f64| { let (c,x,y) = circle_at(v); (r*dot(n,x),r*dot(n,y),h-dot(n,c)) };
     let point = |th: f64,v: f64| { let (c,x,y) = circle_at(v); let (sn,cs) = th.dsin_cos(); add(c,add(scale(x,r*cs),scale(y,r*sn))) };
-    circle_branches(&coefficients,coincide,&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:sheet.clone(),
-        b:Surface::Plane(*pl),pts,closed})))
+    circle_branches(&coefficients,coincide,&point,&|pts,closed| Curve::Traced(std::sync::Arc::new(super::geom::Traced::new(sheet.clone(),Surface::Plane(*pl),pts,closed))))
 }
 
 /// **A ball touching the pipe its great circle screws into, round that circle** (#721 F2c5: a ball
@@ -2131,7 +2130,7 @@ fn screwed_circle_meeting(sheet: &Surface,blend: &std::sync::Arc<super::geom::Bl
                 }
             }
             out.extend(circle_branches(&coefficients,&coincide,&point,&|pts,closed| Curve::Traced(
-                std::sync::Arc::new(Traced {a:sheet.clone(),b:other.clone(),pts,closed}))));
+                std::sync::Arc::new(Traced::new(sheet.clone(),other.clone(),pts,closed)))));
             Some(out)
         }
         // any other plane: its line in each level meets the level circle
@@ -2691,7 +2690,7 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
         (n > SHALLOW).then(|| scale(t,1./n))
     };
     let shallow = |p: V| Shallow::of(a,b,p);
-    let probe = Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
+    let probe = Traced::new(a.clone(),b.clone(),vec![],false);
     let diag = norm(sub(hi,lo)).max(tol);
     let h0 = (a.feature_within(lo,hi).min(b.feature_within(lo,hi))/12.).min(diag/24.).max(diag*1e-4);
     let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
@@ -2933,7 +2932,7 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
         };
         if pts.len() >= 2 {
             if super::debug() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
-            let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
+            let traced = Traced::new(a.clone(),b.clone(),pts,closed);
             traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
         }
     }
@@ -2970,7 +2969,7 @@ pub(crate) fn trace_landing(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn
             moved = true;
         }
         if !moved { return c }
-        Curve::Traced(std::sync::Arc::new(Traced {a:t.a.clone(),b:t.b.clone(),pts,closed:false}))
+        Curve::Traced(std::sync::Arc::new(Traced::new(t.a.clone(),t.b.clone(),pts,false)))
     }).collect();
     for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
@@ -3131,7 +3130,7 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
 /// A bound on the size of an analytic surface's `implicit`'s Hessian over the ball about `p` of
 /// radius `r` — the curvature of its level sets, the inverse of the distance to where they focus —
 /// or none where the ball reaches that focus (an axis, a centre, a torus's core circle).
-fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
+pub(crate) fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
     let [x,y,z] = s.frame().local(p);
     let rho = x.dhypot(y);
     let over = |d: f64| (d > 0.).then(|| 1./d);
@@ -3294,7 +3293,7 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
         grid.around(p,|i| if !hit && crate::util::space::distance(along[i as usize],p) <= within { hit = true });
         hit
     };
-    let probe = super::geom::Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
+    let probe = super::geom::Traced::new(a.clone(),b.clone(),vec![],false);
     let mut cells = vec![domain];
     let mut asked = 0;
     while let Some([[u0,u1],[v0,v1]]) = cells.pop() {

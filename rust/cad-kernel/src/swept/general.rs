@@ -379,7 +379,7 @@ fn ended_on<'r>(mut c: Curve,a: &Brep,b: &Brep,tol: f64,what: &str,touch: &dyn F
                     if pts.len() > 1 && distance(pts[0],q) <= tol { pts.remove(0); }
                     pts.insert(0,q);
                 }
-                Some(Curve::Traced(Arc::new(crate::geom::Traced {a:t.a.clone(),b:t.b.clone(),pts,closed:t.closed})))
+                Some(Curve::Traced(Arc::new(crate::geom::Traced::new(t.a.clone(),t.b.clone(),pts,t.closed))))
             }
             _ => None,
         };
@@ -1075,7 +1075,7 @@ fn on_wall(c: &Curve,wall: &Surface,tol: f64) -> Vec<Curve> {
             let mut pts = vec![c.point(a)];
             pts.extend(tr.pts.iter().enumerate().filter(|&(i,_)| (i as f64) > a && (i as f64) < b).map(|(_,&p)| p));
             pts.push(c.point(b));
-            (pts.len() >= 2).then(|| Curve::Traced(Arc::new(crate::geom::Traced {a:tr.a.clone(),b:tr.b.clone(),pts,closed:false})))
+            (pts.len() >= 2).then(|| Curve::Traced(Arc::new(crate::geom::Traced::new(tr.a.clone(),tr.b.clone(),pts,false))))
         }
         _ => None,
     }).collect()

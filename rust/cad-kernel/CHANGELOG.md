@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A traced meeting is a smooth curve, its rates exact and its enclosure proved** (#1034,
+  `traced`, new). Between two of its points a trace is the quintic of the arc length through both
+  with the meeting's tangent `∇a × ∇b` and curvature vector in closed form there
+  (`Surface::bend`, new: a surface's normal curvature along a tangent), pulled onto both surfaces;
+  its pace runs on through every point. `Curve::d1` of a trace is `T (T · g')` at the point, not a
+  difference of two projections, and `Curve::d2` its second rate, no longer nothing: a spiric
+  section's and two crossed cylinders' curvature agree with their closed forms to 1e-9. Its
+  enclosure is proved where both surfaces bound how fast their normals turn
+  (`ssi::curvature_bound`), so a Boolean through a traced meeting of analytic surfaces is proved,
+  not measured. A torus cut aslant grows (`offset::grown`), refused before: its volume and area
+  are Steiner's to 1e-9. `Traced`'s fields are as they were, but it is built by `Traced::new`
+  (it keeps what it reads at its points, once).
+  `Meter::crossings` is new.
+
 - **A ball whose radius varies along the edge** (`fillet::roll_varying`, new): at each point of the
   edge the ball of the radius a law gives there, touching both faces with its centre in the plane
   square to the edge; its canal fitted as `roll`'s is and the run cut off at its ends. brep-bench's

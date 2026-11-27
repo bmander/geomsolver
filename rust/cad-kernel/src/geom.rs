@@ -2084,6 +2084,53 @@ impl Surface {
         };
         f.dir(l)
     }
+    /// **The surface's normal curvature at `p` along the unit tangent `t`** (#1034): `n · C''` for
+    /// a curve on it through `p` at unit speed along `t`, `n` the unit gradient of `implicit` there
+    /// (`n`, given: what `side` read). On the plane, cylinder, cone, sphere and torus it is
+    /// `−tᵀ ∇²f t`, the Hessian of their signed distance `f` in closed form (`f`'s gradient is
+    /// unit, so `n · C'' = −tᵀ ∇²f t` by differentiating `∇f(C) · C' = 0`); on any other, the
+    /// second fundamental form at `p`'s foot, `n · (S_uu u'² + 2 S_uv u'v' + S_vv v'²)` with
+    /// `t = S_u u' + S_v v'` (`topo::second`'s rates). `None` on an axis or a centre, where the
+    /// distance has no second derivative.
+    pub fn bend(&self,p: V,t: V,n: V) -> Option<f64> {
+        let f = self.frame();
+        let [x,y,z] = f.local(p);
+        let l = f.dir_local(t);
+        let rho = x.dhypot(y);
+        // `tᵀ ∇²ρ t`, `ρ` the distance from the axis: `(|t|² − t_z² − (t·e)²)/ρ`, `e` the radial
+        let radial = || -> Option<(f64,f64)> {
+            (rho > 0.).then(|| { let te = (l[0]*x+l[1]*y)/rho; ((l[0]*l[0]+l[1]*l[1]-te*te)/rho,te) })
+        };
+        let hessian = match *self {
+            Surface::Plane(_) => 0.,
+            Surface::Cylinder(..) => radial()?.0,
+            Surface::Cone(_,_,a) => a.dcos()*radial()?.0,
+            Surface::Sphere(..) => {
+                let d = rho.dhypot(z);
+                if !(d > 0.) { return None }
+                let along = (l[0]*x+l[1]*y+l[2]*z)/d;
+                (dot(l,l)-along*along)/d
+            }
+            Surface::Torus(_,big,_) => {
+                let (h,te) = radial()?;
+                let dr = rho-big;
+                let d = dr.dhypot(z);
+                if !(d > 0.) { return None }
+                let m = (dr*te+z*l[2])/d;
+                dr/d*h+(te*te+l[2]*l[2]-m*m)/d
+            }
+            _ => {
+                let uv = self.inverse(p);
+                let (_,su,sv) = self.d1(uv);
+                let [du,dv] = super::topo::solved(su,sv,t);
+                let (suu,suv,svv) = super::topo::second(self,uv);
+                let c = add(add(scale(suu,du*du),scale(suv,2.*du*dv)),scale(svv,dv*dv));
+                let k = dot(n,c);
+                return k.is_finite().then_some(k)
+            }
+        };
+        Some(-hessian)
+    }
     /// The length over which the surface turns appreciably, for sampling a curve against it
     /// (infinite for a plane).
     pub fn feature(&self) -> f64 {
@@ -2311,20 +2358,50 @@ const SMOOTH_RATIO: f64 = 8.;
 const SMOOTH_COS: f64 = 0.95;
 
 /// Two surfaces' intersection with no closed form, traced: points on both, in order, and a
-/// parameter that counts them — `C(t)` is the parabola through points `⌊t⌋`, `⌊t⌋ + 1` and a
-/// neighbour at `t`'s fraction between the first two (`between`), pulled onto both surfaces by
-/// Newton, so the curve is on both to rounding wherever it is read. A closed trace ends where it began (its last point is its first).
-#[derive(Clone,Debug,PartialEq)]
-pub struct Traced { pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool }
+/// parameter that counts them — `C(t)` at `t`'s fraction between points `⌊t⌋` and `⌊t⌋ + 1` is
+/// the curve read smoothly between them (`traced`, #1034: a quintic of the arc length through
+/// both points with the meeting's tangent and curvature there, its pace running on through every
+/// point) — or, where a stretch has no such reading (beside a touch, or turning sharply), the
+/// parabola through them and a neighbour (`between`) — pulled onto both surfaces by Newton, so
+/// the curve is on both to rounding wherever it is read. Its rates are the meeting's own at that
+/// point (`d1`, `d2`). A closed trace ends where it began (its last point is its first). What it
+/// reads at its points is read once, when first asked (`read`), and built with it (`new`).
+pub struct Traced {
+    pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool,
+    read: std::sync::OnceLock<Arc<super::traced::Read>>,
+}
+
+impl Clone for Traced {
+    fn clone(&self) -> Traced {
+        Traced {a:self.a.clone(),b:self.b.clone(),pts:self.pts.clone(),closed:self.closed,read:self.read.clone()}
+    }
+}
+
+impl PartialEq for Traced {
+    fn eq(&self,o: &Traced) -> bool { self.a == o.a && self.b == o.b && self.pts == o.pts && self.closed == o.closed }
+}
+
+impl std::fmt::Debug for Traced {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Traced").field("a",&self.a).field("b",&self.b).field("pts",&self.pts).field("closed",&self.closed)
+            .finish()
+    }
+}
 
 impl Traced {
+    /// The meeting of `a` and `b` through `pts`, closed where `closed` (its last point its first).
+    pub fn new(a: Surface,b: Surface,pts: Vec<V>,closed: bool) -> Traced {
+        Traced {a,b,pts,closed,read:std::sync::OnceLock::new()}
+    }
     fn segments(&self) -> usize { self.pts.len()-1 }
+    /// What it reads at its points, once (`traced::read`).
+    pub(crate) fn read(&self) -> &super::traced::Read { self.read.get_or_init(|| Arc::new(super::traced::read(self))) }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
     pub fn project(&self,q: V) -> V {
         // settled once both distances are at the rounding of the coordinates, a step stops moving,
         // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
         // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
-        // at the noise, not short of it, since `d1` differences two projections
+        // at the noise, not short of it, since a touch's `d1` differences two projections
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
         let mut best = (f64::INFINITY,q);
@@ -2340,19 +2417,25 @@ impl Traced {
         }
         best.1
     }
-    /// `C`: the chord at `t` pulled onto both surfaces.
+    /// `C`: the guess at `t` pulled onto both surfaces.
     pub(crate) fn at(&self,t: f64) -> V { self.project(self.guess(t)) }
-    /// The point `at` pulls onto both surfaces: the parabola's at `t` (`between`).
-    pub(crate) fn guess(&self,t: f64) -> V {
+    /// The stretch holding `t` and the fraction of it at `t` (past either end of an open trace, its
+    /// end stretch's, run on).
+    pub(crate) fn locate(&self,t: f64) -> (usize,f64) {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
         let i = (t.floor().max(0.) as usize).min(m-1);
-        self.between(i,t-i as f64)
+        (i,t-i as f64)
     }
+    /// The point `at` pulls onto both surfaces, and its two rates in `t`: the stretch's smooth
+    /// reading, or the parabola's (`traced::Read::guess`).
+    pub(crate) fn guess_d2(&self,t: f64) -> (V,V,V) { let (i,f) = self.locate(t); self.read().guess(self,i,f) }
+    /// The point `at` pulls onto both surfaces.
+    pub(crate) fn guess(&self,t: f64) -> V { self.guess_d2(t).0 }
     /// **The curve's point on the plane `n·x = h` beside `q`, and its rate there per unit of `n·x`**
     /// (#798): Newton on both surfaces and the plane from `q`, settled as `project` is; the rate
-    /// `T / (T·n)`, `T = ∇a × ∇b`, read at the point itself, so as exact as the point is — where
-    /// `C'` is a difference of two projections. `None` where the curve runs square to `n`.
+    /// `T / (T·n)`, `T = ∇a × ∇b`, read at the point itself, so as exact as the point is.
+    /// `None` where the curve runs square to `n`.
     pub(crate) fn across(&self,q: V,n: V,h: f64) -> Option<(V,V)> {
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
@@ -2372,15 +2455,17 @@ impl Traced {
         best.1
     }
     /// The point a fraction `f` along the stretch from point `i` to the next, on the parabola through
-    /// it, the next and a neighbour, parameterised by their chords' lengths: a chord's sag, quadratic
-    /// in its length, stands off a curve the projection then finds no better than the angle between
-    /// the two surfaces allows (beside a point where they touch, onto another branch of their
-    /// meeting); the parabola's, cubic.
-    fn between(&self,i: usize,f: f64) -> V {
+    /// it, the next and a neighbour, parameterised by their chords' lengths, and its two rates in
+    /// `f`: a chord's sag, quadratic in its length, stands off a curve the projection then finds no
+    /// better than the angle between the two surfaces allows (beside a point where they touch, onto
+    /// another branch of their meeting); the parabola's, cubic. What a stretch with no smooth
+    /// reading is read by (`traced`).
+    pub(crate) fn between(&self,i: usize,f: f64) -> (V,V,V) {
         use crate::util::space::{distance,lerp};
         let m = self.segments();
         let (a,b) = (self.pts[i],self.pts[i+1]);
-        if m < 2 { return lerp(a,b,f) }
+        let chord = (lerp(a,b,f),sub(b,a),[0.;3]);
+        if m < 2 { return chord }
         // the neighbour: the one before, or after where there is none before
         let (p,q,r,tau) = if i > 0 || self.closed {
             let p = if i > 0 { self.pts[i-1] } else { self.pts[m-1] };
@@ -2391,35 +2476,69 @@ impl Traced {
             let (d0,d1) = (distance(a,b),distance(b,c));
             (a,b,c,[0.,d0,d0+d1])
         };
-        let x = if i > 0 || self.closed { f*tau[2] } else { f*tau[1] };
-        if !(tau[0] < tau[1] && tau[1] < tau[2]) { return lerp(a,b,f) }
+        let span = if i > 0 || self.closed { tau[2] } else { tau[1] };
+        let x = f*span;
+        if !(tau[0] < tau[1] && tau[1] < tau[2]) { return chord }
         // (only where the three run smoothly: chords of like lengths, turning a little — not across a
         // cusp, a seam or a jump in the spacing, where a parabola overshoots)
         let (u,w) = (sub(q,p),sub(r,q));
         let (lu,lw) = (tau[1]-tau[0],tau[2]-tau[1]);
-        if lu > SMOOTH_RATIO*lw || lw > SMOOTH_RATIO*lu || dot(u,w) < SMOOTH_COS*lu*lw { return lerp(a,b,f) }
+        if lu > SMOOTH_RATIO*lw || lw > SMOOTH_RATIO*lu || dot(u,w) < SMOOTH_COS*lu*lw { return chord }
+        // each Lagrange weight, its rate and its second rate in `x`
         let w = |j: usize| {
             let (k,l) = ((j+1)%3,(j+2)%3);
-            (x-tau[k])*(x-tau[l])/((tau[j]-tau[k])*(tau[j]-tau[l]))
+            let den = (tau[j]-tau[k])*(tau[j]-tau[l]);
+            ((x-tau[k])*(x-tau[l])/den,(2.*x-tau[k]-tau[l])/den,2./den)
         };
         let (wp,wq,wr) = (w(0),w(1),w(2));
-        std::array::from_fn(|k| wp*p[k]+wq*q[k]+wr*r[k])
+        (std::array::from_fn(|k| wp.0*p[k]+wq.0*q[k]+wr.0*r[k]),
+            std::array::from_fn(|k| span*(wp.1*p[k]+wq.1*q[k]+wr.1*r[k])),
+            std::array::from_fn(|k| span*span*(wp.2*p[k]+wq.2*q[k]+wr.2*r[k])))
     }
-    /// `C` and `C'`, the derivative the central difference of `C` itself (the projection of a
-    /// chord's point is not the curve's tangent times its speed off the curve): consistent with
-    /// the points to ~1e-10 of the speed, which is what an integral along it needs.
-    pub(crate) fn d1_at(&self,t: f64) -> (V,V) { self.d1(t) }
-    fn d1(&self,t: f64) -> (V,V) {
+    /// **`C` and `C'`** (#1034): the guess pulled onto both surfaces, and there the meeting's unit
+    /// tangent `T` times the guess's speed along it, `T · g'` — the projection's derivative at the
+    /// curve is `T Tᵀ`, so this is the rate of `C` itself, read in closed form. Where the two
+    /// surfaces stand within `traced::CLEAR` of tangent, the central difference of `C`
+    /// (`differenced`).
+    pub(crate) fn d1(&self,t: f64) -> (V,V) {
+        let (g,dg,_) = self.guess_d2(t);
+        let p = self.project(g);
+        match super::traced::tangent(&self.a,&self.b,p,dg) {
+            Some(tn) => (p,scale(tn,dot(tn,dg))),
+            None => (p,self.differenced(t)),
+        }
+    }
+    /// **`C`, `C'` and `C''`** (#1034): as `d1`, and `C'' = K v² + T (v K · g' + T · g'')`, `v = T
+    /// · g'` and `K` the meeting's curvature vector at the point in closed form (`traced::jet`).
+    /// Where it is not read (a touch), `C'` differenced and `C''` nothing.
+    pub(crate) fn d2(&self,t: f64) -> (V,V,V) {
+        let (g,dg,ddg) = self.guess_d2(t);
+        let p = self.project(g);
+        match super::traced::jet(&self.a,&self.b,p,dg) {
+            Some((tn,k)) => {
+                let v = dot(tn,dg);
+                (p,scale(tn,v),add(scale(k,v*v),scale(tn,v*dot(k,dg)+dot(tn,ddg))))
+            }
+            None => (p,self.differenced(t),[0.;3]),
+        }
+    }
+    /// `C'` by the central difference of `C`, never across a point: what a touch's rate is read by.
+    fn differenced(&self,t: f64) -> V {
         const H: f64 = 1e-6;
         let (lo,hi) = if self.closed { (t-H,t+H) } else {
             let m = self.segments() as f64;
             ((t-H).max(0.),(t+H).min(m))
         };
-        // never across a point, where the derivative steps
         let k = t.floor();
         let (lo,hi) = (if t-k >= H { lo } else { t },if k+1.-t >= H { hi } else { t });
+        if !(hi > lo) { return [0.;3] }
         let (a,b) = (self.at(lo),self.at(hi));
-        (self.at(t),scale(sub(b,a),1./(hi-lo)))
+        scale(sub(b,a),1./(hi-lo))
+    }
+    /// The curve's greatest speed: no less than its longest chord.
+    pub(crate) fn speed(&self) -> f64 {
+        let chords = self.pts.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).fold(0.,f64::max);
+        chords.max(self.read().speed)
     }
 }
 
@@ -2502,7 +2621,7 @@ impl Curve {
     /// `C`, `C'`, `C''`.
     pub fn d2(&self,t: f64) -> (V,V,V) {
         match *self {
-            Curve::Traced(ref c) => { let (x,d) = c.d1(t); (x,d,[0.;3]) }
+            Curve::Traced(ref c) => c.d2(t),
             Curve::BSpline(ref b) => b.d2(t),
             Curve::Iso(ref b,u) => {
                 // the second derivative by a central difference of the first, exact enough for
@@ -2558,7 +2677,7 @@ impl Curve {
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
     pub fn d1(&self,t: f64) -> (V,V) {
-        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),Curve::Parallel(m) => m.d1(t),
+        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),Curve::Parallel(m) => m.d1(t),Curve::Traced(c) => c.d1(t),
             _ => { let (x,d,_) = self.d2(t); (x,d) } }
     }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);
@@ -2671,7 +2790,7 @@ impl Curve {
     pub fn speed(&self) -> f64 {
         match *self {
             Curve::Line {..} => 1.,Curve::Circle(_,r) => r,Curve::Ellipse(_,a,b) => a.max(b),
-            Curve::Traced(ref c) => c.pts.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).fold(0.,f64::max),
+            Curve::Traced(ref c) => c.speed(),
             Curve::BSpline(ref b) => {
                 let [a,z] = b.domain();
                 (0..=64).map(|j| norm(b.d2(a+(z-a)*j as f64/64.).1)).fold(0.,f64::max)
@@ -2757,8 +2876,7 @@ impl Curve {
             Curve::Line {p,d} => Curve::Line {p:m.point(p),d:m.vector(d)},
             Curve::Circle(f,r) => Curve::Circle(f.moved(m),r),
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m),a,b),
-            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.moved(m),b:c.b.moved(m),
-                pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::new(c.a.moved(m),c.b.moved(m),c.pts.iter().map(|&p| m.point(p)).collect(),c.closed))),
             Curve::BSpline(ref b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| m.point(p)).collect(),..(**b).clone()})),
             Curve::Iso(ref b,u) => Curve::Iso(Arc::new(b.moved(m)),u),
             Curve::SheetCut(ref c) => Curve::SheetCut(Arc::new(c.moved(m))),
@@ -2781,8 +2899,7 @@ impl Curve {
             Curve::Line {..} | Curve::BSpline(_) => self.moved(m),
             Curve::Circle(f,r) => Curve::Circle(f.moved(m).rehanded(false).0,r),
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m).rehanded(false).0,a,b),
-            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
-                b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::new(c.a.reflected(m)?.0,c.b.reflected(m)?.0,c.pts.iter().map(|&p| m.point(p)).collect(),c.closed))),
             // (a slid contact's points are read off its frame, which a reflection carries)
             Curve::Affine(_) | Curve::Slid(_) | Curve::Trochoid(_) => self.moved(m),
             Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.reflected(m)?)),

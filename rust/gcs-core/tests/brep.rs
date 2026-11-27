@@ -3670,7 +3670,7 @@ fn a_faces_measures_are_cut_at_its_nets_knot_lines() {
     let d = [(q[0]-p[0])/(q[0]-p[0]).hypot(q[1]-p[1]),(q[1]-p[1])/(q[0]-p[0]).hypot(q[1]-p[1]),0.];
     let upright = gcs_core::brep::geom::Surface::Plane(gcs_core::brep::geom::Frame {o:p,x:d,y:[0.,0.,1.],z:[d[1],-d[0],0.]});
     let pts: Vec<[f64;3]> = (0..=64).map(|k| { let f = k as f64/64.; [p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f,1.] }).collect();
-    let traced = gcs_core::brep::geom::Traced {a:b.faces[0].surface.clone(),b:upright,pts,closed:false};
+    let traced = gcs_core::brep::geom::Traced::new(b.faces[0].surface.clone(),upright,pts,false);
     b.edges[2] = Edge {curve:EdgeCurve::Curve(Curve::Traced(Arc::new(traced))),t:[0.,64.],v:[o,t],tol:0.};
     b.faces[0].loops[0][2].pcurve = Pcurve::Inverse {a:[0.,0.],b:[1.,1.]};
     let want = 0.5*(x[2*n]-x[0]);
