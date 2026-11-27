@@ -32,7 +32,7 @@ fn forward_moved(y: f64) -> Tumble { Tumble {centre:[3.,y,2.],..Tumble::crossed(
 /// 0.021 it built before, 14 faces.
 #[test]
 fn moved_a_hair_is_built() {
-    built(forward_moved(0.015),16.5496090184,16.549609);
+    built(forward_moved(0.015),16.5496088176,16.549609);
 }
 
 /// **The forward member moved 0.02: a curve fits only to 1.6e-4**, against 4.4e-7 (0.03: 4.2e-5).
@@ -66,7 +66,7 @@ fn a_double_curve_not_joined_to_its_swallowtail_point() {
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, ~11 s")]
 fn the_trims_leaving_no_angle_free_is_built() {
-    built(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},16.8400036559,16.840004);
+    built(Tumble {height:0.6,roll:[-100.,109.],..Tumble::crossed(1.)},16.8400035716,16.840004);
 }
 
 /// **The reverse member leaning 52°, not 45°: three instants touch a meridian whole** — refused
@@ -141,7 +141,7 @@ fn built(t: Tumble,want: f64,cadrs: f64) {
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~25 s")]
 fn the_ring_roads_open_boundary_is_built_by_the_tube_road() {
     built(Tumble {centre:[3.23,-0.13,2.26],hub:2.03,tube:0.147,ratio:0.377,lean:58.9,heading:31.8,height:0.82,
-        observer:-0.8,roll:[-100.,111.]},8.5463430810,8.546343);
+        observer:-0.8,roll:[-100.,111.]},8.5463429734,8.546343);
 }
 
 /// **A reverse tumble seen from its own axis (`height` 0), turned 0.37 a radian about a hub at 1.87,
@@ -154,7 +154,7 @@ fn the_ring_roads_open_boundary_is_built_by_the_tube_road() {
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~30 s")]
 fn the_ring_roads_short_contact_sheet_is_built_by_the_tube_road() {
     built(Tumble {centre:[3.4,0.,2.2],hub:1.87,ratio:0.37,lean:37.,heading:37.,height:0.,..Tumble::crossed(-1.)},
-        18.0818507296,18.081851);
+        18.0818506396,18.081851);
 }
 
 /// **A forward tumble of tube 0.14 on a torus at (3, 0.4, 2), turned 0.58 a radian about a hub at
@@ -175,7 +175,7 @@ fn a_piece_of_a_torus_is_the_boundary_facing_behind() {
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the ring road refuses first, ~25 s")]
 fn the_ring_roads_pieces_ending_nowhere_are_built_by_the_tube_road() {
     built(Tumble {centre:[2.8,0.,2.28],hub:2.232,tube:0.27,ratio:0.38,lean:24.,heading:10.,height:0.95,observer:0.7,
-        roll:[-100.,155.3],..Tumble::crossed(1.)},21.4295434731,21.429543);
+        roll:[-100.,155.3],..Tumble::crossed(1.)},21.4295431362,21.429543);
 }
 
 /// **A tube road's build that keeps a sheet inside the solid is caught, and built again right**
@@ -202,7 +202,7 @@ fn a_tube_road_build_keeping_a_sheet_inside_is_caught_and_built_again() {
     let b = faces::solid(&tube,tol).unwrap();
     faces::held(&tube,&b,tol).unwrap();
     let v = gcs_core::brep::props::volume(&b);
-    assert!((v-18.0818507296).abs() <= 1e-9,"the volume {v}, pinned 18.0818507296");
+    assert!((v-18.0818506396).abs() <= 1e-9,"the volume {v}, pinned 18.0818506396");
     assert!((v-18.081851).abs() <= 1e-6,"the volume {v}, cadrs's 18.081851");
 }
 

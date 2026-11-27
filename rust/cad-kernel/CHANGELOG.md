@@ -27,20 +27,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `swept/tumbling-torus-half-turn` by a surface or two, each measured the same — and the rest the
   same to the byte.
 
-- **The tube road's sheets' nets are held in every cell and laid along the pinch's rows**
-  (`swept::tube::faces`): every window's net is graded where it bends, not doubled whole, and held
-  at the middle of every cell as well as along its lines (about the crossed forward member's pinch a
-  net held at its lines alone missed the sheet by 8e-6 inside its cells at a bar of 4.4e-7), each
-  cell's miss read apart along `u` and along `v`; each round halves only the intervals missing by a
-  quarter of the worst miss (short of it the miss is the interpolant's ringing). A window holding
-  the pinch is laid along `σ = θ − κ (t − t*)`, `κ` from the Jacobian of `(A, B)` there, so its
-  rows' nearest places to the pinch share one column (`Lay`, public; a lean moving the net by less
-  than one of its first columns is none), and graded to `SHEET_FIT`, 0.03 of the tolerance, where
-  its miss would lean one way at `FIT`'s 0.1. The crossed forward member's STEP file is 6.1 MB, where
-  it was 24 MB, its volume 16.6109997592, 6.5e-9 off cadrs's (it was 16.6109998153); the reverse,
-  laid square, 266 MB where it was 350 MB, built in 28 s where it was 15.5 s (its windows are its
-  near-pinch's, #942). `sheet_net` takes a `&Lay` where it took the window. **Breaking** for code
-  calling `sheet_net`.
+- **The tube road's sheets: nets held in every cell, windows a quarter turn, the pinch's laid along
+  its rows** (`swept::tube::faces`): every window's net is graded where it bends, not doubled
+  whole, and held at the middle of every cell as well as along its lines (about the crossed forward
+  member's pinch a net held at its lines alone missed the sheet by 8e-6 inside its cells at a bar of
+  4.4e-7), each cell's miss read apart along `u` and along `v`, each round halving only the
+  intervals missing by a quarter of the worst miss, and the sites spaced out once within the bar.
+  A sheet's windows wider than a quarter turn are cut again (as cadrs cuts its sheets in quarters),
+  each further cut crossing trims as a cut clear of none does. A window holding the pinch is laid
+  along `σ = θ − κ (t − t*)`, `κ` from the Jacobian of `(A, B)` there, so its rows' nearest places
+  to the pinch share one column (`Lay`, public), its span held within a turn. The crossed forward
+  member's STEP file is 4.8 MB, where it was 24 MB, its volume 16.6109997066 against cadrs's
+  16.6109997657 (it was 16.6109998153); the reverse 160 MB where it was 350 MB. Tube-road builds
+  have more faces (the crossed forward 22, where 14). `sheet_net` takes a `&Lay` where it took the
+  window. **Breaking** for code calling `sheet_net`.
 
 ## [0.26.0] - 2026-11-26
 

@@ -335,7 +335,7 @@ fn the_full_turn_builds_by_the_tube_road() {
     solid.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the full turn by the tube road: {} faces, volume {v:.10}",solid.faces.len());
-    assert_eq!(solid.faces.len(),14);
+    assert_eq!(solid.faces.len(),21);
     assert!((v/23.6738852531-1.).abs() <= 1e-7,"the volume {v}, the old road's 23.6738852531");
     held(&solid,&tube,&path,roll,v);
 }
@@ -359,7 +359,7 @@ fn the_thin_builds_by_the_tube_road() {
     solid.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the thin by the tube road: {} faces, volume {v:.10}",solid.faces.len());
-    assert_eq!(solid.faces.len(),10);
+    assert_eq!(solid.faces.len(),16);
     assert!((v/0.6963027896-1.).abs() <= 1e-7,"the volume {v}, the old road's 0.6963027896");
     // (a tube of 0.015 fills a part in a hundred of its box: read at enough points for a thousand
     // members)
@@ -391,7 +391,7 @@ fn the_tumbling_torus_builds_by_the_tube_road() {
     solid.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the tumbling torus by the tube road: {} faces, volume {v:.10}",solid.faces.len());
-    assert_eq!(solid.faces.len(),8);
+    assert_eq!(solid.faces.len(),13);
     assert!((v/25.2750727653-1.).abs() <= 1e-7,"the volume {v}, the one made apart 25.2750727653");
     held(&solid,&tube,&path,roll,v);
     // the boundary's points under other instants: the tube road's none; the old road's, at this
@@ -445,7 +445,7 @@ fn the_eighty_degree_torus_builds_by_the_tube_road() {
     solid.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the 80° torus by the tube road: {} faces, volume {v:.10}",solid.faces.len());
-    assert_eq!(solid.faces.len(),8);
+    assert_eq!(solid.faces.len(),12);
     assert!((v/10.9393141414-1.).abs() <= 1e-7,"the volume {v}, the old road's 10.9393141414");
     held(&solid,&tube,&path,roll,v);
 }
@@ -514,7 +514,7 @@ fn the_crossed_reverse_member_at_five_degrees_builds_by_the_tube_road() {
     solid.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&solid);
     eprintln!("the crossed reverse member at 5° by the tube road: {} faces, volume {v:.10}",solid.faces.len());
-    assert_eq!(solid.faces.len(),8);
+    assert_eq!(solid.faces.len(),12);
     held(&solid,&tube,&path,roll,v);
 }
 
@@ -740,23 +740,24 @@ fn audited(solid: &gcs_core::brep::topo::Brep,tube: &Tube,[a,b]: [f64;2],delta: 
 
 /// **The crossed forward member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar at `(t*, θ*)` (1.3264, 5.9712), sheet `−`'s two double curves with itself ending at
-/// swallowtail points. 14 faces, volume 16.6109997592 against cadrs's 16.6109997999 — once its
+/// swallowtail points. 14 faces, volume 16.6109997066 against cadrs's 16.6109997999 — once its
 /// flux was read cut at each pcurve's crossings of its graded net's knot lines (`props`; read
 /// whole, 16.6116290673, the face holding the pinch's hole 6.6e-4 off), and its sheets' nets held
-/// in every cell and laid along the pinch's rows (`faces::Lay`; 16.6109998153 before, its STEP file
-/// 24 MB, now 6.1 MB). About 10 s a build.
+/// in every cell, its windows cut to quarter turns and the window holding the pinch laid along its
+/// rows (`faces::Lay`; 16.6109998153 before, its STEP file 24 MB, now 4.8 MB). About 10 s a build.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed forward built three times, ~2 min")]
 fn the_crossed_forward_member_builds_by_the_tube_road() {
     let (faces,v) = crossed_held(1.,16.610999799920087);
-    assert_eq!(faces,14);
-    assert!((v-16.6109997592).abs() <= 1e-9,"the volume {v}, pinned 16.6109997592");
+    assert_eq!(faces,22);
+    assert!((v-16.6109997066).abs() <= 1e-9,"the volume {v}, pinned 16.6109997066");
 }
 
 /// **The crossed reverse member built by the tube road** (#880 T1f): its pinch charted by the
 /// collar, the closed cuspidal edge beside its fold loop traced (the lobe below the near-pinch), the
-/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898473304
-/// against cadrs's 13.7898472784 (13.7898471844 before its sheets' nets were held in every cell)
+/// double curves ending at its swallowtail points joined there. 15 faces, volume 13.7898471576
+/// against cadrs's 13.7898472784 (13.7898471844 before its sheets' nets were held in every cell and
+/// its windows cut to quarter turns)
 /// — once a knot a pcurve's step lands on exactly was crossed there
 /// (`props::crossings`; before, 13.7898471917, its sheet face 1's flux −4.602553423 where the face
 /// read with its net's parameters transposed is −4.602553430438, as it now reads). About a minute a build, most of it the two graded nets over the
@@ -768,8 +769,8 @@ fn the_crossed_forward_member_builds_by_the_tube_road() {
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, the crossed reverse built three times, ~4 min")]
 fn the_crossed_reverse_member_builds_by_the_tube_road() {
     let (faces,v) = crossed_held(-1.,13.789847278416222);
-    assert_eq!(faces,15);
-    assert!((v-13.7898473304).abs() <= 1e-9,"the volume {v}, pinned 13.7898473304");
+    assert_eq!(faces,26);
+    assert!((v-13.7898471576).abs() <= 1e-9,"the volume {v}, pinned 13.7898471576");
 }
 
 /// **The crossed members combine** (#1013): brep-bench's union, difference and intersection of the
@@ -794,7 +795,7 @@ fn the_crossed_members_combine() {
     };
     let ((a,tol),(b,_)) = (member(1.),member(-1.));
     let (va,vb) = (volume(&a),volume(&b));
-    assert!((va-16.6109997592).abs() <= 1e-9 && (vb-13.7898473304).abs() <= 1e-9,"the members' volumes {va}, {vb}");
+    assert!((va-16.6109997066).abs() <= 1e-9 && (vb-13.7898471576).abs() <= 1e-9,"the members' volumes {va}, {vb}");
     let mut v = [0.;3];
     for (k,op) in [Op::Union,Op::Cut,Op::Common].into_iter().enumerate() {
         let clock = std::time::Instant::now();
