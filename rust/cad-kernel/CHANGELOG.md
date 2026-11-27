@@ -30,6 +30,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   touch), and a smooth trace no cubic holds is refused (`Traced::kinks` is public). A loft
   face between traced rails is fitted as a smooth net; `fit_net_broken` is kept for a rail whose
   rate steps (`Traced::kinks`).
+- **Two meetings' crossing is polished by Gauss–Newton** (`meeting::crossings`): after alternating
+  feet, which close in by only `cos² θ` a step where the two cross at a shallow angle, a coupled
+  step on both parameters. The ball-end mill screwed keeps every cell, and the cube tumbling 10°
+  either way, refused in its trim before, builds.
 
 - **A ball whose radius varies along the edge** (`fillet::roll_varying`, new): at each point of the
   edge the ball of the radius a law gives there, touching both faces with its centre in the plane
