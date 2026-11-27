@@ -934,7 +934,8 @@ fn bench_cross_check() {
 }
 
 /// **A solid read on an offset surface is written again and reads to itself** (the writer's
-/// `OFFSET_SURFACE`, which only a reading makes: the kernel builds no face on `Surface::Offset`):
+/// `OFFSET_SURFACE`; the kernel builds such a face too, a sheet thickened, among
+/// `kernel_solids`):
 /// brep-bench's trough thickened (OCCT's and kentron's; kentron's grown ball the reader refuses), from
 /// `$STEP_CORPUS`, each solid read written again, verified, and read to the same solid.
 #[test]
@@ -961,7 +962,8 @@ fn an_offset_read_is_written_again() {
 /// may not: the cone either way and to its apex, a whole sphere and torus (poles and seams of
 /// both parameters), a revolution of a rational spline and an extrusion of a plain one, a traced
 /// meeting, affine images of a quadric, of a cylinder and of a torus, a blend along a line, a
-/// solid with a void, and a body of two lumps.
+/// solid with a void, a body of two lumps, and a spline sheet thickened (a face on its offset,
+/// edges carried along its normal, walls ruled along it).
 fn kernel_solids() -> Vec<(&'static str,Brep)> {
     use gcs_core::brep::affine::Affine;
     use gcs_core::brep::boolean::{combined,Op};
@@ -1011,6 +1013,11 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
         ("block with a spherical void",hollow),
         ("cylinder cut aslant",aslant),
         ("two blocks",two),
+        ("spline sheet thickened",crate::brep_offset::thickened_dish(3.,1.)),
+        ("cone cut aslant grown",crate::brep_offset::cone_cut_aslant_grown()),
+        ("torus's face cut aslant thickened",crate::brep_offset::torus_face_cut_aslant_thickened()),
+        ("spline extrusion cut aslant thickened",crate::brep_offset::spline_extrusion_cut_aslant_thickened()),
+        ("cone at its apex thickened inward",crate::brep_offset::apex_cone_thickened_inward().0),
     ]
 }
 

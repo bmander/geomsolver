@@ -235,3 +235,45 @@ fn the_bezier_dome_block_rounded_along_one_top_edge() {
     let got = volume(&rounded);
     assert!((got-want).abs() <= 1e-7,"the rounded block's volume {got} against {want} ({:e})",got-want);
 }
+
+/// **A rim rounded on a side of faces cut from one sheet** (brep-bench's fillet/nurbs-cylinder-rim):
+/// a cylinder's side as the rational quadratic circle carried up, cut in two faces at its middle
+/// (`build::grid_sheet`, each face on its own half of the net), its top rim rounded 1. The ball
+/// reads the two as one side, rolling on the offset of their nets joined (`Net::joined_u`), and the
+/// run round the rim closes: the solid is the analytic cylinder's rounded, `πR²h − 2π(R − d)(1 −
+/// π/4)r²` by Pappus, its area `150π − 19π + 2π(4 + 2/π)π/2`, to the fit's bar. Two halves of one
+/// net joined are the net.
+#[test]
+fn a_rim_on_a_side_cut_from_one_sheet_rolls_round_it() {
+    use gcs_core::brep::build::{disc,face,grid_sheet};
+    use gcs_core::brep::sew::sewn;
+    use std::f64::consts::{FRAC_1_SQRT_2,PI};
+    let (big,h,r) = (5.,10.,1.);
+    let circle = [[1.,0.],[1.,1.],[0.,1.],[-1.,1.],[-1.,0.],[-1.,-1.],[0.,-1.],[1.,-1.],[1.,0.]];
+    let w = |i: usize| if i % 2 == 1 { FRAC_1_SQRT_2 } else { 1. };
+    let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,0.25,0.25,0.5,0.5,0.75,0.75,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:circle.iter().map(|&[x,y]| vec![[big*x,big*y,0.],[big*x,big*y,h]]).collect(),
+        weights:Some((0..9).map(|i| vec![w(i),w(i)]).collect())};
+    // the halves joined are the whole, point for point
+    let halves = [net.segment([0.,0.5],[0.,1.]),net.segment([0.5,1.],[0.,1.])];
+    let whole = halves[0].joined_u(&halves[1],1e-12).unwrap();
+    for k in 0..=16 {
+        let u = k as f64/16.;
+        let (p,q) = (whole.point(u,0.3),net.point(u,0.3));
+        assert!(norm(sub(p,q)) <= 1e-12,"the joined net at {u}: {p:?} against {q:?}");
+    }
+    assert!(halves[1].joined_u(&halves[1],1e-12).is_none());
+    let side = grid_sheet(&net,&[0.,0.5,1.],&[0.,1.],&["east".into(),"west".into()],[true,false]).unwrap();
+    let ends = [face(&disc([0.;3],[0.,0.,-1.],big)).unwrap(),face(&disc([0.,0.,h],[0.,0.,1.],big)).unwrap()];
+    let cylinder = sewn(&[side,ends[0].clone(),ends[1].clone()],tolerance(2.*h)).unwrap();
+    let round = roll(&cylinder,[0.,big,h],r,tolerance(cylinder.size())).unwrap();
+    assert!(!round.concave);
+    let out = combined(&cylinder,&round.piece,Op::Cut,0.).unwrap();
+    out.check(1e-7).unwrap();
+    let d = r*(10.-3.*PI)/(12.-3.*PI);
+    let want = PI*big*big*h-2.*PI*(big-d)*(1.-PI/4.)*r*r;
+    assert!((volume(&out)-want).abs() <= 1e-9*want,"the volume: {} against {want}",volume(&out));
+    let area: f64 = out.faces.iter().map(|f| gcs_core::brep::props::area(&out,f)).sum();
+    let want = 150.*PI-19.*PI+2.*PI*(4.+2./PI)*PI/2.;
+    assert!((area-want).abs() <= 1e-9*want,"the area: {area} against {want}");
+}

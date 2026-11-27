@@ -446,9 +446,17 @@ impl Complex {
             let flux = super::props::fluxes(&self.b);
             let volumes: Vec<f64> = self.shells.iter().map(|sides| sides.iter().map(|&(f,front)| if front { -flux[f] } else { flux[f] })
                 .sum::<f64>()/3.).collect();
+            // a shell bounds a cell where it holds a volume: past a part of the whole's cube, or —
+            // a small cell, the gap a sliver of a face closes — past what its own faces would hold
+            // laid the tolerance apart, its area times the tolerance (its faces' areas read only
+            // for such a shell)
             let floor = 1e-12*size*size*size;
-            let outer: Vec<usize> = (0..shells.len()).filter(|&c| volumes[c] > floor).collect();
-            let is_outer: Vec<bool> = volumes.iter().map(|&v| v > floor).collect();
+            let holds = |c: usize| volumes[c] > floor || volumes[c] > 0. && {
+                let area: f64 = self.shells[c].iter().map(|&(f,_)| super::props::area(&self.b,&self.b.faces[f])).sum();
+                volumes[c] > area*self.tol
+            };
+            let is_outer: Vec<bool> = (0..shells.len()).map(holds).collect();
+            let outer: Vec<usize> = (0..shells.len()).filter(|&c| is_outer[c]).collect();
             // smallest first, so a void finds its tightest host first
             let mut order = outer.clone();
             order.sort_by(|&x,&y| volumes[x].total_cmp(&volumes[y]).then(x.cmp(&y)));

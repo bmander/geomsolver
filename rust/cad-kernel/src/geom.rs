@@ -284,7 +284,9 @@ pub enum Surface {
     /// `o + r (cos u x + sin u y) + v z`.
     Cylinder(Frame,f64),
     /// `o + (r + v sin α)(cos u x + sin u y) + v cos α z`: `r` the radius at `o`, `α` the
-    /// half-angle, `v` along the generator; the apex at `v = −r / sin α`.
+    /// half-angle, `v` along the generator; the apex at `v = −r / sin α`. `r` is less than nothing
+    /// where `o` lies past the apex, as on a cone moved inward along its normal
+    /// (`Surface::normal_moved`), a face on it on the nappe its parameters reach.
     Cone(Frame,f64,f64),
     /// `o + r cos v (cos u x + sin u y) + r sin v z`, `v ∈ [−π/2, π/2]`.
     Sphere(Frame,f64),
@@ -311,7 +313,8 @@ pub enum Surface {
     /// over the sheet's parameters: the level `d` of the sheet's signed distance (`implicit`), exact
     /// wherever a point's foot on it is one, nearer than where its normals focus; its frame the
     /// sheet's. What a ball's centre runs on, a sheet's offset having no closed form
-    /// (`Surface::parallel`): read, never a face's. It is read on the sheet's continuation past its
+    /// (`Surface::parallel`), and what a sheet's face moved along its normal lies on (a sheet
+    /// thickened, `offset::carried_sweep`; a file's `OFFSET_SURFACE`). It is read on the sheet's continuation past its
     /// domain (its end spans carried on, `Net::d2_continued`), so the ball rolls on past a face's
     /// edge as smoothly as it rolls within it.
     Offset(Frame,Arc<super::nurbs::Net>,f64),
@@ -623,6 +626,18 @@ impl Pipe {
 }
 
 impl Blend {
+    /// Where, strictly inside its `u` from 0 to 1, either of its sections stops being smooth: each
+    /// one's breaks (`Curve::breaks`) at its own fraction of `u`, in order, each once.
+    pub fn breaks(&self) -> Vec<f64> {
+        let mut out = Vec::new();
+        for (c,t) in [(&self.a,self.ta),(&self.b,self.tb)] {
+            let (lo,hi) = (t[0].min(t[1]),t[0].max(t[1]));
+            out.extend(c.breaks([lo,hi]).into_iter().map(|k| (k-t[0])/(t[1]-t[0])).filter(|&u| u > 0. && u < 1.));
+        }
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+    }
     /// **The box the patch keeps within over the parameters `[u, v]`** (#847): a face's piece of a
     /// sheet, where the ring its whole sections turn in (`Surface::bounds_over`) stands for the
     /// whole sheet turned about its axis — a sliver of a cell beside a screwed edge's sheet read as
@@ -639,8 +654,9 @@ impl Blend {
         widen(&mut sections,self.b.bounds(stretch(self.tb)));
         Some(screwed_over(center,axis,angle,advance,[v0,v1],sections))
     }
-    fn ends(&self,u: f64) -> ((V,V,V),(V,V,V)) {
-        (self.a.d2(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d2(self.tb[0]+u*(self.tb[1]-self.tb[0])))
+    /// Each section's point and rate at the fraction `u` of its run.
+    fn ends(&self,u: f64) -> ((V,V),(V,V)) {
+        (self.a.d1(self.ta[0]+u*(self.ta[1]-self.ta[0])),self.b.d1(self.tb[0]+u*(self.tb[1]-self.tb[0])))
     }
     /// **The patch's own size**: the diagonal of the box its two sections fill, before they are
     /// carried — what its sections are one by (`tolerance`), and its foot near by no more than
@@ -676,7 +692,7 @@ impl Blend {
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
-        let ((a,da,_),(b,db,_)) = self.ends(u);
+        let ((a,da),(b,db)) = self.ends(u);
         let p = add(scale(a,1.-v),scale(b,v));
         let pu = add(scale(da,(1.-v)*(self.ta[1]-self.ta[0])),scale(db,v*(self.tb[1]-self.tb[0])));
         let q = self.carry.at(p,v);
@@ -1876,6 +1892,40 @@ impl Surface {
             s => s.offset(d,tol),
         }
     }
+    /// **The surface whose point at `(u, v)` is this one's moved `d` along its unit normal there**,
+    /// `S(u, v) + d N(u, v)` over the same parameters (`N` along `S_u × S_v`): what a face moved
+    /// along its normal lies on with its own pcurves (`offset::carried_sweep`), the promise
+    /// `parallel` does not make (an ellipse swept along a line is read there over its rational
+    /// spline's parameter, and a cone's offset there keeps its frame, shifting `v`). A plane
+    /// moved; a cylinder's, a sphere's or a torus's radius grown; a cone placed `d sin α` back
+    /// along its axis with its radius there grown by `d cos α` — the generator through `u` carried
+    /// along its own normal, `v` kept, its radius at the origin less than nothing where the
+    /// origin falls past the moved apex (a face on it stays on the nappe its parameters reach);
+    /// a sheet's offset (`Surface::Offset`), a spline swept along a line read as its sheet
+    /// (`swept_net`, both its parameters its own). `None` where a radius reaches nothing, and
+    /// for any other kind.
+    pub fn normal_moved(&self,d: f64) -> Option<Surface> {
+        if !self.has_normal_moved() { return None }
+        match *self {
+            Surface::Cone(f,r,a) => {
+                // `N = cos α ρ̂ − sin α z`, the same along each generator
+                let (sa,ca) = a.dsin_cos();
+                Some(Surface::Cone(Frame {o:f.at([0.,0.,-d*sa]),..f},r+d*ca,a))
+            }
+            // the rest as `parallel` reads them, a radius taken to nothing none
+            _ => self.parallel(d,0.).and_then(Offset::surface),
+        }
+    }
+    /// Whether `normal_moved` reads the surface moved along its normal with its parameters kept:
+    /// the analytic kinds but the affine image, a sheet and its offset, a spline swept along a line.
+    pub fn has_normal_moved(&self) -> bool {
+        match self {
+            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)
+                | Surface::BSpline(..) | Surface::Offset(..) => true,
+            Surface::Extrusion(_,c) => matches!(**c,Curve::BSpline(_)),
+            Surface::Affine(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::Family(..) => false,
+        }
+    }
     /// The curve a spline or an ellipse swept along a line (`Extrusion`) is swept from, as a spline:
     /// an ellipse its rational one, the unit circle's whole turn stretched and placed (its parameter
     /// meeting the angle at its knots only). `None` for any other kind.
@@ -2134,14 +2184,8 @@ impl Surface {
             (Surface::Family(_,w),k) => w.breaks(k,span),
             (Surface::Affine(m),k) => m.of.breaks(k,span),
             (Surface::Blend(_,b),0) => {
-                let mut out = Vec::new();
-                for (c,t) in [(&b.a,b.ta),(&b.b,b.tb)] {
-                    let (lo,hi) = (t[0].min(t[1]),t[0].max(t[1]));
-                    out.extend(c.breaks([lo,hi]).into_iter().map(|k| (k-t[0])/(t[1]-t[0]))
-                        .filter(|&u| u > span[0].min(span[1]) && u < span[0].max(span[1])));
-                }
-                out.sort_by(f64::total_cmp);
-                out.dedup();
+                let mut out = b.breaks();
+                out.retain(|&u| u > span[0].min(span[1]) && u < span[0].max(span[1]));
                 out
             }
             _ => vec![],
@@ -2521,6 +2565,9 @@ pub enum Curve {
     /// A point's path under a planar motion of turns and slides (#721 F1d, `trochoid::Trochoid`): a
     /// sum of terms `(a + b t) e^{iωt}` in its frame's plane, the curve's parameter the motion's.
     Trochoid(Arc<super::trochoid::Trochoid>),
+    /// A curve on a sheet carried along the sheet's normal onto its offset (`parallel::Parallel`):
+    /// a face's edge moved with the face (`offset::carried_sweep`), the curve's parameter its own.
+    Parallel(Arc<super::parallel::Parallel>),
 }
 
 impl Curve {
@@ -2528,12 +2575,14 @@ impl Curve {
         match self { Curve::Line {..} => "line",Curve::Circle(..) => "circle",Curve::Ellipse(..) => "ellipse",
             Curve::Traced(..) => "traced",Curve::BSpline(..) => "bspline",Curve::Iso(..) => "iso",
             Curve::Rail(..) => "rail",Curve::Rim(..) => "rim",Curve::Affine(..) => "affine",Curve::SheetCut(..) => "sheet cut",
-            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid",Curve::Trochoid(..) => "trochoid" }
+            Curve::Turned(..) => "turned",Curve::Slid(..) => "slid",Curve::Trochoid(..) => "trochoid",
+            Curve::Parallel(..) => "parallel" }
     }
     pub fn period(&self) -> Option<f64> {
         match self {
             Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::SheetCut(..) | Curve::Slid(..) | Curve::Trochoid(..) => None,
             Curve::Turned(ref t) => t.period(),
+            Curve::Parallel(ref m) => m.of.period(),
             Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             Curve::Affine(m) => m.period(),
@@ -2565,6 +2614,7 @@ impl Curve {
             Curve::Turned(ref m) => m.d2(t),
             Curve::Slid(ref m) => m.d2(t),
             Curve::Trochoid(ref m) => m.d2(t),
+            Curve::Parallel(ref m) => m.d2(t),
             Curve::Line {p,d} => (add(p,scale(d,t)),d,[0.;3]),
             Curve::Circle(f,r) => {
                 let (s,c) = t.dsin_cos();
@@ -2586,17 +2636,20 @@ impl Curve {
             Curve::Rail(w,_) => w.breaks(1,[a,b]),
             Curve::Rim(w,_) => w.breaks(0,[a,b]),
             Curve::Affine(m) => m.breaks([a,b]),
+            Curve::Parallel(m) => m.of.breaks([a,b]),
             _ => vec![],
         }
     }
     pub fn point(&self,t: f64) -> V {
         // (a traced curve's point by one projection: its derivative takes two more, #798)
-        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),_ => self.d2(t).0 }
+        match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),
+            Curve::Parallel(m) => m.point(t),_ => self.d2(t).0 }
     }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
     pub fn d1(&self,t: f64) -> (V,V) {
-        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),_ => { let (x,d,_) = self.d2(t); (x,d) } }
+        match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),Curve::Parallel(m) => m.d1(t),
+            _ => { let (x,d,_) = self.d2(t); (x,d) } }
     }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);
     /// exact for a point on a line or circle, and for an ellipse refined by Newton from its
@@ -2647,6 +2700,7 @@ impl Curve {
             Curve::Turned(ref m) => m.inverse(p),
             Curve::Slid(ref m) => m.inverse(p),
             Curve::Trochoid(ref m) => m.inverse(p),
+            Curve::Parallel(ref m) => self.newton(p,m.seed(p),if m.of.period().is_some() { None } else { crate::query::curve_domain(&m.of) }),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {
@@ -2727,6 +2781,7 @@ impl Curve {
             Curve::Turned(ref m) => m.speed(),
             Curve::Slid(ref m) => m.speed(),
             Curve::Trochoid(ref m) => m.speed(),
+            Curve::Parallel(ref m) => m.speed,
         }
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
@@ -2746,7 +2801,7 @@ impl Curve {
                 Carry::Line {..} => hull([t0,t1].map(|v| b.d1([u,v]).0)),
                 // before it is carried, the rail is the straight line between its sections
                 Carry::Screw {center,axis,angle,advance} => {
-                    let ((a,_,_),(z,_,_)) = b.ends(u);
+                    let ((a,_),(z,_)) = b.ends(u);
                     screwed_over(center,axis,angle,advance,[t0,t1],hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
                 }
             },
@@ -2767,6 +2822,7 @@ impl Curve {
             Curve::Turned(ref m) => m.bounds([t0,t1]),
             Curve::Slid(ref m) => m.bounds([t0,t1]),
             Curve::Trochoid(ref m) => m.bounds([t0,t1]),
+            Curve::Parallel(ref m) => m.bounds([t0,t1]),
             Curve::Traced(ref c) => {
                 // the chords reaching the interval, so its ends' too
                 let m = c.segments();
@@ -2801,6 +2857,7 @@ impl Curve {
             Curve::Turned(ref t) => Curve::Turned(Arc::new(t.moved(m).expect("a rigid motion keeps a frame's hand"))),
             Curve::Slid(ref t) => Curve::Slid(Arc::new(t.moved(m))),
             Curve::Trochoid(ref t) => Curve::Trochoid(Arc::new(t.moved(m))),
+            Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.moved(m))),
             Curve::Affine(ref a) => Curve::Affine(Arc::new(super::affine::MappedCurve::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone(),a.at))),
         }
@@ -2818,6 +2875,7 @@ impl Curve {
                 b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed,feet:Default::default()})),
             // (a slid contact's points are read off its frame, which a reflection carries)
             Curve::Affine(_) | Curve::Slid(_) | Curve::Trochoid(_) => self.moved(m),
+            Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.reflected(m)?)),
             // (a meridian's points read its frame's `x` and `z` alone: reflected, carried)
             Curve::Turned(ref t) => match t.moved(m) {
                 Some(t) => Curve::Turned(Arc::new(t)),

@@ -15,9 +15,11 @@
 //! What the surgery cannot build is refused by name: a face no plane carries, an edge no line does,
 //! a vertex of other than three edges or some of them not rounded, convex and concave edges at one
 //! vertex (the setback such a corner needs), and a round the face beside it cannot hold (a contact
-//! line run past its corners). Edges of which no two share a vertex are rounded instead each in
-//! turn by `fillet::roll` (any faces it rolls between), each piece cut off a convex edge and filled
-//! in at a concave one.
+//! line run past its corners). Where two corners' balls are one, the round between them vanishes,
+//! and a face its rounds close to no area is gone (a plate rounded to half its thickness). Edges of
+//! which no two share a vertex are rounded instead each in turn by `fillet::roll` (any faces it
+//! rolls between), each piece cut off a convex edge and filled in at a concave one. Edges that
+//! cannot be rounded as they stand, with a face between two of them, may swallow it (`swallowed`).
 use super::boolean::{combined,Op};
 use super::geom::{Curve,Frame,Surface,Uv,V};
 use super::topo::{reverse_loop,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
@@ -45,8 +47,88 @@ struct Round {
 struct Ball { centre: V,here: Vec<usize>,touches: BTreeMap<usize,u32> }
 
 /// `b` with `edges` (indices into `b.edges`) rounded to the radius `r`, to the tolerance `tol` (the
-/// module's rules).
+/// module's rules). Where they cannot be rounded as they stand and a face lies between two of them,
+/// that face may be one the round swallows (`swallowed`).
 pub fn rounded(b: &Brep,edges: &[usize],r: f64,tol: f64) -> Result<Brep,String> {
+    rounded_as_given(b,edges,r,tol).or_else(|why| match narrow_face(b,edges,r) {
+        None => Err(why),
+        Some((f,beside)) => swallowed(b,edges,f,&beside,r,tol).map_err(|not| format!("{why}; nor is it swallowed: {not}")),
+    })
+}
+
+/// A face two of `edges` bound, between it and two other faces, narrower than a ball of radius
+/// `r`: those two edges stand nearer each other than `2r` somewhere (read at 17 points of each). The
+/// face, and the face across each of its chosen edges.
+fn narrow_face(b: &Brep,edges: &[usize],r: f64) -> Option<(usize,BTreeMap<usize,usize>)> {
+    let uses = b.uses();
+    let chosen: BTreeSet<usize> = edges.iter().copied().filter(|&e| e < b.edges.len()).collect();
+    let points = |e: usize| { let ed = &b.edges[e]; (0..=16).map(|k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/16.,&b.vertices))
+        .collect::<Vec<V>>() };
+    let near = |e: usize,g: usize| { let (p,q) = (points(e),points(g));
+        p.iter().any(|&x| q.iter().any(|&y| distance(x,y) < 2.*r)) };
+    (0..b.faces.len()).find_map(|f| {
+        // the faces across each chosen edge of `f`
+        let across: BTreeMap<usize,usize> = chosen.iter().filter_map(|&e| match uses[e][..] {
+            [(x,..),(y,..)] if x == f && y != f => Some((e,y)),
+            [(x,..),(y,..)] if y == f && x != f => Some((e,x)),
+            _ => None,
+        }).collect();
+        let narrow = across.iter().any(|(&e,&g)| across.iter().any(|(&h,&k)| k != g && near(e,h)));
+        narrow.then_some((f,across))
+    })
+}
+
+/// **A face the round swallows**: a face `F` two of `edges` bound, between it and two other faces
+/// `G` and `H`, narrower than the ball (`narrow_face`; `beside` the face across each of its chosen
+/// edges) — a corner broken by a flat thinner than the round — is not touched by a ball of radius
+/// `r` at all: the ball rolls between `G` and `H` as they would meet without `F`, and passes clear
+/// of it. So `F` is deleted (`defeature::deleted`, `G` and `H` run on until they meet), the edge
+/// where they meet rounded in place of `F`'s, with the rest of `edges`, and the answer kept only
+/// where `F` is gone from it: every point read along `F`'s edges stands clear of the rounded
+/// solid's boundary, all on one side of it (out of it past a convex round, in it under a concave
+/// one).
+fn swallowed(b: &Brep,edges: &[usize],f: usize,beside: &BTreeMap<usize,usize>,r: f64,tol: f64) -> Result<Brep,String> {
+    use super::query::{Located,Place};
+    let name = &b.faces[f].name;
+    let solid = super::defeature::deleted(b,&[f],tol).map_err(|e| format!("`{name}` is not deleted: {e}"))?;
+    let middle = |s: &Brep,e: usize| { let ed = &s.edges[e]; ed.point(0.5*(ed.t[0]+ed.t[1]),&s.vertices) };
+    // every other chosen edge, as it stands on the solid `F` is deleted from
+    let located = Located::new(&solid,tol);
+    let mut kept: Vec<usize> = Vec::new();
+    for &e in edges.iter().filter(|e| !beside.contains_key(e)) {
+        let at = middle(b,e);
+        let near = (0..solid.edges.len() as u32).filter(|&g| located.edge_gap(g,at) <= tol)
+            .map(|g| (located.nearest(g,at).1,g as usize)).min_by(|x,y| x.0.total_cmp(&y.0));
+        match near {
+            Some((d,g)) if d <= tol => kept.push(g),
+            _ => return Err(format!("the edge through {at:?} is not on the solid `{name}` is deleted from")),
+        }
+    }
+    // the edges where the faces beside `F` meet now, each on two of their surfaces
+    let surfaces: Vec<&Surface> = beside.values().collect::<BTreeSet<_>>().into_iter().map(|&g| &b.faces[g].surface).collect();
+    let bar = 1e3*tol;
+    let met: Vec<usize> = (0..solid.edges.len()).filter(|&e| {
+        let at = middle(&solid,e);
+        surfaces.iter().filter(|s| s.implicit(at).abs() <= bar).count() >= 2
+            && !(0..b.edges.len()).any(|g| distance(middle(b,g),at) <= bar)
+    }).collect();
+    if met.is_empty() { return Err(format!("the faces beside `{name}` do not meet once it is deleted")) }
+    kept.extend(met);
+    let out = rounded(&solid,&kept,r,tol)?;
+    // `F` gone: read along each of its edges, clear of the result's boundary and on one side
+    let located = Located::new(&out,tol);
+    let mut places = b.faces[f].loops.iter().flatten().flat_map(|c| {
+        let ed = &b.edges[c.edge as usize];
+        (1..8).map(move |k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/8.,&b.vertices))
+    }).map(|p| located.solid_place(p));
+    let first = places.next();
+    if first == Some(Place::On) || places.any(|p| Some(p) != first) {
+        return Err(format!("a ball of radius {r} rolled where `{name}` was deleted still touches it"))
+    }
+    Ok(out)
+}
+
+fn rounded_as_given(b: &Brep,edges: &[usize],r: f64,tol: f64) -> Result<Brep,String> {
     if !(r > 0.) { return Err(format!("a round of radius {r}")) }
     let mut edges: Vec<usize> = edges.to_vec();
     edges.sort_unstable();
@@ -138,6 +220,7 @@ fn surgery(b: &Brep,edges: &[usize],reached: &BTreeSet<u32>,r: f64,tol: f64) -> 
         if !reached.contains(&(v as u32)) { kept_vertex.insert(v as u32,out.vertices.len() as u32); out.vertices.push(*vx); }
     }
     let mut balls: BTreeMap<u32,Ball> = BTreeMap::new();
+    let mut touched: Vec<u32> = Vec::new();
     for &v in reached {
         let p = b.vertices[v as usize].p;
         let here: Vec<usize> = (0..rounds.len()).filter(|&k| b.edges[rounds[k].edge].v.contains(&v)).collect();
@@ -154,7 +237,13 @@ fn surgery(b: &Brep,edges: &[usize],reached: &BTreeSet<u32>,r: f64,tol: f64) -> 
         // the centre `r` inside each plane at a convex corner, outside at a concave one
         let sign = if convex { -1. } else { 1. };
         let centre = super::ssi::solve3(n,n.map(|ni| dot(ni,p)+sign*r));
-        let touches = [fa,fb,fc].into_iter().zip(n).map(|(f,ni)| (f,out.vertex(sub(centre,scale(ni,sign*r))))).collect();
+        // (where two corners' balls are one — a plate rounded to half its thickness — they touch a
+        // face they share at one vertex)
+        let touches = [fa,fb,fc].into_iter().zip(n).map(|(f,ni)| {
+            let q = sub(centre,scale(ni,sign*r));
+            let same = touched.iter().copied().find(|&w| distance(out.vertices[w as usize].p,q) <= tol);
+            (f,same.unwrap_or_else(|| { let w = out.vertex(q); touched.push(w); w }))
+        }).collect();
         balls.insert(v,Ball {centre,here,touches});
     }
     let mut kept_edge: BTreeMap<usize,u32> = BTreeMap::new();
@@ -167,8 +256,20 @@ fn surgery(b: &Brep,edges: &[usize],reached: &BTreeSet<u32>,r: f64,tol: f64) -> 
     // parameters, and its arcs at its two ends
     let mut contact: BTreeMap<(usize,usize),(u32,Pcurve)> = BTreeMap::new();
     let mut arcs: Vec<[u32;2]> = Vec::new();
+    // a round whose corners' balls are one has no length: it vanishes, its arc at either end the
+    // same edge, and its faces' loops go straight on past it (an upright edge of a plate rounded to
+    // half its thickness)
+    let mut gone: BTreeSet<usize> = BTreeSet::new();
     for rd in &rounds {
         let ed = &b.edges[rd.edge];
+        if distance(balls[&ed.v[0]].centre,balls[&ed.v[1]].centre) <= tol {
+            gone.insert(rd.edge);
+            let ball = &balls[&ed.v[0]];
+            let arc = out.edge(EdgeCurve::Curve(Curve::Circle(Frame {o:ball.centre,..rd.axes},r)),[0.,rd.turn],
+                [ball.touches[&rd.faces[0]],ball.touches[&rd.faces[1]]]);
+            arcs.push([arc,arc]);
+            continue
+        }
         for f in rd.faces {
             let (a,z) = (balls[&ed.v[0]].touches[&f],balls[&ed.v[1]].touches[&f]);
             let (pa,pz) = (out.vertices[a as usize].p,out.vertices[z as usize].p);
@@ -187,17 +288,41 @@ fn surgery(b: &Brep,edges: &[usize],reached: &BTreeSet<u32>,r: f64,tol: f64) -> 
             out.edge(EdgeCurve::Curve(Curve::Circle(frame,r)),[0.,rd.turn],[ball.touches[&rd.faces[0]],ball.touches[&rd.faces[1]]])
         }));
     }
-    // the faces: each use of a rounded edge walked along its contact line instead, in the same sense
+    // the faces: each use of a rounded edge walked along its contact line instead, in the same
+    // sense, and past a round that vanished; a face whose loop closes on itself with no area — two
+    // contact lines between the same two vertices, the side of a plate rounded to half its
+    // thickness — is gone, and the two rounds either side of it meet along the one line
+    let mut same: BTreeMap<u32,u32> = BTreeMap::new();
     for (fi,f) in b.faces.iter().enumerate() {
-        let loops = f.loops.iter().map(|l| l.iter().map(|c| match contact.get(&(c.edge as usize,fi)) {
-            Some((e,pc)) => Coedge {edge:*e,reversed:c.reversed,pcurve:pc.clone()},
-            None => Coedge {edge:kept_edge[&(c.edge as usize)],..c.clone()},
-        }).collect()).collect();
+        let loops: Vec<Vec<Coedge>> = f.loops.iter().map(|l| l.iter().filter(|c| !gone.contains(&(c.edge as usize)))
+            .map(|c| match contact.get(&(c.edge as usize,fi)) {
+                Some((e,pc)) => Coedge {edge:*e,reversed:c.reversed,pcurve:pc.clone()},
+                None => Coedge {edge:kept_edge[&(c.edge as usize)],..c.clone()},
+            }).collect()).collect();
+        let closed_on_itself = |l: &[Coedge]| match l {
+            [x,y] => {
+                let (ex,ey) = (&out.edges[x.edge as usize],&out.edges[y.edge as usize]);
+                (ex.v == ey.v || ex.v == [ey.v[1],ey.v[0]])
+                    && [ex,ey].iter().all(|e| matches!(e.curve,EdgeCurve::Curve(Curve::Line {..})))
+            }
+            _ => false,
+        };
+        if loops.iter().any(Vec::is_empty) {
+            return Err(format!("the face `{}` is rounded away to nothing",f.name))
+        }
+        if loops.iter().any(|l| closed_on_itself(l)) {
+            if loops.len() > 1 {
+                return Err(format!("the face `{}` is rounded to nothing along one of its loops and not another",f.name))
+            }
+            same.insert(loops[0][1].edge,loops[0][0].edge);
+            continue
+        }
         out.faces.push(Face {loops,..f.clone()});
     }
     // each round's cylinder: arc, far contact, arc back, near contact back — counter-clockwise in
     // its parameters where the run's sense and the arc's agree, its material inside at a convex edge
     for (k,rd) in rounds.iter().enumerate() {
+        if gone.contains(&rd.edge) { continue }
         let ed = &b.edges[rd.edge];
         // from the first corner's ball, whose arc is at `v = 0`, to the second's
         let frame = Frame {o:balls[&ed.v[0]].centre,..rd.axes};
@@ -242,6 +367,21 @@ fn surgery(b: &Brep,edges: &[usize],reached: &BTreeSet<u32>,r: f64,tol: f64) -> 
         if (area > 0.) == reversed { l = reverse_loop(l); }
         out.faces.push(Face {surface:sphere,reversed,loops:vec![l],name:"corner".into()});
     }
+    // each line a face closed on itself left used by the round beside it as the other's, its
+    // pcurve's ends in that edge's order where it runs the other way (a contact's pcurve is a line)
+    for c in out.faces.iter_mut().flat_map(|f| f.loops.iter_mut().flatten()) {
+        let Some(&e) = same.get(&c.edge) else { continue };
+        if out.edges[e as usize].v != out.edges[c.edge as usize].v {
+            c.reversed = !c.reversed;
+            c.pcurve = match c.pcurve {
+                Pcurve::Line {a,b} => Pcurve::Line {a:b,b:a},
+                Pcurve::Inverse {a,b} => Pcurve::Inverse {a:b,b:a},
+                Pcurve::Curve(_) => return Err("a round's contact laid by a curve of its own".into()),
+            };
+        }
+        c.edge = e;
+    }
+    let out = if gone.is_empty() && same.is_empty() { out } else { out.compacted() };
     out.check(tol).map_err(|e| format!("the rounded solid: {e}"))?;
     Ok(out)
 }

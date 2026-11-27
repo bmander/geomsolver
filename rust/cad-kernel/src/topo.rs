@@ -285,7 +285,7 @@ pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
 }
 
 /// `d` in the parameters whose rates are `su`, `sv`: `in_parameters`' least squares.
-fn solved(su: V,sv: V,d: V) -> Uv {
+pub(crate) fn solved(su: V,sv: V,d: V) -> Uv {
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;

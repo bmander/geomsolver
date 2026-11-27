@@ -911,6 +911,47 @@ impl Net {
             out
         }))
     }
+    /// **Two sheets one after another along `u`, as one** (#645's sheets, brep-bench's
+    /// `fillet/nurbs-cylinder-rim`): `self` and `next`, clamped, of one degree each way and one knot
+    /// vector along `v`, where `self`'s last row of poles is `next`'s first (within `tol`), and —
+    /// rational — `next`'s weights are `self`'s along that row times one factor: the net whose
+    /// first part is `self` and whose rest is `next` moved on along `u` to start where `self` ends,
+    /// the knot between them of multiplicity `du` (the two meet with their points continuous, as
+    /// two faces cut from one sheet do), `next`'s weights scaled by that factor (which moves no
+    /// point of it). `None` where they do not so meet.
+    pub fn joined_u(&self,next: &Net,tol: f64) -> Option<Net> {
+        let du = self.du;
+        if next.du != du || next.dv != self.dv || self.weights.is_some() != next.weights.is_some() { return None }
+        let same = |a: &[f64],b: &[f64]| a.len() == b.len() && a.iter().zip(b).all(|(x,y)| (x-y).abs() <= 1e-12*(1.+x.abs()));
+        if !same(&self.vknots,&next.vknots) { return None }
+        let clamped = |k: &[f64]| k.len() > 2*du+2 && k[..=du].iter().all(|&x| x == k[0])
+            && k[k.len()-du-1..].iter().all(|&x| x == k[k.len()-1]);
+        if !clamped(&self.uknots) || !clamped(&next.uknots) { return None }
+        let (last,first) = (self.poles.last()?,&next.poles[0]);
+        let apart = |(p,q): (&V,&V)| crate::util::space::distance(*p,*q) > tol;
+        if last.len() != first.len() || last.iter().zip(first).any(apart) { return None }
+        // (`next`'s weights scaled to meet `self`'s along the row they share)
+        let weights = match (&self.weights,&next.weights) {
+            (Some(a),Some(b)) => {
+                let (wa,wb) = (a.last()?,&b[0]);
+                let f = wa[0]/wb[0];
+                if wa.iter().zip(wb).any(|(x,y)| (x/y-f).abs() > 1e-12*f) { return None }
+                let mut w = a.clone();
+                w.extend(b[1..].iter().map(|row| row.iter().map(|&x| x*f).collect()));
+                Some(w)
+            }
+            _ => None,
+        };
+        let end = self.uknots[self.uknots.len()-1];
+        let shift = end-next.uknots[0];
+        let mut uknots = self.uknots[..self.uknots.len()-1].to_vec();
+        uknots.extend(next.uknots[du+1..].iter().map(|&k| k+shift));
+        let mut poles = self.poles.clone();
+        poles.extend(next.poles[1..].iter().cloned());
+        let net = Net {du,dv:self.dv,uknots,vknots:self.vknots.clone(),poles,weights};
+        net.check().ok()?;
+        Some(net)
+    }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
     /// the same parameters, only the net that reaches there (`BSpline::segment` is a curve's).
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
@@ -994,17 +1035,66 @@ pub fn fit_net_each(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,m
         // each row along u, then each column of their poles along v
         let rows: Vec<BSpline> = tv.iter().map(|&v| interpolate(&tu.iter().map(|&u| f(u,v)).collect::<Vec<_>>(),&tu,du))
             .collect::<Option<_>>()?;
-        let cols: Vec<BSpline> = (0..=nu).map(|i| interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&tv,dv))
-            .collect::<Option<_>>()?;
-        let net = Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
-            poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
-        let off = |u: f64,v: f64| crate::util::space::distance(net.point(u,v),f(u,v));
-        let (mut eu,mut ev) = (0f64,0f64);
-        for i in 0..nu { for &v in &tv { eu = eu.max(off((tu[i]+tu[i+1])/2.,v)); } }
-        for j in 0..nv { for &u in &tu { ev = ev.max(off(u,(tv[j]+tv[j+1])/2.)); } }
+        let net = net_of_rows(&rows,&tv,dv)?;
+        let (across,ev) = net_misses(&net,f,&tu,&tv);
+        let eu = across.into_iter().fold(0.,f64::max);
         let (grow_u,grow_v) = (eu > tol && nu < 1024,ev > tol && nv < 512);
         if !grow_u && !grow_v { return Some((net,eu,ev)) }
         if grow_u { nu *= 2; }
+        if grow_v { nv *= 2; }
+    }
+}
+
+/// The net whose rows along `u` are `rows` (on one knot vector), read at `tv` along `v`: each
+/// column of their poles interpolated along `v` at degree `dv`.
+fn net_of_rows(rows: &[BSpline],tv: &[f64],dv: usize) -> Option<Net> {
+    let cols: Vec<BSpline> = (0..rows[0].poles.len()).map(|i| interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),tv,dv))
+        .collect::<Option<_>>()?;
+    Some(Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
+        poles:cols.into_iter().map(|c| c.poles).collect(),weights:None})
+}
+
+/// How far `net` misses `f`: midway between each two of `us` along every row `tv` (the worst
+/// between each two), and midway between each two rows at every one of `us`.
+fn net_misses(net: &Net,f: &dyn Fn(f64,f64) -> V,us: &[f64],tv: &[f64]) -> (Vec<f64>,f64) {
+    let off = |u: f64,v: f64| crate::util::space::distance(net.point(u,v),f(u,v));
+    let across = us.windows(2).map(|w| tv.iter().map(|&v| off((w[0]+w[1])/2.,v)).fold(0.,f64::max)).collect();
+    let along = tv.windows(2).flat_map(|w| us.iter().map(move |&u| (u,(w[0]+w[1])/2.))).map(|(u,v)| off(u,v)).fold(0.,f64::max);
+    (across,along)
+}
+
+/// **`fit_net` across breaks**: the net of degrees `du`, `dv` through `f` over `[0, 1]²` whose
+/// knots along `u` hold each of `breaks` (in `(0, 1)`, increasing) `du` times over, so it may turn
+/// its rate there as `f` does — a surface ruled between two traced rails, whose parameter's pace
+/// jumps at each of their points, which no net smooth across them follows within a fit's
+/// tolerance. Each stretch between breaks gets its own count of even spans along `u` (2 to start),
+/// each row interpolated at its knots' Greville abscissae (`interpolate_on`), the rows' poles along
+/// `v` as `fit_net`'s; a stretch's count doubled while the net misses `f` within it by more than
+/// `tol` midway between knots, up to 64, and the rows' while it misses between them, up to 512.
+/// With how far it misses.
+pub fn fit_net_broken(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,breaks: &[f64],mut nv: usize,tol: f64) -> Option<(Net,f64)> {
+    let ends: Vec<f64> = std::iter::once(0.).chain(breaks.iter().copied().filter(|&b| b > 0. && b < 1.)).chain([1.]).collect();
+    let mut spans = vec![2usize;ends.len()-1];
+    loop {
+        // the knots, and each distinct knot's stretch
+        let (mut knots,mut us,mut of) = (vec![0.;du+1],vec![0.],Vec::new());
+        for (k,w) in ends.windows(2).enumerate() {
+            let inner = (1..spans[k]).map(|i| w[0]+(w[1]-w[0])*i as f64/spans[k] as f64);
+            knots.extend(inner.clone());
+            us.extend(inner.chain([w[1]]));
+            of.extend(std::iter::repeat(k).take(spans[k]));
+            knots.extend(std::iter::repeat(w[1]).take(if k+2 == ends.len() { du+1 } else { du }));
+        }
+        let tv: Vec<f64> = (0..=nv).map(|j| j as f64/nv as f64).collect();
+        let rows: Vec<BSpline> = tv.iter().map(|&v| interpolate_on(&|u| f(u,v),du,knots.clone())).collect::<Option<_>>()?;
+        let net = net_of_rows(&rows,&tv,dv)?;
+        let (across,ev) = net_misses(&net,f,&us,&tv);
+        let mut missed = vec![false;spans.len()];
+        for (i,&e) in across.iter().enumerate() { if e > tol { missed[of[i]] = true; } }
+        let mut grow_u = false;
+        for (k,n) in spans.iter_mut().enumerate() { if missed[k] && *n < 64 { *n *= 2; grow_u = true; } }
+        let grow_v = ev > tol && nv < 512;
+        if !grow_u && !grow_v { return Some((net,across.into_iter().fold(ev,f64::max))) }
         if grow_v { nv *= 2; }
     }
 }

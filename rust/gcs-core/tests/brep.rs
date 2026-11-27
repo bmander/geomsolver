@@ -4170,3 +4170,32 @@ fn a_large_nets_flux_is_estimated_within_its_bound() {
     let sewn = gcs_core::brep::sew::sewn(&[b],1e-9).unwrap();
     assert!((volume(&sewn)-6.).abs() < 1e-9,"sewn, the block's volume: {}",volume(&sewn));
 }
+
+/// **A ridge nearly flat rounded by a ball wide enough** (brep-bench's fillet/nearly-flat-ridge): a
+/// prism 6 deep whose roof is two faces tilted 0.5° up to a ridge, meeting at 179°, the ridge rounded
+/// 180 — the round 0.0069 off the edge, its ball's centre read to within 6e-7, so it is rounded as
+/// any other: `6(40 + 16 tan α − r²(tan α − α))`. A crease of a ten-millionth of a degree rounded 1
+/// stands off its edge by less than its centre is read to, and is refused.
+#[test]
+fn a_nearly_flat_ridge_is_rounded_by_a_ball_wide_enough() {
+    let roof = |tilt: f64| {
+        let ridge = 5.+4.*tilt.to_radians().tan();
+        let mut floor = Profile {names:vec![],origin:[0.;3],normal:[0.,0.,1.],
+            loops:vec![poly(&[[0.,0.,0.],[8.,0.,0.],[8.,5.,0.],[4.,ridge,0.],[0.,5.,0.]])]};
+        floor.names = vec![["front","right","right roof","left roof","left"].map(String::from).to_vec()];
+        (prism(&floor,0.,6.).unwrap(),ridge)
+    };
+    let (block,ridge) = roof(0.5);
+    let r = 180.;
+    let a = 0.5f64.to_radians();
+    let round = gcs_core::brep::fillet::roll(&block,[4.,ridge,3.],r,gcs_core::brep::geom::tolerance(block.size())).unwrap();
+    use gcs_core::brep::boolean::{combined,Op};
+    let out = combined(&block,&round.piece,Op::Cut,0.).unwrap();
+    out.check(1e-8).unwrap();
+    let section = 40.+16.*a.tan()-r*r*(a.tan()-a);
+    close(volume(&out),6.*section);
+    close(total_area(&out),2.*section+6.*(18.+8./a.cos()-2.*r*a.tan()+2.*r*a));
+    let (block,ridge) = roof(1e-7);
+    let e = gcs_core::brep::fillet::roll(&block,[4.,ridge,3.],1.,gcs_core::brep::geom::tolerance(block.size())).unwrap_err();
+    assert!(e.contains("too nearly flat"),"{e}");
+}

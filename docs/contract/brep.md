@@ -735,6 +735,13 @@ has an offset in closed form at all is its own question (`Surface::has_offset`).
 wants a surface says so (`Offset::surface`, or `Surface::offset_surface`, which refuses a closing
 offset as that), and none reads a collapse as no offset at all (a ball as wide as its cylinder,
 [rounds.md](rounds.md)).
+**The surface moved along its normal with its parameters kept** (`Surface::normal_moved`) is
+what a face carried along its normal lies on (`offset::carried_sweep`): its point at `(u, v)` is
+`S(u, v) + d N(u, v)` exactly, which `offset` and `parallel` do not promise — a cone's offset keeps
+its frame and shifts `v`, so the moved cone is stood `d sin α` back along its axis with its radius
+there grown by `d cos α` (less than nothing where its origin falls past the moved apex, which STEP
+places at its apex, `step::cone_written`), and an ellipse swept along a line is read over its
+rational spline's parameter and has none (`brep_offset::a_surface_moved_along_its_normal_keeps_its_parameters`).
 **A sheet's offset is read by its signed distance** (`Surface::parallel`, `Surface::Offset`): a
 B-spline sheet has no offset in closed form, and a fitted net would be an approximation, so the
 surface standing `d` off it is the level `d` of its signed distance, `S + d N` over the sheet's own
@@ -742,8 +749,9 @@ parameters (`Surface::Offset` holds the sheet's frame and net, and `d`) — its 
 from the sheet's second partials by Weingarten's equations, its distance the sheet's less `d`, its
 gradient the sheet's normal, a point's foot on it the foot on the sheet, warm from the last foot
 read where that settles `d` off (a point on an offset stands too far off the sheet for the sheet's
-own warm start, and every reading searched the whole sheet). It is read, never a face's: STEP and
-the sweep's dump refuse it. Past the sheet's
+own warm start, and every reading searched the whole sheet). It is a face's where a file gives one
+(`OFFSET_SURFACE`, written so again) and where a sheet's face is moved along its normal (a sheet
+thickened, `offset::carried_sweep`); the sweep's dump refuses it. Past the sheet's
 domain it is read on the sheet **carried on by its own polynomials** (`Net::d2_continued`, the end
 spans' polynomials past the knot they end at, and `Surface::continued_inverse`, Newton's foot with
 no domain to hold it), where the sheet's own signed distance runs on along the tangent extension:
@@ -828,6 +836,59 @@ and its strips exact, no canal fitted. A fitted canal round a circle was a net o
 that every later Boolean cut and every measure integrated: brep-bench's fillet/boss-s-curve took
 8.7 s, most of it its area, and now takes milliseconds, its volume and area to 1e-15
 (`brep::a_bosss_rim_and_root_rounded_to_meet_are_two_tori`; the hole's waist too).
+
+**How nearly flat is too flat is the ball's to say** (`fillet::flat_enough`, brep-bench's
+fillet/nearly-flat-ridge): two faces turning through `τ` meet at a ball's centre read within `tol /
+sin τ`, and a ball of radius `r` stands its round `r (1 / sin(θ/2) − 1)` off their edge; the round is
+refused as too nearly flat only where that is no more than a hundred times the first. Faces turning
+less than a degree were refused whatever the ball: a ridge of 179° rounded 180 stands 0.0069 off its
+edge, its centre read within 6e-7, and is rounded as any other; a crease of a ten-millionth of a
+degree rounded 1 is not (`brep::a_nearly_flat_ridge_is_rounded_by_a_ball_wide_enough`). A flat
+between faces turning less than a degree is still refused, none being asked for.
+
+**Rounds together lose what they close to nothing** (`rounds::rounded`, brep-bench's
+fillet/plate-full-round): where a round's two corners' balls are one, the round has no length — it
+vanishes, its arc at either end one edge, its faces' loops going straight on past it — and a face
+whose loop closes on itself with no area, two contact lines between the same two vertices, is gone,
+the two rounds either side of it meeting along that line. A plate rounded to half its thickness is
+its sides' half cylinders, each in two faces, and its corners' balls, each in two, `4896 + 558π` to
+1e-16; a face rounded away to nothing, no loop left (a cube rounded to half its side), is refused by
+name (`rounds_together::a_plate_rounded_to_half_its_thickness_loses_its_sides`). **A face the round
+swallows** (`rounds::swallowed`, fillet/round-swallowing-a-tiny-face): where the edges cannot be
+rounded as they stand and a face lies between two of them that stand nearer each other than the
+ball is wide (`rounds::narrow_face`), the face is deleted
+(`defeature::deleted`), the edge where the faces beside it now meet rounded in place of its two, and
+the answer kept only where every point read along the face's edges stands clear of the result's
+boundary, all on one side — a corner broken by a flat 0.0001 wide, rounded 1, is the corner rounded
+(`rounds_together::a_flat_thinner_than_the_ball_is_swallowed_by_its_round`; a flat wide enough to
+hold the ball keeps its rounds and itself). **A cell is a cell by its own measure**
+(`complex::cells_found`): a shell holds a volume past `1e-12` of the whole's cube, or, under that,
+past its own area times the tolerance (its faces' areas read only then); the flat's gap, 2.5e-8 of
+a complex 40 across, was read as no cell and the flat as closing no gap.
+
+**A side of faces cut from one sheet** (`fillet::ring`, brep-bench's fillet/nurbs-cylinder-rim): a
+face on a B-spline sheet, and every face across an edge from it whose net goes on where its own ends
+along `u` (`Net::joined_u`: clamped, one degree and `v` knots, the last row of poles the next's
+first, rational weights in one ratio), are one side to the ball, which rolls on the offset of the
+nets joined — no face's own net, carried on by its polynomials, is the sheet past its edge. The run
+round them is one closed loop; the canal starts where its contact crosses an edge between them, its
+contact is cut where it crosses each other one, and the side's strip is one face on each of them,
+on that face's own surface, between the run, the contact and the edges up from the run to it
+(`fillet::build_ring`), so the Boolean meets each strip on the surface of the face it lies on. A
+cylinder whose side is the rational circle carried up in two faces is the analytic cylinder's
+rounded rim to 5e-11 (`sheet_rounds::a_rim_on_a_side_cut_from_one_sheet_rolls_round_it`).
+
+**A ball whose radius varies along the edge** (`fillet::roll_varying`, brep-bench's
+fillet/variable-radius-*): at each point `p` of a run that ends, the ball of radius `radius(p)`
+touching both faces with its centre in the plane square to the edge there — the centre on both
+faces' offsets by that radius and in that plane, by Newton's method from `r` off each face — its arc
+between its contacts the section. The run is its edges in order from one end to the other, each
+end cut off as `roll` cuts one, the ball rolled on past it by the edge's own curve carried on; the
+canal and the spine are fitted within `roll`'s bar, and the strips and caps are `roll`'s
+(`build_open`). A cube's edge rounded by a radius growing along it, an L's inside edge, a hexagon's
+obtuse edge and a half cylinder's rim rounded by a radius growing round it are their closed forms
+to 1e-10 (`varying_rounds`). Refused: a radius of no size anywhere along the edge, a run that closes,
+a face's offset that is no surface, a face that cannot hold the ball (`holds_ball_by`).
 **Edges rounded together, the kernel placing every piece** (`rounds::rounded(b, edges, r, tol)`,
 brep-bench's fillet/box-all-edges): a set of edges rounded in one call. Where they are straight,
 between planes, and each vertex they reach has three edges, all of them among the set and all
@@ -2119,16 +2180,49 @@ some point is — a corner where two or more such creases meet and none turns th
 corner of no crease whose faces' normals differ there (a cone's apex; `smooth_at` reads each face
 just inside it, so a sphere's pole is smooth) — every piece within `d` of the solid and every such
 point in a piece, united by the Booleans.  **A face no prism or band of revolution takes is carried
-between its moved copies** (`offset::carried_sweep`): on a plane, a cylinder or a sphere the move
-`q ↦ q + h n(q)` is one affine map of space, linear in `h` (a step, a stretch square to the axis, a
-scaling about the centre), so the face moved to `h` is its image — its edges' images on the offset
-surface, its pcurves its own — and the wall an edge sweeps is exactly the `Blend` of its two images
-(a plane where they lie in one) — which stands on the face's neighbouring plane along the edge and
-along each ruling where its far image crosses that plane, and **a plane meets a ruled sheet one of
-whose rails lies in it exactly in that rail and those rulings** (`ssi::rail_in_plane`:
+between its moved copies wherever its surface moved along its normal keeps its parameters**
+(`offset::carried_sweep`): `Surface::normal_moved` is the surface whose point at `(u, v)` is
+`S(u, v) + h N(u, v)` — a plane moved, a cylinder's, a sphere's or a torus's radius grown, a cone
+stood `h sin α` back along its axis with its radius there grown by `h cos α` (its radius at the
+origin less than nothing where the origin falls past the moved apex; STEP places it at its apex,
+`step::cone_written`), a sheet's offset (`Surface::Offset`, `S + h N` read exactly over the sheet's
+own parameters, though it has no closed form), a spline swept along a line read as its sheet — and
+`Surface::offset` makes no such promise (a cone's keeps its frame and shifts `v`; an ellipse swept
+along a line is read over its rational spline's parameter, and its face is refused).  So the face
+moved to `h` is the face on that surface with its own pcurves (`offset::moved_face`), each edge the
+edge's curve carried along the normal at its foot with its parameter kept (`Curve::Parallel`,
+`parallel::Parallel`: `q + (P − B)` at the foot, so it stands exactly `h` off `q`; its rate by
+Weingarten's partials; its foot and the foot's rate the face's pcurve's where that is a line or a
+curve of the parameters, `parallel::Foot`, searched for only under an inverted pcurve; written to
+STEP as the cubic through it), and the wall an edge sweeps the `Blend` of the edge and its image at
+one parameter — the normals along the edge, exactly (a plane where they lie in one).  **On a plane,
+a cylinder or a sphere the move is one affine map of space**, linear in `h` (a step, a stretch
+square to the axis, a scaling about the centre), so there the face moved is its image instead, its
+edges' images of the kernel's own kinds (an ellipse's an ellipse), which the closed forms of the
+meetings and a file's exact curves take — and the wall stands on the face's neighbouring plane along
+the edge and along each ruling where its far image crosses that plane, and **a plane meets a ruled
+sheet one of whose rails lies in it exactly in that rail and those rulings** (`ssi::rail_in_plane`:
 `(1 − v) α(u) + v β(u)`, the rail's height `α` nothing all along, is `v β(u)`; traced, the rail's
-ends missed its vertices by 4e-6 and the plane's pieces did not close); a cone's or a torus's move is no affine map, and such a face its own
-parameter lines do not bound is refused.  **An extrusion's face is the rectangle its line sweeps
+ends missed its vertices by 4e-6 and the plane's pieces did not close).  The move stretches area by
+`(1 − h κ₁)(1 − h κ₂)`, a quadratic in `h` read exactly from the moved surface's partials at three
+distances, and where its least over the sweep reaches nothing on a grid of each knot span of the
+face's box of parameters (and of each stretch between where a torus's curvature across its tube
+turns, its equators; a cone's runs one way along each generator) the sweep folds and is refused
+(`offset::unfolded`, every carried face); a cone's face reaching its apex, where it has no normal,
+is refused; a sweep that runs into itself across the face, a fold no point's own curvature shows,
+is not detected.  Gates: `brep_offset::a_spline_sheet_is_thickened_on_its_exact_offset`
+(brep-bench's parabolic trough, its closed forms to 1e-9, and refused past its vertex's radius of
+curvature), `a_sheet_curved_both_ways_is_thickened_to_steiners_volume` (a paraboloid sheet, its
+ruled walls blends, against Steiner's `∫ (t − t² (κ₁ + κ₂)/2 + t³ κ₁κ₂/3) dA` by Gauss's rule),
+`a_cone_cut_aslant_grown_is_steiners` (a frustum cut aslant, a convex body's Steiner formula),
+`a_torus_cut_aslant_shrunk_and_its_face_thickened` (a ring two spiric curves bound, shrunk the ring
+of the tube shrunk under the plane moved in, and its torus lifted out and thickened either way,
+`∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA`, each over its meridians in closed form — grown, its traced
+creases' tubes are not held to a family's `EXACT` yet, and `offset::swept_tube` refuses them), `a_spline_extrusion_cut_aslant_is_thickened` (the trough's profile swept and cut
+aslant, its side lifted out and thickened, `∫ (t − t² κ/2) dA` by Gauss's rule, and refused past
+its vertex's curvature), `a_cone_placed_at_its_apex_is_thickened_inward` (onto a cone whose radius
+at its origin is less than nothing), and the same solids among
+`step_roundtrip::the_sample_reads_back`'s.  **An extrusion's face is the rectangle its line sweeps
 along its normal, carried along its curve** (`offset::extruded_sweep`): the normal of `c(u) + v z`
 stands square to `z` and alike all along each line, so the face's sweep is the face family of four
 lines in the plane of `z` and `n(u)` as `u` runs, closed on itself round a closed curve
@@ -2200,19 +2294,22 @@ far radius less the near one's, each cut at the axis).  Past a surface's axis th
 the far side of it: for a sweep in its own right that part mirrored and turned half a turn on is
 added (a bend thickened past its radius); for an offset's piece it is cut away
 (`Reach::cut_at_axis`), since a point there is nearer the surface on the axis's far side and not
-this face's.  Any other plane's, cylinder's or sphere's face is carried between its moved copies
-(above); a surface with no offset in closed form, or a cone's or a torus's face not bounded by its
-own parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
+this face's.  Any other face of those kinds is carried between its moved copies (above), and so is
+a spline sheet's and a spline extrusion's; a surface whose offset keeps no parameters of its own
+(an ellipse swept along a line, its face not bounded by its parameter lines) or is not read (a
+curve turned, a blend, a family's wall, an image) is refused naming the face and a point on it —
+never approximated.  A known limit of
 the Booleans, not a rule of offsets: a meeting through a sphere's pole is read less exactly than one
 clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9e-7 off), so a
 corner's ball is built with its poles along the corner's mean normal, clear of the circles the
 tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
 bend thickened, an L shelled outward open at its step, sharp and round, a block open at its
-sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, rounds offset past
-their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its closed
-form to 1e-9; a spline sheet, an elliptic cylinder shrunk past its curvature and that block shelled
-sharp refused.
+sloping top, rounded, a cylinder cut at 45° grown past its ellipse's curvature, a cone cut aslant
+grown, a torus cut aslant shrunk and its face thickened, a spline extrusion cut aslant thickened, rounds offset
+past their radius, an elliptic cylinder grown and shrunk, and a spline ball grown, each to its
+closed form to 1e-9; sheets thickened past their curvature, an elliptic cylinder shrunk past its
+curvature and that block shelled sharp refused.
 
 **A closed spline meeting is one edge round** (brep-bench's geometry/elliptic-hole): a plane square
 to a spline's sweep meets it in the spline carried along the sweep, its weights and knots kept

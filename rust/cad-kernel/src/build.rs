@@ -294,7 +294,7 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
                     (Surface::Extrusion(plane,Arc::new(s.curve.clone())),!s.forward(),s.t[0],s.t[1]),
                 Curve::Turned(..) => return Err("a turned contact's meridian is turned, not swept along a line".into()),
                 Curve::Traced(..) | Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..)
-                | Curve::SheetCut(..) =>
+                | Curve::SheetCut(..) | Curve::Parallel(..) =>
                     unreachable!("a profile has only lines, circles, splines, ellipses and curves read exactly"),
             };
             // the side's parameters along the walk step, for the step's edge parameter

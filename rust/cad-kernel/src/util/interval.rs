@@ -252,6 +252,8 @@ impl Iv {
             (Some(x),Some(y)) => { let ([a0,a1],[b0,b1]) = (x.bounds(),y.bounds()); Iv(Interval::new(a0.max(b0),a1.min(b1)).ok().or(Some(x))) }
         }
     }
+    /// Its square, nothing less than nought (a product of it by itself is not, straddling nought).
+    pub fn square(self) -> Iv { Iv(self.0.and_then(|a| a.square().ok())) }
     /// Scaled by the float `k`, outward.
     pub fn times(self,k: f64) -> Iv { self*Iv::point(k) }
     /// The hull of `x`, every float of it.

@@ -86,9 +86,8 @@ impl Out {
             Surface::Plane(f) => { let a = self.placement(&f); self.add(format!("PLANE('',#{a})")) }
             Surface::Cylinder(f,r) => { let a = self.placement(&f); self.add(format!("CYLINDRICAL_SURFACE('',#{a},{})",real(r))) }
             Surface::Cone(f,r,a) => {
-                // STEP's semi-angle is positive: a cone opening against its z is the same cone
-                // about the reversed axis (x kept, y reversed), its normal unchanged
-                let f = if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f };
+                // STEP's semi-angle and radius are no less than nothing (`cone_written`)
+                let (f,r,_) = cone_written(f,r,a);
                 let p = self.placement(&f);
                 self.add(format!("CONICAL_SURFACE('',#{p},{},{})",real(r),real(a.abs())))
             }
@@ -178,6 +177,7 @@ impl Out {
 fn whose(c: &Curve) -> &'static str {
     match c { Curve::SheetCut(..) => "a screwed sheet's",Curve::Turned(..) => "a turned contact's",Curve::Slid(..) => "a slid torus's",
         Curve::Trochoid(..) => "a point's path's",
+        Curve::Parallel(..) => "a face's moved edge's",
         _ => "a face family's" }
 }
 
@@ -295,8 +295,13 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
     };
     let f = |u,v| b.d1([u,v]).0;
-    let fitted = match super::nurbs::fit_net(&f,3,dv,8,nv,FIT) {
-        Some((_,err)) if err > FIT && dv == 3 => super::nurbs::fit_net(&f,3,5,8,nv,FIT),
+    // where a rail's parameter turns its pace (a traced rail's, at each of its points), the net
+    // breaks there too
+    let breaks = if rough(&b.a) || rough(&b.b) { b.breaks() } else { Vec::new() };
+    let fit = |dv: usize| if breaks.is_empty() { super::nurbs::fit_net(&f,3,dv,8,nv,FIT) }
+        else { super::nurbs::fit_net_broken(&f,3,dv,&breaks,nv,FIT) };
+    let fitted = match fit(dv) {
+        Some((_,err)) if err > FIT && dv == 3 => fit(5),
         other => other,
     };
     match fitted {
@@ -304,6 +309,13 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),Strin
         Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
         None => Err("a loft face could not be fitted (its surface is degenerate)".into()),
     }
+}
+
+/// Whether a curve's pace jumps where its parameter breaks (`Curve::breaks`), a net through it
+/// being fitted across them: a trace's, and a curve carried along a normal from one or mapped
+/// from one.
+fn rough(c: &Curve) -> bool {
+    match c { Curve::Traced(_) => true,Curve::Parallel(m) => rough(&m.of),Curve::Affine(m) => rough(&m.of),_ => false }
 }
 
 /// A face family's wall as the file writes it (#243 L2): the net through it fitted within `FIT` as
@@ -401,7 +413,7 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
     match s.clone() {
         Surface::Plane(f) => (f,vec![]),
         Surface::Cylinder(f,r) => (f,vec![r]),
-        Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
+        Surface::Cone(f,r,a) => { let (f,r,_) = cone_written(f,r,a); (f,vec![r,a.abs()]) }
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
         Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => (f,vec![]),
@@ -416,18 +428,34 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
     }
 }
 
+/// **A cone as the file places it**: its frame, its radius there, and how far back along its own
+/// axis that frame stands from the kernel's. STEP's semi-angle is positive, so a cone opening
+/// against its z is the same cone about the reversed axis (x kept, y reversed), its normal
+/// unchanged; and its radius is no less than nothing, so a cone whose radius at its origin is
+/// (a face moved inward along its normal, `Surface::normal_moved`, its origin past the moved
+/// apex) is placed at its apex, `−r / tan α` along its axis, its radius there nothing.
+fn cone_written(f: Frame,r: f64,a: f64) -> (Frame,f64,f64) {
+    let back = if r < 0. { -r/a.dtan() } else { 0. };
+    let f = Frame {o:f.at([0.,0.,back]),..f};
+    (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },r.max(0.),back)
+}
+
 /// **A face's parameters as STEP's surface reads them** (ISO 10303-42): the same, but on a cone.
 /// The kernel's cone runs `v` along its generator (OCCT's `Geom_ConicalSurface`); the standard's
 /// `conical_surface` runs it along the axis, `C + (R + v tan α)(cos u x + sin u y) + v z`, so the
-/// file's `v` is the kernel's times `cos α` — and on a cone written about its reversed axis both
-/// run the other way. Each is a scaling, so a line, a spline's poles and a fitted cubic's are
-/// carried exactly. (An affine image's parameters are its net's, `OnNet::uv`.)
+/// file's `v` is the kernel's times `cos α`, less how far back the file places it
+/// (`cone_written`) — and on a cone written about its reversed axis both run the other way. Each
+/// is affine, so a line, a spline's poles and a fitted cubic's are carried exactly. (An affine image's parameters are its net's, `OnNet::uv`.)
 /// A lemon (a torus of negative major radius `−B`) is written as the degenerate torus of major
 /// radius `B`, whose point at `(u + π, π − v)` is the kernel's at `(u, v)`.
 fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
     use std::f64::consts::PI;
     match *s {
-        Surface::Cone(_,_,a) => { let c = a.dcos(); if a < 0. { [-uv[0],-uv[1]*c] } else { [uv[0],uv[1]*c] } }
+        Surface::Cone(f,r,a) => {
+            let (c,(_,_,back)) = (a.dcos(),cone_written(f,r,a));
+            let w = uv[1]*c-back;
+            if a < 0. { [-uv[0],-w] } else { [uv[0],w] }
+        }
         Surface::Torus(_,big,_) if big < 0. => [uv[0]+PI,PI-uv[1]],
         _ => uv,
     }
@@ -1363,7 +1391,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
             // a family's rail or rim likewise, its parameter the rail's or the rim's; an affine image
             // of a curve (a rail under a shear); and a plane's cut of a screwed sheet
             Curve::Rail(..) | Curve::Rim(..) | Curve::Affine(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..)
-            | Curve::Trochoid(..) => {
+            | Curve::Trochoid(..) | Curve::Parallel(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
             // a traced curve: the cubic through its points and tangents within `fit`'s bar, as
