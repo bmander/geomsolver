@@ -129,11 +129,7 @@ fn cut_cylinder(r: f64,h: f64,alpha: f64) -> Brep {
 /// `J = ∫ acos(−sin α cos φ) r √(1 + tan² α sin² φ) dφ` over a turn, which has no elementary form:
 /// the trapezoid rule, exact to rounding for a smooth periodic integrand at this many points.
 fn steiner_cut_cylinder(r: f64,h: f64,alpha: f64,d: f64) -> (f64,f64) {
-    let n = 4096;
-    let j = (0..n).map(|k| {
-        let phi = 2.*PI*k as f64/n as f64;
-        (-alpha.sin()*phi.cos()).acos()*r*(1.+(alpha.tan()*phi.sin()).powi(2)).sqrt()
-    }).sum::<f64>()*2.*PI/n as f64;
+    let j = turn(|phi| (-alpha.sin()*phi.cos()).acos()*r*(1.+(alpha.tan()*phi.sin()).powi(2)).sqrt());
     let (v0,s0) = (PI*r*r*h,2.*PI*r*h+PI*r*r+PI*r*r/alpha.cos());
     let m = PI*h+PI*PI*r/2.+j/2.;
     (v0+s0*d+m*d*d+4.*PI*d*d*d/3.,s0+2.*m*d+4.*PI*d*d)
@@ -270,6 +266,283 @@ fn a_ball_cut_aslant_grown_is_steiners() {
     let m = 4.*PI*r-2.*PI*c+(h/r).acos()*PI*rho;
     close("grown",volume(&g),v0+s0*d+m*d*d+4.*PI*d*d*d/3.);
     close("its area",total_area(&g),s0+2.*m*d+4.*PI*d*d);
+}
+
+/// **A surface moved along its normal keeps its parameters** (`Surface::normal_moved`): its point
+/// at `(u, v)` is the surface's there moved `d` along its unit normal, and its normal there the
+/// same — for a plane, a cylinder, a cone (one with its radius at its origin and one placed at
+/// its apex opening against its axis, moved either way, its moved origin past the moved apex), a
+/// sphere, a torus, a B-spline sheet and a spline swept along a line; an ellipse swept along a line
+/// has none.
+#[test]
+fn a_surface_moved_along_its_normal_keeps_its_parameters() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::nurbs::Net;
+    let f = Frame::new([0.3,-0.2,0.5],[0.,0.6,0.8],[1.,0.,0.]);
+    let dish = Net {du:2,dv:2,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],weights:None,
+        poles:[(-3.,1.125),(0.,-1.125),(3.,1.125)].iter().map(|&(x,zx)| [(-3.,1.125),(0.,-1.125),(3.,1.125)].iter().map(|&(y,zy)| [x,y,zx+zy]).collect()).collect()};
+    let parabola = BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],vec![[-4.,0.,2.],[0.,1.,-2.],[4.,0.,2.]]).unwrap();
+    let (at,across) = ([0.3,2.,4.5],[0.2,0.5,0.8]);
+    let surfaces: Vec<(Surface,Vec<f64>)> = vec![
+        (Surface::Plane(f),vec![-1.,0.,2.]),
+        (Surface::Cylinder(f,2.),vec![-1.,0.,2.]),
+        (Surface::Cone(f,1.5,0.4),vec![0.,1.,2.]),
+        (Surface::Cone(f,0.,-0.5),vec![-3.,-2.,-1.]),
+        (Surface::Sphere(f,3.),vec![-1.,0.,1.]),
+        (Surface::Torus(f,5.,2.),vec![0.5,2.,4.]),
+        (Surface::BSpline(f,Arc::new(dish)),across.to_vec()),
+        (Surface::Extrusion(f,Arc::new(Curve::BSpline(Arc::new(parabola)))),vec![-1.,0.,2.]),
+    ];
+    for (s,vs) in &surfaces {
+        let us: &[f64] = if matches!(s,Surface::BSpline(..) | Surface::Extrusion(..)) { &across } else { &at };
+        for d in [0.7,-0.4] {
+            let moved = s.normal_moved(d).unwrap_or_else(|| panic!("a {} moved by {d}",s.kind()));
+            for &u in us { for &v in vs {
+                let n = s.normal([u,v]).unwrap();
+                let (want,got) = (gcs_core::space::add(s.point([u,v]),n.map(|x| x*d)),moved.point([u,v]));
+                assert!(gcs_core::space::distance(want,got) <= 1e-10,"a {} moved by {d} at {u}, {v}: {got:?} against {want:?}",s.kind());
+                let m = moved.normal([u,v]).unwrap();
+                assert!(gcs_core::space::distance(m,n) <= 1e-9,"a {} moved by {d} at {u}, {v}: its normal {m:?} against {n:?}",s.kind());
+            } }
+        }
+    }
+    let ellipse = Surface::Extrusion(f,Arc::new(Curve::Ellipse(f,3.,2.)));
+    assert!(ellipse.normal_moved(0.5).is_none());
+}
+
+/// The cone of its apex at the origin opening to radius 3 at height 6 (its frame at the apex, its
+/// radius there nothing), cut by the plane `z = 2 + 0.3 x` and kept above it; its side lifted out
+/// and thickened by a half inward, onto the cone moved inward, whose radius at its origin is less
+/// than nothing.  Its volume `∫∫ (t − t² κ / 2) dA`, `κ = cos α / ρ` across the generators and
+/// none along them, `dA = ρ du dv`: `t sin α v²/2 − t² cos α v/2` across each generator, from where
+/// it meets the plane, `v = 2 / (cos α − 0.3 sin α cos u)`, to the rim, `6 / cos α`.
+pub(crate) fn apex_cone_thickened_inward() -> (Brep,f64) {
+    let pointed = cone([0.;3],[0.,0.,1.],0.,3.,6.).unwrap();
+    let n = [-0.3f64,0.,1.];
+    let l = (n[0]*n[0]+n[2]*n[2]).sqrt();
+    let cut = kept(&pointed,[0.,0.,2.],n.map(|x| x/l),0.).unwrap();
+    let sides: Vec<usize> = (0..cut.faces.len()).filter(|&f| cut.faces[f].surface.kind() == "cone").collect();
+    let sheet = sheet_of(&cut,&sides).unwrap();
+    assert!(sheet.faces.iter().all(|f| !f.reversed));
+    let t = 0.5;
+    let solid = thickened(&sheet,[-t,0.],Join::Round).unwrap();
+    let alpha = 0.5f64.atan();
+    let (sa,ca) = alpha.sin_cos();
+    let g = |v: f64| t*sa*v*v/2.-t*t*ca*v/2.;
+    (solid,turn(|u| g(6./ca)-g(2./(ca-0.3*sa*u.cos()))))
+}
+
+/// A cone's face moved inward past where its frame's radius is nothing (`apex_cone_thickened_inward`):
+/// thickened, its volume is its closed form.
+#[test]
+fn a_cone_placed_at_its_apex_is_thickened_inward() {
+    let (solid,want) = apex_cone_thickened_inward();
+    solid.check(1e-7).unwrap();
+    close("volume",volume(&solid),want);
+}
+
+/// The frustum `ρ = R₀ + m z` over `0 ≤ z ≤ 6` (`m = −1/3`, from 3 down to 1), cut by the plane
+/// `z = 3 + x tan β` and kept below it.
+pub(crate) fn cut_cone(beta: f64) -> Brep {
+    let frustum = cone([0.;3],[0.,0.,1.],3.,1.,6.).unwrap();
+    kept(&frustum,[0.,0.,3.],[beta.sin(),0.,-beta.cos()],0.).unwrap()
+}
+
+/// The trapezoid rule over a turn, exact to rounding for a smooth periodic integrand at this many
+/// points.
+fn turn(f: impl Fn(f64) -> f64) -> f64 {
+    let n = 4096;
+    (0..n).map(|k| f(2.*PI*k as f64/n as f64)).sum::<f64>()*2.*PI/n as f64
+}
+
+/// Steiner's formula for `cut_cone(β)` grown by `d`: its volume and area.  Over the polar angle
+/// `φ`, the generator meets the plane at height `z_t(φ) = (c + R₀ T cos φ)/(1 − m T cos φ)`
+/// (`T = tan β`), radius `ρ_t = R₀ + m z_t`.  Its volume by the divergence of `(0, 0, z)`: the
+/// side's `−m (R₀ z_t²/2 + m z_t³/3)` and the top's `c ρ_t²/2 + T cos φ ρ_t³/3`, each over a turn;
+/// its area the base's, the side's `√(1 + m²) (R₀ z_t + m z_t²/2)` and the top's ellipse's; its
+/// integrated mean curvature the side's `z_t / 2` (its curvature `cos α / ρ`), the base circle's
+/// angle between its faces' normals, `acos(m / √(1 + m²))`, along half of it, and the ellipse's
+/// angle `acos(n_side · n_top)` along half of it — a convex body's.
+fn steiner_cut_cone(beta: f64,d: f64) -> (f64,f64) {
+    let (r0,m,c,t) = (3f64,-1f64/3.,3f64,beta.tan());
+    let w = (1.+m*m).sqrt();
+    let zt = |p: f64| (c+r0*t*p.cos())/(1.-m*t*p.cos());
+    let dzt = |p: f64| {
+        let (n,dn,dd) = (c+r0*t*p.cos(),-r0*t*p.sin(),m*t*p.sin());
+        let den = 1.-m*t*p.cos();
+        (dn*den-n*dd)/(den*den)
+    };
+    let v0 = turn(|p| { let (z,rho) = (zt(p),r0+m*zt(p)); -m*(r0*z*z/2.+m*z*z*z/3.)+c*rho*rho/2.+t*p.cos()*rho.powi(3)/3. });
+    let s0 = PI*r0*r0+turn(|p| { let (z,rho) = (zt(p),r0+m*zt(p)); w*(r0*z+m*z*z/2.)+rho*rho/2./beta.cos() });
+    let top = [-beta.sin(),0.,beta.cos()];
+    let crease = turn(|p| {
+        let (z,dz) = (zt(p),dzt(p));
+        let (rho,drho) = (r0+m*z,m*dz);
+        let e = [drho*p.cos()-rho*p.sin(),drho*p.sin()+rho*p.cos(),dz];
+        let n = [p.cos()/w,p.sin()/w,-m/w];
+        (n[0]*top[0]+n[1]*top[1]+n[2]*top[2]).acos()*(e[0]*e[0]+e[1]*e[1]+e[2]*e[2]).sqrt()
+    });
+    let mean = turn(|p| zt(p)/2.)+PI*r0*(m/w).acos()+crease/2.;
+    (v0+s0*d+mean*d*d+4.*PI*d*d*d/3.,s0+2.*mean*d+4.*PI*d*d)
+}
+
+/// `cut_cone(π/6)` grown by 1 (`a_cone_cut_aslant_grown_is_steiners`): its moved side on a cone
+/// stood back along its axis, its edges carried along the normal.
+pub(crate) fn cone_cut_aslant_grown() -> Brep { grown(&cut_cone(PI/6.),1.,Join::Round).unwrap() }
+
+/// The torus's faces of `cut_torus(2, 12°, 0.4)` lifted out and thickened outward by a half
+/// (`a_torus_cut_aslant_shrunk_and_its_face_thickened`).
+pub(crate) fn torus_face_cut_aslant_thickened() -> Brep {
+    let ring = cut_torus(2.,12f64.to_radians(),0.4);
+    let tori: Vec<usize> = (0..ring.faces.len()).filter(|&f| ring.faces[f].surface.kind() == "torus").collect();
+    thickened(&sheet_of(&ring,&tori).unwrap(),[0.,0.5],Join::Round).unwrap()
+}
+
+/// `cut_trough`'s side lifted out and thickened by 1 toward its focus
+/// (`a_spline_extrusion_cut_aslant_is_thickened`).
+pub(crate) fn spline_extrusion_cut_aslant_thickened() -> Brep {
+    let cut = cut_trough();
+    let side = sheet_of(&cut,&faces_through(&cut,&[[0.,1.,0.]])).unwrap();
+    thickened(&side,toward_focus(&side,1.),Join::Round).unwrap()
+}
+
+/// A frustum cut aslant: its side meets the slanted top in an ellipse no parameter line of the
+/// cone is, and a cone's move along its normal is no map of space, so its side's sweep is the face
+/// on its cone moved along the normal with its parameters kept (`Surface::normal_moved`, the
+/// cone's origin stood back along its axis), its edges carried along the normal
+/// (`Curve::Parallel`), walled by the ruled sheet of the normals along the ellipse.  Grown, it is
+/// Steiner's formula, a convex body's.
+#[test]
+fn a_cone_cut_aslant_grown_is_steiners() {
+    for (beta,d) in [(PI/6.,1.),(PI/5.,0.5)] {
+        let cut = cut_cone(beta);
+        close(&format!("cut at {beta}: its volume"),volume(&cut),steiner_cut_cone(beta,0.).0);
+        let g = grown(&cut,d,Join::Round).unwrap();
+        g.check(1e-7).unwrap();
+        let (v,a) = steiner_cut_cone(beta,d);
+        close(&format!("grown by {d} at {beta}: its volume"),volume(&g),v);
+        close(&format!("grown by {d} at {beta}: its area"),total_area(&g),a);
+    }
+}
+
+/// The torus about `z` of middle radius 5 and tube `r` kept below the plane `z = c + x tan β`,
+/// which cuts every meridian circle (a ring, two spiric curves round it).
+pub(crate) fn cut_torus(r: f64,beta: f64,c: f64) -> Brep {
+    kept(&torus([0.;3],[0.,0.,1.],5.,r).unwrap(),[0.,0.,c],[beta.sin(),0.,-beta.cos()],0.).unwrap()
+}
+
+/// The ring `cut_torus(r, β, c)`'s volume, area and integrated mean curvature, in closed form over
+/// its meridians.  At `u` the line `z = c + ρ k` (`k = T cos u`) leaves below it the arc
+/// `v − φ ∈ [π − asin s, 2π + asin s]` of the meridian `ρ = R + r cos v`, `z = r sin v`
+/// (`φ = atan k`, `s = (R k + c)/(r √(1 + k²))`).  Its volume by the divergence of `(0, 0, z)`:
+/// the torus's `r² (R (v/2 − sin 2v/4) + r sin³ v/3)` across the arc and the plane's between its
+/// two curves, `c (ρ_o² − ρ_i²)/2 + T cos u (ρ_o³ − ρ_i³)/3`; its area the torus's
+/// `r (R v + r sin v)` across the arc and the plane's `(ρ_o² − ρ_i²)/2 / cos β`; its mean curvature
+/// the torus's `(R v + 2 r sin v)/2` across the arc and, along each curve, half the angle between
+/// its faces' normals, `|E'| = √(ρ² + r² v'²)`.
+fn cut_torus_measures(r: f64,beta: f64,c: f64) -> (f64,f64,f64) {
+    let (big,t) = (5f64,beta.tan());
+    let arc = |u: f64| cut_torus_arc(r,beta,c,u);
+    let across = |g: &dyn Fn(f64) -> f64,u: f64| { let [a,b] = arc(u).0; g(b)-g(a) };
+    let rho = |v: f64| big+r*v.cos();
+    let plane = |u: f64| { let [i,o] = arc(u).0.map(rho); (i,o) };
+    let v0 = turn(|u| across(&|v| r*r*(big*(v/2.-(2.*v).sin()/4.)+r*v.sin().powi(3)/3.),u))
+        +turn(|u| { let (i,o) = plane(u); c*(o*o-i*i)/2.+t*u.cos()*(o.powi(3)-i.powi(3))/3. });
+    let s0 = turn(|u| across(&|v| r*(big*v+r*v.sin()),u))+turn(|u| { let (i,o) = plane(u); (o*o-i*i)/2./beta.cos() });
+    let top = [-beta.sin(),0.,beta.cos()];
+    let crease = |u: f64,v: f64,dv: f64| {
+        let n = [v.cos()*u.cos(),v.cos()*u.sin(),v.sin()];
+        (n[0]*top[0]+n[1]*top[1]+n[2]*top[2]).acos()*(rho(v)*rho(v)+r*r*dv*dv).sqrt()
+    };
+    let mean = turn(|u| across(&|v| (big*v+2.*r*v.sin())/2.,u))
+        +turn(|u| { let (v,dv) = arc(u); (crease(u,v[0],dv[0])+crease(u,v[1],dv[1]))/2. });
+    (v0,s0,mean)
+}
+
+/// A torus cut aslant by a plane through every meridian is a ring bounded by two spiric curves,
+/// no parameter line of the torus: its face's sweep is the face on the torus of the tube grown or
+/// shrunk, its edges carried along the normal (`Curve::Parallel`), walled by the ruled sheets of
+/// the normals along the curves.  Shrunk, it is the ring of the tube shrunk under the plane moved
+/// in, the eroded meet being the meet of the eroded sets; the torus's face lifted out as a sheet
+/// and thickened by `t` either way is `∫∫ ∫ (1 + h/r)(1 + h cos v/ρ) dh dA` over its arcs, in closed
+/// form, `t r (R v + r sin v) ± t²/2 (R v + 2 r sin v) + t³/3 sin v` across each.  (Grown, the
+/// ring needs the ball's tube along its traced creases, which is not held to a face family's
+/// `EXACT` yet: `offset::swept_tube` refuses it.)
+#[test]
+fn a_torus_cut_aslant_shrunk_and_its_face_thickened() {
+    let (r,beta,c) = (2.,12f64.to_radians(),0.4);
+    let ring = cut_torus(r,beta,c);
+    close("the ring's volume",volume(&ring),cut_torus_measures(r,beta,c).0);
+    let d = 0.5;
+    let s = shrunk(&ring,d,Join::Round).unwrap();
+    s.check(1e-7).unwrap();
+    close("shrunk: its volume",volume(&s),cut_torus_measures(r-d,beta,c-d/beta.cos()).0);
+    let tori: Vec<usize> = (0..ring.faces.len()).filter(|&f| ring.faces[f].surface.kind() == "torus").collect();
+    let sheet = sheet_of(&ring,&tori).unwrap();
+    assert!(sheet.faces.iter().all(|f| !f.reversed));
+    for t in [0.5f64,-0.5] {
+        let th = thickened(&sheet,if t > 0. { [0.,t] } else { [t,0.] },Join::Round).unwrap();
+        th.check(1e-7).unwrap();
+        let big = 5f64;
+        let want = cut_torus_turn(r,beta,c,&|v| t.abs()*r*(big*v+r*v.sin())+t*t.abs()/2.*(big*v+2.*r*v.sin())+t*t*t.abs()/3.*v.sin());
+        close(&format!("thickened by {t}"),volume(&th),want);
+    }
+}
+
+/// The arc `cut_torus(r, β, c)` keeps of its meridian at `u`, `[v_a, v_b]` (`cut_torus_measures`),
+/// and its ends' rates in `u`.
+fn cut_torus_arc(r: f64,beta: f64,c: f64,u: f64) -> ([f64;2],[f64;2]) {
+    let (big,t) = (5f64,beta.tan());
+    let (k,dk) = (t*u.cos(),-t*u.sin());
+    let q = 1.+k*k;
+    let s = (big*k+c)/(r*q.sqrt());
+    assert!(s.abs() < 1.,"the plane misses the meridian at {u}");
+    let ds = dk*(big-c*k)/(r*q.powf(1.5))/(1.-s*s).sqrt();
+    let (phi,dphi) = (k.atan(),dk/q);
+    ([phi+PI-s.asin(),phi+2.*PI+s.asin()],[dphi-ds,dphi+ds])
+}
+
+/// `∫ (g(v_b) − g(v_a)) du` over the arcs `cut_torus(r, β, c)` keeps of its meridians.
+fn cut_torus_turn(r: f64,beta: f64,c: f64,g: &dyn Fn(f64) -> f64) -> f64 {
+    turn(|u| { let [a,b] = cut_torus_arc(r,beta,c,u).0; g(b)-g(a) })
+}
+
+/// The parabolic trough's profile, `z = x²/8` over `|x| ≤ 4` as a quadratic Bézier closed by the
+/// line `z = 2`, swept 10 along `y`, cut by the plane `y = 6 + 0.3 x + 0.2 z` and kept short of it:
+/// its curved side a spline swept along a line (`Surface::Extrusion`), bounded at the cut by no
+/// parameter line of it.
+pub(crate) fn cut_trough() -> Brep {
+    let parabola = BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],vec![[-4.,0.,2.],[0.,0.,-2.],[4.,0.,2.]]).unwrap();
+    let section = Profile {origin:[0.;3],normal:[0.,1.,0.],names:Vec::new(),
+        loops:vec![vec![ProfileEdge::Spline(Arc::new(parabola)),ProfileEdge::Line {a:[4.,0.,2.],b:[-4.,0.,2.]}]]};
+    let trough = prism(&section,0.,10.).unwrap();
+    let n = [0.3f64,-1.,0.2];
+    let l = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+    kept(&trough,[0.,6.,0.],n.map(|x| x/l),0.).unwrap()
+}
+
+/// A spline swept along a line, cut aslant so its boundary is no parameter line of it: its offset
+/// keeps its parameters (`Surface::normal_moved`, the sweep read as its sheet), so the face lifted
+/// out as a sheet and thickened by 1 toward its focus is the face moved on the sheet's exact
+/// offset, its edges carried along the normal, walled by the normals along them — its volume
+/// `∫ (t − t² κ / 2) dA`, the sheet's curvature `κ = (1/4) / (1 + x²/16)^{3/2}` across it and none
+/// along it, `dA = √(1 + x²/16) (6 + 0.3 x + 0.2 x²/8) dx`, by Gauss's rule, independently of the
+/// solid.  Thickened past its least radius of curvature, 4 at the vertex, it folds and is refused.
+#[test]
+fn a_spline_extrusion_cut_aslant_is_thickened() {
+    let cut = cut_trough();
+    let side = sheet_of(&cut,&faces_through(&cut,&[[0.,1.,0.]])).unwrap();
+    assert_eq!(side.faces[0].surface.kind(),"extrusion");
+    let th = 1.;
+    let t = thickened(&side,toward_focus(&side,th),Join::Round).unwrap();
+    t.check(1e-7).unwrap();
+    let want = crate::swept_slid::gauss(&|x| {
+        let g = 1.+x*x/16.;
+        (th-th*th*0.25/g.powf(1.5)/2.)*g.sqrt()*(6.+0.3*x+0.2*x*x/8.)
+    },-4.,4.,16);
+    close("volume",volume(&t),want);
+    let e = thickened(&side,toward_focus(&side,5.),Join::Round).unwrap_err();
+    assert!(e.contains("folds"),"{e}");
 }
 
 #[test]

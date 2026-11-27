@@ -41,10 +41,30 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (`(1 − h κ₁)(1 − h κ₂)` read exactly as a quadratic in `h` over each knot span). brep-bench's
   parabolic trough thickened is its closed forms to 1e-9 in volume and area, and a paraboloid sheet
   thickened is Steiner's volume.
-- **`Curve::Parallel`** (`parallel::Parallel`): a curve on a sheet carried `d` along the sheet's
-  normal onto its offset, its parameter its own — a face's edge moved with the face. Written to STEP
-  as the cubic through it within the file's bar. **Breaking** for code matching `Curve`
+- **`Curve::Parallel`** (`parallel::Parallel`): a curve on a surface carried `d` along the
+  surface's normal onto its offset, its parameter its own — a face's edge moved with the face.
+  Written to STEP as the cubic through it within the file's bar. Its foot on the surface is read off
+  the face's pcurve where that is a line or a curve of the parameters (`parallel::Foot`), not
+  searched for (some 7–9× faster a point on a sheet). **Breaking** for code matching `Curve`
   exhaustively.
+- **One normal sweep for every surface whose offset keeps its parameters**
+  (`Surface::normal_moved`, `offset::carried_sweep`): `S + d N` over the surface's own
+  parameters — a plane, cylinder, sphere or torus with its radius grown, a cone stood `d sin α`
+  back along its axis with its radius grown by `d cos α` (its offset by `Surface::offset` keeps its
+  frame and shifts `v`), a sheet's offset, a spline swept along a line read as its sheet. Any such
+  face is carried between its moved copies on it, its edges `Curve::Parallel`, its walls the
+  normals along them; a plane's, a cylinder's and a sphere's are still their affine images, whose
+  edges are of the kernel's own kinds. A cone's or a torus's face, or a spline extrusion's, not
+  bounded by its own parameter lines is swept, not refused, so it is grown, shrunk and thickened,
+  each to its closed form to 1e-9; the fold check (`offset::unfolded`) runs for every carried face,
+  a torus's grid cut where its curvature turns, and a cone's face reaching its apex is refused.
+  A cone whose radius at its origin is less than nothing (its origin past its apex, as a face moved
+  inward lies on) is written to STEP placed at its apex. A carried edge is enclosed
+  (`enclose::normal_at`: on the analytic kinds the unit normal a closed form of the point), so the
+  Booleans prove its meetings and a grown cone's sweep unites.
+- **A loft face ruled between traced rails is written within `FIT`** (`nurbs::fit_net_broken`):
+  its net breaks along `u` where a rail's parameter turns its pace, each of a trace's points, not
+  fitted smooth across them (a thickened torus's wall was 8.4e-6 off).
 
 ## [0.26.0] - 2026-11-26
 

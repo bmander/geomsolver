@@ -1014,6 +1014,10 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
         ("cylinder cut aslant",aslant),
         ("two blocks",two),
         ("spline sheet thickened",crate::brep_offset::thickened_dish(3.,1.)),
+        ("cone cut aslant grown",crate::brep_offset::cone_cut_aslant_grown()),
+        ("torus's face cut aslant thickened",crate::brep_offset::torus_face_cut_aslant_thickened()),
+        ("spline extrusion cut aslant thickened",crate::brep_offset::spline_extrusion_cut_aslant_thickened()),
+        ("cone at its apex thickened inward",crate::brep_offset::apex_cone_thickened_inward().0),
     ]
 }
 

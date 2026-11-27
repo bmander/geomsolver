@@ -20,21 +20,23 @@
 //!
 //! Every piece is built exactly by the kernel's own sweeps (`build::prism`, `build::revolve`,
 //! `build::sphere`), and combined by its Booleans.  A face no profile's prism or band of
-//! revolution takes — a plane's loop of ellipses, a cylinder's face an ellipse bounds — is carried
-//! between its moved copies where its move along its normal is an affine map (`carried_sweep`: a
-//! plane's, a cylinder's, a sphere's), and so is a spline sheet's face, whose offset has no closed
-//! form but is read exactly over the sheet's own parameters (`Surface::Offset`, its edges carried
-//! along the normal, `parallel::Parallel`); a crease along a curve no closed form carries a tube
-//! along is the ball carried along it (`swept_tube`).  A face whose normal sweep has no exact
-//! construction here yet — a cone's or a torus's face not bounded by its own parameter lines, a
-//! surface whose offset is not read at all (a curve turned, a blend, a family's wall, an image) —
-//! is refused, naming it and a point on it.
+//! revolution takes — a plane's loop of ellipses, a cylinder's face an ellipse bounds, a cone's or a
+//! torus's a plane cuts aslant — is carried between its moved copies wherever its surface moved
+//! along its normal keeps its parameters (`carried_sweep`, `Surface::normal_moved`): the face moved
+//! is the face on that surface with its own pcurves, its edges carried along the normal
+//! (`parallel::Parallel`) — or, where the move is an affine map of space (a plane's, a cylinder's, a
+//! sphere's), its image — so a spline sheet's face, whose offset has no closed form, is carried on
+//! its exact offset (`Surface::Offset`) as a torus's is on the torus of its tube grown; a crease
+//! along a curve no closed form carries a tube along is the ball carried along it (`swept_tube`).
+//! A face whose normal sweep has no exact construction here yet — a surface whose offset keeps no
+//! parameters of its own (an ellipse swept along a line) or is not read at all (a curve turned, a
+//! blend, a family's wall, an image) — is refused, naming it and a point on it.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::boolean::{combined,combined_known,Known,Op};
 use super::build::{kept,prism,revolve,sphere,square,disc,Profile,ProfileEdge};
 use super::affine::Affine;
-use super::geom::{tolerance,Blend,Carry,Curve,Frame,Offset,Rigid,Surface,Uv,V};
+use super::geom::{tolerance,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use std::sync::Arc;
 use super::recipe::Spine;
@@ -903,9 +905,10 @@ fn corner(b: &Brep,faces: &[usize],p: V,side: Side,d: f64) -> Result<Brep,String
 /// outward normal, `s` over `[s[0], s[1]]` — the solid between the face moved to `s[0]` and to
 /// `s[1]` and the walls its boundary sweeps.  A plane's is the prism of its loops; a cylinder's,
 /// a cone's, a sphere's or a torus's, bounded by its own parameter lines, the section between the
-/// face's meridian and its moved copies turned through the face's span; any other plane's,
-/// cylinder's or sphere's, and a spline sheet's, the face carried between its moved copies
-/// (`carried_sweep`).  Refused where the sweep passes the surface's centre, or folds.
+/// face's meridian and its moved copies turned through the face's span; an extrusion's so bounded
+/// the face family of its line's rectangle (`extruded_sweep`); any other face of those kinds, and a
+/// spline sheet's, the face carried between its moved copies (`carried_sweep`).  Refused where the
+/// sweep passes the surface's centre, or folds.
 pub fn normal_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     sweep(b,fi,s,Reach::default())?.ok_or_else(|| format!("{} is swept wholly past its axis",face_name(b,fi)))
 }
@@ -950,7 +953,7 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
         // (a piece cut at the axis is a distance set's, which may reach back past the face)
         Surface::Extrusion(..) => match iso_box(b,f) {
             Some(bx) => extruded_sweep(b,fi,bx,s,reach.cut_at_axis).map(Some),
-            None => Err("an extrusion's face is swept where its boundary is its own parameter lines, and this one's is not".into()),
+            None => carried("its boundary is not its own parameter lines"),
         },
         // a sheet's offset has no closed form, but is read exactly (`Surface::Offset`) over the
         // sheet's own parameters
@@ -1019,49 +1022,50 @@ fn extruded_sweep(b: &Brep,fi: usize,([u0,u1],[v0,v1]): ([f64;2],[f64;2]),s: [f6
 }
 
 /// **A face swept along its normal by carrying it between its moved copies** (`normal_sweep`, any
-/// boundary): on a plane, a cylinder or a sphere the move `q ↦ q + h n(q)` of the face's points is
-/// an affine map `A_h` of space, linear in `h`, carrying the surface onto its
-/// offset (`Surface::offset`) with its parameters kept. So the face moved to `h` is the face's
-/// image under `A_h` — its edges' images (`Curve::mapped`: an ellipse's an ellipse) on the offset
-/// surface, its pcurves its own — and the wall an edge sweeps is the ruled surface joining each of
-/// its points' images at `s[0]` and `s[1]`, `(1 − v) A₀(q) + v A₁(q) = A_{s₀ + v (s₁ − s₀)}(q)`:
-/// exactly a `Blend` of the edge's two images (a plane where they lie in one). The rails between
-/// them are the normals at the face's vertices. Refused where the move takes the surface past its
-/// centre or axis, and for a cone or a torus, whose move moves each point by its own map.
+/// boundary): the face moved to `h` lies on the surface moved along its normal with its
+/// parameters kept (`Surface::normal_moved`, `S + h N` at each `(u, v)`), so its pcurves are its
+/// own — the face on that surface, each edge the edge's curve carried along the normal at its
+/// foot, its parameter kept (`moved_face`, `parallel::Parallel`) — and the wall an edge sweeps is
+/// the ruled surface joining each of its points to its moved copies at `s[0]` and `s[1]`, the
+/// normal there: exactly a `Blend` of the edge's two images at one parameter (a plane where they
+/// lie in one). The rails between them are the normals at the face's vertices. So for a cone, a
+/// torus, a spline swept along a line and a spline sheet alike.
 ///
-/// **A spline sheet's face is carried so too, though its move is no map of space**
-/// (`carried_on_sheet`): the face moved to `h` lies on the sheet's offset, `S + h N` read exactly
-/// over the sheet's own parameters (`Surface::Offset`), so its pcurves are its own, and each edge
-/// is the edge's curve carried along the normal, its parameter kept (`parallel::Parallel`). The
-/// wall is again the `Blend` of the edge and its image at one parameter, `(1 − v) q + v (q + h N)`
-/// — the sheet's normal along the edge, exactly, which is what the sweep's boundary there is.
-/// Refused where the sweep folds (`unfolded`), past the sheet's least radius of curvature.
+/// **On a plane, a cylinder or a sphere the move is an affine map of space** `A_h`, linear in `h`
+/// (a step, a stretch square to the axis, a scaling about the centre), carrying the surface onto
+/// its moved one with its parameters kept, so there the face moved is the face's image under
+/// `A_h` instead: its edges' images (`Curve::mapped`) are of the kernel's own kinds (an ellipse's
+/// an ellipse), which the closed forms of the surface meetings and a file's exact curves take.
+///
+/// Refused where the surface keeps no parameters of its own as it moves (an ellipse swept along a
+/// line, read over its rational spline's), where the move takes it past its centre or axis or a
+/// cone's face reaches its apex (where it has no normal), or where the sweep folds (`unfolded`),
+/// past the face's least radius of curvature.
 fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     let f = &b.faces[fi];
     let out = if f.reversed { -1. } else { 1. };
-    let tol = tolerance(b.size()+s[1]-s[0]);
+    if !f.surface.has_normal_moved() {
+        return Err(format!("its {}'s offset is read over no parameters of its own",f.surface.kind()))
+    }
     let sheet = sheet_of(b,&[fi])?;
-    let on_sheet = matches!(f.surface,Surface::BSpline(..) | Surface::Offset(..));
-    if on_sheet { unfolded(b,fi,[out*s[0],out*s[1]])?; }
-    // the face moved to `h`: its image under the move, on the surface's offset
-    let moved = |h: f64| -> Result<Brep,String> {
+    let [s0,s1] = unfolded(b,fi,[out*s[0],out*s[1]])?;
+    // the face moved to `h`, onto `surface`: on its surface moved, an affine image where the move
+    // is one
+    let moved = |h: f64,surface: Surface| -> Result<Brep,String> {
         let d = out*h;
-        if on_sheet { return Ok(carried_on_sheet(&sheet,d)) }
-        let Some(Offset::Surface(surface)) = f.surface.offset(d,tol) else {
-            return Err(format!("swept past the centre of its {}: no point stands that far off it",f.surface.kind()))
-        };
         let map = match f.surface {
             Surface::Plane(fr) => Affine::new(Affine::IDENTITY.m,scale(fr.z,d)),
             Surface::Cylinder(fr,r) => Affine::stretch(&fr,[(r+d)/r,(r+d)/r,1.]),
             Surface::Sphere(fr,r) => Affine::stretch(&fr,[(r+d)/r;3]),
-            _ => return Err(format!("a {}'s move along its normal is no affine map",f.surface.kind())),
+            _ => return Ok(moved_face(&sheet,surface,d)),
         }?;
         let mut c = sheet.mapped(&map);
-        // the offset's parameters are the face's own (an affine image's, wrapped, are too)
+        // the moved surface's parameters are the face's own (an affine image's, wrapped, are too)
         c.faces[0].surface = surface;
         Ok(c)
     };
-    let (near,far) = (moved(s[0])?,moved(s[1])?);
+    let (near,far) = (moved(s[0],s0)?,moved(s[1],s1)?);
+    let tol = tolerance(b.size()+s[1]-s[0]);
     let (nv,ne) = (near.vertices.len() as u32,near.edges.len() as u32);
     let mut solid = near.clone();
     solid.join(&far);
@@ -1130,44 +1134,78 @@ fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     Ok(solid)
 }
 
-/// **A sheet's face moved `d` along its normal** (`carried_sweep`; `sheet` the face alone): on the
-/// sheet's offset (`Surface::Offset`, `S + d N` over the sheet's own parameters), so its pcurves
-/// are its own; each edge the curve it lies on carried along the normal (`parallel::Parallel`),
-/// its parameter kept, and each vertex the point it stands on carried so.
-fn carried_on_sheet(sheet: &Brep,d: f64) -> Brep {
+/// **A face moved `d` along its normal** (`carried_sweep`; `sheet` the face alone, `under` its
+/// surface moved, `Surface::normal_moved`): on `under`, so its pcurves are its own; each edge the
+/// curve it lies on carried along the normal (`parallel::Parallel`), its parameter kept, its foot
+/// read off the face's pcurve where that is a line or a curve of the parameters; and each vertex
+/// the point it stands on carried so.
+fn moved_face(sheet: &Brep,under: Surface,d: f64) -> Brep {
+    use crate::parallel::{Foot,Parallel};
     if d == 0. { return sheet.clone() }
-    let surface = &sheet.faces[0].surface;
-    let offset = surface.parallel(d,0.).and_then(Offset::surface).expect("a sheet's offset is read");
+    let face = &sheet.faces[0];
+    let surface = &face.surface;
+    // each edge's foot as the face's pcurve says, the first use's of a seam (either is the other a
+    // period on)
+    let mut feet: BTreeMap<u32,Foot> = BTreeMap::new();
+    for c in face.loops.iter().flatten() {
+        let foot = match c.pcurve {
+            Pcurve::Line {a,b} => Foot::Line {t:sheet.edges[c.edge as usize].t,a,b},
+            Pcurve::Curve(ref k) => Foot::Curve(k.clone()),
+            Pcurve::Inverse {..} => continue,
+        };
+        feet.entry(c.edge).or_insert(foot);
+    }
     let mut c = sheet.clone();
     for v in &mut c.vertices {
         let uv = surface.continued_inverse(v.p);
-        v.p = add(v.p,sub(offset.point(uv),surface.point(uv)));
+        v.p = add(v.p,sub(under.point(uv),surface.point(uv)));
     }
-    for e in &mut c.edges {
+    for (i,e) in c.edges.iter_mut().enumerate() {
         let EdgeCurve::Curve(curve) = &e.curve else { continue };
-        let carried = crate::parallel::Parallel::new(curve.clone(),surface.clone(),offset.clone(),d);
+        let carried = Parallel::new(curve.clone(),surface.clone(),under.clone(),d,feet.remove(&(i as u32)));
         e.curve = EdgeCurve::Curve(Curve::Parallel(Arc::new(carried)));
     }
-    c.faces[0].surface = offset;
+    c.faces[0].surface = under;
     c
 }
 
-/// **Where a sheet's face folds as it moves along its normal** (`carried_sweep`): the move
-/// `q ↦ q + h N(q)` stretches the sheet's area by `(1 − h κ₁)(1 − h κ₂)` at each point, `κ` its
-/// principal curvatures toward the normal — `|P_u × P_v| / |S_u × S_v|` of the offset `P` read
-/// against the sheet `S`, a quadratic in `h`, since `P`'s partials are linear in it (Weingarten's)
-/// — and the sweep over `h` in `s` folds where it reaches nothing. Read at three distances it is
-/// that quadratic exactly, its least over `s` at an end or its vertex; read on a grid of each knot
-/// span of the box of the face's parameters (eight a span each way, its sides among them), the
-/// face's own points and its box's alike, so a fold is refused, naming where and how far, wherever
-/// the box holds one.
-fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
+/// **Where a face folds as it moves along its normal** (`carried_sweep`): the move
+/// `q ↦ q + h N(q)` stretches the surface's area by `(1 − h κ₁)(1 − h κ₂)` at each point, `κ` its
+/// principal curvatures toward the normal — `|P_u × P_v| / |S_u × S_v|` of the moved surface `P`
+/// (`Surface::normal_moved`) read against the surface `S`, a quadratic in `h`, since `P`'s
+/// partials are linear in it (Weingarten's) — and the sweep over `h` in `s` folds where it reaches
+/// nothing. Read at three distances it is that quadratic exactly, its least over `s` at an end or
+/// its vertex; read on a grid of each knot span of the box of the face's parameters (eight a span
+/// each way, its sides among them) and of each stretch between where the curvature turns (a
+/// torus's `v` at its outer and inner equators: a cone's curvature `cos α / ρ` runs one way along
+/// each generator, a cylinder's, a sphere's and a plane's are constant), the face's own points
+/// and its box's alike, so a fold is refused, naming where and how far, wherever the box holds
+/// one (at its middle, where the curvature is the same everywhere). A cone's face reaching its
+/// apex, where it has no normal, is refused too, and a surface moved past its centre. The surface
+/// moved to `s[0]` and to `s[1]`, read once.
+fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<[Surface;2],String> {
     let f = &b.faces[fi];
     let (_,[lo,hi]) = samples(b,f);
     let base = &f.surface;
-    let ends = [s[0],0.5*(s[0]+s[1]),s[1]].map(|h| base.parallel(h,0.).and_then(Offset::surface).expect("a sheet's offset is read"));
+    if let Surface::Cone(_,r,a) = *base {
+        let (sa,_) = a.dsin_cos();
+        let least = (r+lo[1]*sa).min(r+hi[1]*sa);
+        if !(least > tolerance(b.size())) { return Err("its face reaches its cone's apex, where it has no normal".into()) }
+    }
+    let [Some(e0),Some(e1),Some(e2)] = [s[0],0.5*(s[0]+s[1]),s[1]].map(|h| base.normal_moved(h)) else {
+        return Err(format!("swept past the centre of its {}: no point stands that far off it",base.kind()))
+    };
+    let constant = matches!(base,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..));
+    // where a torus's curvature across its tube, `cos v / (big + r cos v)`, turns
+    let turns = |k: usize,[a,z]: [f64;2]| -> Vec<f64> {
+        if k == 0 || !matches!(base,Surface::Torus(..)) { return vec![] }
+        ((a/PI).ceil() as i64..=(z/PI).floor() as i64).map(|j| j as f64*PI).collect()
+    };
     let grid = |k: usize| -> Vec<f64> {
-        let cuts: Vec<f64> = std::iter::once(lo[k]).chain(base.breaks(k,[lo[k],hi[k]])).chain([hi[k]]).collect();
+        if constant { return vec![0.5*(lo[k]+hi[k])] }
+        let mut cuts: Vec<f64> = std::iter::once(lo[k]).chain(base.breaks(k,[lo[k],hi[k]])).chain(turns(k,[lo[k],hi[k]])).chain([hi[k]]).collect();
+        cuts.sort_by(f64::total_cmp);
+        cuts.dedup();
         let mut out = vec![lo[k]];
         for w in cuts.windows(2) { for j in 1..=8 { out.push(w[0]+(w[1]-w[0])*j as f64/8.); } }
         out
@@ -1179,14 +1217,14 @@ fn unfolded(b: &Brep,fi: usize,s: [f64;2]) -> Result<(),String> {
         let area = dot(n,n);
         if !(area > 1e-24*(dot(su,su)+dot(sv,sv)).powi(2)) { continue }
         // the stretch at each of the three distances, and the quadratic through them over `s`
-        let [g0,g1,g2] = ends.each_ref().map(|p| { let (_,pu,pv) = p.d1([u,v]); dot(cross(pu,pv),n)/area });
+        let [g0,g1,g2] = [&e0,&e1,&e2].map(|p| { let (_,pu,pv) = p.d1([u,v]); dot(cross(pu,pv),n)/area });
         let (a2,a1) = (2.*(g0-2.*g1+g2),-3.*g0+4.*g1-g2);
         let least = if a2 > 0. && (0. ..1.).contains(&(-a1/(2.*a2))) { g0-a1*a1/(4.*a2) } else { g0.min(g2) };
         if !(least > 1e-6) {
-            return Err(format!("its sweep over {s:?} folds where the sheet curves tighter than that, at {q:?} (its area stretched by {least:.3e} there)"))
+            return Err(format!("its sweep over {s:?} folds where the {} curves tighter than that, at {q:?} (its area stretched by {least:.3e} there)",base.kind()))
         }
     } }
-    Ok(())
+    Ok([e0,e2])
 }
 
 /// The plane the points `pts` lie in within `tol`, or none: through the first, across the farthest
