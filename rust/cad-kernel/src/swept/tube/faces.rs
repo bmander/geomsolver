@@ -412,7 +412,7 @@ fn split_trim(tube: &Tube,trims: &mut Vec<Trim>,vertices: &mut Vec<Vertex>,(i,mi
 const CHARTS: [Chart;4] = [Chart::Sheet(1.),Chart::Sheet(-1.),Chart::End(0),Chart::End(1)];
 
 /// A chart's windows' cuts, of each chart's: rising within the turn.
-fn cuts_of(cuts: &[(Chart,Vec<f64>)],chart: Chart) -> Vec<f64> { cuts.iter().find(|(c,_)| *c == chart).expect("every chart's cuts").1.clone() }
+fn cuts_of(cuts: &[(Chart,Vec<f64>)],chart: Chart) -> &[f64] { &cuts.iter().find(|(c,_)| *c == chart).expect("every chart's cuts").1 }
 
 /// **The windows `cuts` (rising within the turn) make**: from each cut to the next, the last round to
 /// the first a turn on.
@@ -430,14 +430,14 @@ const WIDEST_WINDOW: f64 = 0.25*TAU;
 
 /// **The sheet's further cuts**: each window `cuts` leaves wider than `WIDEST_WINDOW` cut again into
 /// as many like parts, each cut moved to the angle nearest its share clear of what a cut must not
-/// cross — the pinch's hole and a band's seam whole (`hole`), and each swallowtail point and vertex
-/// on the chart — by a two-hundredth of a turn (structural); a part with no such angle within half
-/// its width left uncut.
-fn more_cuts(tube: &Tube,chart: Chart,cuts: &[f64],points: &[(Chart,P)],vertices: &[Vertex]) -> Result<Vec<f64>,Unbuilt> {
+/// cross — the pinch's hole whole (`hole`, the chart's `Tube::hole`), and each swallowtail point and
+/// vertex on the chart — by a two-hundredth of a turn (structural); a part with no such angle within
+/// half its width left uncut.
+fn more_cuts(chart: Chart,cuts: &[f64],hole: &[Vec<P>],points: &[(Chart,P)],vertices: &[Vertex]) -> Vec<f64> {
     let clear = 0.005*TAU;
     // (the angles a cut must keep clear of, as intervals within the turn's unwrapping)
     let mut kept_off: Vec<(f64,f64)> = Vec::new();
-    for rim in tube.hole(chart)? {
+    for rim in hole {
         let Some(first) = rim.first() else { continue };
         let ths: Vec<f64> = rim.iter().map(|p| unwrap(p[0],first[0])).collect();
         let (lo,hi) = ths.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),&t| (l.min(t),h.max(t)));
@@ -458,7 +458,7 @@ fn more_cuts(tube: &Tube,chart: Chart,cuts: &[f64],points: &[(Chart,P)],vertices
             if let Some(th) = found { out.push(th.rem_euclid(TAU)) }
         }
     }
-    Ok(out)
+    out
 }
 
 /// The chart's end-pose band: where the sheet `+`'s rim stands on the end pose `k` at `θ`, and
@@ -1252,7 +1252,8 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     let [a,b] = tube.roll;
     let mut points: Vec<(Chart,P)> = tails.iter().map(|t| (t.0,t.1)).collect();
     // (the sheets' windows clear of the pinch's hole, which lies whole in one of them)
-    for side in [1.,-1.] { points.extend(tube.hole(Chart::Sheet(side))?.into_iter().flatten().map(|p| (Chart::Sheet(side),p))) }
+    let holes = [tube.hole(Chart::Sheet(1.))?,tube.hole(Chart::Sheet(-1.))?];
+    for (side,hole) in [1.,-1.].into_iter().zip(&holes) { points.extend(hole.iter().flatten().map(|&p| (Chart::Sheet(side),p))) }
     // (each chart's cuts clear of its trims where they leave an angle free; else clear of its points
     // alone, each cut then crossing trims, split there: `crossed` holds each such cut's crossings —
     // the chart, the angle, and the crossings' places along it with their vertices)
@@ -1282,21 +1283,20 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     }
     // (each sheet's windows wider than `WIDEST_WINDOW` cut again, each further cut crossing trims as
     // a cut clear of none crosses them)
-    for side in [1.,-1.] {
+    for (side,hole) in [1.,-1.].into_iter().zip(&holes) {
         let c = Chart::Sheet(side);
-        let base = cuts_of(&cuts,c);
-        let more = more_cuts(tube,c,&base,&points,vertices)?;
+        let (_,at) = cuts.iter_mut().find(|(x,_)| *x == c).expect("every chart's cuts");
+        let more = more_cuts(c,at,hole,&points,vertices);
         for &th in &more {
-            let at = cut_across(tube,c,th,[a,b],trims,vertices)?;
-            if debug() { eprintln!("tube: {c:?}'s further cut at {th} crosses {} trims",at.len()) }
-            crossed.push((c,th,at));
+            let across = cut_across(tube,c,th,[a,b],trims,vertices)?;
+            if debug() { eprintln!("tube: {c:?}'s further cut at {th} crosses {} trims",across.len()) }
+            crossed.push((c,th,across));
         }
-        let entry = cuts.iter_mut().find(|(x,_)| *x == c).expect("every chart's cuts");
-        entry.1.extend(more);
-        entry.1.sort_by(f64::total_cmp);
+        at.extend(more);
+        at.sort_by(f64::total_cmp);
     }
     let crossings_of = |chart: Chart,th: f64| -> Vec<(f64,usize)> { crossed.iter().find(|(c,t,_)| *c == chart && *t == th).map_or(Vec::new(),|x| x.2.clone()) };
-    let collar_cuts = if tube.pinch.is_some() { cuts_of(&cuts,Chart::Collar) } else { Vec::new() };
+    let collar_cuts = if tube.pinch.is_some() { cuts_of(&cuts,Chart::Collar).to_vec() } else { Vec::new() };
     // the cuts from each swallowtail point toward the rim it opens away from (the way whose point a
     // disc's span beside it is kept), each to the first trim it meets or else that rim
     let mut across: Vec<Arc2> = Vec::new();
@@ -1360,7 +1360,7 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
             let mut splits: Vec<(f64,usize)> = vertices.iter().enumerate()
                 .flat_map(|(j,v)| v.on.iter().filter(|(c,p)| *c == chart && p[1] == e).map(move |(_,p)| (p[0].rem_euclid(TAU),j))).collect();
             // (an angle both charts cut at, one vertex)
-            let mut at: Vec<f64> = cuts_of(&cuts,chart).into_iter().chain(cuts_of(&cuts,Chart::End(k))).collect();
+            let mut at: Vec<f64> = cuts_of(&cuts,chart).iter().chain(cuts_of(&cuts,Chart::End(k))).copied().collect();
             at.sort_by(f64::total_cmp);
             at.dedup();
             for c in at {
@@ -1449,14 +1449,14 @@ fn build(tube: &Tube,vertices: &mut Vec<Vertex>,trims: &mut Vec<Trim>,tails: &[(
     let at_rim = |vs: &Vec<Vertex>,chart: Chart,q: P| vs.iter().position(|v| v.on.iter().any(|(c,p)| *c == chart && p[0] == q[0] && p[1] == q[1]));
     for side in [1.,-1.] {
         let chart = Chart::Sheet(side);
-        for c in cuts_of(&cuts,chart) {
+        for &c in cuts_of(&cuts,chart) {
             let (v0,v1) = (at_rim(vertices,chart,[c,a]).expect("a rim's cut"),at_rim(vertices,chart,[c,b]).expect("a rim's cut"));
             chained(&mut arcs,chart,c,(a,v0),&crossings_of(chart,c),(b,v1));
         }
     }
     for k in 0..2 {
         let chart = Chart::End(k);
-        for c in cuts_of(&cuts,chart) {
+        for &c in cuts_of(&cuts,chart) {
             let (plus,way,width) = band(tube,k,c).ok_or_else(|| failed("no band on an end pose".into()))?;
             let (v0,v1) = (at_rim(vertices,Chart::Sheet(1.),[c,tube.roll[k]]).expect("a rim's cut"),at_rim(vertices,Chart::Sheet(-1.),[c,tube.roll[k]]).expect("a rim's cut"));
             // (the crossings along the band's way, each read within a turn of its start)
@@ -1550,7 +1550,7 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
     let held = |side: f64,s: &super::band::Band| {
         let outline = s.stretch_outline(64);
         let [a,b] = tube.roll;
-        outline.iter().all(|q| q[1] > a && q[1] < b) && windows_of(&cuts_of(cuts,Chart::Sheet(side))).iter().any(|&(w0,w1)| outline.iter().all(|q| {
+        outline.iter().all(|q| q[1] > a && q[1] < b) && windows_of(cuts_of(cuts,Chart::Sheet(side))).iter().any(|&(w0,w1)| outline.iter().all(|q| {
             let th = w0+(q[0]-w0).rem_euclid(TAU);
             th > w0 && th < w1
         }))
@@ -1647,8 +1647,8 @@ fn faces(tube: &Tube,vertices: &[Vertex],arcs: &[Arc2],trims: &[Trim],cuts: &[(C
     for chart in charts {
         // (a band's chart runs round neither way: one window, the whole of it)
         let banded = matches!(chart,Chart::Band(..));
-        let cuts = if banded { Vec::new() } else { cuts_of(cuts,chart) };
-        let wins = if banded { vec![(f64::NEG_INFINITY,f64::INFINITY)] } else { windows_of(&cuts) };
+        let cuts: &[f64] = if banded { &[] } else { cuts_of(cuts,chart) };
+        let wins = if banded { vec![(f64::NEG_INFINITY,f64::INFINITY)] } else { windows_of(cuts) };
         for (w,&(w0,w1)) in wins.iter().enumerate() {
             // the window's edges: (arc, use, its polyline placed)
             let mut lines: Vec<(usize,usize,Vec<P>)> = Vec::new();
@@ -2056,7 +2056,7 @@ fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool 
     let mids = |ts: &[f64]| ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<f64>>();
     // (the net through `f` at the sites `us` by `vs`, the misses at its intervals' middles along
     // each way, its cells' middles' misses and `f` there; none where `f` is not read)
-    struct Read { net: crate::nurbs::Net,eu: Vec<f64>,ev: Vec<f64>,cells: Vec<Vec<f64>>,middle: Vec<Vec<Option<V>>> }
+    struct Read { net: crate::nurbs::Net,mu: Vec<f64>,mv: Vec<f64>,eu: Vec<f64>,ev: Vec<f64>,cells: Vec<Vec<f64>>,middle: Vec<Vec<Option<V>>> }
     let read = |us: &[f64],vs: &[f64]| -> Option<Read> {
         // (each row read, interpolated and its error read on every core, `util::par`, in order: a
         // window about a pinch is graded to some 900 × 850, read a few times over, #1013)
@@ -2074,14 +2074,14 @@ fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool 
         // (each cell's middle: `f` there where kept, and the net's miss)
         let middle: Vec<Vec<Option<V>>> = indices(mu.len(),|i| mv.iter().map(|&v| kept(mu[i],v).then(|| f(mu[i],v))).collect());
         let cells: Vec<Vec<f64>> = indices(mu.len(),|i| mv.iter().zip(&middle[i]).map(|(&v,x)| x.map_or(0.,|x| distance(net.point(mu[i],v),x))).collect());
-        Some(Read {net,eu,ev,cells,middle})
+        Some(Read {net,mu,mv,eu,ev,cells,middle})
     };
     let worst_of = |r: &Read| r.eu.iter().chain(&r.ev).chain(r.cells.iter().flatten()).fold(0f64,|m,&e| m.max(e));
     let (mut us,mut vs) = (even(nu),even(nv));
     loop {
-        let Read {net,mut eu,mut ev,cells,middle} = read(&us,&vs)?;
-        let (mu,mv) = (mids(&us),mids(&vs));
-        let worst = eu.iter().chain(&ev).chain(cells.iter().flatten()).fold(0f64,|m,&e| m.max(e));
+        let r = read(&us,&vs)?;
+        let worst = worst_of(&r);
+        let Read {net,mu,mv,mut eu,mut ev,cells,middle} = r;
         if debug() {
             let hist = |ts: &[f64]| (0..20).map(|k| ts.iter().filter(|&&t| t >= k as f64/20. && t < (k+1) as f64/20.).count()).collect::<Vec<_>>();
             eprintln!("graded: {}×{}, worst {worst:e}; u {:?} v {:?}",us.len(),vs.len(),hist(&us),hist(&vs))
@@ -2105,14 +2105,14 @@ fn fit_graded(f: &(dyn Fn(f64,f64) -> V + Sync),kept: &(dyn Fn(f64,f64) -> bool 
         if worst.is_finite() {
             // (a cell's miss read apart: along `u` through its middle row, along `v` through its
             // middle column)
-            let across: Vec<Vec<f64>> = indices(mv.len(),|j| {
-                let Some(c) = crate::nurbs::interpolate(&us.iter().map(|&u| f(u,mv[j])).collect::<Vec<_>>(),&us,degree) else { return vec![f64::INFINITY;mu.len()] };
-                mu.iter().enumerate().map(|(i,&u)| middle[i][j].map_or(0.,|x| distance(c.point(u),x))).collect()
-            });
-            let along: Vec<Vec<f64>> = indices(mu.len(),|i| {
-                let Some(c) = crate::nurbs::interpolate(&vs.iter().map(|&v| f(mu[i],v)).collect::<Vec<_>>(),&vs,degree) else { return vec![f64::INFINITY;mv.len()] };
-                mv.iter().enumerate().map(|(j,&v)| middle[i][j].map_or(0.,|x| distance(c.point(v),x))).collect()
-            });
+            // (the interpolant through `line` at the sites `ts`, read at their middles `ms` against
+            // the cells' middles `at`)
+            let apart = |ts: &[f64],ms: &[f64],line: &dyn Fn(f64) -> V,at: &dyn Fn(usize) -> Option<V>| -> Vec<f64> {
+                let Some(c) = crate::nurbs::interpolate(&ts.iter().map(|&t| line(t)).collect::<Vec<_>>(),ts,degree) else { return vec![f64::INFINITY;ms.len()] };
+                ms.iter().enumerate().map(|(i,&t)| at(i).map_or(0.,|x| distance(c.point(t),x))).collect()
+            };
+            let across: Vec<Vec<f64>> = indices(mv.len(),|j| apart(&us,&mu,&|u| f(u,mv[j]),&|i| middle[i][j]));
+            let along: Vec<Vec<f64>> = indices(mu.len(),|i| apart(&vs,&mv,&|v| f(mu[i],v),&|j| middle[i][j]));
             for row in &across { for (e,&m) in eu.iter_mut().zip(row) { *e = e.max(m); } }
             for col in &along { for (e,&m) in ev.iter_mut().zip(col) { *e = e.max(m); } }
         }

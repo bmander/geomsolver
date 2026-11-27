@@ -1998,11 +1998,6 @@ impl Surface {
         }
         self.side(p)
     }
-    /// A point's foot on a B-spline sheet searched cold (`net_search`: a function of the point
-    /// alone); none on any other surface.
-    pub(crate) fn sheet_foot(&self,p: V) -> Option<Uv> {
-        match self { Surface::BSpline(_,n) => Some(net_search(n,p,false)),_ => None }
-    }
     /// Whether the surface is a patch over a domain with an edge — a curve's swept or turned, a
     /// loft's, a sheet, a family's wall, or an image of one — whose inverse takes a point off it
     /// onto its rim, and whose signed distance runs on past that rim along its extension.
@@ -2300,26 +2295,7 @@ impl PartialEq for Feet { fn eq(&self,_: &Feet) -> bool { true } }
 impl Traced {
     fn segments(&self) -> usize { self.pts.len()-1 }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
-    pub fn project(&self,q: V) -> V {
-        // settled once both distances are at the rounding of the coordinates, a step stops moving,
-        // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
-        // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
-        // at the noise, not short of it, since `d1` differences two projections
-        let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
-        let mut p = q;
-        let mut best = (f64::INFINITY,q);
-        for _ in 0..50 {
-            let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
-            let off = fa.abs().max(fb.abs());
-            if off >= best.0 { break }
-            best = (off,p);
-            if off <= settled { break }
-            let Some(step) = crate::util::roots::least_norm_step(&[ga,gb],&[fa,fb]) else { break };
-            p = sub(p,step);
-            if crate::util::space::norm(step) <= settled { best.1 = p; break }
-        }
-        best.1
-    }
+    pub fn project(&self,q: V) -> V { self.project_from(q,[None;2]) }
     /// `C`: the chord at `t` pulled onto both surfaces, **on the layers its points are on**: each
     /// sheet's distance read from the foot of the curve's point nearest `t` (`feet`, `side_from`).
     /// Read from the thread's last foot on the sheet (`Surface::side`), a point beside a swept
@@ -2333,37 +2309,36 @@ impl Traced {
     pub(crate) fn at(&self,t: f64) -> V {
         let (i,f) = self.segment(t);
         let k = if f <= 0.5 { i } else { i+1 };
-        let hint = self.feet().get(k).copied().unwrap_or([None,None]);
-        self.project_from(self.between(i,f),hint)
+        self.project_from(self.between(i,f),self.feet()[k])
     }
     /// **Each of its points' feet on its B-spline sheets, on the layer the march put it on**: the
     /// march held each point to its sheets from the last one's foot, so each foot is Newton's from
     /// the last one's where that lands on the point (within a millionth of its size), and searched
-    /// (`Surface::sheet_foot`) where it does not; then back from the end, a searched foot replaced by
+    /// (`net_search`, cold) where it does not; then back from the end, a searched foot replaced by
     /// the next one's carried back where that lands — so a point where the sheet's layers cross (a
     /// vertex on its double curve), where a search reads either, takes its neighbours' layer. A foot
     /// that lands on its point nowhere is none (`side_from` then reads `side`).
     pub(crate) fn feet(&self) -> &[[Option<Uv>;2]] {
         self.feet.0.get_or_init(|| {
             let sheets = [&self.a,&self.b];
-            let lands = |s: &Surface,p: V,uv: Uv| crate::util::space::distance(s.point(uv),p) <= 1e-6*(1.+crate::util::space::norm(p));
-            let newton = |s: &Surface,p: V,h: Uv| match s { Surface::BSpline(_,n) => net_newton(n,p,h).filter(|&uv| lands(s,p,uv)),_ => None };
+            let lands = |n: &super::nurbs::Net,p: V,uv: Uv| crate::util::space::distance(n.d1(uv[0],uv[1]).0,p) <= 1e-6*(1.+crate::util::space::norm(p));
+            let newton = |n: &super::nurbs::Net,p: V,h: Uv| net_newton(n,p,h).filter(|&uv| lands(n,p,uv));
             let mut out: Vec<[Option<Uv>;2]> = Vec::with_capacity(self.pts.len());
             let mut searched: Vec<[bool;2]> = Vec::with_capacity(self.pts.len());
             for (j,&p) in self.pts.iter().enumerate() {
                 let (mut f,mut by) = ([None;2],[false;2]);
                 for (k,s) in sheets.into_iter().enumerate() {
-                    if !matches!(s,Surface::BSpline(..)) { continue }
-                    let carried = j.checked_sub(1).and_then(|i| out[i][k]).and_then(|h| newton(s,p,h));
-                    f[k] = carried.or_else(|| { by[k] = true; s.sheet_foot(p).filter(|&uv| lands(s,p,uv)) });
+                    let Surface::BSpline(_,n) = s else { continue };
+                    let carried = j.checked_sub(1).and_then(|i| out[i][k]).and_then(|h| newton(n,p,h));
+                    f[k] = carried.or_else(|| { by[k] = true; Some(net_search(n,p,false)).filter(|&uv| lands(n,p,uv)) });
                 }
                 out.push(f);
                 searched.push(by);
             }
             for j in (0..self.pts.len().saturating_sub(1)).rev() {
                 for (k,s) in sheets.into_iter().enumerate() {
-                    if !searched[j][k] { continue }
-                    if let Some(uv) = out[j+1][k].and_then(|h| newton(s,self.pts[j],h)) { out[j][k] = Some(uv) }
+                    let (true,Surface::BSpline(_,n)) = (searched[j][k],s) else { continue };
+                    if let Some(uv) = out[j+1][k].and_then(|h| newton(n,self.pts[j],h)) { out[j][k] = Some(uv) }
                 }
             }
             out
@@ -2378,8 +2353,13 @@ impl Traced {
         let i = (t.floor().max(0.) as usize).min(m-1);
         (i,t-i as f64)
     }
-    /// `project`, each sheet's distance read on the layer of its foot `hint` (`Surface::side_from`).
+    /// `project`, each sheet's distance read on the layer of its foot `hint` (`Surface::side_from`;
+    /// with none, `side`).
     fn project_from(&self,q: V,hint: [Option<Uv>;2]) -> V {
+        // settled once both distances are at the rounding of the coordinates, a step stops moving,
+        // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
+        // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
+        // at the noise, not short of it, since `d1` differences two projections
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
         let mut best = (f64::INFINITY,q);

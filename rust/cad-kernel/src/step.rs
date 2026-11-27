@@ -587,45 +587,46 @@ fn stretch_poles(n: &super::nurbs::Net,at: Option<[[f64;2];2]>) -> usize {
 /// sheet's double curve the edge's two pcurves lie on two layers of the net, and only their
 /// surfaces tell a reader which is whose. Nor two faces of two lumps (`written_lumps`): each solid
 /// is read on its own surfaces. Faces not on a sheet's net as `face_net` writes them.
-pub fn face_nets(b: &Brep) -> Vec<Option<Result<OnNet,String>>> {
-    let mut out: Vec<Option<Result<OnNet,String>>> = Vec::with_capacity(b.faces.len());
-    // (each stretch: its net and frame, its faces' lump, the box, and its faces' edges)
-    struct Stretch { net: Arc<super::nurbs::Net>,frame: Frame,lump: usize,at: Option<[[f64;2];2]>,edges: std::collections::BTreeSet<u32> }
+pub fn face_nets(b: &Brep) -> Vec<Option<Result<OnNet,String>>> { written_nets(b).0 }
+
+/// `face_nets`, with the stretch each face is on (none where the face is on no sheet's net): the
+/// file writes one surface a stretch, however many of its stretches are one net written whole.
+fn written_nets(b: &Brep) -> (Vec<Option<Result<OnNet,String>>>,Vec<Option<usize>>) {
+    // (each stretch: its net and frame, the box, and its faces' edges)
+    struct Stretch { net: Arc<super::nurbs::Net>,frame: Frame,at: Option<[[f64;2];2]>,edges: std::collections::BTreeSet<u32> }
+    fn join(a: Option<[[f64;2];2]>,b: Option<[[f64;2];2]>) -> Option<[[f64;2];2]> {
+        let (a,b) = (a?,b?);
+        Some(std::array::from_fn(|k| [a[k][0].min(b[k][0]),a[k][1].max(b[k][1])]))
+    }
     let mut stretches: Vec<Stretch> = Vec::new();
     let mut on: Vec<Option<usize>> = vec![None;b.faces.len()];
-    let mut lump = vec![0;b.faces.len()];
-    let lumps = written_lumps(b);
-    for (k,l) in lumps.iter().enumerate() { for fi in l.faces() { lump[fi] = k; } }
-    // (in the order the file writes them: the stretches the same however `b` orders its faces)
-    for fi in lumps.iter().flat_map(Lump::faces) {
-        let f = &b.faces[fi];
-        let Surface::BSpline(g,n) = &f.surface else { continue };
-        let at = stretch_box(b,fi);
-        let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
-        let join = |a: Option<[[f64;2];2]>,b: Option<[[f64;2];2]>| -> Option<[[f64;2];2]> {
-            let (a,b) = (a?,b?);
-            Some(std::array::from_fn(|k| [a[k][0].min(b[k][0]),a[k][1].max(b[k][1])]))
-        };
-        let k = stretches.iter().position(|s| Arc::ptr_eq(&s.net,n) && s.frame == *g && s.lump == lump[fi] && s.edges.is_disjoint(&edges)
-            && stretch_poles(n,join(s.at,at)) <= stretch_poles(n,s.at)+stretch_poles(n,at));
-        match k {
-            Some(k) => {
-                let s = &mut stretches[k];
-                s.at = join(s.at,at);
-                s.edges.extend(edges);
-                on[fi] = Some(k);
-            }
-            None => {
-                on[fi] = Some(stretches.len());
-                stretches.push(Stretch {net:n.clone(),frame:*g,lump:lump[fi],at,edges});
+    // (in the order the file writes them: the stretches the same however `b` orders its faces; a
+    // lump's faces only on its own stretches, those from `first` on)
+    for lump in written_lumps(b) {
+        let first = stretches.len();
+        for fi in lump.faces() {
+            let f = &b.faces[fi];
+            let Surface::BSpline(g,n) = &f.surface else { continue };
+            let at = stretch_box(b,fi);
+            let edges: std::collections::BTreeSet<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
+            let k = stretches[first..].iter().position(|s| Arc::ptr_eq(&s.net,n) && s.frame == *g && s.edges.is_disjoint(&edges)
+                && stretch_poles(n,join(s.at,at)) <= stretch_poles(n,s.at)+stretch_poles(n,at)).map(|k| first+k);
+            match k {
+                Some(k) => {
+                    let s = &mut stretches[k];
+                    s.at = join(s.at,at);
+                    s.edges.extend(edges);
+                    on[fi] = Some(k);
+                }
+                None => {
+                    on[fi] = Some(stretches.len());
+                    stretches.push(Stretch {net:n.clone(),frame:*g,at,edges});
+                }
             }
         }
     }
     let written: Vec<OnNet> = stretches.iter().map(|s| stretch(s.frame,&s.net,s.at)).collect();
-    for fi in 0..b.faces.len() {
-        out.push(match on[fi] { Some(k) => Some(Ok(written[k].clone())),None => face_net(b,fi) });
-    }
-    out
+    (on.iter().enumerate().map(|(fi,k)| match *k { Some(k) => Some(Ok(written[k].clone())),None => face_net(b,fi) }).collect(),on)
 }
 
 /// The least uncertainty a file states (millimetres): a tolerance asked finer is written as this.
@@ -1322,17 +1323,14 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
     // (a vertex stands off its edges' ends by its own tolerance: every curve is written ending
     // where the edge's does)
     let mut held = b.vertices.iter().zip(&wanted).filter(|(_,&w)| w).map(|(v,_)| v.tol).fold(0.,f64::max);
-    let nets: Vec<Option<OnNet>> = face_nets(b).into_iter().map(Option::transpose).collect::<Result<_,_>>()?;
-    // (a net several faces share, `face_nets`, written once)
-    let mut once: Vec<(Arc<super::nurbs::Net>,usize)> = Vec::new();
-    let (surfaces,sheets): (Vec<usize>,Vec<f64>) = b.faces.iter().zip(&nets).map(|(f,n)| match n {
-        Some(n) => {
-            if let Some(&(_,id)) = once.iter().find(|(m,_)| Arc::ptr_eq(m,&n.net)) { return Ok((id,n.fit)) }
-            let id = o.net(&n.net);
-            once.push((n.net.clone(),id));
-            Ok((id,n.fit))
-        }
-        None => o.surface(&f.surface),
+    // (a stretch of a sheet's net several faces are on, `face_nets`, written once)
+    let (nets,on) = written_nets(b);
+    let nets: Vec<Option<OnNet>> = nets.into_iter().map(Option::transpose).collect::<Result<_,_>>()?;
+    let mut once: std::collections::BTreeMap<usize,usize> = std::collections::BTreeMap::new();
+    let (surfaces,sheets): (Vec<usize>,Vec<f64>) = b.faces.iter().zip(on.iter().zip(&nets)).map(|(f,on)| match on {
+        (Some(k),Some(n)) => Ok((*once.entry(*k).or_insert_with(|| o.net(&n.net)),n.fit)),
+        (None,Some(n)) => Ok((o.net(&n.net),n.fit)),
+        (_,None) => o.surface(&f.surface),
     }).collect::<Result<Vec<_>,String>>()?.into_iter().unzip();
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
     let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| -> Result<Option<usize>,String> {
