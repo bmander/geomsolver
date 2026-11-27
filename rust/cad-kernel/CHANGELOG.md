@@ -35,7 +35,24 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   feet, which close in by only `cos² θ` a step where the two cross at a shallow angle, a coupled
   step on both parameters. The ball-end mill screwed keeps every cell, and the cube tumbling 10°
   either way, refused in its trim before, builds.
-
+- **A traced meeting is read on the layers its march walked** (`geom::Traced::feet`): a point of a
+  traced curve between its marched points is pulled onto each B-spline sheet from the foot of its
+  nearest marched point, those feet read once and carried along the curve, where it was pulled from
+  the thread's last foot on the sheet — on a sheet that comes back near itself, whatever layer the
+  thread had read last. The crossed tumbling tori's Booleans were right, wrong or refused as their
+  cores' order fell; they now hold inclusion–exclusion to 1e-8, the same on one core or four, in
+  about half the time. `Traced` keeps them beside it (`Feet`), built by `Traced::new`; every
+  reading of the curve (its point, rates and the points read once) takes each sheet so.
+- **The faces on one sheet's net that share no edge are written on one surface** (`step::face_nets`,
+  public; `step_check` reads it too): each face's own stretch of its net (#1013) wrote the poles
+  where the stretches overlap once a face. Faces are taken in the order written into the first
+  stretch of their net none of whose faces they share an edge with, where it then holds no more
+  poles than the two apart; two faces sharing an edge, or of two lumps, are never on one surface. A
+  net several faces share is written once. Of brep-bench's 538 files seven are smaller — the crossed
+  tumbling tori's forward member 24.1 MB to 21.7 MB, the reverse 350 MB to 298 MB, their union,
+  intersection and difference 126, 220 and 236 MB to 117, 202 and 233 MB, `integration/benchy` and
+  `swept/tumbling-torus-half-turn` by a surface or two, each measured the same — and the rest the
+  same to the byte.
 - **A ball whose radius varies along the edge** (`fillet::roll_varying`, new): at each point of the
   edge the ball of the radius a law gives there, touching both faces with its centre in the plane
   square to the edge; its canal fitted as `roll`'s is and the run cut off at its ends. brep-bench's

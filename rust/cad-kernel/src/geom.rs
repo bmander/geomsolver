@@ -2038,6 +2038,21 @@ impl Surface {
     /// `implicit` and `gradient` at `p`, read together: a numerical foot (a sheet's, an image's)
     /// found once for both.
     pub fn side(&self,p: V) -> (f64,V) { self.swept_side(p).unwrap_or_else(|| (self.implicit(p),self.gradient(p))) }
+    /// **`side` read on the layer of a sheet `hint` stands on**: on a B-spline sheet the foot by
+    /// Newton's method from `hint` (`net_newton`), so where the sheet comes back near itself the
+    /// distance is to the layer the hint's foot is on and not to the nearest; on any other surface,
+    /// or where Newton's method does not settle, `side`.
+    pub(crate) fn side_from(&self,p: V,hint: Option<Uv>) -> (f64,V) {
+        if let (Surface::BSpline(_,n),Some(h)) = (self,hint) {
+            if let Some(uv) = net_newton(n,p,h) { return patch_side(p,uv,net_middle(n),&|[u,v]| n.d1(u,v)) }
+        }
+        self.side(p)
+    }
+    /// A point's foot on a B-spline sheet searched cold (`net_search`: a function of the point
+    /// alone); none on any other surface.
+    pub(crate) fn sheet_foot(&self,p: V) -> Option<Uv> {
+        match self { Surface::BSpline(_,n) => Some(net_search(n,p,false)),_ => None }
+    }
     /// Whether the surface is a patch over a domain with an edge — a curve's swept or turned, a
     /// loft's, a sheet, a family's wall, or an image of one — whose inverse takes a point off it
     /// onto its rim, and whose signed distance runs on past that rim along its extension.
@@ -2366,12 +2381,20 @@ const SMOOTH_COS: f64 = 0.95;
 /// surfaces by Newton, so the curve is on both to rounding wherever it is read. Its rates are the
 /// meeting's own at that point (`d1`, `d2`). A closed trace ends where it began (its last point is
 /// its first). What it reads at its points is read once, when first asked (`read`); a trace moved
-/// or mapped from another keeps that one's parameters at its points (`carried`).
+/// or mapped from another keeps that one's parameters at its points (`carried`). Each sheet is
+/// read on the layer of the foot of the point nearest where it is read (`feet`, `at`).
 #[derive(Clone)]
 pub struct Traced {
     pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool,
     carried: Option<Arc<Vec<f64>>>,read: std::sync::OnceLock<Arc<super::traced::Read>>,
+    /// Its points' feet on its sheets, read once (`Traced::feet`).
+    feet: Feet,
 }
+
+/// **A traced curve's points' feet on its B-spline sheets** (`Traced::feet`), read once and kept
+/// beside it: a function of the curve alone, so two curves are alike whatever either holds.
+#[derive(Clone,Debug,Default)]
+pub struct Feet(std::sync::OnceLock<Vec<[Option<Uv>;2]>>);
 
 impl PartialEq for Traced {
     fn eq(&self,o: &Traced) -> bool {
@@ -2389,14 +2412,14 @@ impl std::fmt::Debug for Traced {
 impl Traced {
     /// The meeting of `a` and `b` through `pts`, closed where `closed` (its last point its first).
     pub fn new(a: Surface,b: Surface,pts: Vec<V>,closed: bool) -> Traced {
-        Traced {a,b,pts,closed,carried:None,read:std::sync::OnceLock::new()}
+        Traced {a,b,pts,closed,carried:None,read:std::sync::OnceLock::new(),feet:Feet::default()}
     }
     /// **The trace `from` carried onto `a` and `b`, its points to `pts`** (moved, reflected or
     /// mapped point for point): its parameter at each point `from`'s, so what was placed on `from`
     /// by its parameter is where it was on this (`traced::read`).
     pub fn carried(a: Surface,b: Surface,pts: Vec<V>,from: &Traced) -> Traced {
         let at = (pts.len() == from.pts.len() && pts.len() >= 2).then(|| Arc::new(from.read().at.clone()));
-        Traced {a,b,pts,closed:from.closed,carried:at,read:std::sync::OnceLock::new()}
+        Traced {a,b,pts,closed:from.closed,carried:at,read:std::sync::OnceLock::new(),feet:Feet::default()}
     }
     /// The parameters at its points a trace was carried with (`Traced::carried`), none where it laid
     /// its own.
@@ -2442,10 +2465,12 @@ impl Traced {
     /// What it reads at its points, once (`traced::read`).
     pub(crate) fn read(&self) -> &super::traced::Read { self.read.get_or_init(|| Arc::new(super::traced::read(self))) }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
-    pub fn project(&self,q: V) -> V { self.projected(q).0 }
-    /// `project`, and the two surfaces' gradients at the point it settles on (read again there only
-    /// where its last step moved it after they were read).
-    pub(crate) fn projected(&self,q: V) -> (V,(V,V)) {
+    pub fn project(&self,q: V) -> V { self.projected(q,[None,None]).0 }
+    /// `project`, each sheet's distance read on the layer of its foot `hint` (`Surface::side_from`),
+    /// and the two surfaces' gradients at the point it settles on (read again there only where its
+    /// last step moved it after they were read).
+    pub(crate) fn projected(&self,q: V,hint: [Option<Uv>;2]) -> (V,(V,V)) {
+        let side = |p: V| (self.a.side_from(p,hint[0]),self.b.side_from(p,hint[1]));
         // settled once both distances are at the rounding of the coordinates, a step stops moving,
         // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
         // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
@@ -2454,7 +2479,7 @@ impl Traced {
         let mut p = q;
         let mut best: (f64,V,Option<(V,V)>) = (f64::INFINITY,q,None);
         for _ in 0..50 {
-            let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
+            let ((fa,ga),(fb,gb)) = side(p);
             let off = fa.abs().max(fb.abs());
             if off >= best.0 { break }
             best = (off,p,Some((ga,gb)));
@@ -2464,10 +2489,57 @@ impl Traced {
             if crate::util::space::norm(step) <= settled { best = (best.0,p,None); break }
         }
         let p = best.1;
-        (p,best.2.unwrap_or_else(|| (self.a.side(p).1,self.b.side(p).1)))
+        (p,best.2.unwrap_or_else(|| { let ((_,ga),(_,gb)) = side(p); (ga,gb) }))
     }
-    /// `C`: the guess at `t` pulled onto both surfaces.
-    pub(crate) fn at(&self,t: f64) -> V { self.project(self.guess(t)) }
+    /// `C`: the guess at `t` pulled onto both surfaces, **on the layers its points are on**: each
+    /// sheet's distance read from the foot of the curve's point nearest `t` (`feet`, `side_from`).
+    /// Read from the thread's last foot on the sheet (`Surface::side`), a point beside a swept
+    /// sheet's double curve, its two layers some 1e-5 apart there, was pulled onto whichever layer
+    /// the thread had read last: on the crossed tori, after a mesh of the solid, a meeting's end
+    /// stood 1.3e-5 off its vertex and its pcurve was inverted onto the other layer, and the
+    /// Boolean's face took in a strip of the sheet inside the solid (the union 3e-4 off), or the
+    /// Boolean refused, as the order its cores read in fell. Read from a cold search's foot, or the
+    /// nearest's, a chord's point beside the double curve went onto the other layer wherever that
+    /// was nearer, and every Boolean refused.
+    pub(crate) fn at(&self,t: f64) -> V { self.projected(self.guess(t),self.hint(t)).0 }
+    /// The feet `at` reads each sheet from at `t`: those of the point nearest it along its stretch.
+    pub(crate) fn hint(&self,t: f64) -> [Option<Uv>;2] {
+        let (i,f) = self.locate(t);
+        self.feet().get(if f <= 0.5 { i } else { i+1 }).copied().unwrap_or([None,None])
+    }
+    /// **Each of its points' feet on its B-spline sheets, on the layer the march put it on**: the
+    /// march held each point to its sheets from the last one's foot, so each foot is Newton's from
+    /// the last one's where that lands on the point (within a millionth of its size), and searched
+    /// (`Surface::sheet_foot`) where it does not; then back from the end, a searched foot replaced by
+    /// the next one's carried back where that lands — so a point where the sheet's layers cross (a
+    /// vertex on its double curve), where a search reads either, takes its neighbours' layer. A foot
+    /// that lands on its point nowhere is none (`side_from` then reads `side`).
+    pub(crate) fn feet(&self) -> &[[Option<Uv>;2]] {
+        self.feet.0.get_or_init(|| {
+            let sheets = [&self.a,&self.b];
+            let lands = |s: &Surface,p: V,uv: Uv| crate::util::space::distance(s.point(uv),p) <= 1e-6*(1.+crate::util::space::norm(p));
+            let newton = |s: &Surface,p: V,h: Uv| match s { Surface::BSpline(_,n) => net_newton(n,p,h).filter(|&uv| lands(s,p,uv)),_ => None };
+            let mut out: Vec<[Option<Uv>;2]> = Vec::with_capacity(self.pts.len());
+            let mut searched: Vec<[bool;2]> = Vec::with_capacity(self.pts.len());
+            for (j,&p) in self.pts.iter().enumerate() {
+                let (mut f,mut by) = ([None;2],[false;2]);
+                for (k,s) in sheets.into_iter().enumerate() {
+                    if !matches!(s,Surface::BSpline(..)) { continue }
+                    let carried = j.checked_sub(1).and_then(|i| out[i][k]).and_then(|h| newton(s,p,h));
+                    f[k] = carried.or_else(|| { by[k] = true; s.sheet_foot(p).filter(|&uv| lands(s,p,uv)) });
+                }
+                out.push(f);
+                searched.push(by);
+            }
+            for j in (0..self.pts.len().saturating_sub(1)).rev() {
+                for (k,s) in sheets.into_iter().enumerate() {
+                    if !searched[j][k] { continue }
+                    if let Some(uv) = out[j+1][k].and_then(|h| newton(s,self.pts[j],h)) { out[j][k] = Some(uv) }
+                }
+            }
+            out
+        })
+    }
     /// The stretch holding `t` and the fraction of it at `t` (past either end of an open trace, its
     /// end stretch's, run on).
     pub(crate) fn locate(&self,t: f64) -> (usize,f64) {
@@ -2552,7 +2624,7 @@ impl Traced {
     /// (`differenced`).
     pub(crate) fn d1(&self,t: f64) -> (V,V) {
         let (g,dg,_) = self.guess_d2(t);
-        let (p,grads) = self.projected(g);
+        let (p,grads) = self.projected(g,self.hint(t));
         match super::traced::tangent(grads,dg) {
             Some(tn) => (p,scale(tn,dot(tn,dg))),
             None => (p,self.differenced(t)),
@@ -2563,7 +2635,7 @@ impl Traced {
     /// Where it is not read (a touch), `C'` differenced and `C''` nothing.
     pub(crate) fn d2(&self,t: f64) -> (V,V,V) {
         let (g,dg,ddg) = self.guess_d2(t);
-        let (p,grads) = self.projected(g);
+        let (p,grads) = self.projected(g,self.hint(t));
         match super::traced::jet(&self.a,&self.b,p,grads,dg) {
             Some((tn,k)) => {
                 let v = dot(tn,dg);

@@ -1022,6 +1022,30 @@ and the crossed tori asked it a hundred times beside their folds, most running a
 to nothing. A sheet's grid seeds settle each sign change by false position (Illinois) and drop a
 side at once where the distance changes by more than twice its ends stand apart (a distance is
 1-Lipschitz, so the foot leapt; halving gave such a side up after forty readings).
+**A traced meeting is read on the layers its march walked** (`geom::Traced::feet`, `Traced::at`,
+`Surface::side_from`). A march holds each point to a sheet from the last one's foot, so its points
+lie on one layer of the net where the sheet comes back near itself; nothing said which. A point of
+the curve between two marched points was pulled onto both sheets by the sheets' signed distances
+from the thread's last foot on each (`Surface::side`), which is the march's own while it marches
+and whatever the thread read last after. On the crossed tori's sheets, layers some 1e-5 apart about
+their double curves, a meeting's end read after a mesh of the solid stood 1.3e-5 off its vertex, on
+the other layer; its pcurve, inverted, ran onto that layer; and a Boolean's face took in a strip of
+the sheet inside the solid, the union's volume 3e-4 off, or refused — as the order the cores read
+in fell, so that a change anywhere in either member flipped the three Booleans between right, wrong
+and refused. Each point's feet are now read once, carried along the march (Newton's from the last
+point's foot where it lands within a millionth of the point's size, searched where it does not,
+and a searched foot replaced by the next one's carried back, so a vertex where the layers cross
+takes its neighbours' layer), and a curve's point is pulled onto each sheet from the foot of its
+nearest marched point. Read so, the crossed tori's union, difference and intersection hold
+inclusion–exclusion to 1e-8 — and with the members' sheets fitted otherwise, where the reading from
+the thread's last foot built a wrong union — the same with one core or four, each in about half the
+time (no search of the whole sheet a point).
+Read from a cold search's foot, or the nearest one, a chord's point beside the double curve went
+onto the other layer wherever that was nearer, and every Boolean refused. Every reading of the
+curve is so (#1034): its point, its rates (`Traced::d1`, `d2`, the gradients read on the same
+layers) and its points pulled onto both sheets once (`traced::read`), each from the feet of the
+point nearest (`Traced::hint`).
+`swept_tube::the_crossed_members_combine` is the gate.
 **An edge's gap is measured as a reader measures it** (`Brep::measure_tolerances`, read as
 `standing`: 64 places, the knots and the ends, and halfway between each two). Read at 33, the
 crossed reverse sheet stated a rim's gap of 1.1e-5 where its pcurve stood 1.5e-5 off between two of
@@ -2469,6 +2493,24 @@ found lines 0.075 mm off their edges), otherwise as the cubic within `EXACT`. Ga
 `step_parameters::every_pcurve_lies_on_its_edge_at_the_edges_parameter` (each pcurve, read through
 the reader's evaluation of the standard, on its edge within `FIT + 2·EXACT`),
 `a_lemon_is_written_as_a_degenerate_torus`.
+
+**The faces on one sheet's net that share no edge are written on one surface**
+(`step::face_nets`). A face on a sheet's net is written on its own stretch of the net, its
+parameter box grown by a sixteenth (`Net::segment`, the same surface at the same parameters, #1013;
+whole, the crossed tori's union was a 2.4 GB file). The faces of one window of a swept sheet lie
+on its net side by side, their boxes overlapping, and each stretch wrote the overlap again: the
+crossed tori's forward member wrote 242 thousand poles of the 136 thousand in its nets. So faces
+are taken in the order written, each into the first stretch of its net none of whose faces it
+shares an edge with, where the stretch, the least box holding theirs, then holds no more poles
+than the two apart; else a stretch of its own, and a net several faces share is written once. Two
+faces sharing an edge are never on one surface: on a sheet's double curve the edge's two pcurves
+lie on two layers of the net, and only their surfaces tell a reader which is whose (a reader takes
+two pcurves on one surface for a seam). Nor two faces of two lumps: each solid is read on its own
+surfaces, so the halves of a block cut through, on one net, read back on two. `step_check::Solid`
+reads the faces' surfaces as `face_nets` writes them.
+`step_shared_nets::faces_on_one_net_sharing_no_edge_are_written_on_one_surface` is the gate: a
+block under a patch slotted across its top, its top's two halves one surface and the file read back
+to the same solid; cut through, no two lumps' faces on one surface, read back the same.
 
 **A STEP file never states less than it holds** (#993 stage 1, `step::write_stating`,
 `step::statement`). The uncertainty a file states is the tolerance asked (at least 1e-7) where

@@ -168,7 +168,7 @@ pub(crate) fn read(tr: &Traced) -> Read {
     let mut points: Vec<V> = Vec::with_capacity(n);
     for i in 0..=m {
         if tr.closed && i == m { let first = jets[0]; jets.push(first); points.push(points[0]); continue }
-        let (p,g) = tr.projected(tr.pts[i]);
+        let (p,g) = tr.projected(tr.pts[i],tr.feet()[i]);
         points.push(p);
         let prev = if i > 0 { tr.pts[i-1] } else if tr.closed && m > 1 { tr.pts[m-1] } else { tr.pts[i] };
         let next = if i < m { tr.pts[i+1] } else { tr.pts[i] };
