@@ -803,13 +803,14 @@ fn radial_reach(b: &Brep,o: V,z: V) -> f64 {
         EdgeCurve::Curve(c) => corners(c.bounds(e.t)),
         EdgeCurve::Degenerate => radial(b.vertices[e.v[0] as usize].p),
     };
+    let edges = |f: &crate::topo::Face| f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max);
     b.faces.iter().map(|f| match &f.surface {
         Surface::Cylinder(frame,r) if coaxial(frame) => r.abs(),
-        Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
         // (a cone about the line: its distance from it affine along each line of the cone, so at
         // most its edges' — the gear's blank, its four faces cones, read 43.8 from its box's
         // corners where its reach is 30.9)
-        Surface::Cone(frame,..) if coaxial(frame) => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
+        Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => edges(f),
+        Surface::Cone(frame,..) if coaxial(frame) => edges(f),
         _ => *whole.get_or_init(|| corners(bounds)),
     }).fold(0.,f64::max)
 }
@@ -1172,7 +1173,6 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
             Trajectory::Relative {observer,..} => observer.screw().filter(|s| s.ratio != 0.),
             _ => None,
         };
-        let g = REACH*b.size();
         match turned {
             Some(s) => {
                 let (o,z) = (s.origin,unit(s.axis));
@@ -1182,7 +1182,7 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
                 let r = radial_reach(b,o,z);
                 super::trim::Reach::Turned {o,z,r:r*(1.+HUGGED),span:[lo-HUGGED*r,hi+HUGGED*r]}
             }
-            None => { let (lo,hi) = b.bounds(); super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)) }
+            None => { let (lo,hi) = b.bounds(); let g = REACH*b.size(); super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)) }
         }
     });
     let swept = match reach.map(|reach| super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})) {

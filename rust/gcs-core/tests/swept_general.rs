@@ -328,14 +328,11 @@ fn the_paths_the_general_road_gives_lie_on_both_their_walls() {
     eprintln!("{} candidates, {read} given rails",candidates.len());
 }
 
-/// A planar polygon through `points`, in order, as a profile.
-fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
-    use gcs_core::brep::build::{Profile,ProfileEdge};
-    use gcs_core::space::{add,cross,unit};
-    let n = points.len();
-    let normal = (0..n).fold([0.;3],|s,k| add(s,cross(points[k],points[(k+1)%n])));
-    let edges = (0..n).map(|k| ProfileEdge::Line {a:points[k],b:points[(k+1)%n]}).collect();
-    Profile {origin:points[0],normal:unit(normal),loops:vec![edges],names:Vec::new()}
+/// The bevel pair's frame: `g` along the line where the pitch cones touch, `d` square to it in the
+/// xz-plane, and the outer cone distance `15√5`.
+fn bevel_frame() -> ([f64;3],[f64;3],f64) {
+    let s5 = 5f64.sqrt();
+    ([2./s5,0.,1./s5],[-1./s5,0.,2./s5],15.*s5)
 }
 
 /// brep-bench's hypoid gear cut by its pinion (`swept/hypoid-gear-cut-by-its-pinion`): the straight
@@ -346,9 +343,7 @@ fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
 fn hypoid_tooth() -> (gcs_core::brep::topo::Brep,Trajectory) {
     use gcs_core::brep::build::{kept,prism};
     use gcs_core::space::{add,cross,dot,scale,unit};
-    let s5 = 5f64.sqrt();
-    let (g,d,y) = ([2./s5,0.,1./s5],[-1./s5,0.,2./s5],[0.,1.,0.]);
-    let ae = 15.*s5;
+    let ((g,d,ae),y) = (bevel_frame(),[0.,1.,0.]);
     let (inner,outer) = (ae-12.,ae+2.);
     let w = |u: f64| std::f64::consts::FRAC_PI_2-u*20f64.to_radians().tan();
     let corners: Vec<[f64;3]> = [(2.5,-w(2.5)),(-2.5,-w(-2.5)),(-2.5,w(-2.5)),(2.5,w(2.5))].iter()
@@ -358,13 +353,13 @@ fn hypoid_tooth() -> (gcs_core::brep::topo::Brep,Trajectory) {
         let c = scale(add(scale(g,ae),scale(add(c,scale(g,-ae)),1.2)),outer/ae);
         add(c,scale(g,inner-dot(c,g)))
     }).collect();
-    let section = polygon(&wide);
+    let section = crate::swept_rings::polygon(&wide);
     let mut tooth = if dot(section.normal,g) > 0. { prism(&section,0.,outer-inner).unwrap() } else { prism(&section,-(outer-inner),0.).unwrap() };
     for k in 0..4 {
         let n = unit(cross(corners[k],corners[(k+1)%4]));
         tooth = kept(&tooth,[0.;3],if dot(n,g) > 0. { n } else { scale(n,-1.) },0.).unwrap();
     }
-    let phi = (24./(75.-5.*s5)).asin();
+    let phi = (24./(75.-5.*5f64.sqrt())).asin();
     let tooth = tooth.moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],phi));
     let pinion = Trajectory::Twist(Screw {origin:[0.,12.,0.],axis:[1.,0.,0.],ratio:1.,advance:0.});
     let gear = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:-7./15.,advance:0.});
@@ -375,11 +370,10 @@ fn hypoid_tooth() -> (gcs_core::brep::topo::Brep,Trajectory) {
 /// in the xz-plane turned about `z`.
 fn hypoid_blank() -> gcs_core::brep::topo::Brep {
     use gcs_core::space::{add,scale};
-    let s5 = 5f64.sqrt();
-    let (g,d) = ([2./s5,0.,1./s5],[-1./s5,0.,2./s5]);
-    let (ae,ai) = (15.*s5,15.*s5-10.);
+    let (g,d,ae) = bevel_frame();
+    let ai = ae-10.;
     let at = |s: f64,u: f64| add(scale(g,s),scale(d,u));
-    gcs_core::brep::build::revolve(&polygon(&[at(ae,-2.),at(ae,6.),at(ai,6.),at(ai,-2.*ai/ae)]),[0.;3],[0.,0.,1.],std::f64::consts::TAU).unwrap()
+    gcs_core::brep::build::revolve(&crate::swept_rings::polygon(&[at(ae,-2.),at(ae,6.),at(ai,6.),at(ai,-2.*ai/ae)]),[0.;3],[0.,0.,1.],std::f64::consts::TAU).unwrap()
 }
 
 /// **A flank's wall is read only past its fold, and an edge's fan and its face's wall are given
@@ -397,7 +391,7 @@ fn a_flanks_wall_is_read_only_past_its_fold_and_its_crossing_is_given() {
     use gcs_core::space::{cross,dot,distance};
     let (tooth,path) = hypoid_tooth();
     let roll = [-23f64.to_radians(),-18f64.to_radians()];
-    let tol = gcs_core::brep::geom::tolerance(hypoid_blank().size());
+    let tol = tolerance_of(&hypoid_blank());
     let (candidates,given) = gcs_core::brep::swept::general::candidates(&tooth,&path,roll,tol).unwrap_or_else(|u| panic!("{u:?}"));
     for (k,c) in candidates.iter().enumerate() {
         let located = gcs_core::brep::query::Located::new(c,tol);
@@ -458,7 +452,7 @@ fn membership_settles_a_hair_outside_where_the_tool_passes_close_by() {
 fn the_hypoid_gears_tooth_space_is_cut_by_its_pinion() {
     let (tooth,path) = hypoid_tooth();
     let blank = hypoid_blank();
-    let tol = gcs_core::brep::geom::tolerance(blank.size());
+    let tol = tolerance_of(&blank);
     let roll = [-70f64.to_radians(),70f64.to_radians()];
     let cut = gcs_core::brep::swept::closed::cut_from(&blank,&tooth,&path,roll,0.01,tol).unwrap_or_else(|u| panic!("{u:?}"));
     cut.check(tol).unwrap();
