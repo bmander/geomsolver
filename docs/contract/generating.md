@@ -2110,7 +2110,43 @@ its rate where the face's two derivatives are parallel (`topo::inverse_derivativ
 read NaN at a pinch). The bench's 75° cube is built (`swept_general`'s slow gate, held to
 membership: a count of 40000 points gives 11.029 ± 0.072 against its 11.0993). **Not yet built**:
 the cube tumbled 10° and 12° is refused in its trim, a piece the boundary at one point and off it at
-another (candidate 6 near `(2.99, 0.77, 2.59)`), with no fan crossing itself. **A ring's fold pair born partway**
+another (candidate 6 near `(2.99, 0.77, 2.59)`), with no fan crossing itself. 
+**A face's wall is read only past its fold** (#942 T1d-hypoid, `general::Tool::fold`, `candidates`'
+`kept`): a plane face's wall is the envelope of its plane, and where the plane's second rate by the
+roll at a point of its characteristic line, `F″ = −n · (v₀′ + ω′ × x) + n · (ω × v(x))`, is
+negative the face at its own neighbouring instants holds the point inside — affine along the line,
+its root the wall's fold, past which the sheet doubles back over itself. A chord wholly on that side
+is left out of the contact, one holding the fold ends there (`End::Fold`), and each face's wall is
+read over the runs of stretches holding a chord of it, from the fold to its reach's end on the side
+kept (or its whole reach), its sheet parted where the fold enters or leaves that reach, a stretch
+cut there. The body twist's rate is the bracket `[V, ξ]` for one turn seen from another, nought
+for a constant twist, else Richardson's extrapolation. Read whole, the hypoid tooth's flank folded
+inside its face, a crossing traced on it ran 3.8e-2 off both walls and the trim refused a piece
+both the boundary and off it. **An edge's fan and the wall of a face of it are always given their
+meeting**: their path where the face's chord holds that end (none where the chord is buried), and
+their crossings beside it (`beside_rails`, seeded where they meet at a sine past `SHALLOWEST`, the
+two touching all along the path) — none at all where they have none, the trim never searching the
+pair (where the face's end on the edge is buried, the fan's side lies on the sheet folded away,
+grazing the wall's fold, and that search read more boxes than any may). **A crossing beside the
+path is carried on to the corner it is born at** (`completed`, `carried`): each end of a run of the
+path — where the face's fold passes the edge, or its chord there is born or dies — a branch passing
+within `REACHED` of the tool's size cut where it passes nearest (what runs on beyond lies along the
+path, traced again) and marched on to the corner in both walls' parameters, Newton from pair to
+pair, each pair within both walls' stretches of `u` (past them lies the path carried on over the
+buried sheet, which leaves the corner the branch's way), laid as a polyline halved until each
+chord's middle stands within a quarter of the tolerance of the meeting. **Where the whole sweep's
+trim refuses and the sweep is cut from a blank** (`closed::general_built`), it is trimmed within the
+blank's reach — seen from a turn, a cylinder about the turn's axis `HUGGED` past the blank's
+`radial_reach` (which reads a cone about the axis by its edges), else the blank's box — the hypoid's
+heel, past the blank, left unasked. **Membership's stretch** (`member::Swept::member`): a stretch of
+half-width `h` about `m` reaches at most `min(L h, |v(m)| h + ½ A h²)`, `L` the trajectory's speed
+bound, `v(m)` the carried point's own velocity and `A` its acceleration bound where there is one
+(the hypoid's `L` 85 where the point moves at 30, and a quadratic dip a hair outside ran past
+`MOST_READS`). Gates: `swept_general::a_flanks_wall_is_read_only_past_its_fold_and_its_crossing_is_given`,
+`membership_settles_a_hair_outside_where_the_tool_passes_close_by`; brep-bench's
+`hypoid-gear-cut-by-its-pinion` is built (`the_hypoid_gears_tooth_space_is_cut_by_its_pinion`, slow:
+its volume and area cadrs's within 7e-10 and 2e-9), in about four minutes — past the bench's two at
+one core. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

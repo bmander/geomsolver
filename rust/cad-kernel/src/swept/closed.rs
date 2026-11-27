@@ -782,8 +782,9 @@ fn clipped_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,bl
 }
 
 /// **A bound on how far `b` reaches from the line through `o` along the unit `z`**: a face on a
-/// cylinder about the line its radius; a plane square to it its edges' (a distance from the line is
-/// convex, so its greatest over a plane region is on its boundary) — a line's ends, a circle about
+/// cylinder about the line its radius; a plane square to it, or a cone about the line, its edges' (a
+/// distance from the line is convex over a plane, and affine along each line of a cone about it, so
+/// its greatest over either is on its boundary) — a line's ends, a circle about
 /// the line its radius, any other curve its box's corners; any other face the corners of the
 /// solid's box (`Brep::bounds`, which holds its surfaces), the greatest over a box being at a
 /// corner.
@@ -805,6 +806,10 @@ fn radial_reach(b: &Brep,o: V,z: V) -> f64 {
     b.faces.iter().map(|f| match &f.surface {
         Surface::Cylinder(frame,r) if coaxial(frame) => r.abs(),
         Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
+        // (a cone about the line: its distance from it affine along each line of the cone, so at
+        // most its edges' — the gear's blank, its four faces cones, read 43.8 from its box's
+        // corners where its reach is 30.9)
+        Surface::Cone(frame,..) if coaxial(frame) => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
         _ => *whole.get_or_init(|| corners(bounds)),
     }).fold(0.,f64::max)
 }
@@ -1153,9 +1158,44 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
     let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
     crate::util::meter::go_on()?;
     let trim = road_trim(tool,tol);
-    let swept = trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    // **the sweep within the blank's reach, where the whole does not close** (#942 T1d-hypoid), as
+    // the contact's road asks it (`contacts_road`): cut from a blank, the sweep is wanted only where
+    // the blank is. Seen from a turn — the gear a tooth cuts, turning about its axis — within a
+    // cylinder about that axis just past the blank's reach from it (`HUGGED`; no round number, so
+    // its side stands clear of the blank's), its ends `REACH` of the blank's size past the blank's
+    // along it; the sweep there and the blank cut alike. The hypoid's tooth runs past the gear's
+    // blank at its heel, where its flank's fold meets its heel edge's fan outside the blank: the
+    // whole's trim refused there, at 31.8 from the axis, the blank's reach 30.9
+    let whole = super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim);
+    let swept = match (whole,blank) {
+        (Ok((swept,_)),_) => swept,
+        (Err(why),Some(b)) if !matches!(why,Unbuilt::Budget {..}) => {
+            let turned = match path {
+                Trajectory::Relative {observer,..} => observer.screw().filter(|s| s.ratio != 0.),
+                _ => None,
+            };
+            let reach = match turned {
+                Some(s) => {
+                    let (o,z) = (s.origin,unit(s.axis));
+                    let r = radial_reach(b,o,z);
+                    let [lo,hi] = axial_span(b,o,z);
+                    let g = REACH*b.size();
+                    super::trim::Reach::Turned {o,z,r:r*(1.+HUGGED),span:[lo-g,hi+g]}
+                }
+                None => { let (lo,hi) = b.bounds(); let g = REACH*b.size(); super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)) }
+            };
+            if crate::debug() { eprintln!("swept: the whole sweep's trim refused ({why:?}): trimmed within the blank's reach, {reach:?}") }
+            trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})?
+        }
+        _ => trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?,
+    };
     cut_blank(swept,blank,tol)
 }
+
+/// How far past the blank's reach from the axis a turn sees it from the cylinder the general road's
+/// sweep is trimmed within stands, of that reach (`general_built`): the blank's within a few
+/// thousandths, so what the sweep does past the blank is not asked.
+const HUGGED: f64 = 0.00317;
 
 /// The candidates trimmed by membership (`trim::trim`), and where that is refused and
 /// `SOLVENT_SWEEP_DUMP` names a directory, what the trim was given written there (`dump_trim`,
