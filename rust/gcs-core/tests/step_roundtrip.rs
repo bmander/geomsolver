@@ -170,8 +170,9 @@ fn edge_fit(b: &Brep,ei: usize,fit: Fit,stated: f64,polyline: bool) -> f64 {
         EdgeCurve::Degenerate => 0.,
         EdgeCurve::Curve(c) => match c {
             Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => 0.,
-            // (the polyline a traced curve is written as where no cubic closes in: within the
-            // uncertainty the file states, which covers it)
+            // (a cubic, as any curve the writer fits; the polyline written where none closes in
+            // over a trace with a kink there, beside a touch, within the uncertainty the file
+            // states, which covers it — `same` refuses one of a trace with none, #1034)
             Curve::Traced(_) if polyline => stated,
             Curve::Traced(_) => fit.bar(),
             _ => FIT,
@@ -205,7 +206,7 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 /// * an edge whose written curve stands up to `δ` off the built one moves the face's trim by as
 ///   much along it: `2 δ L` (twice, as a fitted cubic's miss keeps its sign along a piece); and
 ///   so does a pcurve the writer fits (`Fit::bar` on the face, or the edge's own tolerance where
-///   that is past it, or the uncertainty the file states where it writes a polyline), which a
+///   that is past it, or the uncertainty the file states where it writes a pcurve as a polyline), which a
 ///   reader may trim by;
 /// * a surface written within `δₛ` of the built one moves the face along its normal: its area by
 ///   `δₛ ∬ 2H`, held as `20 δₛ A / s` (its radius of curvature no less than a tenth of the solid's
@@ -387,7 +388,13 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         let off = distance(r.vertices[i].p,b.vertices[vertex_of[&id]].p);
         if off > 1e-12*s { return Err(format!("vertex #{id} read {off:.2e} from where it was written")) }
     }
+    // a traced edge is written as a cubic within the fit's bar, as any smooth curve — a polyline
+    // only where it has a kink, beside a touch (#1034)
     let polys = polylines(b,given,&edge_ids);
+    for &ei in &polys {
+        let (EdgeCurve::Curve(Curve::Traced(t)),span) = (&b.edges[ei].curve,b.edges[ei].t) else { continue };
+        if t.kinks(span).is_empty() { return Err(format!("traced edge {ei}, smooth, written as a polyline")) }
+    }
     let mut laid_degenerate = 0;
     for (i,&id) in given.edges.iter().enumerate() {
         let e = &r.edges[i];

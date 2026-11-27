@@ -10,11 +10,9 @@
 //!   both points with their `T` and `K`, its length read off itself (the fixed point of
 //!   `L = ∫ |P'|`), so it follows the curve to the sixth power of the step — the parabola it
 //!   replaces, through the chords alone, to the third.
-//! * **A pace with no jump** (`Smooth::pace`): the curve's parameter still counts its points, and
-//!   `σ(f)`, the length along a stretch at the fraction `f` of it, is a quintic rising from 0 to
-//!   the stretch's length, its rate at each point the harmonic mean of the two stretches' lengths
-//!   there and its second rate nought: the same either side, so the speed and its rate run on
-//!   through every point.
+//! * **A parameter running evenly along the curve** (`read`): its `m` stretches over `[0, m]` as
+//!   before, but each point where the length run to it puts it, so the speed is the same
+//!   everywhere, through every point.
 //!
 //! A point of the curve is that quintic's point pulled onto both surfaces (`Traced::project`,
 //! as before); its rates are read there, not differenced: `C' = T v`, `v = T · g'` the speed of
@@ -101,16 +99,11 @@ fn hermite(ends: [V;6]) -> [V;6] {
     std::array::from_fn(|j| std::array::from_fn(|k| (0..6).map(|i| ends[i][k]*BASIS[i][j]).sum()))
 }
 
-/// The scalar quintic rising from 0 to `len` over `[0, 1]`, its rates `v0` and `v1` at its ends
-/// and its second rates nought.
-fn rising(len: f64,v0: f64,v1: f64) -> [f64;6] {
-    std::array::from_fn(|j| v0*BASIS[1][j]+v1*BASIS[4][j]+len*BASIS[5][j])
-}
-
-/// A stretch read by its quintic: its length along the curve, the quintic in `x = σ / len`, and
-/// the pace, `σ` as a quintic of the fraction of the stretch.
+/// A stretch read by its quintic: its length along the curve, and the quintic in `x = σ / len`,
+/// `σ` the length along it — the fraction of the stretch, the curve's parameter running evenly
+/// along its length (`read`).
 #[derive(Clone,Debug)]
-pub(crate) struct Smooth { pub(crate) len: f64,curve: [V;6],pace: [f64;6] }
+pub(crate) struct Smooth { pub(crate) len: f64,curve: [V;6] }
 
 impl Smooth {
     /// The quintic between `p0` and `p1` with their tangents and curvature vectors, its length the
@@ -130,69 +123,55 @@ impl Smooth {
             if settled { break }
         }
         let fair = GAUSS8.iter().all(|&(x,_)| { let s = norm(quintic3(&c,0.5*(1.+x)).1)/len; (0.5..=1.5).contains(&s) });
-        fair.then_some(Smooth {len,curve:c,pace:[0.,len,0.,0.,0.,0.]})
+        fair.then_some(Smooth {len,curve:c})
     }
     /// The guess at the fraction `f` of the stretch and its two rates in `f`.
-    fn at(&self,f: f64) -> (V,V,V) {
-        let (s,ds,dds) = quintic(&self.pace,f);
-        let l = self.len;
-        let (p,px,pxx) = quintic3(&self.curve,s/l);
-        (p,scale(px,ds/l),add(scale(pxx,ds*ds/(l*l)),scale(px,dds/l)))
-    }
-    /// The guess's rate in the fraction `f` over the fractions `f`, enclosed: the quintics read in
-    /// intervals.
-    fn rate_over(&self,f: Iv) -> I3 {
-        let (s,ds) = quintic_over(&self.pace,f);
-        let l = Iv::point(self.len);
-        let x = s/l;
-        std::array::from_fn(|k| quintic_over(&self.curve.map(|v| v[k]),x).1*ds/l)
-    }
-    /// The fraction of the stretch at which its pace has run `x` of its length (`x ∈ [0, 1]`): the
-    /// pace's quintic inverted, by bisection kept to Newton's steps where they stay inside.
-    fn fraction(&self,x: f64) -> f64 {
-        let want = x.clamp(0.,1.)*self.len;
-        let (mut lo,mut hi,mut f) = (0.,1.,x.clamp(0.,1.));
-        for _ in 0..60 {
-            let (s,ds,_) = quintic(&self.pace,f);
-            if s < want { lo = f } else { hi = f }
-            let next = f-(s-want)/ds;
-            let next = if next > lo && next < hi { next } else { 0.5*(lo+hi) };
-            if (next-f).abs() <= 1e-15 { return next }
-            f = next;
-        }
-        f
-    }
-    /// The pace's greatest rate over the stretch, sampled.
-    fn fastest(&self) -> f64 { (0..=32).map(|j| quintic(&self.pace,j as f64/32.).1).fold(0.,f64::max) }
+    fn at(&self,f: f64) -> (V,V,V) { quintic3(&self.curve,f) }
+    /// The guess's rate in `f` over the fractions `f`, enclosed: the quintic read in intervals.
+    fn rate_over(&self,f: Iv) -> I3 { std::array::from_fn(|k| quintic_over(&self.curve.map(|v| v[k]),f).1) }
+    /// The guess's greatest rate in `f` over the stretch, sampled.
+    fn fastest(&self) -> f64 { (0..=32).map(|j| norm(quintic3(&self.curve,j as f64/32.).1)).fold(0.,f64::max) }
 }
 
-/// **What a trace reads once at its points** (the module's): each stretch's quintic where it has
-/// one, and the curve's greatest speed.
-/// Its points pulled onto both surfaces (`nodes`), and each whole stretch's enclosure, read once
-/// when first asked (`enclose`).
+/// **What a trace reads once at its points** (the module's): its points pulled onto both surfaces
+/// (`nodes`), each stretch's quintic where it has one, the curve's parameter at each point (`at`),
+/// whether its rate may step at each (`kinks`), its greatest speed, and each whole stretch's
+/// enclosure, read once when first asked (`enclose`).
 #[derive(Debug,Default)]
 pub(crate) struct Read {
     pub(crate) smooth: Vec<Option<Smooth>>,pub(crate) speed: f64,pub(crate) nodes: Vec<V>,
+    pub(crate) at: Vec<f64>,pub(crate) kinks: Vec<bool>,
     pub(crate) wholes: std::sync::OnceLock<Vec<Patch<1>>>,
 }
 
-/// A trace's `Read`: its points pulled onto both surfaces, their jets read, each stretch's quintic
-/// built where both its ends have one and it runs along its chord, and the paces set.
+/// **A trace's `Read`**: its points pulled onto both surfaces, their jets read, each stretch's
+/// quintic built where both its ends have one and it runs along its chord, and the parameter laid:
+/// the length run along the curve to each point, by its stretches' lengths (a quintic's own, a
+/// chord where none), scaled so the trace's `m` stretches run over `[0, m]` — **the curve's
+/// parameter runs evenly along its length**, its speed the same everywhere (#1034). Its points then
+/// stand at no whole parameter in general, and a stretch's fraction `f` is its parameter's over
+/// it. (Its parameter counted its points before: where they stood unevenly, its speed had to
+/// change within a stretch however smoothly it was laid, and a stretch two-thirds its neighbour's
+/// length swayed it by a quarter, which a ruled wall's net could not follow to the file's 1e-6.) A
+/// trace carried from another (`Traced::carried`, moved or mapped) keeps that one's parameters at
+/// its points, so whatever was placed on it is where it was: a map that is no similarity changes
+/// its stretches' lengths unevenly, and its speed steps at a point there. A point is a kink where
+/// a stretch either side has no smooth reading, or where its speed steps.
 pub(crate) fn read(tr: &Traced) -> Read {
     let n = tr.pts.len();
     if n < 2 { return Read::default() }
     let m = n-1;
     let mut nodes: Vec<Option<(V,V,V)>> = Vec::with_capacity(n);
-    let mut at: Vec<V> = Vec::with_capacity(n);
+    let mut points: Vec<V> = Vec::with_capacity(n);
     for i in 0..=m {
-        if tr.closed && i == m { let first = nodes[0]; nodes.push(first); at.push(at[0]); continue }
+        if tr.closed && i == m { let first = nodes[0]; nodes.push(first); points.push(points[0]); continue }
         let p = tr.project(tr.pts[i]);
-        at.push(p);
+        points.push(p);
         let prev = if i > 0 { tr.pts[i-1] } else if tr.closed && m > 1 { tr.pts[m-1] } else { tr.pts[i] };
         let next = if i < m { tr.pts[i+1] } else { tr.pts[i] };
         nodes.push(jet(&tr.a,&tr.b,p,sub(next,prev)).map(|(t,k)| (p,t,k)));
     }
-    let mut smooth: Vec<Option<Smooth>> = (0..m).map(|i| {
+    let smooth: Vec<Option<Smooth>> = (0..m).map(|i| {
         let ((p0,t0,k0),(p1,t1,k1)) = (nodes[i]?,nodes[i+1]?);
         let c = sub(p1,p0);
         let l = norm(c);
@@ -200,52 +179,60 @@ pub(crate) fn read(tr: &Traced) -> Read {
         if !(l > 0.) || !along(t0) || !along(t1) || norm(k0).max(norm(k1))*l > 1. { return None }
         Smooth::new((p0,t0,k0),(p1,t1,k1))
     }).collect();
-    // the paces: at each point the harmonic mean of the lengths of the read stretches either side
-    let len = |i: Option<usize>| i.and_then(|i| smooth[i].as_ref().map(|s| s.len));
-    let pace: Vec<f64> = (0..=m).map(|i| {
-        let left = if i > 0 { Some(i-1) } else if tr.closed { Some(m-1) } else { None };
-        let right = if i < m { Some(i) } else if tr.closed { Some(0) } else { None };
-        match (len(left),len(right)) {
-            (Some(a),Some(b)) => 2.*a*b/(a+b),
-            (Some(a),None) | (None,Some(a)) => a,
-            (None,None) => 0.,
+    // each stretch's length: its quintic's, or its chord's
+    let lens: Vec<f64> = (0..m).map(|i| match &smooth[i] { Some(s) => s.len,None => norm(sub(tr.pts[i+1],tr.pts[i])) }).collect();
+    let at: Vec<f64> = match tr.carried_at() {
+        Some(at) if at.len() == n => at.to_vec(),
+        _ => {
+            let mut run = vec![0.;n];
+            for i in 0..m { run[i+1] = run[i]+lens[i] }
+            let total = run[m];
+            if total > 0. { run.iter().enumerate().map(|(i,&s)| if i == m { m as f64 } else { m as f64*s/total }).collect() }
+            else { (0..=m).map(|i| i as f64).collect() }
+        }
+    };
+    // (a stretch of no extent in the parameter, two points at one place, read as a unit of it)
+    let span = |i: usize| { let d = at[i+1]-at[i]; if d > 0. { d } else { 1. } };
+    // the speed over each stretch read smoothly, its length over its extent
+    let pace = |i: usize| smooth[i].as_ref().map(|s| s.len/span(i));
+    let kinks: Vec<bool> = (0..=m).map(|i| {
+        let (left,right) = (if i > 0 { Some(i-1) } else if tr.closed { Some(m-1) } else { None },
+            if i < m { Some(i) } else if tr.closed { Some(0) } else { None });
+        match (left.map(pace),right.map(pace)) {
+            (Some(Some(a)),Some(Some(b))) => (a-b).abs() > 1e-9*a.max(b),
+            (None,Some(Some(_))) | (Some(Some(_)),None) => false,
+            _ => true,
         }
     }).collect();
-    for (i,s) in smooth.iter_mut().enumerate() {
-        let Some(s) = s else { continue };
-        let p = rising(s.len,pace[i],pace[i+1]);
-        // (a pace that would stand still within the stretch is read evenly over it)
-        if (0..=32).all(|j| quintic(&p,j as f64/32.).1 > 0.05*s.len) { s.pace = p }
-    }
     let speed = (0..m).map(|i| match &smooth[i] {
-        Some(s) => s.fastest(),
-        None => norm(sub(tr.pts[i+1],tr.pts[i])),
+        Some(s) => s.fastest()/span(i),
+        None => 1.25*lens[i]/span(i),
     }).fold(0.,f64::max);
-    Read {smooth,speed,nodes:at,wholes:std::sync::OnceLock::new()}
+    Read {smooth,speed,nodes:points,at,kinks,wholes:std::sync::OnceLock::new()}
 }
 
 impl Read {
+    /// The stretch `i`'s extent in the curve's parameter (a stretch of none read as a unit).
+    pub(crate) fn span(&self,i: usize) -> f64 { let d = self.at[i+1]-self.at[i]; if d > 0. { d } else { 1. } }
     /// The guess at the fraction `f` of stretch `i` and its two rates in the curve's parameter: the
     /// stretch's quintic where it has one, the parabola through the chords where not.
     pub(crate) fn guess(&self,tr: &Traced,i: usize,f: f64) -> (V,V,V) {
-        match self.smooth.get(i) { Some(Some(s)) => s.at(f),_ => tr.between(i,f) }
-    }
-    /// The fraction of stretch `i` at which the curve has run the fraction `x` of its length along
-    /// it: where its pace has (a stretch with no smooth reading runs at its chord's, `x` itself).
-    /// What a search along the curve starts from, given where along a chord it stands.
-    pub(crate) fn fraction(&self,i: usize,x: f64) -> f64 {
-        match self.smooth.get(i) { Some(Some(s)) => s.fraction(x),_ => x }
+        let (p,d,dd) = match self.smooth.get(i) { Some(Some(s)) => s.at(f),_ => tr.between(i,f) };
+        let w = 1./self.span(i);
+        (p,scale(d,w),scale(dd,w*w))
     }
     /// The guess's rate in the curve's parameter over the fractions `f` of stretch `i`, enclosed:
-    /// the stretch's quintics in intervals, or the parabola's rate, linear in `f` (its value at the
+    /// the stretch's quintic in intervals, or the parabola's rate, linear in `f` (its value at the
     /// two ends of `f` hulled), or the chord.
     pub(crate) fn rate_over(&self,tr: &Traced,i: usize,f: [f64;2]) -> I3 {
-        match self.smooth.get(i) {
+        let r: I3 = match self.smooth.get(i) {
             Some(Some(s)) => s.rate_over(Iv::new(f[0],f[1])),
             _ => {
                 let (a,b) = (tr.between(i,f[0]).1,tr.between(i,f[1]).1);
                 std::array::from_fn(|k| Iv::new(a[k],b[k]))
             }
-        }
+        };
+        let w = Iv::point(1.)/Iv::point(self.span(i));
+        r.map(|x| x*w)
     }
 }

@@ -118,8 +118,10 @@ fn span(c: &Curve) -> [f64;2] {
 /// thousand places, its point lies on both surfaces and on the closed form's curve, its unit
 /// tangent and its curvature vector `(C'' − (C''·T) T)/|C'|²` agree with the closed form's to 1e-9
 /// — read before as a straight line, `C''` nothing — its rate agrees with the difference of its
-/// points, and its speed runs on through every point of the trace (it stepped at each, its
-/// parameter counting the points over chords of their own lengths).
+/// points, and its speed is the same all along it to a part in a million, through every point of
+/// the trace — its
+/// parameter runs evenly along its length (it stepped at each point, the parameter counting the
+/// points over chords of their own lengths).
 #[test]
 fn a_traced_meetings_rates_are_its_closed_forms() {
     for (what,c,a,b,closed) in traces() {
@@ -142,11 +144,17 @@ fn a_traced_meetings_rates_are_its_closed_forms() {
                 assert!(norm(sub(fd,d)) < 1e-7*speed,"{what} at {t}: rate {d:?}, differenced {fd:?}");
             }
         }
+        let Curve::Traced(tr) = &c else { unreachable!() };
         for k in 1..t1 as usize {
-            let t = k as f64;
+            let t = tr.parameter_of(k);
             let (before,after) = (c.d1(t-1e-12).1,c.d1(t).1);
             assert!(norm(sub(before,after)) < 1e-9*norm(after),"{what}: its rate steps at point {k}: {before:?} to {after:?}");
         }
+        // its parameter runs evenly along it: the same speed everywhere, to a part in a million (the
+        // quintic between two points runs along its length to the fifth power of the step)
+        let speeds: Vec<f64> = (0..=n).map(|i| norm(c.d1(t0+(t1-t0)*i as f64/n as f64).1)).collect();
+        let (lo,hi) = speeds.iter().fold((f64::INFINITY,0f64),|(l,h),&v| (l.min(v),h.max(v)));
+        assert!(hi-lo <= 1e-6*hi,"{what}: its speed runs from {lo} to {hi}");
     }
 }
 
@@ -191,4 +199,26 @@ fn a_boolean_through_a_traced_meeting_is_proved() {
     assert_eq!(m.measured(),0,"a search measured\n{}",m.report());
     let (whole,part) = (volume(&ring),volume(&kept));
     assert!((part-whole/2.).abs() < 1e-9*whole,"half the ring: {part} of {whole}");
+}
+
+/// **A wall ruled between traced rails is written as a smooth net** (#1034): the torus's face cut
+/// aslant, lifted out and thickened (`brep_offset::torus_face_cut_aslant_thickened`), is walled by
+/// the ruled sheets of the normals along its spiric edges, each a loft between a trace and the trace
+/// carried along the normal. Each is written as a net fitted smooth across the traces' points within
+/// the file's `FIT` — no knot of the degree's multiplicity anywhere inside it — where, while the
+/// trace's pace stepped at every point, the net broke at each (`nurbs::fit_net_broken`).
+#[test]
+fn a_wall_between_traced_rails_is_a_smooth_net() {
+    use gcs_core::brep::step::{blend_net,FIT};
+    let walled = crate::brep_offset::torus_face_cut_aslant_thickened();
+    let mut walls = 0;
+    for f in &walled.faces {
+        let Surface::Blend(_,b) = &f.surface else { continue };
+        assert!(matches!(b.a,Curve::Traced(_)),"a wall's rail: {}",b.a.kind());
+        let (net,miss) = blend_net(b).unwrap();
+        assert!(miss <= FIT,"a wall fitted {miss:e} off");
+        assert!(net.kinks(0).is_empty() && net.kinks(1).is_empty(),"a wall's net breaks at {:?}",net.kinks(0));
+        walls += 1;
+    }
+    assert!(walls >= 2,"{walls} walls");
 }

@@ -2358,27 +2358,31 @@ const SMOOTH_RATIO: f64 = 8.;
 const SMOOTH_COS: f64 = 0.95;
 
 /// Two surfaces' intersection with no closed form, traced: points on both, in order, and a
-/// parameter that counts them — `C(t)` at `t`'s fraction between points `⌊t⌋` and `⌊t⌋ + 1` is
-/// the curve read smoothly between them (`traced`, #1034: a quintic of the arc length through
-/// both points with the meeting's tangent and curvature there, its pace running on through every
-/// point) — or, where a stretch has no such reading (beside a touch, or turning sharply), the
-/// parabola through them and a neighbour (`between`) — pulled onto both surfaces by Newton, so
-/// the curve is on both to rounding wherever it is read. Its rates are the meeting's own at that
-/// point (`d1`, `d2`). A closed trace ends where it began (its last point is its first). What it
-/// reads at its points is read once, when first asked (`read`), and built with it (`new`).
+/// parameter running evenly along its length, its `m` stretches over `[0, m]` (#1034, `traced`:
+/// each point where the length run to it puts it, `parameter_of`) — `C(t)` within a stretch is the
+/// curve read smoothly over it (a quintic of the arc length through both its points with the
+/// meeting's tangent and curvature there) or, where a stretch has no such reading (beside a touch,
+/// or turning sharply), the parabola through them and a neighbour (`between`) — pulled onto both
+/// surfaces by Newton, so the curve is on both to rounding wherever it is read. Its rates are the
+/// meeting's own at that point (`d1`, `d2`). A closed trace ends where it began (its last point is
+/// its first). What it reads at its points is read once, when first asked (`read`); a trace moved
+/// or mapped from another keeps that one's parameters at its points (`carried`).
 pub struct Traced {
     pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool,
-    read: std::sync::OnceLock<Arc<super::traced::Read>>,
+    carried: Option<Arc<Vec<f64>>>,read: std::sync::OnceLock<Arc<super::traced::Read>>,
 }
 
 impl Clone for Traced {
     fn clone(&self) -> Traced {
-        Traced {a:self.a.clone(),b:self.b.clone(),pts:self.pts.clone(),closed:self.closed,read:self.read.clone()}
+        Traced {a:self.a.clone(),b:self.b.clone(),pts:self.pts.clone(),closed:self.closed,carried:self.carried.clone(),
+            read:self.read.clone()}
     }
 }
 
 impl PartialEq for Traced {
-    fn eq(&self,o: &Traced) -> bool { self.a == o.a && self.b == o.b && self.pts == o.pts && self.closed == o.closed }
+    fn eq(&self,o: &Traced) -> bool {
+        self.a == o.a && self.b == o.b && self.pts == o.pts && self.closed == o.closed && self.carried == o.carried
+    }
 }
 
 impl std::fmt::Debug for Traced {
@@ -2391,9 +2395,56 @@ impl std::fmt::Debug for Traced {
 impl Traced {
     /// The meeting of `a` and `b` through `pts`, closed where `closed` (its last point its first).
     pub fn new(a: Surface,b: Surface,pts: Vec<V>,closed: bool) -> Traced {
-        Traced {a,b,pts,closed,read:std::sync::OnceLock::new()}
+        Traced {a,b,pts,closed,carried:None,read:std::sync::OnceLock::new()}
     }
+    /// **The trace `from` carried onto `a` and `b`, its points to `pts`** (moved, reflected or
+    /// mapped point for point): its parameter at each point `from`'s, so what was placed on `from`
+    /// by its parameter is where it was on this (`traced::read`).
+    pub fn carried(a: Surface,b: Surface,pts: Vec<V>,from: &Traced) -> Traced {
+        let at = (pts.len() == from.pts.len() && pts.len() >= 2).then(|| Arc::new(from.read().at.clone()));
+        Traced {a,b,pts,closed:from.closed,carried:at,read:std::sync::OnceLock::new()}
+    }
+    /// The parameters at its points a trace was carried with (`Traced::carried`), none where it laid
+    /// its own.
+    pub(crate) fn carried_at(&self) -> Option<&[f64]> { self.carried.as_deref().map(|v| &v[..]) }
     fn segments(&self) -> usize { self.pts.len()-1 }
+    /// **The curve's parameter at its point `i`**: the length run along it to there, scaled so its
+    /// `m` stretches run over `[0, m]` (#1034, `traced::read`).
+    pub fn parameter_of(&self,i: usize) -> f64 { self.read().at[i] }
+    /// The curve's parameter at the fractional index `x` of its points: point `⌊x⌋`'s, and the
+    /// fraction on of the stretch after it (run on past either end of an open trace).
+    pub fn parameter_at_index(&self,x: f64) -> f64 {
+        let m = self.segments();
+        let (turns,x) = if self.closed { ((x/m as f64).floor(),x.rem_euclid(m as f64)) } else { (0.,x) };
+        let i = (x.floor().max(0.) as usize).min(m-1);
+        let r = self.read();
+        turns*m as f64+r.at[i]+(x-i as f64)*r.span(i)
+    }
+    /// The fractional index of its points at the curve's parameter `t`: the stretch holding it and
+    /// the fraction of it there (`locate`), a turn of a closed trace counted as its `m` points.
+    pub fn index_at(&self,t: f64) -> f64 {
+        let m = self.segments() as f64;
+        let turns = if self.closed { (t/m).floor() } else { 0. };
+        let (i,f) = self.locate(t);
+        turns*m+i as f64+f
+    }
+    /// **Its points strictly inside `[a, b]`**, each with its parameter there (a closed trace's
+    /// round every turn the stretch reaches) and its index.
+    pub(crate) fn points_within(&self,[a,b]: [f64;2]) -> Vec<(f64,usize)> {
+        let (a,b) = (a.min(b),a.max(b));
+        let m = self.segments();
+        let at = &self.read().at;
+        if !self.closed { return (0..=m).filter(|&j| at[j] > a && at[j] < b).map(|j| (at[j],j)).collect() }
+        let mf = m as f64;
+        let mut out = Vec::new();
+        for turn in (a/mf).floor() as i64..=(b/mf).floor() as i64 {
+            for j in 0..m {
+                let t = turn as f64*mf+at[j];
+                if t > a && t < b { out.push((t,j)) }
+            }
+        }
+        out
+    }
     /// What it reads at its points, once (`traced::read`).
     pub(crate) fn read(&self) -> &super::traced::Read { self.read.get_or_init(|| Arc::new(super::traced::read(self))) }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
@@ -2424,8 +2475,9 @@ impl Traced {
     pub(crate) fn locate(&self,t: f64) -> (usize,f64) {
         let m = self.segments();
         let t = if self.closed { t.rem_euclid(m as f64) } else { t };
-        let i = (t.floor().max(0.) as usize).min(m-1);
-        (i,t-i as f64)
+        let r = self.read();
+        let i = r.at.partition_point(|&x| x <= t).clamp(1,m)-1;
+        (i,(t-r.at[i])/r.span(i))
     }
     /// The point `at` pulls onto both surfaces, and its two rates in `t`: the stretch's smooth
     /// reading, or the parabola's (`traced::Read::guess`).
@@ -2529,11 +2581,21 @@ impl Traced {
             let m = self.segments() as f64;
             ((t-H).max(0.),(t+H).min(m))
         };
-        let k = t.floor();
-        let (lo,hi) = (if t-k >= H { lo } else { t },if k+1.-t >= H { hi } else { t });
+        let (i,f) = self.locate(t);
+        let w = self.read().span(i);
+        let (k,z) = (t-f*w,t+(1.-f)*w);
+        let (lo,hi) = (if t-k >= H { lo } else { t },if z-t >= H { hi } else { t });
         if !(hi > lo) { return [0.;3] }
         let (a,b) = (self.at(lo),self.at(hi));
         scale(sub(b,a),1./(hi-lo))
+    }
+    /// **Where, strictly inside `[a, b]`, the curve may stop being smooth**: its points beside a
+    /// stretch with no smooth reading (`traced`), read on the parabola through its chords, or where
+    /// its speed steps (a trace carried under a map that is no similarity, `traced::read`); across
+    /// every other point it runs on smoothly (#1034).
+    pub fn kinks(&self,[a,b]: [f64;2]) -> Vec<f64> {
+        let kinks = &self.read().kinks;
+        self.points_within([a,b]).into_iter().filter(|&(_,j)| kinks[j]).map(|(t,_)| t).collect()
     }
     /// The curve's greatest speed: no less than its longest chord.
     pub(crate) fn speed(&self) -> f64 {
@@ -2563,7 +2625,8 @@ pub enum Curve {
     Circle(Frame,f64),
     /// `o + a cos t x + b sin t y`.
     Ellipse(Frame,f64,f64),
-    /// A traced intersection, its parameter counting its points.
+    /// A traced intersection, its parameter running evenly along it over `[0, m]`, `m` its
+    /// stretches.
     Traced(std::sync::Arc<Traced>),
     /// A non-rational B-spline over its knots' domain.
     BSpline(Arc<BSpline>),
@@ -2661,7 +2724,7 @@ impl Curve {
         let (a,b) = (a.min(b),a.max(b));
         match self {
             Curve::BSpline(s) => s.breaks([a,b]),
-            Curve::Traced(_) => (a.floor() as i64+1..=b.ceil() as i64-1).map(|k| k as f64).filter(|&k| k > a && k < b).collect(),
+            Curve::Traced(c) => c.points_within([a,b]).into_iter().map(|(t,_)| t).collect(),
             Curve::Rail(w,_) => w.breaks(1,[a,b]),
             Curve::Rim(w,_) => w.breaks(0,[a,b]),
             Curve::Affine(m) => m.breaks([a,b]),
@@ -2693,7 +2756,7 @@ impl Curve {
                     let d = sub(b,a);
                     let s = (dot(sub(p,a),d)/dot(d,d).max(1e-300)).clamp(0.,1.);
                     let dist = crate::util::space::distance(p,crate::util::space::lerp(a,b,s));
-                    if dist < best.0 { best = (dist,i as f64+c.read().fraction(i,s)); }
+                    if dist < best.0 { best = (dist,c.parameter_at_index(i as f64+s)); }
                 }
                 // (each step kept only where it comes no farther from `p`: where the trace stands all
                 // but still — points crowded where it set out past a patch's end — its derivative is
@@ -2857,15 +2920,17 @@ impl Curve {
                 let m = c.segments();
                 let mut out = EMPTY;
                 let mut sag = 0f64;
-                let first = t0.floor();
-                let count = ((t1.ceil()-first).max(1.) as usize).min(m);
+                // (its stretches by their points' indices, the parameter at each where the trace
+                // laid it)
+                let first = c.index_at(t0).floor();
+                let count = ((c.index_at(t1).ceil()-first).max(1.) as usize).min(m);
                 for j in 0..count {
                     let i = first as i64+j as i64;
                     let i = if c.closed { i.rem_euclid(m as i64) as usize } else { i.clamp(0,m as i64-1) as usize };
                     let (a,b) = (c.pts[i],c.pts[i+1]);
                     include(&mut out,a);
                     include(&mut out,b);
-                    sag = sag.max(crate::util::space::distance(c.at(i as f64+0.5),crate::util::space::lerp(a,b,0.5)));
+                    sag = sag.max(crate::util::space::distance(c.at(c.parameter_at_index(i as f64+0.5)),crate::util::space::lerp(a,b,0.5)));
                 }
                 (out.0.map(|x| x-2.*sag),out.1.map(|x| x+2.*sag))
             }
@@ -2876,7 +2941,8 @@ impl Curve {
             Curve::Line {p,d} => Curve::Line {p:m.point(p),d:m.vector(d)},
             Curve::Circle(f,r) => Curve::Circle(f.moved(m),r),
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m),a,b),
-            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::new(c.a.moved(m),c.b.moved(m),c.pts.iter().map(|&p| m.point(p)).collect(),c.closed))),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::carried(c.a.moved(m),c.b.moved(m),
+                c.pts.iter().map(|&p| m.point(p)).collect(),c))),
             Curve::BSpline(ref b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| m.point(p)).collect(),..(**b).clone()})),
             Curve::Iso(ref b,u) => Curve::Iso(Arc::new(b.moved(m)),u),
             Curve::SheetCut(ref c) => Curve::SheetCut(Arc::new(c.moved(m))),
@@ -2899,7 +2965,8 @@ impl Curve {
             Curve::Line {..} | Curve::BSpline(_) => self.moved(m),
             Curve::Circle(f,r) => Curve::Circle(f.moved(m).rehanded(false).0,r),
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m).rehanded(false).0,a,b),
-            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::new(c.a.reflected(m)?.0,c.b.reflected(m)?.0,c.pts.iter().map(|&p| m.point(p)).collect(),c.closed))),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced::carried(c.a.reflected(m)?.0,c.b.reflected(m)?.0,
+                c.pts.iter().map(|&p| m.point(p)).collect(),c))),
             // (a slid contact's points are read off its frame, which a reflection carries)
             Curve::Affine(_) | Curve::Slid(_) | Curve::Trochoid(_) => self.moved(m),
             Curve::Parallel(ref t) => Curve::Parallel(Arc::new(t.reflected(m)?)),

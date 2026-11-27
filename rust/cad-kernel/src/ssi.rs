@@ -3376,6 +3376,9 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     let last = t.pts.len()-1;
     // (a point it must pass through takes the place of a regular one within half a stride of it,
     // which beside it would leave a gap the grading spreads)
+    // (`through` gives the curve's parameters, and the fit reads by the points' indices: the trace's
+    // parameter runs evenly along it, not one a point, `Traced::index_at`)
+    let through: Vec<(f64,V)> = through.iter().map(|&(x,p)| (t.index_at(x),p)).collect();
     let must: Vec<f64> = through.iter().map(|w| w.0).filter(|&x| x > 0. && x < last as f64).collect();
     // every eighth step's length apart, by length along the trace and not by count: a trace takes
     // small steps where it starts from a seed, and points crowded there beside a stride of full
@@ -3405,7 +3408,7 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     at.dedup_by(|x,y| (*x-*y).abs() < 1e-9);
     let between = std::cell::RefCell::new(through.iter().map(|&(x,p)| (x.to_bits(),p)).collect::<std::collections::BTreeMap<u64,V>>());
     let point = |x: f64| if x.fract() == 0. { t.pts[x as usize] } else {
-        *between.borrow_mut().entry(x.to_bits()).or_insert_with(|| t.at(x))
+        *between.borrow_mut().entry(x.to_bits()).or_insert_with(|| t.at(t.parameter_at_index(x)))
     };
     // a traced point where one stands near the middle, else the middle itself: a traced point
     // beside an end (a vertex the fit passes through, between two traced points) would crowd it

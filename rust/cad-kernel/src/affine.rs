@@ -324,7 +324,7 @@ impl MappedCurve {
         debug_assert!(!matches!(of,Curve::Affine(_)),"an image of an image is the composite's");
         MappedCurve {back:map.inverse(),stretch:map.stretches()[2],map,of,at}
     }
-    fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
+    pub(crate) fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
     fn global(&self,s: f64) -> f64 { self.at[0]*s+self.at[1] }
     pub fn d2(&self,t: f64) -> (V,V,V) {
         let (x,d,dd) = self.of.d2(self.local(t));
@@ -476,7 +476,10 @@ impl Curve {
                 let poles = b.poles.iter().map(|&p| a.point(p)).collect();
                 (Curve::BSpline(Arc::new(super::nurbs::BSpline {poles,..(**b).clone()})),[1.,0.])
             }
-            Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced::new(c.a.mapped(a).0,c.b.mapped(a).0,c.pts.iter().map(|&p| a.point(p)).collect(),c.closed))),[1.,0.]),
+            // (its parameter at each point carried with it: a map that is no similarity changes its
+            // stretches' lengths unevenly, `Traced::carried`)
+            Curve::Traced(ref c) => (Curve::Traced(Arc::new(Traced::carried(c.a.mapped(a).0,c.b.mapped(a).0,
+                c.pts.iter().map(|&p| a.point(p)).collect(),c))),[1.,0.]),
             Curve::Iso(ref b,u) => match b.mapped(a) { Some(b) => (Curve::Iso(Arc::new(b),u),[1.,0.]),None => wrapped() },
             Curve::Rail(..) | Curve::Rim(..) | Curve::SheetCut(..) | Curve::Turned(..) | Curve::Slid(..) | Curve::Trochoid(..)
             | Curve::Parallel(..) => match a.similarity() {

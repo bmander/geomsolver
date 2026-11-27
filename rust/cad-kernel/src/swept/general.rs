@@ -370,6 +370,8 @@ fn ended_on<'r>(mut c: Curve,a: &Brep,b: &Brep,tol: f64,what: &str,touch: &dyn F
             }
             Curve::Traced(t) => {
                 let mut pts = t.pts.clone();
+                // (the cut's place among the points: their parameters are where the trace laid them)
+                let tc = t.index_at(tc);
                 if high {
                     if cut { pts.truncate(tc.floor() as usize+1) }
                     if pts.len() > 1 && distance(pts[pts.len()-1],q) <= tol { pts.pop(); }
@@ -1073,7 +1075,7 @@ fn on_wall(c: &Curve,wall: &Surface,tol: f64) -> Vec<Curve> {
         Curve::Traced(tr) => {
             // (its points between, and the two ends where it was cut)
             let mut pts = vec![c.point(a)];
-            pts.extend(tr.pts.iter().enumerate().filter(|&(i,_)| (i as f64) > a && (i as f64) < b).map(|(_,&p)| p));
+            pts.extend(tr.pts.iter().enumerate().filter(|&(i,_)| { let x = tr.parameter_of(i); x > a && x < b }).map(|(_,&p)| p));
             pts.push(c.point(b));
             (pts.len() >= 2).then(|| Curve::Traced(Arc::new(crate::geom::Traced::new(tr.a.clone(),tr.b.clone(),pts,false))))
         }

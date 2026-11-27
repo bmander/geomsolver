@@ -541,7 +541,7 @@ fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,[ua,ub]: [Uv;2],s:
         }
         let n = sub(at[j].1,at[i].1);
         let len = norm(n);
-        if len > 0. { total += across_span(tr,&at[i..=j],scale(n,1./len),len,e,(ua,ub),s,f).unwrap_or_else(|| by_parameter(i,j,f)) }
+        if len > 0. { let x = across_span(tr,&at[i..=j],scale(n,1./len),len,e,(ua,ub),s,f); total += x.unwrap_or_else(|| by_parameter(i,j,f)) }
         i = j;
     }
     total
@@ -561,6 +561,10 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
     let stretches = at.len()-1;
     let mut read = |cells: usize| -> Option<(f64,f64)> {
         let (mut size,mut failed) = (0.,false);
+        // (each node's foot on the face sought from the last one's, carried along the edge, and
+        // from the line between its ends where that stands off: from the line alone, a foot on a
+        // screwed rim's thin ramp was read 1.7e-7 off it, its cut's volume 1.5e-8 of itself)
+        let mut last: Option<Uv> = None;
         let mut integrand = |x: f64| {
             if failed { return 0. }
             // the stretch holding `x`, and the parabola's point there to start from
@@ -571,7 +575,8 @@ fn across_span(tr: &super::geom::Traced,at: &[(f64,[f64;3])],n: [f64;3],len: f64
             let q = tr.guess(t);
             let Some((p,rate)) = tr.across(q,n,h0+x).filter(|&(p,rate)| norm(rate) <= 2. && distance(p,q) <= distance(at[a].1,at[a+1].1))
                 else { failed = true; return 0. };
-            let uv = super::topo::inverse_at(ua,ub,t,p,e,s);
+            let uv = super::topo::inverse_carried(ua,ub,t,p,e,s,last);
+            last = Some(uv);
             let y = f(uv,super::topo::in_parameters(s,uv,rate));
             size += y.abs();
             y

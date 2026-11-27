@@ -144,8 +144,12 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
-/// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None,0.) }
+/// across planes) — sought first from `seed` where one is given, a foot found just behind along
+/// the edge, and again from the line between the ends where that stands off the surface, the
+/// nearer kept (`inverse_from`).
+pub(crate) fn inverse_carried(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
+    inverse_from(a,b,t,x,edge,surface,seed,0.)
+}
 
 /// How far from a pole an inverse curve's end at `t` is read as on it: its vertex's tolerance
 /// there (a file's curve may pass its vertex at a pole on the pole's far side, #993), none

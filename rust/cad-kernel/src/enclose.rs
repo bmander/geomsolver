@@ -651,9 +651,8 @@ impl Enclosed<1> for Traced {
         // a closed trace's stretch reaching once round or more is every stretch
         if self.closed && b-a >= m as f64 { return traced_wholes(self).iter().copied().reduce(Patch::hull).unwrap() }
         // the pieces: `[a, b]` cut at the points between, each piece within one stretch
-        let first = a.floor();
         let mut cuts = vec![a];
-        cuts.extend((first as i64+1..=b.ceil() as i64-1).map(|k| k as f64).filter(|&k| k > a && k < b));
+        cuts.extend(self.points_within([a,b]).into_iter().map(|(t,_)| t));
         cuts.push(b);
         if !self.closed && cuts.len() > 2 {
             // an open trace's parameter runs on past its ends on its end stretches: no cut there
@@ -677,8 +676,9 @@ impl Enclosed<1> for Traced {
 /// points as the trace holds them, `traced::Read::nodes`), its measured bound where no certificate
 /// holds.
 fn traced_wholes(tr: &Traced) -> &Vec<Patch<1>> {
+    let at = &tr.read().at;
     tr.read().wholes.get_or_init(|| (0..tr.pts.len()-1).map(|i| {
-        let w = [i as f64,i as f64+1.];
+        let w = [at[i],at[i+1]];
         traced_piece(tr,w,4).unwrap_or_else(|| traced_measured(tr,w))
     }).collect())
 }
@@ -717,8 +717,8 @@ fn turn_within(s: &Surface,p: V,r: f64) -> Option<(V,f64)> {
 fn traced_piece(tr: &Traced,[a,b]: [f64;2],depth: usize) -> Option<Patch<1>> {
     use crate::util::space::{cross,distance,dot,norm,scale,sub};
     let (i,f0) = tr.locate(a);
-    let f1 = f0+(b-a);
-    let whole = a == a.floor() && b == a.floor()+1.;
+    let f1 = f0+(b-a)/tr.read().span(i);
+    let whole = f0 == 0. && f1 == 1.;
     let (p0,p1) = if whole { let n = &tr.read().nodes; (n[i],n[i+1]) } else { (tr.at(a),tr.at(b)) };
     let chord = distance(p0,p1);
     let scale_of = p0.iter().chain(p1.iter()).fold(0f64,|m,x| m.max(x.abs()));
@@ -773,17 +773,22 @@ fn traced_piece(tr: &Traced,[a,b]: [f64;2],depth: usize) -> Option<Patch<1>> {
 /// a stretch reaching past one segment, of the chords of every segment it reaches, grown by twice
 /// their spread. Measured: `proved` false.
 fn traced_measured(tr: &Traced,[a,b]: [f64;2]) -> Patch<1> {
-    let m = tr.pts.len()-1;
+    let m = tr.pts.len().saturating_sub(1);
+    if m == 0 { return Patch {proved:false,..Patch::ANY} }
     // (a point read once: its five places are one)
     let samples: Vec<(f64,(V,V))> = (0..if b > a { 5 } else { 1 }).map(|k| a+(b-a)*k as f64/4.).map(|s| (s,tr.d1(s))).collect();
-    let at_point = |k: i64| -> V { tr.pts[if tr.closed { k.rem_euclid(m as i64) as usize } else { k.clamp(0,m as i64) as usize }] };
-    let (lo,hi) = (a.ceil() as i64,b.floor() as i64);
     let mut pts: Vec<(f64,V)> = samples.iter().map(|e| (e.0,e.1.0)).collect();
-    pts.extend((lo..=hi).filter(|&k| (k as f64) > a && (k as f64) < b).map(|k| (k as f64,at_point(k))));
+    let within = tr.points_within([a,b]);
+    pts.extend(within.iter().map(|&(t,j)| (t,tr.pts[j])));
     pts.sort_by(|x,y| x.0.total_cmp(&y.0));
+    // the rates: at the five places, and each chord's mean rate over the stretches reached
     let mut rates: Vec<V> = samples.iter().map(|e| e.1.1).collect();
-    if b.floor() > a.floor() {
-        rates.extend((a.floor() as i64..=b.ceil() as i64-1).map(|k| crate::util::space::sub(at_point(k+1),at_point(k))));
+    if !within.is_empty() {
+        let read = tr.read();
+        let first = tr.locate(a).0;
+        for i in std::iter::once(first).chain(within.iter().filter_map(|&(_,j)| (j < m).then_some(j))) {
+            rates.push(crate::util::space::scale(crate::util::space::sub(tr.pts[i+1],tr.pts[i]),1./read.span(i)));
+        }
     }
     let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
     let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);

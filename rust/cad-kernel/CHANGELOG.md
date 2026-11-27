@@ -21,6 +21,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   are Steiner's to 1e-9. `Traced`'s fields are as they were, but it is built by `Traced::new`
   (it keeps what it reads at its points, once).
   `Meter::crossings` is new.
+- **A trace's parameter runs evenly along its length** (#1034): its `m` stretches still run over
+  `[0, m]`, but each point stands where the length run to it puts it (`Traced::parameter_of`,
+  `parameter_at_index`, `index_at`), not at a whole number, so the speed is the same everywhere.
+  A trace moved, reflected or mapped keeps its parameters at its points (`Traced::carried`).
+- **STEP writes a trace as a cubic over its own parameter**, as any smooth curve: `Along` and the
+  polyline written where no cubic closed in are gone but for a trace with a kink there (beside a
+  touch), and a smooth trace no cubic holds is refused (`Traced::kinks` is public). A loft
+  face between traced rails is fitted as a smooth net; `fit_net_broken` is kept for a rail whose
+  rate steps (`Traced::kinks`).
 
 - **A ball whose radius varies along the edge** (`fillet::roll_varying`, new): at each point of the
   edge the ball of the radius a law gives there, touching both faces with its centre in the plane
