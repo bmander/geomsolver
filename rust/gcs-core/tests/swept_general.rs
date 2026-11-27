@@ -327,3 +327,137 @@ fn the_paths_the_general_road_gives_lie_on_both_their_walls() {
     assert!(read > 0);
     eprintln!("{} candidates, {read} given rails",candidates.len());
 }
+
+/// The bevel pair's frame: `g` along the line where the pitch cones touch, `d` square to it in the
+/// xz-plane, and the outer cone distance `15√5`.
+fn bevel_frame() -> ([f64;3],[f64;3],f64) {
+    let s5 = 5f64.sqrt();
+    ([2./s5,0.,1./s5],[-1./s5,0.,2./s5],15.*s5)
+}
+
+/// brep-bench's hypoid gear cut by its pinion (`swept/hypoid-gear-cut-by-its-pinion`): the straight
+/// bevel case's tooth — the frustum of the pyramid from O over a trapezoid at `15√5 g`, between the
+/// planes square to `g` at `15√5 − 12` and `15√5 + 2` — turned about the gear's axis by `φ`
+/// (`sin φ = 24/(75 − 5√5)`); and the motion that carries it, the pinion turning about the line
+/// through `(0, 12, 0)` along `x` seen from the gear turning `−7/15` as fast about `z`.
+fn hypoid_tooth() -> (gcs_core::brep::topo::Brep,Trajectory) {
+    use gcs_core::brep::build::{kept,prism};
+    use gcs_core::space::{add,cross,dot,scale,unit};
+    let ((g,d,ae),y) = (bevel_frame(),[0.,1.,0.]);
+    let (inner,outer) = (ae-12.,ae+2.);
+    let w = |u: f64| std::f64::consts::FRAC_PI_2-u*20f64.to_radians().tan();
+    let corners: Vec<[f64;3]> = [(2.5,-w(2.5)),(-2.5,-w(-2.5)),(-2.5,w(-2.5)),(2.5,w(2.5))].iter()
+        .map(|&(u,w)| add(add(scale(g,ae),scale(d,u)),scale(y,w))).collect();
+    // (a prism along `g` on the trapezoid grown a fifth, kept behind the pyramid's four planes)
+    let wide: Vec<[f64;3]> = corners.iter().map(|&c| {
+        let c = scale(add(scale(g,ae),scale(add(c,scale(g,-ae)),1.2)),outer/ae);
+        add(c,scale(g,inner-dot(c,g)))
+    }).collect();
+    let section = crate::swept_rings::polygon(&wide);
+    let mut tooth = if dot(section.normal,g) > 0. { prism(&section,0.,outer-inner).unwrap() } else { prism(&section,-(outer-inner),0.).unwrap() };
+    for k in 0..4 {
+        let n = unit(cross(corners[k],corners[(k+1)%4]));
+        tooth = kept(&tooth,[0.;3],if dot(n,g) > 0. { n } else { scale(n,-1.) },0.).unwrap();
+    }
+    let phi = (24./(75.-5.*5f64.sqrt())).asin();
+    let tooth = tooth.moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[0.,0.,1.],phi));
+    let pinion = Trajectory::Twist(Screw {origin:[0.,12.,0.],axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let gear = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:-7./15.,advance:0.});
+    (tooth,Trajectory::Relative {source:Box::new(pinion),observer:Box::new(gear)})
+}
+
+/// The bevel gear's blank the hypoid's tooth is cut from: the quadrilateral of the points `s g + u d`
+/// in the xz-plane turned about `z`.
+fn hypoid_blank() -> gcs_core::brep::topo::Brep {
+    use gcs_core::space::{add,scale};
+    let (g,d,ae) = bevel_frame();
+    let ai = ae-10.;
+    let at = |s: f64,u: f64| add(scale(g,s),scale(d,u));
+    gcs_core::brep::build::revolve(&crate::swept_rings::polygon(&[at(ae,-2.),at(ae,6.),at(ai,6.),at(ai,-2.*ai/ae)]),[0.;3],[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A flank's wall is read only past its fold, and an edge's fan and its face's wall are given
+/// their crossing** (#942 T1d-hypoid): over the stretch of the hypoid's roll where the fold of the
+/// tooth's flank enters it through its toe edge, every face family's wall holds no fold within its
+/// faces — its sheet's normal `S_u × S_s` keeps one side of the face's middle's over a grid of each
+/// face's parameters (read whole, past its fold, the wall doubled back over itself and a meeting
+/// traced on it ran 3.8e-2 off both walls) — and some crossing beside a path is given, each lying on
+/// both its walls to what a patch is read to, a thousand tolerances (traced on past where a wall
+/// ends, over its sheet carried on, one ran 1.5e-2 off it at the roll's end). How near the
+/// crossings lie, and the corners they are carried on to, the gear's cut holds against cadrs's
+/// (`the_hypoid_gears_tooth_space_is_cut_by_its_pinion`).
+#[test]
+fn a_flanks_wall_is_read_only_past_its_fold_and_its_crossing_is_given() {
+    use gcs_core::space::{cross,dot,distance};
+    let (tooth,path) = hypoid_tooth();
+    let roll = [-23f64.to_radians(),-18f64.to_radians()];
+    let tol = tolerance_of(&hypoid_blank());
+    let (candidates,given) = gcs_core::brep::swept::general::candidates(&tooth,&path,roll,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    for (k,c) in candidates.iter().enumerate() {
+        let located = gcs_core::brep::query::Located::new(c,tol);
+        for (f,face) in c.faces.iter().enumerate() {
+            let gcs_core::brep::geom::Surface::Family(..) = &face.surface else { continue };
+            let [lo,hi] = located.parameter_box(f);
+            let at = |i: usize,j: usize| [lo[0]+(hi[0]-lo[0])*(0.05+0.9*i as f64/8.),lo[1]+(hi[1]-lo[1])*(0.05+0.9*j as f64/8.)];
+            let normal = |uv: [f64;2]| { let (_,su,sv) = face.surface.d1(uv); cross(su,sv) };
+            let middle = normal(at(4,4));
+            for i in 0..=8 { for j in 0..=8 {
+                assert!(dot(normal(at(i,j)),middle) > 0.,"candidate {k}'s face {f} ({}) folds within its parameters, at {:?}",face.name,at(i,j));
+            } }
+        }
+    }
+    let mut crossings = 0;
+    for g in &given { for c in g.curves.iter().filter(|c| matches!(c,gcs_core::brep::geom::Curve::BSpline(..))) {
+        let [lo,hi] = gcs_core::brep::query::curve_domain(c).unwrap();
+        for k in 0..=64 {
+            let p = c.point(lo+(hi-lo)*k as f64/64.);
+            for s in &g.surfaces {
+                let off = distance(s.point(s.inverse(p)),p);
+                assert!(off <= 1.01e3*tol,"a crossing given {off:e} off a {}, at {p:?} ({k} of 64)",s.kind());
+            }
+        }
+        crossings += 1;
+    } }
+    assert!(crossings > 0,"no crossing given beside a path");
+}
+
+/// **Membership settles a hair outside where the tool passes close by** (#942 T1d-hypoid): a point
+/// the hair (2e-5) off the hypoid's sweep beside a face family's wall, which the tooth passes at that
+/// distance in a quadratic dip over the roll. Read by the trajectory's speed bound alone (85 where
+/// the point moves at 30), the halving ran past `MOST_READS` and the trim refused its piece as
+/// unsettled; read by the point's own speed at each stretch's middle and the acceleration bound, it
+/// settles outside — and the point the hair inside, inside.
+#[test]
+fn membership_settles_a_hair_outside_where_the_tool_passes_close_by() {
+    use gcs_core::brep::swept::member::{Solid,Swept};
+    use gcs_core::space::{add,scale};
+    let (tooth,path) = hypoid_tooth();
+    let solid = Solid::new(&tooth,0.01,1.).unwrap();
+    let swept = Swept::new(&solid,&path,[-70f64.to_radians(),70f64.to_radians()]);
+    let (p,n,hair) = ([29.639557235137353,10.128004301459285,15.22965729215133],[-0.16824040442306315,0.9388304834288936,-0.3004870874168042],
+        1.9732398592686516e-05);
+    assert!(matches!(swept.member(add(p,scale(n,-hair))),Ok(false)),"{:?}",swept.member(add(p,scale(n,-hair))));
+    assert!(matches!(swept.member(add(p,scale(n,hair))),Ok(true)),"{:?}",swept.member(add(p,scale(n,hair))));
+}
+
+/// **The hypoid gear's tooth space cut by its pinion** (brep-bench `swept/hypoid-gear-cut-by-its-pinion`,
+/// #942 T1d-hypoid): the tooth carried through the gear's blank by the two turns about skew axes, its
+/// sweep built by the general road — its flanks' walls read only past their folds, each edge's fan
+/// and its face's wall given their crossings, carried on to the corners they are born at — trimmed
+/// within the blank's reach about the gear's axis, and cut from the blank: held to the volume and
+/// area cadrs builds, within 7e-10 and 2e-9 (11792.246457828824 and 5510.2842692069335), at a
+/// hundred-millionth.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 70 s: the hypoid's tooth space cut from its blank")]
+fn the_hypoid_gears_tooth_space_is_cut_by_its_pinion() {
+    let (tooth,path) = hypoid_tooth();
+    let blank = hypoid_blank();
+    let tol = tolerance_of(&blank);
+    let roll = [-70f64.to_radians(),70f64.to_radians()];
+    let cut = gcs_core::brep::swept::closed::cut_from(&blank,&tooth,&path,roll,0.01,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    cut.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&cut);
+    let a: f64 = cut.faces.iter().map(|f| gcs_core::brep::props::area(&cut,f)).sum();
+    assert!((v/11792.246457828824-1.).abs() <= 1e-8,"the cut blank's volume {v} against cadrs's 11792.246457828824");
+    assert!((a/5510.2842692069335-1.).abs() <= 1e-8,"its surface {a} against cadrs's 5510.2842692069335");
+}

@@ -362,6 +362,9 @@ impl Swept<'_> {
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
         let speed = self.speed(x,domain)?;
+        // (and how fast the point carried back changes its speed, where the motion bounds that: a
+        // stretch's reach is then also its speed read at the stretch's middle and that, `reach`)
+        let accel = self.path.inverse_point_acceleration_bound(x,domain).ok().filter(|a| a.is_finite());
         let sag = self.tool.sag;
         let finest = FINEST*(b-a).abs().max(1e-300);
         // **best first** (#810): each stretch keyed by the least signed distance its parent's
@@ -387,9 +390,23 @@ impl Swept<'_> {
             if d > sag && self.tool.winding(back) > 0.5 { d = -d }
             if d < -sag { return Ok(true) }
             let h = 0.5*(hi-lo);
-            if d-sag > speed*h { continue }
+            // **how far the point carried back strays from where it stands at the middle** over
+            // the stretch: at most its speed bound times `h`, and — where the motion bounds its
+            // acceleration `A` — at most its own speed there `|v(m)|` times `h` and `½ A h²` more
+            // (Taylor's, the remainder bounded): near a point the tool passes close by, its depth a
+            // quadratic dip, the bound's own speed past the point's own (85 for 30, the hypoid's
+            // gear tooth turning about two skew axes) halved its stretches past `MOST_READS` before
+            // the dip was cleared, where the speed it moves at there clears it in a third as many
+            let mut reach = speed*h;
+            if d-sag <= reach {
+                if let Some(acc) = accel {
+                    let v = self.path.at(m).map_err(|e| Unsettled::Unread(e.msg))?.inverse().velocity(x);
+                    reach = reach.min(norm(v)*h+0.5*acc*h*h);
+                }
+            }
+            if d-sag > reach { continue }
             if h <= finest { near.get_or_insert(m); continue }
-            let key = d-speed*h;
+            let key = d-reach;
             for (lo,hi) in [(lo,m),(m,hi)] { pushed += 1; frontier.push(Stretch {key,order:pushed,lo,hi}) }
         }
         match near { Some(at) => Err(Unsettled::Near {at}),None => Ok(false) }
