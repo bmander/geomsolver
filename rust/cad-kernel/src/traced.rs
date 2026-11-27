@@ -28,7 +28,7 @@ use crate::enclose::{I3,Patch};
 use crate::geom::{Surface,Traced,V};
 use crate::util::interval::Iv;
 use crate::util::quadrature::GAUSS8;
-use crate::util::space::{add,cross,dot,norm,normalised,scale,sub};
+use crate::util::space::{cross,dot,norm,normalised,scale,sub};
 
 /// The sine of the angle between the two surfaces below which their meeting's direction is not
 /// read from them: a touch's, where `T` and `K` (which goes as one over its square) are lost.
@@ -37,13 +37,14 @@ pub(crate) const CLEAR: f64 = 1e-3;
 /// chord (25°), and its curvature times its length at most one.
 const ALONG_COS: f64 = 0.9;
 
-/// **The meeting's unit tangent at `p`**, turned along `along`: `None` where the two surfaces
-/// stand within `CLEAR` of tangent there, or a gradient vanishes.
-pub(crate) fn tangent(a: &Surface,b: &Surface,p: V,along: V) -> Option<V> { normals(a,b,p,along).map(|(t,..)| t) }
+/// **The meeting's unit tangent**, from the two surfaces' gradients `g` at a point of it, turned
+/// along `along`: `None` where the two stand within `CLEAR` of tangent there, or a gradient
+/// vanishes.
+pub(crate) fn tangent(g: (V,V),along: V) -> Option<V> { normals(g,along).map(|(t,..)| t) }
 
-/// `T` and the two unit normals at `p`.
-fn normals(a: &Surface,b: &Surface,p: V,along: V) -> Option<(V,V,V)> {
-    let (na,nb) = (normalised(a.side(p).1)?,normalised(b.side(p).1)?);
+/// `T` and the two unit normals, from the gradients `g`.
+fn normals((ga,gb): (V,V),along: V) -> Option<(V,V,V)> {
+    let (na,nb) = (normalised(ga)?,normalised(gb)?);
     let w = cross(na,nb);
     let s = norm(w);
     if !(s >= CLEAR) { return None }
@@ -51,13 +52,13 @@ fn normals(a: &Surface,b: &Surface,p: V,along: V) -> Option<(V,V,V)> {
     Some((t,na,nb))
 }
 
-/// **The meeting's unit tangent and curvature vector at `p`** (the module's): `K` solves
-/// `n_a · K = κ_a`, `n_b · K = κ_b`, `T · K = 0` by Cramer's rule.
-pub(crate) fn jet(a: &Surface,b: &Surface,p: V,along: V) -> Option<(V,V)> {
-    let (t,na,nb) = normals(a,b,p,along)?;
+/// **The meeting's unit tangent and curvature vector at `p`** (the module's), `g` the two
+/// surfaces' gradients there: `K` solves `n_a · K = κ_a`, `n_b · K = κ_b` with the least norm,
+/// which lies in the plane of the two normals, so `T · K = 0` too.
+pub(crate) fn jet(a: &Surface,b: &Surface,p: V,g: (V,V),along: V) -> Option<(V,V)> {
+    let (t,na,nb) = normals(g,along)?;
     let (ka,kb) = (a.bend(p,t,na)?,b.bend(p,t,nb)?);
-    let det = dot(na,cross(nb,t));
-    let k = scale(add(scale(cross(nb,t),ka),scale(cross(t,na),kb)),1./det);
+    let k = crate::util::roots::least_norm_step(&[na,nb],&[ka,kb])?;
     k.iter().all(|x| x.is_finite()).then_some((t,k))
 }
 
@@ -86,14 +87,6 @@ fn quintic3(c: &[V;6],x: f64) -> (V,V,V) {
     (r.map(|q| q.0),r.map(|q| q.1),r.map(|q| q.2))
 }
 
-/// A quintic's value and rate over the interval `x`, by Horner's rule in intervals.
-fn quintic_over(c: &[f64;6],x: Iv) -> (Iv,Iv) {
-    let k = |a: f64| Iv::point(a);
-    let v = ((((k(c[5])*x+k(c[4]))*x+k(c[3]))*x+k(c[2]))*x+k(c[1]))*x+k(c[0]);
-    let d = (((k(5.*c[5])*x+k(4.*c[4]))*x+k(3.*c[3]))*x+k(2.*c[2]))*x+k(c[1]);
-    (v,d)
-}
-
 /// The quintic in `x ∈ [0, 1]` holding `ends` (value, first and second rate in `x`) at 0 and 1.
 fn hermite(ends: [V;6]) -> [V;6] {
     std::array::from_fn(|j| std::array::from_fn(|k| (0..6).map(|i| ends[i][k]*BASIS[i][j]).sum()))
@@ -103,7 +96,7 @@ fn hermite(ends: [V;6]) -> [V;6] {
 /// `σ` the length along it — the fraction of the stretch, the curve's parameter running evenly
 /// along its length (`read`).
 #[derive(Clone,Debug)]
-pub(crate) struct Smooth { pub(crate) len: f64,curve: [V;6] }
+struct Smooth { len: f64,curve: [V;6] }
 
 impl Smooth {
     /// The quintic between `p0` and `p1` with their tangents and curvature vectors, its length the
@@ -127,22 +120,31 @@ impl Smooth {
     }
     /// The guess at the fraction `f` of the stretch and its two rates in `f`.
     fn at(&self,f: f64) -> (V,V,V) { quintic3(&self.curve,f) }
-    /// The guess's rate in `f` over the fractions `f`, enclosed: the quintic read in intervals.
-    fn rate_over(&self,f: Iv) -> I3 { std::array::from_fn(|k| quintic_over(&self.curve.map(|v| v[k]),f).1) }
+    /// The guess's rate in `f` over the fractions `[f₀, f₁]`, enclosed: the quintic's slope read
+    /// in intervals (`isolate::Poly`).
+    fn rate_over(&self,[f0,f1]: [f64;2]) -> I3 {
+        use crate::util::isolate::Function;
+        std::array::from_fn(|k| crate::util::isolate::Poly(&self.curve.map(|v| v[k])).slope(f0,f1))
+    }
     /// The guess's greatest rate in `f` over the stretch, sampled.
     fn fastest(&self) -> f64 { (0..=32).map(|j| norm(quintic3(&self.curve,j as f64/32.).1)).fold(0.,f64::max) }
 }
 
 /// **What a trace reads once at its points** (the module's): its points pulled onto both surfaces
 /// (`nodes`), each stretch's quintic where it has one, the curve's parameter at each point (`at`),
-/// whether its rate may step at each (`kinks`), its greatest speed, and each whole stretch's
-/// enclosure, read once when first asked (`enclose`).
+/// whether its rate may step at each (`kinks`), its greatest speed (no less than its longest chord
+/// over its extent), and each whole stretch's enclosure and their hull, each read once when first
+/// asked (`enclose`).
 #[derive(Debug,Default)]
 pub(crate) struct Read {
-    pub(crate) smooth: Vec<Option<Smooth>>,pub(crate) speed: f64,pub(crate) nodes: Vec<V>,
+    smooth: Vec<Option<Smooth>>,pub(crate) speed: f64,pub(crate) nodes: Vec<V>,
     pub(crate) at: Vec<f64>,pub(crate) kinks: Vec<bool>,
-    pub(crate) wholes: std::sync::OnceLock<Vec<Patch<1>>>,
+    pub(crate) wholes: std::sync::OnceLock<Vec<Patch<1>>>,pub(crate) whole: std::sync::OnceLock<Patch<1>>,
 }
+
+/// Stretch `i`'s extent in the parameter, `at` the parameter at each point (a stretch of none, two
+/// points at one place, read as a unit of it).
+fn span(at: &[f64],i: usize) -> f64 { let d = at[i+1]-at[i]; if d > 0. { d } else { 1. } }
 
 /// **A trace's `Read`**: its points pulled onto both surfaces, their jets read, each stretch's
 /// quintic built where both its ends have one and it runs along its chord, and the parameter laid:
@@ -162,18 +164,18 @@ pub(crate) fn read(tr: &Traced) -> Read {
     let n = tr.pts.len();
     if n < 2 { return Read::default() }
     let m = n-1;
-    let mut nodes: Vec<Option<(V,V,V)>> = Vec::with_capacity(n);
+    let mut jets: Vec<Option<(V,V,V)>> = Vec::with_capacity(n);
     let mut points: Vec<V> = Vec::with_capacity(n);
     for i in 0..=m {
-        if tr.closed && i == m { let first = nodes[0]; nodes.push(first); points.push(points[0]); continue }
-        let p = tr.project(tr.pts[i]);
+        if tr.closed && i == m { let first = jets[0]; jets.push(first); points.push(points[0]); continue }
+        let (p,g) = tr.projected(tr.pts[i]);
         points.push(p);
         let prev = if i > 0 { tr.pts[i-1] } else if tr.closed && m > 1 { tr.pts[m-1] } else { tr.pts[i] };
         let next = if i < m { tr.pts[i+1] } else { tr.pts[i] };
-        nodes.push(jet(&tr.a,&tr.b,p,sub(next,prev)).map(|(t,k)| (p,t,k)));
+        jets.push(jet(&tr.a,&tr.b,p,g,sub(next,prev)).map(|(t,k)| (p,t,k)));
     }
     let smooth: Vec<Option<Smooth>> = (0..m).map(|i| {
-        let ((p0,t0,k0),(p1,t1,k1)) = (nodes[i]?,nodes[i+1]?);
+        let ((p0,t0,k0),(p1,t1,k1)) = (jets[i]?,jets[i+1]?);
         let c = sub(p1,p0);
         let l = norm(c);
         let along = |t: V| dot(t,c) >= ALONG_COS*l;
@@ -183,7 +185,7 @@ pub(crate) fn read(tr: &Traced) -> Read {
     // each stretch's length: its quintic's, or its chord's
     let lens: Vec<f64> = (0..m).map(|i| match &smooth[i] { Some(s) => s.len,None => norm(sub(tr.pts[i+1],tr.pts[i])) }).collect();
     let at: Vec<f64> = match tr.carried_at() {
-        Some(at) if at.len() == n => at.to_vec(),
+        Some(at) => at.to_vec(),
         _ => {
             let mut run = vec![0.;n];
             for i in 0..m { run[i+1] = run[i]+lens[i] }
@@ -192,10 +194,8 @@ pub(crate) fn read(tr: &Traced) -> Read {
             else { (0..=m).map(|i| i as f64).collect() }
         }
     };
-    // (a stretch of no extent in the parameter, two points at one place, read as a unit of it)
-    let span = |i: usize| { let d = at[i+1]-at[i]; if d > 0. { d } else { 1. } };
     // the speed over each stretch read smoothly, its length over its extent
-    let pace = |i: usize| smooth[i].as_ref().map(|s| s.len/span(i));
+    let pace = |i: usize| smooth[i].as_ref().map(|s| s.len/span(&at,i));
     let kinks: Vec<bool> = (0..=m).map(|i| {
         let (left,right) = (if i > 0 { Some(i-1) } else if tr.closed { Some(m-1) } else { None },
             if i < m { Some(i) } else if tr.closed { Some(0) } else { None });
@@ -205,16 +205,16 @@ pub(crate) fn read(tr: &Traced) -> Read {
             _ => true,
         }
     }).collect();
-    let speed = (0..m).map(|i| match &smooth[i] {
-        Some(s) => s.fastest()/span(i),
-        None => 1.25*lens[i]/span(i),
+    let speed = (0..m).map(|i| {
+        let chord = norm(sub(tr.pts[i+1],tr.pts[i]));
+        (match &smooth[i] { Some(s) => s.fastest().max(chord),None => 1.25*lens[i] })/span(&at,i)
     }).fold(0.,f64::max);
-    Read {smooth,speed,nodes:points,at,kinks,wholes:std::sync::OnceLock::new()}
+    Read {smooth,speed,nodes:points,at,kinks,..Read::default()}
 }
 
 impl Read {
     /// The stretch `i`'s extent in the curve's parameter (a stretch of none read as a unit).
-    pub(crate) fn span(&self,i: usize) -> f64 { let d = self.at[i+1]-self.at[i]; if d > 0. { d } else { 1. } }
+    pub(crate) fn span(&self,i: usize) -> f64 { span(&self.at,i) }
     /// The guess at the fraction `f` of stretch `i` and its two rates in the curve's parameter: the
     /// stretch's quintic where it has one, the parabola through the chords where not.
     pub(crate) fn guess(&self,tr: &Traced,i: usize,f: f64) -> (V,V,V) {
@@ -227,7 +227,7 @@ impl Read {
     /// two ends of `f` hulled), or the chord.
     pub(crate) fn rate_over(&self,tr: &Traced,i: usize,f: [f64;2]) -> I3 {
         let r: I3 = match self.smooth.get(i) {
-            Some(Some(s)) => s.rate_over(Iv::new(f[0],f[1])),
+            Some(Some(s)) => s.rate_over(f),
             _ => {
                 let (a,b) = (tr.between(i,f[0]).1,tr.between(i,f[1]).1);
                 std::array::from_fn(|k| Iv::new(a[k],b[k]))

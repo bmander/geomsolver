@@ -722,17 +722,15 @@ fn breaks_of(c: &Curve,[t0,t1]: [f64;2]) -> Vec<f64> {
 /// knots and miss, the most the edge was found standing off its foot.
 fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,
     c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<[f64;2]>,Vec<f64>,f64,f64)> {
-    let at = |s: f64| uv(s);
-    let rate = |s: f64| duv(s);
     // (and the most the edge stands off the surface at every point the fit reads: what a reader
     // measures it standing off the face by, at the pieces' joints among others)
     let gap = std::cell::Cell::new(0f64);
     let off = |q: [f64;2],s: f64| {
-        let foot = surface.point(at(s));
+        let foot = surface.point(uv(s));
         gap.set(gap.get().max(distance(foot,c.point(s))));
         distance(surface.point(q),foot)
     };
-    let (poles,knots,miss) = hermite_fit(&at,&rate,&off,t,&breaks_of(c,t),bar)?;
+    let (poles,knots,miss) = hermite_fit(uv,duv,&off,t,&breaks_of(c,t),bar)?;
     Some((poles,knots,miss,gap.get()))
 }
 
@@ -746,8 +744,11 @@ fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super:
 /// their cushion's volume 1.2e-4 off). `None` for any other curve.
 fn bezier_curve(c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>,f64)> {
     let Curve::Traced(tr) = c else { return None };
-    let at = |s: f64| c.point(s);
-    let rate = |s: f64| c.d1(s).1;
+    // (a point and its rate read by one projection: the fit asks both of each parameter in turn)
+    let last: std::cell::Cell<Option<(f64,(V,V))>> = std::cell::Cell::new(None);
+    let d1 = |s: f64| match last.get() { Some((x,r)) if x == s => r,_ => { let r = c.d1(s); last.set(Some((s,r))); r } };
+    let at = |s: f64| d1(s).0;
+    let rate = |s: f64| d1(s).1;
     // the foot of `q` on `surface`, by Newton along its gradient (the surfaces' sides are signed
     // distances, so a step or two)
     let foot = |surface: &Surface,q: V| {

@@ -13,41 +13,22 @@ use gcs_core::meter::{self as meter,Budget,Meter};
 use gcs_core::rng::Rng;
 use gcs_core::space::{add,cross,dot,norm,scale,sub};
 use std::f64::consts::PI;
-use std::ops::{Add,Div,Mul,Neg,Sub};
+use gcs_core::taylor::Jet;
 
-/// A number and its first two derivatives along one parameter, for the closed forms.
-#[derive(Clone,Copy,Debug)]
-struct J { v: f64,d: f64,dd: f64 }
-
-impl J {
-    fn c(v: f64) -> J { J {v,d:0.,dd:0.} }
-    fn x(v: f64) -> J { J {v,d:1.,dd:0.} }
-    /// `f` of it, `f`'s value and two derivatives given.
-    fn of(self,f0: f64,f1: f64,f2: f64) -> J { J {v:f0,d:f1*self.d,dd:f2*self.d*self.d+f1*self.dd} }
-    fn sin(self) -> J { self.of(self.v.sin(),self.v.cos(),-self.v.sin()) }
-    fn cos(self) -> J { self.of(self.v.cos(),-self.v.sin(),-self.v.cos()) }
-    fn sqrt(self) -> J { let s = self.v.sqrt(); self.of(s,0.5/s,-0.25/(s*self.v)) }
-    fn asin(self) -> J { let q = 1.-self.v*self.v; self.of(self.v.asin(),1./q.sqrt(),self.v/q.powf(1.5)) }
-    fn atan(self) -> J { let q = 1.+self.v*self.v; self.of(self.v.atan(),1./q,-2.*self.v/(q*q)) }
-}
-impl Add for J { type Output = J; fn add(self,b: J) -> J { J {v:self.v+b.v,d:self.d+b.d,dd:self.dd+b.dd} } }
-impl Sub for J { type Output = J; fn sub(self,b: J) -> J { J {v:self.v-b.v,d:self.d-b.d,dd:self.dd-b.dd} } }
-impl Neg for J { type Output = J; fn neg(self) -> J { J {v:-self.v,d:-self.d,dd:-self.dd} } }
-impl Mul for J {
-    type Output = J;
-    fn mul(self,b: J) -> J { J {v:self.v*b.v,d:self.d*b.v+self.v*b.d,dd:self.dd*b.v+2.*self.d*b.d+self.v*b.dd} }
-}
-impl Div for J {
-    type Output = J;
-    fn div(self,b: J) -> J { let v = self.v/b.v; let d = (self.d-v*b.d)/b.v; J {v,d,dd:(self.dd-2.*d*b.d-v*b.dd)/b.v} }
-}
+/// A closed form's jets along its parameter (`taylor::Jet`): a constant, the parameter, its sine
+/// and cosine, and the inverse sine and tangent by `atan2`.
+fn c(v: f64) -> Jet { Jet::constant(v) }
+fn sin(x: Jet) -> Jet { x.sin_cos().0 }
+fn cos(x: Jet) -> Jet { x.sin_cos().1 }
+fn asin(x: Jet) -> Jet { Jet::atan2(x,(c(1.)-x*x).sqrt()) }
+fn atan(x: Jet) -> Jet { Jet::atan2(x,c(1.)) }
 
 /// A curve's point, unit tangent and curvature vector `(C'' − (C''·T) T)/|C'|²` from its jet.
-fn closed_jet(e: [J;3]) -> (V,V,V) {
-    let (d,dd) = (e.map(|j| j.d),e.map(|j| j.dd));
+fn closed_jet(e: [Jet;3]) -> (V,V,V) {
+    let (d,dd) = (e.map(|j| j.nth(1)),e.map(|j| j.nth(2)));
     let s2 = dot(d,d);
     let t = scale(d,1./s2.sqrt());
-    (e.map(|j| j.v),t,scale(sub(dd,scale(t,dot(dd,t))),1./s2))
+    (e.map(|j| j.nth(0)),t,scale(sub(dd,scale(t,dot(dd,t))),1./s2))
 }
 
 /// The cylinder of radius 2 about `z` and the one of radius 1 about `x` through it.
@@ -58,9 +39,9 @@ fn crossed() -> (Surface,Surface) {
 /// The crossed cylinders' meeting through `p`, in closed form over the lesser's angle `θ`:
 /// `(±√(4 − cos² θ), cos θ, sin θ)`.
 fn crossed_closed(p: V) -> (V,V,V) {
-    let th = J::x(p[2].atan2(p[1]));
-    let x = (J::c(4.)-th.cos()*th.cos()).sqrt()*J::c(p[0].signum());
-    closed_jet([x,th.cos(),th.sin()])
+    let th = Jet::var(p[2].atan2(p[1]));
+    let x = (c(4.)-cos(th)*cos(th)).sqrt()*p[0].signum();
+    closed_jet([x,cos(th),sin(th)])
 }
 
 const BIG: f64 = 5.;
@@ -80,15 +61,15 @@ fn ring_and_plane() -> (Surface,Surface) {
 /// `v = φ + π − asin s` and `v = φ + 2π + asin s`, `φ = atan k`, `s = (R k + c)/(r √(1 + k²))` — the
 /// one nearer `p`'s own.
 fn spiric_closed(p: V) -> (V,V,V) {
-    let u = J::x(p[1].atan2(p[0]));
+    let u = Jet::var(p[1].atan2(p[0]));
     let v0 = p[2].atan2(p[0].hypot(p[1])-BIG);
-    let k = J::c(SLANT.tan())*u.cos();
-    let s = (J::c(BIG)*k+J::c(RISE))/(J::c(TUBE)*(J::c(1.)+k*k).sqrt());
-    let (va,vb) = (k.atan()+J::c(PI)-s.asin(),k.atan()+J::c(2.*PI)+s.asin());
-    let off = |v: J| { let d = (v.v-v0).rem_euclid(2.*PI); d.min(2.*PI-d) };
+    let k = cos(u)*SLANT.tan();
+    let s = (k*BIG+c(RISE))/((c(1.)+k*k).sqrt()*TUBE);
+    let (va,vb) = (atan(k)+c(PI)-asin(s),atan(k)+c(2.*PI)+asin(s));
+    let off = |v: Jet| { let d = (v.nth(0)-v0).rem_euclid(2.*PI); d.min(2.*PI-d) };
     let v = if off(va) < off(vb) { va } else { vb };
-    let rho = J::c(BIG)+J::c(TUBE)*v.cos();
-    closed_jet([rho*u.cos(),rho*u.sin(),J::c(TUBE)*v.sin()])
+    let rho = c(BIG)+cos(v)*TUBE;
+    closed_jet([rho*cos(u),rho*sin(u),sin(v)*TUBE])
 }
 
 /// The crossed cylinders' two loops (`ssi::intersect`'s own trace) and the spiric section's two

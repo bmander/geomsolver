@@ -541,7 +541,7 @@ fn along_trace(tr: &super::geom::Traced,e: &super::topo::Edge,[ua,ub]: [Uv;2],s:
         }
         let n = sub(at[j].1,at[i].1);
         let len = norm(n);
-        if len > 0. { let x = across_span(tr,&at[i..=j],scale(n,1./len),len,e,(ua,ub),s,f); total += x.unwrap_or_else(|| by_parameter(i,j,f)) }
+        if len > 0. { total += across_span(tr,&at[i..=j],scale(n,1./len),len,e,(ua,ub),s,f).unwrap_or_else(|| by_parameter(i,j,f)) }
         i = j;
     }
     total

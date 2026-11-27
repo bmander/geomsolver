@@ -324,8 +324,15 @@ impl MappedCurve {
         debug_assert!(!matches!(of,Curve::Affine(_)),"an image of an image is the composite's");
         MappedCurve {back:map.inverse(),stretch:map.stretches()[2],map,of,at}
     }
-    pub(crate) fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
+    fn local(&self,t: f64) -> f64 { (t-self.at[1])/self.at[0] }
     fn global(&self,s: f64) -> f64 { self.at[0]*s+self.at[1] }
+    /// `C` at `t`: the preimage's point mapped.
+    pub fn point(&self,t: f64) -> V { self.map.point(self.of.point(self.local(t))) }
+    /// `C` and `C'` at `t`, read without the preimage's second rate.
+    pub fn d1(&self,t: f64) -> (V,V) {
+        let (x,d) = self.of.d1(self.local(t));
+        (self.map.point(x),scale(self.map.vector(d),1./self.at[0]))
+    }
     pub fn d2(&self,t: f64) -> (V,V,V) {
         let (x,d,dd) = self.of.d2(self.local(t));
         let a = self.at[0];

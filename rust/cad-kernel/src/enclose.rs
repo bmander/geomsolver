@@ -642,33 +642,23 @@ impl Enclosed<1> for Traced {
         let m = self.pts.len()-1;
         // (a surface whose normal's turning has no bound in closed form, a sheet's, proves no piece:
         // the whole stretch measured at once, not piece by piece)
-        let bounded = |s: &Surface| match s {
-            Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => true,
-            Surface::Affine(m) => m.quadric.is_some(),
-            _ => false,
-        };
+        let bounded = |s: &Surface| crate::ssi::curvature_bounded(s);
         if m == 0 || !(a.is_finite() && b.is_finite()) || !bounded(&self.a) || !bounded(&self.b) { return traced_measured(self,[a,b]) }
         // a closed trace's stretch reaching once round or more is every stretch
-        if self.closed && b-a >= m as f64 { return traced_wholes(self).iter().copied().reduce(Patch::hull).unwrap() }
-        // the pieces: `[a, b]` cut at the points between, each piece within one stretch
-        let mut cuts = vec![a];
-        cuts.extend(self.points_within([a,b]).into_iter().map(|(t,_)| t));
-        cuts.push(b);
-        if !self.closed && cuts.len() > 2 {
-            // an open trace's parameter runs on past its ends on its end stretches: no cut there
-            cuts.retain(|&k| k == a || k == b || (k > 0. && k < m as f64));
+        if self.closed && b-a >= m as f64 {
+            return *self.read().whole.get_or_init(|| traced_wholes(self).iter().copied().reduce(Patch::hull).unwrap())
         }
-        let wholes = (cuts.len() > 3).then(|| traced_wholes(self));
-        let mut out: Option<Patch<1>> = None;
-        for (j,w) in cuts.windows(2).enumerate() {
-            let interior = j > 0 && j+2 < cuts.len();
-            let p = match (interior,wholes) {
-                (true,Some(ws)) => ws[self.locate(0.5*(w[0]+w[1])).0],
-                _ => traced_piece(self,[w[0],w[1]],4).unwrap_or_else(|| traced_measured(self,[w[0],w[1]])),
-            };
-            out = Some(match out { Some(o) => o.hull(p),None => p });
-        }
-        out.unwrap_or_else(|| traced_measured(self,[a,b]))
+        // the pieces: `[a, b]` cut at the points between (an open trace's parameter runs on past
+        // its ends on its end stretches: no cut there), the end pieces each within one stretch,
+        // the whole stretches between
+        let mut points = self.points_within([a,b]);
+        if !self.closed { points.retain(|&(_,j)| j > 0 && j < m) }
+        let piece = |w: [f64;2]| traced_piece(self,w,None,4).unwrap_or_else(|| traced_measured(self,w));
+        let (Some(&(first,_)),Some(&(last,_))) = (points.first(),points.last()) else { return piece([a,b]) };
+        let ends = piece([a,first]).hull(piece([last,b]));
+        if points.len() < 2 { return ends }
+        let wholes = traced_wholes(self);
+        points[..points.len()-1].iter().fold(ends,|out,&(_,j)| out.hull(wholes[j]))
     }
 }
 
@@ -676,10 +666,10 @@ impl Enclosed<1> for Traced {
 /// points as the trace holds them, `traced::Read::nodes`), its measured bound where no certificate
 /// holds.
 fn traced_wholes(tr: &Traced) -> &Vec<Patch<1>> {
-    let at = &tr.read().at;
-    tr.read().wholes.get_or_init(|| (0..tr.pts.len()-1).map(|i| {
-        let w = [at[i],at[i+1]];
-        traced_piece(tr,w,4).unwrap_or_else(|| traced_measured(tr,w))
+    let r = tr.read();
+    r.wholes.get_or_init(|| (0..tr.pts.len()-1).map(|i| {
+        let w = [r.at[i],r.at[i+1]];
+        traced_piece(tr,w,Some((r.nodes[i],r.nodes[i+1])),4).unwrap_or_else(|| traced_measured(tr,w))
     }).collect())
 }
 
@@ -714,23 +704,21 @@ fn turn_within(s: &Surface,p: V,r: f64) -> Option<(V,f64)> {
 /// off `T Tᵀ`. Halved, `depth` times at most, where `ℓ` is not shown; `None` where it is not shown
 /// then, where a surface's turning has no bound in closed form, or where the two stand within
 /// `traced::CLEAR` of tangent (its rate there is differenced: `Traced::d1`).
-fn traced_piece(tr: &Traced,[a,b]: [f64;2],depth: usize) -> Option<Patch<1>> {
+fn traced_piece(tr: &Traced,[a,b]: [f64;2],ends: Option<(V,V)>,depth: usize) -> Option<Patch<1>> {
     use crate::util::space::{cross,distance,dot,norm,scale,sub};
     let (i,f0) = tr.locate(a);
     let f1 = f0+(b-a)/tr.read().span(i);
-    let whole = f0 == 0. && f1 == 1.;
-    let (p0,p1) = if whole { let n = &tr.read().nodes; (n[i],n[i+1]) } else { (tr.at(a),tr.at(b)) };
+    let (p0,p1) = ends.unwrap_or_else(|| (tr.at(a),tr.at(b)));
     let chord = distance(p0,p1);
     let scale_of = p0.iter().chain(p1.iter()).fold(0f64,|m,x| m.max(x.abs()));
     let off = [p0,p1].iter().map(|&p| tr.a.implicit(p).abs().max(tr.b.implicit(p).abs())).fold(0.,f64::max);
     let round = 16.*f64::EPSILON*(1.+scale_of);
     let split = |depth: usize| -> Option<Patch<1>> {
         if depth == 0 || !(b > a) { return None }
-        let m = 0.5*(a+b);
-        Some(traced_piece(tr,[a,m],depth-1)?.hull(traced_piece(tr,[m,b],depth-1)?))
+        let (m,pm) = (0.5*(a+b),tr.at(0.5*(a+b)));
+        Some(traced_piece(tr,[a,m],Some((p0,pm)),depth-1)?.hull(traced_piece(tr,[m,b],Some((pm,p1)),depth-1)?))
     };
-    let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
-    let ball = |p: V,r: f64| -> I3 { std::array::from_fn(|k| Iv::new(p[k]-r,p[k]+r)) };
+    let ball = |p: V,r: f64| grown((p,p),r);
     // a point's piece: the box of its rounding
     let (u,mut len) = if chord > round {
         (scale(sub(p1,p0),1./chord),chord*(1.+1e-9)+round)
@@ -756,10 +744,10 @@ fn traced_piece(tr: &Traced,[a,b]: [f64;2],depth: usize) -> Option<Patch<1>> {
         let margin = round+2.*off/(sin0-eps);
         let reach = Iv::new(0.,len);
         let at = meet3(meet3(ball(p0,len),ball(p1,len)),meet3(add3(c3(p0),scale3(t,reach)),sub3(c3(p1),scale3(t,reach))))
-            .map(|x| grow(x,margin));
+            .map(|x| widened(x,margin));
         // the rate: `T (T · g')`
         let g = tr.read().rate_over(tr,i,[f0,f1]);
-        let d = scale3(t,dot3(t,g)).map(|x| grow(x,1e-8*x.mag()+round*norm(g.map(|y| y.mag()))));
+        let d = scale3(t,dot3(t,g)).map(|x| widened(x,1e-8*x.mag()+round*norm(g.map(|y| y.mag()))));
         let p = Patch {at,d:[d],proved:true};
         return p.bounded().then_some(p).or_else(|| split(depth))
     }
@@ -792,16 +780,18 @@ fn traced_measured(tr: &Traced,[a,b]: [f64;2]) -> Patch<1> {
     }
     let chord = pts.windows(2).map(|w| crate::util::space::distance(w[0].1,w[1].1)).fold(0.,f64::max);
     let scale = pts.iter().map(|p| p.1.iter().fold(0f64,|m,x| m.max(x.abs()))).fold(0.,f64::max);
-    let grow = |x: Iv,by: f64| Iv::new(x.lo()-by,x.hi()+by);
     // (a point of it its projected point, to a few units of the coordinates' rounding: a wider
     // margin, read through a quartic's cancelling terms, proved no sign anywhere near nought)
-    let at: I3 = std::array::from_fn(|k| grow(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+16.*f64::EPSILON*(1.+scale)));
+    let at: I3 = std::array::from_fn(|k| widened(Iv::of_all(pts.iter().map(|p| p.1[k])),chord+16.*f64::EPSILON*(1.+scale)));
     let d: I3 = std::array::from_fn(|k| {
         let h = Iv::of_all(rates.iter().map(|r| r[k]));
-        grow(h,(2.*(h.hi()-h.lo())).max(1e-9*h.mag()))
+        widened(h,(2.*(h.hi()-h.lo())).max(1e-9*h.mag()))
     });
     Patch {at,d:[d],proved:false}
 }
+
+/// `x` widened by `by` either way.
+fn widened(x: Iv,by: f64) -> Iv { Iv::new(x.lo()-by,x.hi()+by) }
 
 impl Enclosed<1> for SheetCut {
     /// `C(v) = S(u(v), v)`, `C' = S_u u' + S_v`, `u = −α/β` (the module's).

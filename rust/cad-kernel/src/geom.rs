@@ -2367,16 +2367,10 @@ const SMOOTH_COS: f64 = 0.95;
 /// meeting's own at that point (`d1`, `d2`). A closed trace ends where it began (its last point is
 /// its first). What it reads at its points is read once, when first asked (`read`); a trace moved
 /// or mapped from another keeps that one's parameters at its points (`carried`).
+#[derive(Clone)]
 pub struct Traced {
     pub a: Surface,pub b: Surface,pub pts: Vec<V>,pub closed: bool,
     carried: Option<Arc<Vec<f64>>>,read: std::sync::OnceLock<Arc<super::traced::Read>>,
-}
-
-impl Clone for Traced {
-    fn clone(&self) -> Traced {
-        Traced {a:self.a.clone(),b:self.b.clone(),pts:self.pts.clone(),closed:self.closed,carried:self.carried.clone(),
-            read:self.read.clone()}
-    }
 }
 
 impl PartialEq for Traced {
@@ -2406,7 +2400,7 @@ impl Traced {
     }
     /// The parameters at its points a trace was carried with (`Traced::carried`), none where it laid
     /// its own.
-    pub(crate) fn carried_at(&self) -> Option<&[f64]> { self.carried.as_deref().map(|v| &v[..]) }
+    pub(crate) fn carried_at(&self) -> Option<&[f64]> { self.carried.as_deref().map(Vec::as_slice) }
     fn segments(&self) -> usize { self.pts.len()-1 }
     /// **The curve's parameter at its point `i`**: the length run along it to there, scaled so its
     /// `m` stretches run over `[0, m]` (#1034, `traced::read`).
@@ -2434,39 +2428,43 @@ impl Traced {
         let (a,b) = (a.min(b),a.max(b));
         let m = self.segments();
         let at = &self.read().at;
-        if !self.closed { return (0..=m).filter(|&j| at[j] > a && at[j] < b).map(|j| (at[j],j)).collect() }
+        // (the parameters rise along the points: the run between `a` and `b` found by halving)
+        let inside = |lo: f64,hi: f64| at.partition_point(|&x| x <= lo)..at.partition_point(|&x| x < hi);
+        if !self.closed { return inside(a,b).map(|j| (at[j],j)).collect() }
         let mf = m as f64;
         let mut out = Vec::new();
         for turn in (a/mf).floor() as i64..=(b/mf).floor() as i64 {
-            for j in 0..m {
-                let t = turn as f64*mf+at[j];
-                if t > a && t < b { out.push((t,j)) }
-            }
+            let base = turn as f64*mf;
+            out.extend(inside(a-base,b-base).filter(|&j| j < m).map(|j| (base+at[j],j)));
         }
         out
     }
     /// What it reads at its points, once (`traced::read`).
     pub(crate) fn read(&self) -> &super::traced::Read { self.read.get_or_init(|| Arc::new(super::traced::read(self))) }
     /// The point of both surfaces nearest `q`, by minimum-norm Newton steps.
-    pub fn project(&self,q: V) -> V {
+    pub fn project(&self,q: V) -> V { self.projected(q).0 }
+    /// `project`, and the two surfaces' gradients at the point it settles on (read again there only
+    /// where its last step moved it after they were read).
+    pub(crate) fn projected(&self,q: V) -> (V,(V,V)) {
         // settled once both distances are at the rounding of the coordinates, a step stops moving,
         // or the distances stop falling (a sheet's are read through a numerical foot, whose noise
         // is above the coordinates' rounding): the nearest iterate, never the unprojected point —
         // at the noise, not short of it, since a touch's `d1` differences two projections
         let settled = 4.*f64::EPSILON*(1.+crate::util::space::norm(q));
         let mut p = q;
-        let mut best = (f64::INFINITY,q);
+        let mut best: (f64,V,Option<(V,V)>) = (f64::INFINITY,q,None);
         for _ in 0..50 {
             let ((fa,ga),(fb,gb)) = (self.a.side(p),self.b.side(p));
             let off = fa.abs().max(fb.abs());
             if off >= best.0 { break }
-            best = (off,p);
+            best = (off,p,Some((ga,gb)));
             if off <= settled { break }
             let Some(step) = crate::util::roots::least_norm_step(&[ga,gb],&[fa,fb]) else { break };
             p = sub(p,step);
-            if crate::util::space::norm(step) <= settled { best.1 = p; break }
+            if crate::util::space::norm(step) <= settled { best = (best.0,p,None); break }
         }
-        best.1
+        let p = best.1;
+        (p,best.2.unwrap_or_else(|| (self.a.side(p).1,self.b.side(p).1)))
     }
     /// `C`: the guess at `t` pulled onto both surfaces.
     pub(crate) fn at(&self,t: f64) -> V { self.project(self.guess(t)) }
@@ -2554,8 +2552,8 @@ impl Traced {
     /// (`differenced`).
     pub(crate) fn d1(&self,t: f64) -> (V,V) {
         let (g,dg,_) = self.guess_d2(t);
-        let p = self.project(g);
-        match super::traced::tangent(&self.a,&self.b,p,dg) {
+        let (p,grads) = self.projected(g);
+        match super::traced::tangent(grads,dg) {
             Some(tn) => (p,scale(tn,dot(tn,dg))),
             None => (p,self.differenced(t)),
         }
@@ -2565,8 +2563,8 @@ impl Traced {
     /// Where it is not read (a touch), `C'` differenced and `C''` nothing.
     pub(crate) fn d2(&self,t: f64) -> (V,V,V) {
         let (g,dg,ddg) = self.guess_d2(t);
-        let p = self.project(g);
-        match super::traced::jet(&self.a,&self.b,p,dg) {
+        let (p,grads) = self.projected(g);
+        match super::traced::jet(&self.a,&self.b,p,grads,dg) {
             Some((tn,k)) => {
                 let v = dot(tn,dg);
                 (p,scale(tn,v),add(scale(k,v*v),scale(tn,v*dot(k,dg)+dot(tn,ddg))))
@@ -2597,11 +2595,8 @@ impl Traced {
         let kinks = &self.read().kinks;
         self.points_within([a,b]).into_iter().filter(|&(_,j)| kinks[j]).map(|(t,_)| t).collect()
     }
-    /// The curve's greatest speed: no less than its longest chord.
-    pub(crate) fn speed(&self) -> f64 {
-        let chords = self.pts.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).fold(0.,f64::max);
-        chords.max(self.read().speed)
-    }
+    /// The curve's greatest speed: no less than any chord over its extent (`traced::Read::speed`).
+    pub(crate) fn speed(&self) -> f64 { self.read().speed }
 }
 
 /// What a surface offset by a distance is (`Surface::offset`): a surface, or — where the distance
@@ -2735,12 +2730,13 @@ impl Curve {
     pub fn point(&self,t: f64) -> V {
         // (a traced curve's point by one projection: its derivative takes two more, #798)
         match self { Curve::BSpline(b) => b.point(t),Curve::SheetCut(c) => c.point(t),Curve::Traced(c) => c.at(t),
-            Curve::Parallel(m) => m.point(t),_ => self.d2(t).0 }
+            Curve::Parallel(m) => m.point(t),Curve::Affine(m) => m.point(t),_ => self.d2(t).0 }
     }
     pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
     /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
     pub fn d1(&self,t: f64) -> (V,V) {
         match self { Curve::BSpline(b) => b.d1(t),Curve::SheetCut(c) => c.d1(t),Curve::Parallel(m) => m.d1(t),Curve::Traced(c) => c.d1(t),
+            Curve::Affine(m) => m.d1(t),
             _ => { let (x,d,_) = self.d2(t); (x,d) } }
     }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);

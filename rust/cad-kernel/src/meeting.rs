@@ -1318,21 +1318,19 @@ pub fn crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],reach: f64) -> Vec<
         // comes nearer: where two curves cross at a shallow angle `θ` alternating feet close in by
         // `cos² θ` a step, and stopped short of the crossing — a trace setting out from a touch
         // beside a pipe's rail, 2e-3 along it, and cut there (#1034)
+        // (each trial's points and rates read once, carried to the next step)
+        let (mut ja,mut jb) = (a.d1(s),b.d1(t));
         for _ in 0..30 {
-            let ((qa,da),(qb,db)) = (a.d1(s),b.d1(t));
-            let f = crate::util::space::sub(qa,qb);
-            let (aa,ab,bb) = (dot(da,da),dot(da,db),dot(db,db));
-            let det = aa*bb-ab*ab;
-            if !(det > 1e-24*aa*bb) { break }
-            let (ra,rb) = (-dot(da,f),dot(db,f));
-            let (ds,dt) = ((bb*ra+ab*rb)/det,(ab*ra+aa*rb)/det);
+            if last <= 1e-15*(1.+norm(pa)) { break }
+            let ((qa,da),(qb,db)) = (ja,jb);
+            if !(norm(cross(da,db)).powi(2) > 1e-24*dot(da,da)*dot(db,db)) { break }
+            let [ds,dt] = super::topo::solved(da,scale(db,-1.),sub(qb,qa));
             let (s2,t2) = (wrap(a,s+ds,ta),wrap(b,t+dt,tb));
             if !(s2.is_finite() && t2.is_finite()) { break }
-            let (p2,q2) = (a.point(s2),b.point(t2));
-            let d = distance(p2,q2);
+            let (ka,kb) = (a.d1(s2),b.d1(t2));
+            let d = distance(ka.0,kb.0);
             if !(d < last) { break }
-            (s,t,pa,last) = (s2,t2,p2,d);
-            if d <= 1e-15*(1.+norm(p2)) { break }
+            (s,t,pa,last,ja,jb) = (s2,t2,ka.0,d,ka,kb);
         }
         if !(last <= reach) || s < ta[0]-1e-12 || s > ta[1]+1e-12 || t < tb[0]-1e-12 || t > tb[1]+1e-12 { return }
         // two crossing at a shallow angle meet over a stretch `reach / sin θ` long: one crossing

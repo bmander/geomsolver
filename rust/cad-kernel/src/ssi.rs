@@ -3127,6 +3127,16 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
     }
 }
 
+/// Whether `curvature_bound` bounds a surface of this kind anywhere (a sheet's normal turns by no
+/// bound in closed form).
+pub(crate) fn curvature_bounded(s: &Surface) -> bool {
+    match s {
+        Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => true,
+        Surface::Affine(m) => m.quadric.is_some(),
+        _ => false,
+    }
+}
+
 /// A bound on the size of an analytic surface's `implicit`'s Hessian over the ball about `p` of
 /// radius `r` — the curvature of its level sets, the inverse of the distance to where they focus —
 /// or none where the ball reaches that focus (an axis, a centre, a torus's core circle).
