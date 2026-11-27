@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.27.0] - 2026-11-27
+
 - **A traced meeting is a smooth curve, its rates exact and its enclosure proved** (#1034,
   `traced`, new). Between two of its points a trace is the quintic of the arc length through both
   with the meeting's tangent `∇a × ∇b` and curvature vector in closed form there
