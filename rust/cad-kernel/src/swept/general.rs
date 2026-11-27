@@ -10,7 +10,9 @@
 //!
 //! - **a face's chord**: the face's contact is the line of its plane where `n · v` vanishes, within
 //!   the face — a chord from one of its edges to another, each end the root of the face's `n · v`
-//!   along that edge;
+//!   along that edge — less what the face's own neighbouring instants bury, past the fold of the
+//!   wall its plane sweeps (`Tool::fold`, #942 T1d-hypoid): a chord wholly there left out, one the
+//!   fold crosses ending at it;
 //! - **a sharp edge's stretch** (L2's rule): the edge bounds the sweep where its two faces' `n · v`
 //!   differ in sign — affine along it, so between their roots, or a vertex — each end where one
 //!   face's chord reaches the edge, or a vertex.
@@ -82,7 +84,11 @@ pub(super) fn parameters(b: &Brep,tol: f64) -> [[f64;2];2] {
 /// space, and where that is refused as shallow marched in both walls' parameters), each seed on its
 /// own, and kept where some point of the curve stands that far off the rails. None where nothing
 /// seeds, or every seed is refused.
-fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Vec<Curve> {
+/// The least sine of the angle an edge's fan and the wall of a face of it meet at where a crossing
+/// beside the path they touch along is seeded (`beside_rails`).
+const SHALLOWEST: f64 = 1e-2;
+
+fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],shallowest: f64,tol: f64) -> Vec<Curve> {
     let (la,ha) = a.bounds();
     let (lb,hb) = b.bounds();
     let (lo,hi): (V,V) = (std::array::from_fn(|k| la[k].max(lb[k])-tol),std::array::from_fn(|k| ha[k].min(hb[k])+tol));
@@ -93,7 +99,8 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
         for e in &from.edges {
             let EdgeCurve::Curve(c) = &e.curve else { continue };
             if let crate::query::Meets::At(roots) = crate::query::curve_surface(c,e.t,onto,tol) {
-                seeds.extend(roots.iter().map(|&(t,_)| c.point(t)).filter(|&p| off_rails(p)));
+                seeds.extend(roots.iter().map(|&(t,_)| c.point(t)).filter(|&p| off_rails(p)
+                    && crate::util::space::norm(cross(unit(sa,p),unit(sb,p))) > shallowest));
             }
         }
     }
@@ -159,6 +166,158 @@ fn ended_on_rails(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[
             (distance(q,p) <= reach).then_some((q,r))
         })
     })
+}
+
+/// **A branch beside the path an edge's fan and its face's wall share, carried on to the corner it
+/// is born at** (#942 T1d-hypoid): the crossing of the two walls away from their path is born at an
+/// end of a run of it — where the face's fold passes the edge, or the face's chord there is born or
+/// dies — a corner of both walls' strips (`births`), and the trace, its walls meeting ever more
+/// shallowly toward it, stops short (the hypoid's flank and its toe edge's fan, 2e-3 short; its
+/// heel's, 2.4e-3, a corner of the fan's strip left unparted and the boundary open along its rim).
+/// From an end within `REACHED` of the tool's size of such a corner the branch is marched on to it
+/// in both walls' parameters: one wall's roll stepped from the end's to the corner's, the other
+/// three numbers of `a(u, s) = b(u′, s′)` found by Newton from the last pair, until Newton no longer
+/// settles beside the corner, where the two walls' path and the branch come together; and laid as a
+/// polyline through the pairs solved, each chord halved until its middle stands within a quarter of
+/// the tolerance of the meeting's own point there, and on to the corner. A pair is taken only within
+/// both walls' stretches of `u` (`boxes`, each wall's `[u, s]` box): past them lies the edge's path
+/// carried on over the sheet its face's fold buries, which leaves the corner the branch's way. The branch is given whole,
+/// its carried part a curve of its own sharing its end; an end that does not reach its corner so
+/// is left as it was traced.
+fn completed(c: Curve,[sa,sb]: [&Surface;2],boxes: [[[f64;2];2];2],births: &[V],size: f64,tol: f64) -> Vec<Curve> {
+    let mut c = c;
+    let mut more: Vec<Curve> = Vec::new();
+    for &q in births {
+        let Some([t0,t1]) = crate::query::curve_domain(&c) else { break };
+        // where the branch passes nearest the corner: read at points along it, then by its inverse
+        let n = 512;
+        let tq = (0..=n).map(|k| t0+(t1-t0)*k as f64/n as f64).min_by(|x,y| distance(c.point(*x),q).total_cmp(&distance(c.point(*y),q))).unwrap();
+        let tq = { let t = c.inverse(q).clamp(t0,t1); if distance(c.point(t),q) < distance(c.point(tq),q) { t } else { tq } };
+        let gap = distance(c.point(tq),q);
+        if gap > REACHED*size { continue }
+        // (a branch passing the corner and running on beside the walls' path, where the two touch,
+        // cut there: what runs on is that path traced again — the hypoid's heel, its branch run
+        // 5e-4 of the roll past its corner along the path and laid over it, the strip beyond the
+        // corner left unparted)
+        let length = |a: f64,b: f64| (0..64).map(|k| distance(c.point(a+(b-a)*k as f64/64.),c.point(a+(b-a)*(k+1) as f64/64.))).sum::<f64>();
+        // the side kept: away from the corner, the longer
+        let inward = if tq <= t0 { 1. } else if tq >= t1 { -1. } else if length(t0,tq) >= length(tq,t1) { -1. } else { 1. };
+        // (and from there back along it to where the trace lies on both walls, to their
+        // fit: beside the corner the two walls meet ever more shallowly and the trace strays —
+        // the hypoid's toe, its branch passing its corner 9.9e-6 off the flank's wall — the rest
+        // carried on to the corner by the march, which holds to both)
+        let on_both = |t: f64| { let p = c.point(t); [sa,sb].iter().all(|s| distance(s.point(s.inverse(p)),p) <= crate::tolerant::ON_CURVE*tol) };
+        let far = if inward > 0. { t1 } else { t0 };
+        let Some(tc) = (0..=256).map(|k| tq+(far-tq)*k as f64/256.).find(|&t| on_both(t)) else { continue };
+        if tc != t0 && tc != t1 {
+            let keep = if inward > 0. { [tc,t1] } else { [t0,tc] };
+            match &c {
+                Curve::BSpline(b) => c = Curve::BSpline(Arc::new(b.segment(keep))),
+                _ => continue,
+            }
+        }
+        if distance(c.point(tc.clamp(t0,t1)),q) <= ON*tol { continue }
+        let Some([k0,k1]) = crate::query::curve_domain(&c) else { break };
+        let p = [c.point(k0),c.point(k1)].into_iter().min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).unwrap();
+        match carried(sa,sb,boxes,p,q,tol) {
+            Some(m) => {
+                if crate::debug() { eprintln!("general: a branch carried {gap:.3e} on to the corner it is born at, {q:?}") }
+                more.push(m)
+            }
+            None => if crate::debug() { eprintln!("general: a branch {gap:.3e} short of the corner {q:?} not carried there") },
+        }
+    }
+    std::iter::once(c).chain(more).collect()
+}
+
+/// How far from the corner it is born at, of the tool's size, a branch's end is carried on to it
+/// (`completed`).
+const REACHED: f64 = 1e-2;
+
+/// How near, in tolerances, a branch's end stands on the corner it is born at already (`completed`).
+const ON: f64 = 4.;
+
+/// `completed`'s march from `p`, on both walls, to the corner `q`: the polyline, or none where the
+/// walls do not carry it there.
+fn carried(sa: &Surface,sb: &Surface,boxes: [[[f64;2];2];2],p: V,q: V,tol: f64) -> Option<Curve> {
+    // the four numbers `(u, s, u′, s′)` at `p` and at `q`, one held to each step: the roll of the wall
+    // whose roll moves the more
+    let (a0,b0,a1,b1) = (sa.inverse(p),sb.inverse(p),sa.inverse(q),sb.inverse(q));
+    if [(sa,a0,p),(sb,b0,p),(sa,a1,q),(sb,b1,q)].iter().any(|(s,uv,x)| distance(s.point(*uv),*x) > 1e3*tol) { return None }
+    let on_a = (a1[1]-a0[1]).abs() >= (b1[1]-b0[1]).abs();
+    let x0 = [a0[0],a0[1],b0[0],b0[1]];
+    let x1 = [a1[0],a1[1],b1[0],b1[1]];
+    let fixed = if on_a { 1 } else { 3 };
+    let free: [usize;3] = if on_a { [0,2,3] } else { [0,1,2] };
+    // the pair at the held number's `f`-th of the way from `p` to `q`, Newton from `x`
+    let solve = |f: f64,mut x: [f64;4]| -> Option<([f64;4],V)> {
+        x[fixed] = x0[fixed]+(x1[fixed]-x0[fixed])*f;
+        for _ in 0..40 {
+            let (pa,au,av) = sa.d1([x[0],x[1]]);
+            let (pb,bu,bv) = sb.d1([x[2],x[3]]);
+            let r = sub(pa,pb);
+            if crate::util::space::norm(r) <= 0.25*tol {
+                // (within both walls' own stretches of `u`: beside the corner the edge's path runs
+                // on past the face's fold over the wall's lines carried on past it, the sheet the
+                // fold buries, and the march, its two solutions there a hair apart, slid onto it)
+                let slack = 1e-9;
+                let within = |u: f64,[lo,hi]: [f64;2]| u >= lo-slack && u <= hi+slack;
+                if !within(x[0],boxes[0][0]) || !within(x[2],boxes[1][0]) { return None }
+                return Some((x,scale(add(pa,pb),0.5)))
+            }
+            let cols = [au,av,scale(bu,-1.),scale(bv,-1.)];
+            let j = [cols[free[0]],cols[free[1]],cols[free[2]]];
+            let det = dot(j[0],cross(j[1],j[2]));
+            if !(det.abs() > 1e-300) { return None }
+            // Cramer's rule for `J d = −r`
+            let neg = scale(r,-1.);
+            let d = [dot(neg,cross(j[1],j[2]))/det,dot(j[0],cross(neg,j[2]))/det,dot(j[0],cross(j[1],neg))/det];
+            for k in 0..3 { x[free[k]] += d[k] }
+            if !x.iter().all(|v| v.is_finite()) { return None }
+        }
+        None
+    };
+    // the march: on in steps, each halved where Newton does not settle, to within a millionth of the
+    // way from the corner
+    let mut solved: Vec<(f64,[f64;4],V)> = vec![(0.,x0,p)];
+    let mut step = 1./16.;
+    while solved.last().unwrap().0 < 1. && step > 1e-12 {
+        let (f,x,_) = *solved.last().unwrap();
+        let g = (f+step).min(1.);
+        match solve(g,x) {
+            Some((y,at)) if g < 1. && distance(at,q) < distance(solved.last().unwrap().2,q) => { solved.push((g,y,at)); step = (step*2.).min(1./16.) }
+            _ => step *= 0.5,
+        }
+        if g >= 1. && solve(1.,x).is_none() { step = step.min(0.5*(1.-f)) }
+    }
+    // the last pair settled must stand where a chord from it to the corner lies within the tolerance
+    // of both walls
+    let last = solved.last().unwrap().2;
+    let mid = scale(add(last,q),0.5);
+    if sa.implicit(mid).abs().max(sb.implicit(mid).abs()) > crate::tolerant::ON_CURVE*tol { return None }
+    // the polyline: each chord halved where the meeting's own point at its middle stands off it
+    let mut pts: Vec<V> = vec![p];
+    for w in solved.windows(2) {
+        let mut todo = vec![(w[0],w[1],0)];
+        let mut run: Vec<V> = Vec::new();
+        while let Some(((f,x,a),(g,_,b),depth)) = todo.pop() {
+            let m = 0.5*(f+g);
+            match solve(m,x) {
+                Some((y,at)) if depth < 24 && distance(scale(add(a,b),0.5),at) > 0.25*tol => {
+                    todo.push(((m,y,at),(g,[0.;4],b),depth+1));
+                    todo.push(((f,x,a),(m,y,at),depth+1));
+                }
+                _ => run.push(b),
+            }
+        }
+        pts.extend(run);
+    }
+    pts.push(q);
+    let mut params = vec![0.];
+    for w in pts.windows(2) { params.push(params.last().unwrap()+distance(w[0],w[1]).max(1e-300)) }
+    let length = *params.last().unwrap();
+    let params: Vec<f64> = params.iter().map(|t| t/length).collect();
+    crate::nurbs::interpolate(&pts,&params,1).map(|b| Curve::BSpline(Arc::new(b)))
 }
 
 /// **A branch between two runs of one fan ends on their rim at the pinch it is born at** (#942
@@ -407,7 +566,15 @@ enum End {
     Vertex(u32),
     /// On edge `edge`, where face `face`'s `n · v` vanishes along it: a face's chord reaching the edge.
     Root { edge: usize,face: usize },
+    /// On face `face`'s chord, where the wall its plane sweeps folds (`Tool::fold`): the end of the
+    /// part of the chord the face's own neighbouring instants do not bury.
+    Fold { face: usize },
 }
+
+/// **An instant of the motion, read on the tool**: its body twist `w` and that twist's rate by the
+/// roll `dw` (`rate`), what a face's fold is read from.
+#[derive(Clone,Copy,Debug)]
+struct Moving { w: Twist,dw: Twist }
 
 /// A piece of an instant's contact, from its first end to its second.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -428,8 +595,8 @@ struct Tool<'a> {
     brep: &'a Brep,
     /// Per edge: its ends, `p₀` and `p₁`, and its faces where it is sharp.
     edges: Vec<Option<([V;2],Option<[usize;2]>)>>,
-    /// Per face: its outward normal, and its edges.
-    faces: Vec<(V,Vec<usize>)>,
+    /// Per face: its outward normal, its edges, and a point of its plane.
+    faces: Vec<(V,Vec<usize>,V)>,
 }
 
 impl<'a> Tool<'a> {
@@ -452,7 +619,7 @@ impl<'a> Tool<'a> {
             let mut own: Vec<usize> = face.loops.iter().flatten().map(|c| c.edge as usize).collect();
             own.sort();
             own.dedup();
-            faces.push((n,own));
+            faces.push((n,own,frame.o));
         }
         Ok(Tool {brep,edges,faces})
     }
@@ -464,22 +631,49 @@ impl<'a> Tool<'a> {
         [dot(n,w.velocity(p0)),dot(n,cross(w.omega,sub(p1,p0)))]
     }
 
-    /// Where `end` stands under twist `w`, in the tool.
-    fn point(&self,w: &Twist,end: End) -> V {
+    /// Where `end` stands at instant `m`, in the tool.
+    fn point(&self,m: &Moving,end: End) -> V {
         match end {
             End::Vertex(v) => self.brep.vertices[v as usize].p,
             End::Root {edge,face} => {
                 let ([p0,p1],_) = self.edges[edge].unwrap();
-                let [a,b] = self.along(w,face,edge);
+                let [a,b] = self.along(&m.w,face,edge);
                 add(p0,scale(sub(p1,p0),-a/b))
             }
+            End::Fold {face} => {
+                let (n,o) = (self.faces[face].0,self.faces[face].2);
+                let (c,d) = characteristic(n,o,&m.w).unwrap_or((o,[0.;3]));
+                let (f0,f1) = (self.fold(m,face,c),self.fold(m,face,add(c,d)));
+                add(c,scale(d,f0/(f0-f1)))
+            }
         }
+    }
+
+    /// **Where face `f`'s wall folds** (#942 T1d-hypoid): `F″`, the second rate by the roll of the
+    /// signed distance `n · x − h` of a fixed point from the face's plane, read at the tool's point
+    /// `x` — on the face's characteristic line, where the first rate `−n · v(x)` is nought, so that
+    /// the face's plane at the instant `δ` later stands `½ F″ δ²` from it. Where `F″ < 0` the face at
+    /// its own neighbouring instants holds the point inside (`n` outward): the chord there is buried,
+    /// the wall's sheet past its fold, and bounds nothing. Affine along the line: one root, the fold.
+    /// The point's place in the tool moves by `ẋ = −v(x)`, so
+    /// `F″ = −n · (v₀′ + ω′ × x) + n · (ω × v(x))`.
+    fn fold(&self,m: &Moving,f: usize,x: V) -> f64 {
+        let n = self.faces[f].0;
+        -dot(n,add(m.dw.v0,cross(m.dw.omega,x)))+dot(n,cross(m.w.omega,m.w.velocity(x)))
+    }
+
+    /// The least `F″` (`fold`) at `x` that is no rounding's: a trillionth of what its terms are made of.
+    fn folds_at(&self,m: &Moving,x: V) -> f64 {
+        use crate::util::space::norm;
+        let (w,dw) = (norm(m.w.omega),norm(m.dw.omega));
+        1e-12*(w*norm(m.w.velocity(x))+w*w*norm(x)+dw*norm(x)+norm(m.dw.v0)+1e-300)
     }
 
     /// **The contact under twist `w`** (see the module): each sharp edge's stretches along it, then each
     /// face's chords along its line, in that order; refused where a face's `n · v` vanishes all along
     /// one of its edges.
-    fn contact(&self,w: &Twist) -> Result<Vec<Piece>,Unbuilt> {
+    fn contact(&self,m: &Moving) -> Result<Vec<Piece>,Unbuilt> {
+        let w = &m.w;
         let mut out = Vec::new();
         for (e,x) in self.edges.iter().enumerate() {
             let Some((_,Some([f1,f2]))) = *x else { continue };
@@ -504,7 +698,7 @@ impl<'a> Tool<'a> {
             }
             if let Some(first) = run { out.push(Piece::Stretch {edge:e,ends:[first,cuts[cuts.len()-1].1]}) }
         }
-        for (f,(n,own)) in self.faces.iter().enumerate() {
+        for (f,(n,own,_)) in self.faces.iter().enumerate() {
             // its line's way in its plane, `n × (n × ω)`, along which its crossings are ordered
             let way = cross(*n,cross(*n,w.omega));
             let mut crossings: Vec<(f64,End)> = Vec::new();
@@ -519,7 +713,17 @@ impl<'a> Tool<'a> {
             }
             crossings.sort_by(|x,y| x.0.total_cmp(&y.0));
             for pair in crossings.chunks(2) {
-                if let [x,y] = pair { if x.1 != y.1 { out.push(Piece::Chord {face:f,ends:[x.1,y.1]}) } }
+                let [x,y] = pair else { continue };
+                if x.1 == y.1 { continue }
+                // **the chord clipped to its fold** (`fold`): the part its own face buries dropped,
+                // a chord wholly buried left out, the end where the wall folds an end of its own
+                let (px,py) = (self.point(m,x.1),self.point(m,y.1));
+                let (fx,fy) = (self.fold(m,f,px),self.fold(m,f,py));
+                let least = self.folds_at(m,px).max(self.folds_at(m,py));
+                let ends = if fx.min(fy) >= -least { [x.1,y.1] }
+                    else if fx.max(fy) <= least { continue }
+                    else if fx > 0. { [x.1,End::Fold {face:f}] } else { [End::Fold {face:f},y.1] };
+                out.push(Piece::Chord {face:f,ends});
             }
         }
         Ok(out)
@@ -573,12 +777,13 @@ fn events(shape: &dyn Fn(f64) -> Result<Vec<Piece>,Unbuilt>,[a,b]: [f64;2],grain
 
 /// **A surface pieces of the contact lie on over the roll** (a face family's wall, `family::Sheet`, a
 /// line from end to end at each `s`): a sharp edge's line carried, its `u` the way along the edge;
-/// or a plane face's characteristic line over a stretch of the roll it comes near the face, its `u`
-/// the way along the chord `reach` either side of its point nearest the face's middle `q`.
+/// or a plane face's characteristic line over a run of stretches holding a chord of the face, its
+/// `u` the way along the part of the line its wall is read over (`candidates`' `kept`): the face's
+/// reach either side of its point nearest the face's middle, less what the face's fold buries.
 struct Bearer { sheet: Arc<Sheet>,of: Bears }
 
 #[derive(Clone,Copy)]
-enum Bears { Edge(usize),Face { face: usize,q: V,n: V,reach: f64 } }
+enum Bears { Edge(usize),Face { face: usize } }
 
 /// A bearer read over `[0, 1]²` (`contacts::pose_meeting`): its `u`, and its span of the roll as `v`.
 struct Rolled<'a>(&'a Sheet);
@@ -607,7 +812,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     let exact = crate::family::EXACT*size.max(1.);
     let read = Tool::read(tool)?;
     let posed = |s: f64| -> Result<Rigid,Unbuilt> { let q = path.pose(s)?; Ok(Rigid {r:q.r,t:q.p}) };
-    let twist = |s: f64| -> Result<Twist,Unbuilt> { Ok(Twist::body(path.at(s)?)) };
+    let twist = |s: f64| -> Result<Moving,Unbuilt> { Ok(Moving {w:Twist::body(path.at(s)?),dw:rate(path,s)?}) };
     // (two changes nearer than the roll's grain at the tolerance are one instant, #942 F6)
     let grain = super::closed::grain(tool,path,[a,b],tol)?;
     let (cuts,shapes) = events(&|s| read.contact(&twist(s)?),[a,b],grain)?;
@@ -643,52 +848,121 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     if crate::debug() {
         for (k,sh) in shapes.iter().enumerate() { eprintln!("general: over [{:.6}, {:.6}] {} pieces: {sh:?}",cuts[k],cuts[k+1],sh.len()) }
     }
+    // **each face read over its reach**: its middle `q`, and how far its characteristic line is read
+    // either way of its point nearest `q` — every chord of the face lies within the face, so within
+    // that reach of the middle, and of that point along the line
+    let faces_read: Vec<(V,f64)> = (0..read.faces.len()).map(|f| {
+        let face = &tool.faces[f];
+        let corners: Vec<V> = face.loops.iter().flatten().map(|c| tool.vertices[tool.ends(c)[0] as usize].p).collect();
+        let middle = scale(corners.iter().fold([0.;3],|acc,&p| add(acc,p)),1./corners.len().max(1) as f64);
+        (middle,corners.iter().map(|&p| distance(p,middle)).fold(0.,f64::max))
+    }).collect();
+    // **the part of face `f`'s line its wall is read over at `s`** (#942 T1d-hypoid): the line's
+    // point nearest `q`, its way, and the interval of the reach either way of it that the face's own
+    // neighbouring instants do not bury (`Tool::fold`) — the whole reach, or from the fold to the
+    // reach's end on the side kept; none where all of it is buried. Read so, a wall never holds its
+    // fold within it: past the fold its sheet doubles back over itself, and a meeting traced on it
+    // crossed the fold and ran off both walls (the hypoid's flank, 3.8e-2 off)
+    let kept = |f: usize,s: f64| -> Result<Option<(V,V,[f64;2])>,Unbuilt> {
+        let (n,(q,reach)) = (read.faces[f].0,faces_read[f]);
+        let Some((c,d)) = line(path,n,q,s)? else { return Ok(None) };
+        let m = twist(s)?;
+        let (x0,x1) = (add(c,scale(d,-reach)),add(c,scale(d,reach)));
+        let (f0,f1) = (read.fold(&m,f,x0),read.fold(&m,f,x1));
+        let least = read.folds_at(&m,x0).max(read.folds_at(&m,x1));
+        if f0.min(f1) >= -least { return Ok(Some((c,d,[-reach,reach]))) }
+        if f0.max(f1) <= least { return Ok(None) }
+        let t = -reach+2.*reach*f0/(f0-f1);
+        Ok(Some((c,d,if f1 > f0 { [t,reach] } else { [-reach,t] })))
+    };
+    let folded = |f: usize,s: f64| -> Result<bool,Unbuilt> { Ok(kept(f,s)?.is_some_and(|(_,_,[lo,hi])| hi-lo < 2.*faces_read[f].1)) };
+    // each face's runs of stretches whose shape holds a chord of it
+    let spans_of = |cuts: &[f64],shapes: &[Vec<Piece>],f: usize| -> Vec<[f64;2]> {
+        let mut out: Vec<[f64;2]> = Vec::new();
+        for (k,sh) in shapes.iter().enumerate() {
+            if !sh.iter().any(|p| matches!(p,Piece::Chord {face,..} if *face == f)) { continue }
+            match out.last_mut() { Some(r) if r[1] == cuts[k] => r[1] = cuts[k+1],_ => out.push([cuts[k],cuts[k+1]]) }
+        }
+        out
+    };
+    // **where a face's fold enters or leaves its reach**: the wall's side there turns from the reach's
+    // end to the fold, so a stretch is cut there and the wall's pieces parted there, each side one
+    // polynomial (a cut within the grain of another is that one)
+    let (cuts,shapes,breaks) = {
+        let mut found: Vec<(usize,f64)> = Vec::new();
+        for f in 0..read.faces.len() {
+            for [lo,hi] in spans_of(&cuts,&shapes,f) {
+                let looks = ((LOOKS as f64*(hi-lo)/(b-a).max(1e-300)).ceil() as usize).max(64);
+                let at = |k: usize| if k == looks { hi } else { lo+(hi-lo)*k as f64/looks as f64 };
+                let mut was = folded(f,lo)?;
+                for k in 1..=looks {
+                    let now = folded(f,at(k))?;
+                    if now == was { continue }
+                    let (mut x,mut y) = (at(k-1),at(k));
+                    while y-x > 1e-15*(b-a).max(1.)*(1.+x.abs()) {
+                        let m = 0.5*(x+y);
+                        if m <= x || m >= y { break }
+                        if folded(f,m)? == was { x = m } else { y = m }
+                    }
+                    found.push((f,y));
+                    was = now;
+                }
+            }
+        }
+        let (mut cuts,mut shapes) = (cuts,shapes);
+        let mut breaks: Vec<Vec<f64>> = vec![Vec::new();read.faces.len()];
+        for (f,x) in found {
+            let k = cuts.partition_point(|&c| c <= x).clamp(1,cuts.len()-1)-1;
+            let at = if x-cuts[k] <= grain { cuts[k] } else if cuts[k+1]-x <= grain { cuts[k+1] } else {
+                cuts.insert(k+1,x);
+                let sh = shapes[k].clone();
+                shapes.insert(k+1,sh);
+                x
+            };
+            if crate::debug() { eprintln!("general: face {f}'s fold enters or leaves its reach at {at:.9}") }
+            breaks[f].push(at);
+        }
+        (cuts,shapes,breaks)
+    };
     let line_numbers = |x: V,y: V| vec![x[0],x[1],x[2],y[0],y[1],y[2]];
     // **the bearers**: each sharp edge's line carried over the whole roll; each face's characteristic
-    // line over each stretch of the roll it comes near the face
+    // line, the part of it its wall is read over (`kept`), over each run of stretches holding a chord
+    // of the face
     let mut bearers: Vec<Bearer> = Vec::new();
     for (e,x) in read.edges.iter().enumerate() {
         let Some(([p0,p1],Some(_))) = *x else { continue };
         let numbers = |s: f64| -> Result<Vec<Vec<f64>>,Unbuilt> { let m = posed(s)?; Ok(vec![line_numbers(m.point(p0),m.point(p1))]) };
-        let sheet = sheets(1,&numbers,[a,b],exact)?.remove(0);
+        let sheet = sheets(1,&numbers,[a,b],exact,&[])?.remove(0);
         bearers.push(Bearer {sheet:Arc::new(sheet),of:Bears::Edge(e)});
     }
-    for (f,(n,_)) in read.faces.iter().enumerate() {
-        let face = &tool.faces[f];
-        let corners: Vec<V> = face.loops.iter().flatten().map(|c| tool.vertices[tool.ends(c)[0] as usize].p).collect();
-        let middle = scale(corners.iter().fold([0.;3],|acc,&p| add(acc,p)),1./corners.len().max(1) as f64);
-        // (its characteristic line read as far as the face's reach about its middle either way from
-        // the line's point nearest the middle: every chord of the face lies within the face, so
-        // within that reach of the middle, and of that point along the line)
-        let reach = corners.iter().map(|&p| distance(p,middle)).fold(0.,f64::max);
-        let (n,q) = (*n,middle);
-        let near = |s: f64| -> Result<bool,Unbuilt> { Ok(line(path,n,q,s)?.is_some_and(|(c,_)| distance(c,q) < reach)) };
-        for span in runs(&near,&|s| Ok(line(path,n,q,s)?.is_some()),[a,b])? {
+    for f in 0..read.faces.len() {
+        for span in spans_of(&cuts,&shapes,f) {
             let numbers = |s: f64| -> Result<Vec<Vec<f64>>,Unbuilt> {
-                let (c,d) = line(path,n,q,s)?.ok_or_else(|| Unbuilt::Failed("a face's characteristic line lost partway".into()))?;
+                let (c,d,[lo,hi]) = kept(f,s)?.ok_or_else(|| Unbuilt::Failed("a face's characteristic line lost partway".into()))?;
                 let m = posed(s)?;
-                Ok(vec![line_numbers(m.point(add(c,scale(d,-reach))),m.point(add(c,scale(d,reach))))])
+                Ok(vec![line_numbers(m.point(add(c,scale(d,lo))),m.point(add(c,scale(d,hi))))])
             };
-            if crate::debug() { eprintln!("general: face {f}'s characteristic line near it over [{:.6}, {:.6}]",span[0],span[1]) }
-            let sheet = sheets(1,&numbers,span,exact)?.remove(0);
-            bearers.push(Bearer {sheet:Arc::new(sheet),of:Bears::Face {face:f,q,n,reach}});
+            if crate::debug() { eprintln!("general: face {f}'s characteristic line over [{:.6}, {:.6}]",span[0],span[1]) }
+            let within: Vec<f64> = breaks[f].iter().copied().filter(|&x| x > span[0] && x < span[1]).collect();
+            let sheet = sheets(1,&numbers,span,exact,&within)?.remove(0);
+            bearers.push(Bearer {sheet:Arc::new(sheet),of:Bears::Face {face:f}});
         }
     }
-    // `end`'s `u` on bearer `bi` at `s`, under twist `w`
-    let u_of = |bi: usize,w: &Twist,end: End,s: f64| -> Result<f64,Unbuilt> {
+    // `end`'s `u` on bearer `bi` at `s`, at instant `w`
+    let u_of = |bi: usize,w: &Moving,end: End,s: f64| -> Result<f64,Unbuilt> {
         match bearers[bi].of {
             Bears::Edge(e) => {
                 let v = tool.edges[e].v;
                 Ok(match end {
                     End::Vertex(x) if x == v[0] => 0.,
                     End::Vertex(x) if x == v[1] => 1.,
-                    End::Root {face,..} => { let [g0,g1] = read.along(w,face,e); -g0/g1 }
-                    End::Vertex(_) => return Err(Unbuilt::Failed("a stretch's end off its edge".into())),
+                    End::Root {face,..} => { let [g0,g1] = read.along(&w.w,face,e); -g0/g1 }
+                    End::Vertex(_) | End::Fold {..} => return Err(Unbuilt::Failed("a stretch's end off its edge".into())),
                 })
             }
-            Bears::Face {q,n,reach,..} => {
-                let (c,d) = line(path,n,q,s)?.ok_or_else(|| Unbuilt::Failed("a face's characteristic line lost partway".into()))?;
-                Ok((dot(sub(read.point(w,end),c),d)+reach)/(2.*reach))
+            Bears::Face {face,..} => {
+                let (c,d,[lo,hi]) = kept(face,s)?.ok_or_else(|| Unbuilt::Failed("a face's characteristic line lost partway".into()))?;
+                Ok((dot(sub(read.point(w,end),c),d)-lo)/(hi-lo))
             }
         }
     };
@@ -723,7 +997,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
             }
             Ok(out)
         };
-        let made = if moving.is_empty() { Vec::new() } else { sheets(2*moving.len(),&numbers,span,exact)? };
+        let made = if moving.is_empty() { Vec::new() } else { sheets(2*moving.len(),&numbers,span,exact,&[])? };
         let made: Vec<Arc<Sheet>> = made.into_iter().map(Arc::new).collect();
         let w = [twist(span[0])?,twist(span[1])?];
         for (p,&bi) in shape.iter().zip(&on) {
@@ -761,56 +1035,99 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         None => vec![(&breps[x],&surfaces[x])],
         Some(w) => w.iter().map(|(b,s)| (b,s)).collect(),
     } };
-    let mut given: Vec<Given> = Vec::new();
-    let mut per_run: Vec<Given> = Vec::new();
-    for x in 0..held.len() { for y in x+1..held.len() {
+    // (each two bearers met on their own, across the cores — their crossings beside a path traced a
+    // second or more a pair, 28 s of the hypoid's build one after another — and gathered in the
+    // pairs' order, as they were)
+    let pairs: Vec<(usize,usize)> = (0..held.len()).flat_map(|x| (x+1..held.len()).map(move |y| (x,y))).collect();
+    let met_pairs = crate::util::par::map_in_order(&pairs,|&(x,y)| -> Result<(Option<Given>,Vec<Given>),Unbuilt> {
+        let mut per_run: Vec<Given> = Vec::new();
         let (bi,bj) = (held[x],held[y]);
         let mut curves = Vec::new();
+        let mut births: Vec<V> = Vec::new();
         match (bearers[bi].of,bearers[bj].of) {
             // **two edges with a vertex in common**: its path, a rail of both
             (Bears::Edge(e),Bears::Edge(e2)) => {
                 let (v,v2) = (tool.edges[e].v,tool.edges[e2].v);
                 for i in 0..2 { if v2.contains(&v[i]) { curves.push(Curve::Rail(bearers[bi].sheet.clone(),i as f64)) } }
-                // (and where the two fans cross away from it: a given meeting is the whole of it,
-                // and two edges' fans from one corner cross a second time beside its path — the
-                // cube tumbling 5°, its top front edge's fan and its top side edge's, the hole
-                // between them left open — traced from where an edge of either crosses the other)
-                if !curves.is_empty() {
-                    let beside = |a: &Brep,sa: &Surface,b: &Brep,sb: &Surface| -> Vec<Curve> {
-                        beside_rails(a,sa,b,sb,&curves,tol).into_iter().map(|c| ended_on_rails(c,a,sa,b,sb,&curves,tol)).collect()
-                    };
-                    if split[x].is_none() && split[y].is_none() {
-                        let met = beside(&breps[x],&surfaces[x],&breps[y],&surfaces[y]);
-                        curves.extend(met);
-                    } else {
-                        for (a,sa) in pieces(x) { for (b,sb) in pieces(y) {
-                            let met = beside(a,sa,b,sb);
-                            if crate::debug() { for c in &met { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: given between bearers {bi} and {bj}, run by run: {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
-                            if !met.is_empty() { per_run.push(Given {surfaces:[sa.clone(),sb.clone()],curves:met,touches:Vec::new()}) }
-                        } }
-                    }
-                }
             }
             // **a face and an edge of it**: the path of where the face's chord reaches the edge, where
-            // the two touch — over each stretch whose shape holds that end, so each piece ends where
-            // the end is born or passes a vertex
+            // the two touch — over each stretch whose shape holds that end on a chord of the face, so
+            // each piece ends where the end is born or passes a vertex, and none is given where the
+            // face's chord there is buried (`Tool::fold`) and its wall holds no face
             (Bears::Edge(e),Bears::Face {face,..}) | (Bears::Face {face,..},Bears::Edge(e)) => {
                 let end = End::Root {edge:e,face};
                 let span = if let Bears::Face {..} = bearers[bi].of { bearers[bi].sheet.span() } else { bearers[bj].sheet.span() };
+                let holds = |shape: &[Piece]| shape.iter().any(|p| matches!(p,Piece::Chord {face:f,ends} if *f == face && ends.contains(&end)));
+                let given_at = |k: usize| k < shapes.len() && cuts[k] >= span[0] && cuts[k+1] <= span[1] && holds(&shapes[k]);
                 for (k,shape) in shapes.iter().enumerate() {
-                    if cuts[k] < span[0] || cuts[k+1] > span[1] || !shape.iter().any(|p| p.ends().contains(&end)) { continue }
+                    // (each end of a run of the path — where the face's fold passes the edge, or the
+                    // face's chord there is born or dies — a corner a crossing of the two walls
+                    // beside their path may be born at, `beside_rails`, `completed`)
+                    // (not at an end of the roll, where the walls end on the tool posed there)
+                    if given_at(k) && k > 0 && !given_at(k-1) { births.push(posed(cuts[k])?.point(read.point(&twist(cuts[k])?,end))) }
+                    if given_at(k) && k+1 < shapes.len() && !given_at(k+1) { births.push(posed(cuts[k+1])?.point(read.point(&twist(cuts[k+1])?,end))) }
+                    if cuts[k] < span[0] || cuts[k+1] > span[1] || !holds(shape) { continue }
                     let numbers = |s: f64| -> Result<Vec<Vec<f64>>,Unbuilt> {
                         let y = posed(s)?.point(read.point(&twist(s)?,end));
                         Ok(vec![line_numbers(y,y)])
                     };
-                    curves.push(Curve::Rail(Arc::new(sheets(1,&numbers,[cuts[k],cuts[k+1]],exact)?.remove(0)),0.));
+                    curves.push(Curve::Rail(Arc::new(sheets(1,&numbers,[cuts[k],cuts[k+1]],exact,&[])?.remove(0)),0.));
                 }
             }
             _ => {}
         }
+        // **where two walls sharing a rail cross away from it**: a given meeting is the whole of it,
+        // and two edges' fans from one corner cross a second time beside its path — the cube
+        // tumbling 5°, its top front edge's fan and its top side edge's, the hole between them left
+        // open — as an edge's fan crosses the wall of a face of it beside the path of the chord's
+        // end on the edge, from where the face's fold passes the edge (#942 T1d-hypoid: the
+        // hypoid's tooth, its flank's wall and its toe edge's fan, a piece of the fan both the
+        // boundary and off it): traced from where an edge of either crosses the other, where the
+        // two meet at an angle. An edge's fan touches its face's wall all along their path, so a
+        // seed where the two meet shallowly lies beside that touch and its trace is ill-conditioned
+        // (`SHALLOWEST`); a branch's end at the corner where it is born is carried onto it
+        // (an edge's fan and the wall of a face of it are always given their meeting, its paths
+        // and crossings, none at all where they have none: where the face's chord ends on the edge
+        // on the side its fold buries, the wall is not read there, and the fan's side along that end
+        // lies on the sheet folded away, grazing the wall's fold within a ten-thousandth — a search
+        // the trim refused, reading more boxes than any search may, #942 T1d-hypoid)
+        let of_face = match (bearers[bi].of,bearers[bj].of) {
+            (Bears::Edge(e),Bears::Face {face}) | (Bears::Face {face},Bears::Edge(e)) => read.faces[face].1.contains(&e),
+            _ => false,
+        };
+        if !curves.is_empty() || of_face {
+            let shallowest = if of_face { SHALLOWEST } else { 0. };
+            let beside = |a: &Brep,sa: &Surface,b: &Brep,sb: &Surface| -> Vec<Curve> {
+                // (an edge's fan and its face's wall: each branch cut to the stretches of it lying on
+                // both walls — a trace runs on past where a wall ends, over its sheet carried on, 1.5e-2
+                // off it where the roll ends beside the corner — and carried on to its corner)
+                beside_rails(a,sa,b,sb,&curves,shallowest,tol).into_iter().flat_map(|c| if of_face {
+                    on_wall(&c,sa,tol).into_iter().flat_map(|c| on_wall(&c,sb,tol))
+                        .flat_map(|c| completed(c,[sa,sb],[parameters(a,tol),parameters(b,tol)],&births,size,tol)).collect()
+                } else { vec![ended_on_rails(c,a,sa,b,sb,&curves,tol)] }).collect()
+            };
+            if split[x].is_none() && split[y].is_none() {
+                let met = beside(&breps[x],&surfaces[x],&breps[y],&surfaces[y]);
+                curves.extend(met);
+            } else {
+                for (a,sa) in pieces(x) { for (b,sb) in pieces(y) {
+                    let met = beside(a,sa,b,sb);
+                    if crate::debug() { for c in &met { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: given between bearers {bi} and {bj}, run by run: {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
+                    if !met.is_empty() { per_run.push(Given {surfaces:[sa.clone(),sb.clone()],curves:met,touches:Vec::new()}) }
+                } }
+            }
+        }
         if crate::debug() { for c in &curves { eprintln!("general: given between bearers {bi} and {bj}: {} from {:?} to {:?}",c.kind(),crate::query::curve_domain(c).map(|d| c.point(d[0])),crate::query::curve_domain(c).map(|d| c.point(d[1]))) } }
-        if !curves.is_empty() { given.push(Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves,touches:Vec::new()}) }
-    } }
+        let given = (!curves.is_empty() || of_face).then(|| Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves,touches:Vec::new()});
+        Ok((given,per_run))
+    });
+    let mut given: Vec<Given> = Vec::new();
+    let mut per_run: Vec<Given> = Vec::new();
+    for met in met_pairs {
+        let (g,runs) = met?;
+        given.extend(g);
+        per_run.extend(runs);
+    }
     // **each bearer's whole meeting with each face of the tool at either end**
     let ends = [posed(a)?,posed(b)?];
     let poses: Vec<Brep> = ends.iter().map(|m| tool.moved(m)).collect();
@@ -902,14 +1219,17 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
         let rim = |i: usize,j: usize| -> Vec<Curve> {
             if stretches[i][1] == stretches[j][0] { vec![Curve::Rim(sheet.clone(),stretches[i][1])] } else { Vec::new() }
         };
+        // (each two stretches met on their own, across the cores, gathered in order: a hundred and
+        // more pairs a fan, 9 s of the hypoid's build one after another)
+        let ij: Vec<(usize,usize)> = (0..stretches.len()).flat_map(|i| (i+1..stretches.len()).map(move |j| (i,j))).collect();
+        let met = crate::util::par::map_in_order(&ij,|&(i,j)| beside_rails(&pieces[i],&alone[i],&pieces[j],&alone[j],&rim(i,j),0.,tol));
         let mut crossing: Vec<(usize,usize,Vec<Curve>)> = Vec::new();
-        for i in 0..stretches.len() { for j in i+1..stretches.len() {
-            let met = beside_rails(&pieces[i],&alone[i],&pieces[j],&alone[j],&rim(i,j),tol);
+        for (&(i,j),met) in ij.iter().zip(met) {
             if !met.is_empty() {
                 if crate::debug() { eprintln!("general: a fan crossing itself: its stretches over {:?} and {:?}, {} curves",stretches[i],stretches[j],met.len()) }
                 crossing.push((i,j,met));
             }
-        } }
+        }
         if crossing.is_empty() { continue }
         // the fewest cuts parting every two crossing stretches: each pair's first cut at its later
         // stretch where no cut already parts it (the earliest-ending first)
@@ -938,7 +1258,7 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
         for g in 0..runs { for h in g+1..runs {
             let rails: Vec<Curve> = if out[g].0[1] == out[h].0[0] { vec![Curve::Rim(sheet.clone(),out[g].0[1])] } else { Vec::new() };
             let ((rg,sg),(rh,sh)) = (&walls[g],&walls[h]);
-            let mut met: Vec<Curve> = beside_rails(rg,sg,rh,sh,&rails,tol);
+            let mut met: Vec<Curve> = beside_rails(rg,sg,rh,sh,&rails,0.,tol);
             // (where the two runs share a rim, their crossing from each pinch on it built, and any
             // branch traced to a pinch — the trace's poor copy of it — given no more)
             if let Some(rim) = rails.first() {
@@ -1228,11 +1548,18 @@ fn on_cylinder(b: &mut Brep,sheet: &Sheet,frame: &Frame) {
 /// (`family::Sheet`), read at one set of stations: the stretch cut into pieces, each a quintic through
 /// the numbers at its six Gauss–Lobatto stations, and a piece halved where any wall's quintic stands
 /// off its numbers by more than `exact` midway between two of its stations.
-fn sheets(count: usize,numbers: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,Unbuilt>,[a,b]: [f64;2],exact: f64) -> Result<Vec<Sheet>,Unbuilt> {
-    let mut todo: Vec<[f64;2]> = (0..FIRST_PIECES).rev().map(|k| {
+fn sheets(count: usize,numbers: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,Unbuilt>,[a,b]: [f64;2],exact: f64,breaks: &[f64]) -> Result<Vec<Sheet>,Unbuilt> {
+    // (first pieces parted at `breaks` where it has them, where its numbers turn — a face's wall
+    // where its fold enters its reach — and in `FIRST_PIECES` equal ones where it has none)
+    let mut todo: Vec<[f64;2]> = if breaks.is_empty() { (0..FIRST_PIECES).rev().map(|k| {
         let w = (b-a)/FIRST_PIECES as f64;
         [a+w*k as f64,if k+1 == FIRST_PIECES { b } else { a+w*(k+1) as f64 }]
-    }).collect();
+    }).collect() } else {
+        let mut at: Vec<f64> = std::iter::once(a).chain(breaks.iter().copied()).chain(std::iter::once(b)).collect();
+        at.sort_by(|x,y| x.total_cmp(y));
+        at.dedup();
+        at.windows(2).rev().map(|w| [w[0],w[1]]).collect()
+    };
     let (mut spans,mut at) = (Vec::new(),Vec::new());
     let mut nodes: Vec<Vec<Vec<f64>>> = vec![Vec::new();count];
     while let Some([lo,hi]) = todo.pop() {
@@ -1270,31 +1597,44 @@ fn sheets(count: usize,numbers: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,Unbuilt>,[a
 /// the plane, `n · v₀ + x · (n × ω)`, and the line where it vanishes runs square to `n × ω` within
 /// the plane; none where `n × ω` vanishes (the plane turning about its own normal, or not turning).
 fn line(path: &Trajectory,n: V,q: V,s: f64) -> Result<Option<(V,V)>,Unbuilt> {
-    let w = Twist::body(path.at(s)?);
+    Ok(characteristic(n,q,&Twist::body(path.at(s)?)))
+}
+
+/// `line` under the twist `w` read on the tool.
+fn characteristic(n: V,q: V,w: &Twist) -> Option<(V,V)> {
     let g = cross(n,w.omega);
     let gg = dot(g,g);
     // (where `n × ω` all but vanishes the line stands far off, past any face's reach about `q`,
     // where `near` reads it so: only none at all is none, #942 F6)
-    if !(gg > 0.) { return Ok(None) }
+    if !(gg > 0.) { return None }
     let c = add(q,scale(g,(-dot(n,w.v0)-dot(q,g))/gg));
-    Ok(Some((c,scale(cross(n,g),1./gg.sqrt()))))
+    Some((c,scale(cross(n,g),1./gg.sqrt())))
 }
 
-/// The stretches of `[a, b]` where `holds`, read at `LOOKS` points and each run a step on past
-/// either end where `read` (what `holds` reads is defined there): so a surface over one runs on past
-/// where it holds.
-fn runs(holds: &dyn Fn(f64) -> Result<bool,Unbuilt>,read: &dyn Fn(f64) -> Result<bool,Unbuilt>,[a,b]: [f64;2]) -> Result<Vec<[f64;2]>,Unbuilt> {
-    let looks: Vec<f64> = (0..=LOOKS).map(|k| if k == LOOKS { b } else { a+(b-a)*k as f64/LOOKS as f64 }).collect();
-    let mut found: Vec<[usize;2]> = Vec::new();
-    for (k,&s) in looks.iter().enumerate() {
-        if !holds(s)? { continue }
-        match found.last_mut() { Some(r) if r[1]+1 == k => r[1] = k,_ => found.push([k,k]) }
+/// **The rate by the roll of the body twist** (`Twist::body`) at `s`: what a face's fold is read
+/// from (`Tool::fold`). A constant twist, or one placed first, carries what it carries at one body
+/// twist, its rate nought; one constant twist seen from another — the meshing pairs' motion, the
+/// source turning `ξ` and the observer `η` — reads `V = ξ − Ad(S⁻¹) η`, whose rate is the bracket
+/// `[V, ξ] = (ω × ω_ξ, ω × v_ξ − ω_ξ × v₀)`; a path of pieces its piece's. Any other motion is read
+/// by Richardson's extrapolation of central differences, which a twist read at a thousandth of the
+/// roll either way carries to the rounding's square root and past.
+fn rate(path: &Trajectory,s: f64) -> Result<Twist,Unbuilt> {
+    use crate::trajectory::Trajectory as T;
+    match path {
+        T::Twist(_) | T::Placed {..} => return Ok(Twist {omega:[0.;3],v0:[0.;3]}),
+        T::Relative {source,observer} => if let (T::Twist(x),T::Twist(_)) = (&**source,&**observer) {
+            let (v,xi) = (Twist::body(path.at(s)?),x.twist());
+            return Ok(Twist {omega:cross(v.omega,xi.omega),v0:sub(cross(v.omega,xi.v0),cross(xi.omega,v.v0))})
+        },
+        T::Pieces(pieces) => if let Some(p) = pieces.pieces().iter().find(|p| p.over[0] <= s && s <= p.over[1]) {
+            if !matches!(p.path,T::Pieces(_)) { return rate(&p.path,s) }
+        },
+        _ => {}
     }
-    let mut out = Vec::new();
-    for [i,j] in found {
-        let i = if i > 0 && read(looks[i-1])? { i-1 } else { i };
-        let j = if j < LOOKS && read(looks[j+1])? { j+1 } else { j };
-        if j > i { out.push([looks[i],looks[j]]) }
-    }
-    Ok(out)
+    let body = |t: f64| -> Result<[f64;6],Unbuilt> { let w = Twist::body(path.at(t)?); Ok([w.omega[0],w.omega[1],w.omega[2],w.v0[0],w.v0[1],w.v0[2]]) };
+    let h = 1e-3*s.abs().max(1.);
+    let central = |h: f64| -> Result<[f64;6],Unbuilt> { let (p,m) = (body(s+h)?,body(s-h)?); Ok(std::array::from_fn(|k| (p[k]-m[k])/(2.*h))) };
+    let (d1,d2) = (central(h)?,central(0.5*h)?);
+    let r: [f64;6] = std::array::from_fn(|k| (4.*d2[k]-d1[k])/3.);
+    Ok(Twist {omega:[r[0],r[1],r[2]],v0:[r[3],r[4],r[5]]})
 }

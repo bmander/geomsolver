@@ -782,8 +782,9 @@ fn clipped_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,bl
 }
 
 /// **A bound on how far `b` reaches from the line through `o` along the unit `z`**: a face on a
-/// cylinder about the line its radius; a plane square to it its edges' (a distance from the line is
-/// convex, so its greatest over a plane region is on its boundary) — a line's ends, a circle about
+/// cylinder about the line its radius; a plane square to it, or a cone about the line, its edges' (a
+/// distance from the line is convex over a plane, and affine along each line of a cone about it, so
+/// its greatest over either is on its boundary) — a line's ends, a circle about
 /// the line its radius, any other curve its box's corners; any other face the corners of the
 /// solid's box (`Brep::bounds`, which holds its surfaces), the greatest over a box being at a
 /// corner.
@@ -802,9 +803,14 @@ fn radial_reach(b: &Brep,o: V,z: V) -> f64 {
         EdgeCurve::Curve(c) => corners(c.bounds(e.t)),
         EdgeCurve::Degenerate => radial(b.vertices[e.v[0] as usize].p),
     };
+    let edges = |f: &crate::topo::Face| f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max);
     b.faces.iter().map(|f| match &f.surface {
         Surface::Cylinder(frame,r) if coaxial(frame) => r.abs(),
-        Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => f.loops.iter().flatten().map(|c| edge(&b.edges[c.edge as usize])).fold(0.,f64::max),
+        // (a cone about the line: its distance from it affine along each line of the cone, so at
+        // most its edges' — the gear's blank, its four faces cones, read 43.8 from its box's
+        // corners where its reach is 30.9)
+        Surface::Plane(frame) if norm(cross(frame.z,z)) <= 1e-12 => edges(f),
+        Surface::Cone(frame,..) if coaxial(frame) => edges(f),
         _ => *whole.get_or_init(|| corners(bounds)),
     }).fold(0.,f64::max)
 }
@@ -1153,9 +1159,47 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
     let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
     crate::util::meter::go_on()?;
     let trim = road_trim(tool,tol);
-    let swept = trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    // **the sweep within the blank's reach, cut from a blank** (#942 T1d-hypoid): the sweep is wanted
+    // only where the blank is. Seen from a turn — the gear a tooth cuts, turning about its axis —
+    // within a cylinder about that axis just past the blank's reach from it and its span along it
+    // (`HUGGED`; no round number, so its faces stand clear of the blank's); else the blank's box
+    // grown `REACH` of its size; the sweep there and the blank
+    // cut alike. Asked first: the hypoid's tooth runs past the gear's blank at its heel, where its
+    // flank's fold meets its heel edge's fan outside the blank, the whole's trim refused there (at
+    // 31.8 from the axis, the blank's reach 30.9) after 50 s of the build's 156. Where the region's
+    // trim refuses, the whole is asked, as it was before
+    let reach = blank.map(|b| {
+        let turned = match path {
+            Trajectory::Relative {observer,..} => observer.screw().filter(|s| s.ratio != 0.),
+            _ => None,
+        };
+        match turned {
+            Some(s) => {
+                let (o,z) = (s.origin,unit(s.axis));
+                let [lo,hi] = axial_span(b,o,z);
+                // (its ends as near the blank's as its side: `REACH` of the blank's size took the
+                // tooth's toe a quarter of the gear's width below the blank into the trim)
+                let r = radial_reach(b,o,z);
+                super::trim::Reach::Turned {o,z,r:r*(1.+HUGGED),span:[lo-HUGGED*r,hi+HUGGED*r]}
+            }
+            None => { let (lo,hi) = b.bounds(); let g = REACH*b.size(); super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)) }
+        }
+    });
+    let swept = match reach.map(|reach| super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})) {
+        Some(Ok((swept,_))) => swept,
+        Some(Err(why @ Unbuilt::Budget {..})) => return Err(why),
+        other => {
+            if let (Some(Err(why)),true) = (&other,crate::debug()) { eprintln!("swept: the sweep's trim within the blank's reach refused ({why:?}): the whole trimmed") }
+            trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?
+        }
+    };
     cut_blank(swept,blank,tol)
 }
+
+/// How far past the blank's reach from the axis a turn sees it from the cylinder the general road's
+/// sweep is trimmed within stands, of that reach (`general_built`): the blank's within a few
+/// thousandths, so what the sweep does past the blank is not asked.
+const HUGGED: f64 = 0.00317;
 
 /// The candidates trimmed by membership (`trim::trim`), and where that is refused and
 /// `SOLVENT_SWEEP_DUMP` names a directory, what the trim was given written there (`dump_trim`,
@@ -1775,12 +1819,36 @@ pub(crate) fn judge_within(built: &Brep,swept: &Swept,domain: &Brep,blank: Optio
     // face was not read facing out (where every face was, the solid's point location holds the side
     // each faces away from, and the volume, the sum of their fluxes, is that of what it holds:
     // above nothing)
-    if turned.iter().any(|r| r.is_none()) && crate::props::volume(built) < 0. {
+    if turned.iter().any(|r| r.is_none()) && inside_out(built) {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
             .or_else(|| witnesses.first().copied()).unwrap_or_else(|| built.vertices.first().map_or([0.;3],|v| v.p));
         return Err(Unbuilt::Wrong {at:inside,held:false})
     }
     Ok(())
+}
+
+/// **Whether a solid's boundary is turned inside out** (`judge_within`): its volume below nothing.
+/// Read first off a coarse mesh of it — its triangles' signed volume, off the solid's by at most its
+/// sag across its area, settles the sign where it stands clear of that four times over — and else
+/// exactly (`props::volume`): only the sign is asked, and the exact volume of the hypoid's sweep, its
+/// 213 faces a face family's walls, took 23 of its build's 104 s.
+fn inside_out(built: &Brep) -> bool {
+    use crate::util::space::{cross,norm};
+    let (lo,hi) = built.bounds();
+    let size = crate::util::space::distance(lo,hi);
+    // (each mesh a third as coarse as the last, its sag a ninth)
+    for bar in [0.05,0.0167,0.0056] {
+        let Ok(m) = crate::mesh::mesh(built,bar*size,0.5) else { break };
+        let (mut v,mut area) = (0f64,0f64);
+        for t in &m.tris {
+            let [a,b,c] = t.map(|i| m.pts[i as usize]);
+            v += dot(a,cross(b,c))/6.;
+            area += 0.5*norm(cross(sub(b,a),sub(c,a)));
+        }
+        if !v.is_finite() { break }
+        if v.abs() > 4.*m.sag*area { return v < 0. }
+    }
+    crate::props::volume(built) < 0.
 }
 
 /// The span of a cylinder's or a cone's face along its rulings (its surface's `v`), read off its
