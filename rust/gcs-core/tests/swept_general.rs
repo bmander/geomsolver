@@ -147,14 +147,15 @@ fn the_general_roads_candidates_are_written_and_read_back_whole() {
 }
 
 /// **A refused trim replays from its dump to the same refusal** (#942 F5's gate, fast): the cube
-/// tumbling 10° either way, refused in its trim, gives the same refusal run again from the files —
+/// tumbling 12° either way, refused in its trim, gives the same refusal run again from the files —
 /// every wall written with the number it is shared by, so the walls read back are shared as they
 /// were built (a wall's inverse starts from its last foot: read back apart, the refusal's points
 /// moved in their last digits). The 15° cube replayed its refusal here until #942 T1d-cube built
-/// it; the bench's 75° cube, below, replays one with a fan cut into runs.
+/// it, and the 10° cube until #1034 did (two meetings crossing at a shallow angle polished onto their
+/// crossing, `meeting::crossings`); the bench's 75° cube, below, replays one with a fan cut into runs.
 #[test]
 fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
-    let why = replayed_alike(&cube_trimming(10.),"cube-10-dump");
+    let why = replayed_alike(&cube_trimming(12.),"cube-12-dump");
     assert!(why.contains("a meeting the trim was not given"),"{why}");
 }
 
@@ -327,3 +328,4 @@ fn the_paths_the_general_road_gives_lie_on_both_their_walls() {
     assert!(read > 0);
     eprintln!("{} candidates, {read} given rails",candidates.len());
 }
+

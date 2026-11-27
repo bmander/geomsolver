@@ -1436,7 +1436,11 @@ crossed by search (`meeting::crossings`: polished from each curve's own ends fir
 on the other curve is the meeting exactly, then from chords standing within reach and their sags,
 where they may cross within those or stand at a least of the chords' distance — #780 C2, whose
 contact ruling's foot a polish from chords crawled toward along two tangent curves and stopped
-4e-4 short of, after three thousand polishes) and the point polished onto all three surfaces
+4e-4 short of, after three thousand polishes; each polish alternating feet, then Gauss–Newton on
+`a(s) − b(t)` over both parameters, which closes in at a shallow crossing where alternating feet
+gain only `cos² θ` a step — #1034, a trace setting out from a touch beside a pipe's rail, its
+polish stopped 2e-3 along it from its start and cut there, the ball-end mill screwed then missing
+a cell) and the point polished onto all three surfaces
 (`shared_point`); and a cell too thin to mesh is read inside at its faces' points stepped in
 (`Complex::inside_points`). **Points along a shallow meeting are one by its reach** (A3): a
 crossing with a meeting is read to that meeting's `on_meeting` reach at the point, not the pool's
