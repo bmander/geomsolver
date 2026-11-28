@@ -1047,7 +1047,7 @@ pub fn fit_net_each(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,m
 
 /// The net whose rows along `u` are `rows` (on one knot vector), read at `tv` along `v`: each
 /// column of their poles interpolated along `v` at degree `dv`.
-fn net_of_rows(rows: &[BSpline],tv: &[f64],dv: usize) -> Option<Net> {
+pub(crate) fn net_of_rows(rows: &[BSpline],tv: &[f64],dv: usize) -> Option<Net> {
     let cols: Vec<BSpline> = (0..rows[0].poles.len()).map(|i| interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),tv,dv))
         .collect::<Option<_>>()?;
     Some(Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),

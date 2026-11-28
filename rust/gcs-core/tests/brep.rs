@@ -1568,6 +1568,31 @@ fn a_sector_patterned_is_its_whole_revolution() {
     }
 }
 
+/// **A sector through the axis patterned is its whole** (`brep::pattern`): a disc's slice a pitch
+/// wide, its two sides meeting along the axis, turned into its copies — what the sides share is
+/// left out with them, and the caps' pieces close into whole discs, no vertex at their middle — is
+/// the disc: three faces, its volume.
+#[test]
+fn a_disc_sliced_through_its_axis_patterned_is_the_disc() {
+    use gcs_core::brep::pattern::pattern;
+    use gcs_core::space::{add,scale};
+    let disc_prism = prism(&gcs_core::brep::build::disc([0.,0.,-6.],[0.,0.,1.],32.),0.,12.).unwrap();
+    for n in [3,7,30] {
+        let (from,pitch,r) = (2.7,TAU/n as f64,40.);
+        let dir = |a: f64| [a.cos(),a.sin(),0.];
+        let o = [0.,0.,-7.];
+        let frame = gcs_core::brep::geom::Frame::new(o,[0.,0.,1.],dir(from));
+        let wedge = Profile {origin:o,normal:[0.,0.,1.],names:vec![],loops:vec![vec![
+            ProfileEdge::Line {a:o,b:add(o,scale(dir(from),r))},ProfileEdge::Arc {frame,r,span:Some([0.,pitch])},
+            ProfileEdge::Line {a:add(o,scale(dir(from+pitch),r)),b:o}]]};
+        let slice = gcs_core::brep::boolean::combined(&disc_prism,&prism(&wedge,0.,14.).unwrap(),gcs_core::brep::boolean::Op::Common,1e-9).unwrap();
+        let built = pattern(&slice,[0.;3],[0.,0.,1.],n,1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
+        built.solid.check(1e-9).unwrap_or_else(|e| panic!("{n} copies: {e}"));
+        assert_eq!(built.solid.faces.len(),3,"{n} copies: two discs and a cylinder");
+        close(volume(&built.solid),PI*32.*32.*12.);
+    }
+}
+
 #[test]
 fn interior_samples_are_inside_and_no_deeper_than_they_are() {
     use gcs_core::brep::query::interior;

@@ -88,6 +88,11 @@ pub enum Reach {
     /// The cylinder of radius `r` about the line through `o` along the unit `z`, from `span[0]` to
     /// `span[1]` along it.
     Turned { o: V,z: V,r: f64,span: [f64;2] },
+    /// **One sector of that cylinder**: the part between the half-planes through its axis
+    /// at `from` and `from + pitch` radians about `z` from the unit `x` square to it — where a sweep
+    /// a turn about the axis carries onto itself `count` times is wanted one copy at a time, its
+    /// sides standing where the sweep is not.
+    Sector { o: V,z: V,x: V,r: f64,span: [f64;2],from: f64,pitch: f64 },
 }
 
 impl Reach {
@@ -95,7 +100,7 @@ impl Reach {
     pub fn bounds(&self) -> (V,V) {
         match *self {
             Reach::Box(lo,hi) => (lo,hi),
-            Reach::Turned {o,z,r,span} => {
+            Reach::Turned {o,z,r,span} | Reach::Sector {o,z,r,span,..} => {
                 let ends = span.map(|t| add(o,scale(z,t)));
                 // (a circle of radius `r` square to `z` reaches `r √(1 − z_k²)` along axis `k`)
                 let reach: V = std::array::from_fn(|k| r*(1.-z[k]*z[k]).max(0.).sqrt());
@@ -110,7 +115,9 @@ impl Reach {
         if !crate::boolean::overlap(&b,&own,r) { return false }
         match *self {
             Reach::Box(..) => true,
-            Reach::Turned {o,z,r: radius,..} => crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
+            // (a sector's no nearer than its cylinder's: its candidates are one copy's, within it)
+            Reach::Turned {o,z,r: radius,..} | Reach::Sector {o,z,r: radius,..} =>
+                crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
         }
     }
     /// The region as a solid.
@@ -118,6 +125,16 @@ impl Reach {
         match *self {
             Reach::Box(lo,hi) => crate::build::block(lo,hi),
             Reach::Turned {o,z,r,span} => crate::build::prism(&crate::build::disc(o,z,r),span[0],span[1]),
+            Reach::Sector {o,z,x,r,span,from,pitch} => {
+                use crate::build::{Profile,ProfileEdge};
+                let y = crate::util::space::cross(z,x);
+                let dir = |a: f64| add(scale(x,a.cos()),scale(y,a.sin()));
+                let (p0,p1) = (add(o,scale(dir(from),r)),add(o,scale(dir(from+pitch),r)));
+                let frame = crate::geom::Frame::new(o,z,dir(from));
+                let profile = Profile {origin:o,normal:z,names:Vec::new(),loops:vec![vec![ProfileEdge::Line {a:o,b:p0},
+                    ProfileEdge::Arc {frame,r,span:Some([0.,pitch])},ProfileEdge::Line {a:p1,b:o}]]};
+                crate::build::prism(&profile,span[0],span[1])
+            }
         }
     }
 }
@@ -687,7 +704,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     };
     let clock = crate::util::clock::Instant::now();
     // (within a region not a box, its box's corners outside it: the solid holds nothing there)
-    let within = matches!(trim.reach,Some(Reach::Turned {..}));
+    let within = matches!(trim.reach,Some(Reach::Turned {..} | Reach::Sector {..}));
     super::closed::judge_within(&out,&swept,domain,None,within,&[],tol)?;
     if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))

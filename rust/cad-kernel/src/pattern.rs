@@ -92,6 +92,13 @@ impl Kept {
     fn kept(self) -> bool { self != Kept::No }
 }
 
+/// **Whether every turn about the line through `o` along the unit `a` keeps `b`** (`Kept::of`, what
+/// a pattern joins across its sides): each face of revolution about the line, or a plane square to it.
+pub(crate) fn kept_by_turns(b: &Brep,o: V,a: V,tol: f64) -> bool {
+    let tol = tol.max(1e-9*(1.+b.size()));
+    b.faces.iter().all(|f| Kept::of(&f.surface,o,a,tol).kept())
+}
+
 /// The shift along `u` that turning surface `s` (of revolution about the axis) by `angle` makes:
 /// `+angle` or `-angle`, read off one of its points.
 fn shift(s: &Surface,turn: &Rigid,angle: f64,uv: Uv,tol: f64) -> Result<f64,String> {
@@ -152,6 +159,11 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     let (near_edges,far_edges) = (side_edges(sides[0]),side_edges(sides[1]));
     let vertices_of = |es: &[u32]| -> Vec<u32> { let mut v: Vec<u32> = es.iter().flat_map(|&e| sector.edges[e as usize].v).collect(); v.sort(); v.dedup(); v };
     let (near_vs,far_vs) = (vertices_of(&near_edges),vertices_of(&far_edges));
+    // **what the two sides share** — the axis, where a sector through it has its sides meet — is
+    // the turn's own: left out with the sides, as every copy's is, no vertex of it partnered and
+    // no face joined across it (a solid disc's pie slice: its caps' pieces close into whole discs)
+    let far_vs: Vec<u32> = far_vs.into_iter().filter(|v| near_vs.binary_search(v).is_err()).collect();
+    let joined: Vec<u32> = far_edges.iter().copied().filter(|e| near_edges.binary_search(e).is_err()).collect();
     // a far vertex is a near one turned a step
     let one = turn(1);
     let mut partner = vec![None;sector.vertices.len()];
@@ -166,14 +178,16 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     }
     // a far edge is a near one turned: by its ends, and its middle where two share them
     let mut edge_partner = vec![None;sector.edges.len()];
-    for &e in &far_edges {
+    // (a vertex on both sides, the axis's, is its own partner: the turn keeps it)
+    let to = |v: u32| if near_vs.binary_search(&v).is_ok() && partner[v as usize].is_none() { Some(v) } else { partner[v as usize] };
+    for &e in &joined {
         let ef = &sector.edges[e as usize];
         let m = ef.point((ef.t[0]+ef.t[1])/2.,&sector.vertices);
         let found = near_edges.iter().copied().filter_map(|n| {
             let en = &sector.edges[n as usize];
             let ends = en.v.map(Some);
-            let same = ends == [partner[ef.v[0] as usize],partner[ef.v[1] as usize]];
-            let other = ends == [partner[ef.v[1] as usize],partner[ef.v[0] as usize]];
+            let same = ends == [to(ef.v[0]),to(ef.v[1])];
+            let other = ends == [to(ef.v[1]),to(ef.v[0])];
             if !same && !other { return None }
             let d = distance(one.point(en.point((en.t[0]+en.t[1])/2.,&sector.vertices)),m);
             Some((d,n,same))
@@ -192,7 +206,7 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     let mut ring = vec![false;faces.len()];
     // the joins between pieces of a face that does not close round the axis (copy k's to copy k + 1's)
     let mut links: Vec<((usize,usize),(usize,usize))> = Vec::new();
-    for &e in &far_edges {
+    for &e in &joined {
         let (n,_) = edge_partner[e as usize].unwrap();
         let (fa,fb) = (across(e,sides[1])?,across(n,sides[0])?);
         if !(kept[fa].kept() && kept[fa] == kept[fb] && same_surface(&faces[fa].surface,&faces[fb].surface)
