@@ -1401,7 +1401,9 @@ of a thousandth of the ring stand beside them. (brep-bench's cadrs builds the ba
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
 edge's, its two triangles' summed (Bærentzen & Aanæs 2005) — exact for a closed mesh turned
-consistently outward, where it fell to the generalised winding number over every triangle. A vertex
+consistently outward, where it fell to the generalised winding number over every triangle; a point
+member or not (`Swept::member`) is read so at every stretch of the roll as well (the winding over
+every triangle there was nine tenths of the worm wheel's hobbing, 28 s of 31). A vertex
 with an edge not bounding exactly two triangles, and such an edge, has none, and is read by the
 winding. Zoning the leaning torus's sheet, where most of what is read is far from any pose of the
 tool, fell from over twenty-five minutes to thirty-six seconds. Held at four thousand points about a
@@ -2168,7 +2170,11 @@ bounds it, and the turn a lead on, `O(L/δ)`, carries the sheets of one tooth of
 next's) and the observer a turn. One tooth's elements that reach the reach in one window of the
 screw's turn (a point sliding along itself at no instant, its normal square to the rate, reaches
 nothing) are one candidate: fitted at degree 5 on one grid of the turn within a quarter of the
-tolerance, each two sharing their rail as one curve (laid by `build::sheets`; the trim meets no two
+tolerance — each element's sites across it and the run's along the turn halved only where a point
+between two misses, then graded so no span is more than twice a neighbour (`generated::refined`: a
+flank bends hardest at the window's ends, and a grid doubled all over to fit them was 65 × 257
+poles a flank, 108 MB of STEP, where one halved where it misses is 28 × 73) — each two sharing their
+rail as one curve (laid by `build::sheets`; the trim meets no two
 faces of one candidate); a concave corner in the reach, and a whole section reaching it, are
 refused by name. **One copy, patterned:** where one copy's turns
 about the observer's axis within the reach, read at its sheets' exact points, span a pitch less

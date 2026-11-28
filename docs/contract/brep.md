@@ -59,9 +59,18 @@ there), so the cubic and each pcurve's image stand within twice the bar of each 
 parameter, and their ends are the edge's vertices. The pieces are marched along the curve as long
 as the bar allows (a cubic's miss goes as the fourth power of its length, so each is shortened
 where it misses and the next lengthened by the fourth root of the bar over the miss), stopping at
-every break of the curve (a spline's knots; a trace's kinks, `Traced::kinks`, its points beside a
-stretch read on a parabola); joints where the curve is smooth share their rate and are double
-knots. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+every break of the curve (a spline's knots where it is no more than once differentiable, as many
+times over as its degree less one — across a cubic's simple knot its rate and curvature run on,
+and a cubic over several follows it, its miss measured as every piece's is: stopped at every knot,
+a worm wheel's flank's pcurves took three poles to each span of their edges' cubics, 290 beside
+105, at a thirtieth of the bar; a trace's kinks, `Traced::kinks`, its points beside a stretch read
+on a parabola; `step::breaks_of`); joints where the curve is smooth share their rate and are double
+knots. **Every use's pcurve is read before anything is written** (`step::pcurve_plan`, on every core
+with each use's distance off its face, `Brep::standing`), and written in the edges' order
+(`pcurve_written`), so the file does not depend on the cores that read it; an inverse pcurve's feet along one edge
+are each sought from the foot found nearest it (`topo::Feet`), kept within the edge's tolerance of
+the edge's point and else sought again from the line between its ends, as `inverse_from` seeks
+any. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
 parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
 points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
 wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a

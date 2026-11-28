@@ -427,52 +427,63 @@ fn unfitted(why: &str) -> Unbuilt { Unbuilt::Failed(format!("the thread's genera
 /// **The run's sheets fitted on one grid of the turn** over `window`, each within `tol`: each
 /// element's rows across it interpolated at every turn of the grid, through its exact points (its
 /// rails the corners' points, shared with its neighbours), then their poles along the turn
-/// (`nurbs::net_of_rows`); the grid across each element and the grid of the turn doubled where a
-/// point between them misses. Each two neighbours' shared rail is then one curve, laid as both
-/// nets' edge row.
+/// (`nurbs::net_of_rows`). Each element's sites across it, and the run's sites along the turn, are
+/// halved only where a point between two of them misses (`refined`): a flank's sheet bends hardest
+/// at the window's ends, where its miss at the middle of a span stood five orders of magnitude over
+/// the miss at the window's middle on the same grid — so a grid doubled all over to fit its ends
+/// (the worm wheel's flanks on 64 × 256, 108 MB of STEP) carried eight times the poles one halved
+/// where it misses does (27 × 72). Each two neighbours' shared rail is then one curve, laid as
+/// both nets' edge row.
 fn fitted(thread: &Thread,rack: &Rack,run: &[Element],window: [f64;2],tol: f64) -> Result<Vec<Net>,Unbuilt> {
-    let mut across = vec![8usize;run.len()];
-    let mut along = 16usize;
+    let even = |n: usize| -> Vec<f64> { (0..=n).map(|i| i as f64/n as f64).collect() };
+    let mut across: Vec<Vec<f64>> = vec![even(8);run.len()];
+    let mut along = even(16);
     let phi = |s: f64| window[0]+s*(window[1]-window[0]);
     loop {
-        // the corners at every turn of the grid and halfway between (the misses along read there)
-        let halves: Vec<f64> = (0..=2*along).map(|j| j as f64/(2*along) as f64).collect();
+        // the corners at every turn of the grid and halfway between each two (the misses along
+        // read there)
+        let halves: Vec<f64> = along.windows(2).flat_map(|w| [w[0],0.5*(w[0]+w[1])]).chain(along.last().copied()).collect();
         let at: Vec<Vec<Corner>> = crate::util::par::map(&halves,|&s| corners(thread,rack,phi(s))).into_iter().collect::<Result<_,_>>()?;
-        let tv: Vec<f64> = halves.iter().step_by(2).copied().collect();
         let mut nets = Vec::with_capacity(run.len());
         let mut grown = false;
-        let mut grow_along = false;
+        let mut missed_along = vec![false;along.len()-1];
         for (e,&el) in run.iter().enumerate() {
-            let tu: Vec<f64> = (0..=across[e]).map(|i| i as f64/across[e] as f64).collect();
-            let rows: Vec<BSpline> = tv.iter().zip(at.iter().step_by(2)).map(|(&s,c)| {
+            let tu = &across[e];
+            let rows: Vec<BSpline> = along.iter().zip(at.iter().step_by(2)).map(|(&s,c)| {
                 let pts = tu.iter().map(|&w| sheet_point(thread,rack,el,w,phi(s),c)).collect::<Result<Vec<V>,_>>()?;
-                interpolate(&pts,&tu,DEGREE).ok_or_else(|| unfitted("a row not interpolated"))
+                interpolate(&pts,tu,DEGREE).ok_or_else(|| unfitted("a row not interpolated"))
             }).collect::<Result<_,_>>()?;
-            let net = crate::nurbs::net_of_rows(&rows,&tv,DEGREE).ok_or_else(|| unfitted("a column not interpolated"))?;
-            // how far it misses at the points `us` across, at the turns of the grid `rows` (even or odd)
-            let miss = |us: &mut dyn Iterator<Item=f64>,odd: usize| -> Result<f64,Unbuilt> {
-                let us: Vec<f64> = us.collect();
-                let mut most = 0f64;
-                for (j,c) in at.iter().enumerate().skip(odd).step_by(2) {
-                    let s = halves[j];
-                    for &u in &us { most = most.max(distance(net.point(u,s),sheet_point(thread,rack,el,u,phi(s),c)?)) }
+            let net = crate::nurbs::net_of_rows(&rows,&along,DEGREE).ok_or_else(|| unfitted("a column not interpolated"))?;
+            let off = |u: f64,j: usize| -> Result<f64,Unbuilt> { Ok(distance(net.point(u,halves[j]),sheet_point(thread,rack,el,u,phi(halves[j]),&at[j])?)) };
+            // across: at the middle of each span of its sites, at every turn of the grid
+            let mut missed_across = vec![false;tu.len()-1];
+            let (mut most_across,mut most_along) = (0f64,0f64);
+            for j in (0..halves.len()).step_by(2) {
+                for (i,w) in tu.windows(2).enumerate() {
+                    let miss = off(0.5*(w[0]+w[1]),j)?;
+                    most_across = most_across.max(miss);
+                    missed_across[i] |= miss > tol;
                 }
-                Ok(most)
-            };
-            let miss_across = miss(&mut tu.windows(2).map(|w| 0.5*(w[0]+w[1])),0)?;
-            let miss_along = miss(&mut tu.iter().copied(),1)?;
-            if crate::debug() { eprintln!("generated: {el:?} on {} × {along}: misses {miss_across:.2e} across, {miss_along:.2e} along",across[e]) }
-            if miss_across > tol {
-                if across[e] >= 512 { return Err(unfitted("a sheet not fitted across within the tolerance")) }
-                across[e] *= 2;
+            }
+            // along: at every site across, halfway between each two turns of the grid
+            for j in (1..halves.len()).step_by(2) {
+                for &u in tu.iter() {
+                    let miss = off(u,j)?;
+                    most_along = most_along.max(miss);
+                    missed_along[j/2] |= miss > tol;
+                }
+            }
+            if crate::debug() { eprintln!("generated: {el:?} on {} × {}: misses {most_across:.2e} across, {most_along:.2e} along",tu.len()-1,along.len()-1) }
+            if missed_across.iter().any(|&m| m) {
+                across[e] = refined(tu,&missed_across);
+                if across[e].len() > 513 { return Err(unfitted("a sheet not fitted across within the tolerance")) }
                 grown = true;
             }
-            grow_along |= miss_along > tol;
             nets.push(net);
         }
-        if grow_along {
-            if along >= 1024 { return Err(unfitted("a sheet not fitted along the turn within the tolerance")) }
-            along *= 2;
+        if missed_along.iter().any(|&m| m) {
+            along = refined(&along,&missed_along);
+            if along.len() > 1025 { return Err(unfitted("a sheet not fitted along the turn within the tolerance")) }
             grown = true;
         }
         if grown { continue }
@@ -482,5 +493,24 @@ fn fitted(thread: &Thread,rack: &Rack,run: &[Element],window: [f64;2],tol: f64) 
             nets[r].poles[0] = rail;
         }
         return Ok(nets)
+    }
+}
+
+/// **Interpolation sites halved where they miss** (`fitted`): each span of `sites` that `missed`
+/// halved, then any span more than twice as long as a neighbour halved too, until none is — an
+/// interpolant through sites crowded beside sparse ones sways between the sparse ones.
+fn refined(sites: &[f64],missed: &[bool]) -> Vec<f64> {
+    let mut out: Vec<f64> = vec![sites[0]];
+    for (w,&m) in sites.windows(2).zip(missed) {
+        if m { out.push(0.5*(w[0]+w[1])) }
+        out.push(w[1]);
+    }
+    loop {
+        let span = |k: usize,o: &[f64]| o[k+1]-o[k];
+        let n = out.len()-1;
+        let wide: Vec<usize> = (0..n).filter(|&k| (k > 0 && span(k,&out) > 2.*span(k-1,&out)*(1.+1e-12))
+            || (k+1 < n && span(k,&out) > 2.*span(k+1,&out)*(1.+1e-12))).collect();
+        if wide.is_empty() { return out }
+        for &k in wide.iter().rev() { let m = 0.5*(out[k]+out[k+1]); out.insert(k+1,m) }
     }
 }

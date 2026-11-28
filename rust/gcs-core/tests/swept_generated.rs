@@ -83,6 +83,26 @@ fn each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary() {
     }
 }
 
+/// **A tooth space's sheets are fitted on sites halved only where they miss** (`generated::refined`):
+/// a flank bends hardest at the ends of the window of the screw's turn, and a grid doubled all over
+/// until those ends fit carried 65 × 257 poles a flank and 9 × 257 a crest and its corners, 40 000 in
+/// all (108 MB of STEP for the wheel); halved where a point between two sites misses and graded, the
+/// five sheets hold within the same quarter of the tolerance on 28 × 73 and 9 × 73, under 6 000.
+#[test]
+fn a_tooth_spaces_sheets_are_fitted_on_sites_halved_where_they_miss() {
+    let at = [0.,40.,0.];
+    let tol = gcs_core::brep::geom::tolerance(wheel().size());
+    let found = gcs_core::brep::swept::generated::candidates(&worm_thread(at,-20.,20.),&in_mesh(at),ROLL,&reach(),tol)
+        .unwrap_or_else(|u| panic!("{u:?}")).expect("the worm's thread is the rack's road's");
+    let [candidate] = &found.candidates[..] else { panic!("{} candidates for one copy",found.candidates.len()) };
+    let poles: Vec<[usize;2]> = candidate.faces.iter().map(|f| match &f.surface {
+        gcs_core::brep::geom::Surface::BSpline(_,net) => [net.poles.len(),net.poles[0].len()],
+        s => panic!("a sheet no net: {}",s.kind()),
+    }).collect();
+    let all: usize = poles.iter().map(|p| p[0]*p[1]).sum();
+    assert!(all <= 8000,"the tooth space's sheets on {poles:?}, {all} poles");
+}
+
 /// **A thread whose ends come within the wheel's reach is no rack's**: the worm cut off at x = ±10,
 /// where the wheel reaches 16.6 along its axis, sweeps what its ends do too, which no slid endless
 /// thread does; the road leaves it to the others.

@@ -136,6 +136,46 @@ impl Pcurve {
     }
 }
 
+/// **A use's pcurve read at many parameters of its edge, each inverse foot sought from the foot
+/// found nearest it** (`Pcurve::Inverse`): a fit or a measure reads one edge's feet in hundreds of
+/// places near one another — a cubic's ends, its rates there and its misses between — and Newton's
+/// method from the line between the ends took some ten steps a foot on a fitted sheet, where from a
+/// foot a fraction of a span away it takes two. Each foot is found once (read again, the same), and
+/// sought as `at_and_derivative_from` seeks it, from the nearest foot found before — kept where it
+/// stands within the edge's tolerance of the edge's point, else sought again from the line
+/// (`inverse_from`). Any other pcurve is read as it is.
+pub struct Feet<'a> { pcurve: &'a Pcurve,edge: &'a Edge,surface: &'a Surface,vertices: &'a [Vertex],
+    found: std::cell::RefCell<std::collections::BTreeMap<u64,(f64,Uv)>> }
+
+impl<'a> Feet<'a> {
+    pub fn new(pcurve: &'a Pcurve,edge: &'a Edge,surface: &'a Surface,vertices: &'a [Vertex]) -> Feet<'a> {
+        Feet {pcurve,edge,surface,vertices,found:Default::default()}
+    }
+    /// `Pcurve::at`.
+    pub fn at(&self,t: f64) -> Uv {
+        let Pcurve::Inverse {a,b} = *self.pcurve else { return self.pcurve.at(t,self.edge,self.surface,self.vertices) };
+        // (keyed by the parameter's bits, ordered as the parameters are)
+        let key = { let bits = t.to_bits(); if t.is_sign_negative() { !bits } else { bits | (1 << 63) } };
+        let mut found = self.found.borrow_mut();
+        if let Some(&(_,uv)) = found.get(&key) { return uv }
+        let before = found.range(..key).next_back().map(|(_,&(s,uv))| ((t-s).abs(),uv));
+        let after = found.range(key..).next().map(|(_,&(s,uv))| ((s-t).abs(),uv));
+        let seed = match (before,after) { (Some(x),Some(y)) => Some(if x.0 <= y.0 { x.1 } else { y.1 }),(x,y) => x.or(y).map(|z| z.1) };
+        let uv = inverse_from(a,b,t,self.edge.point(t,self.vertices),self.edge,self.surface,seed,reach(t,self.edge,self.vertices));
+        found.insert(key,(t,uv));
+        uv
+    }
+    /// `Pcurve::derivative`, at the foot `at` finds.
+    pub fn derivative(&self,t: f64) -> Uv {
+        match self.pcurve {
+            Pcurve::Inverse {..} => inverse_derivative(self.at(t),t,self.edge,self.surface),
+            _ => self.pcurve.derivative(t,self.edge,self.surface,self.vertices),
+        }
+    }
+    /// `Pcurve::at_and_derivative`.
+    pub fn at_and_derivative(&self,t: f64) -> (Uv,Uv) { (self.at(t),self.derivative(t)) }
+}
+
 /// The point the fraction `s` of the way along the line from `a` to `b`.
 fn along(a: Uv,b: Uv,s: f64) -> Uv { [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])] }
 
@@ -1135,7 +1175,8 @@ impl Brep {
         ts.sort_by(f64::total_cmp);
         let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
         ts.extend(halves);
-        ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
+        let feet = Feet::new(&u.pcurve,e,&f.surface,&self.vertices);
+        ts.iter().map(|&t| distance(f.surface.point(feet.at(t)),e.point(t,&self.vertices))).fold(0.,f64::max)
     }
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image, read
