@@ -83,13 +83,15 @@ fn each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary() {
     }
 }
 
-/// **A tooth space's sheets are fitted on sites halved only where they miss** (`generated::refined`):
-/// a flank bends hardest at the ends of the window of the screw's turn, and a grid doubled all over
-/// until those ends fit carried 65 × 257 poles a flank and 9 × 257 a crest and its corners, 40 000 in
-/// all (108 MB of STEP for the wheel); halved where a point between two sites misses and graded, the
-/// five sheets hold within the same quarter of the tolerance on 28 × 73 and 9 × 73, under 6 000.
+/// **A tooth space's sheets are charted by the wheel's slices, on sites halved only where they
+/// miss** (`generated::Slices`, `refined`): over the screw's turn a flank bends hardest at the ends
+/// of the window, and a grid doubled all over until those ends fit carried 65 × 257 poles a flank
+/// and 9 × 257 a crest and its corners, 40 000 in all (108 MB of STEP for the wheel), and halved
+/// where it misses 28 × 73 and 9 × 73, 6 000; over the slices of the wheel, a flank cut off where
+/// each slice leaves the reach, the five hold within the same quarter of the tolerance on 23 × 45,
+/// 8 × 45 and 6 × 45, some 3 000.
 #[test]
-fn a_tooth_spaces_sheets_are_fitted_on_sites_halved_where_they_miss() {
+fn a_tooth_spaces_sheets_are_charted_by_slices_on_sites_halved_where_they_miss() {
     let at = [0.,40.,0.];
     let tol = gcs_core::brep::geom::tolerance(wheel().size());
     let found = gcs_core::brep::swept::generated::candidates(&worm_thread(at,-20.,20.),&in_mesh(at),ROLL,&reach(),tol)
@@ -100,7 +102,7 @@ fn a_tooth_spaces_sheets_are_fitted_on_sites_halved_where_they_miss() {
         s => panic!("a sheet no net: {}",s.kind()),
     }).collect();
     let all: usize = poles.iter().map(|p| p[0]*p[1]).sum();
-    assert!(all <= 8000,"the tooth space's sheets on {poles:?}, {all} poles");
+    assert!(all <= 4000,"the tooth space's sheets on {poles:?}, {all} poles");
 }
 
 /// **A thread whose ends come within the wheel's reach is no rack's**: the worm cut off at x = ±10,
@@ -122,7 +124,6 @@ fn a_thread_whose_ends_reach_the_wheel_is_left_to_the_other_roads() {
 /// within 1.8e-9 and 3.1e-9 (34429.34922122754 and 10356.511065918847), at a hundred-millionth; 182
 /// faces, cadrs's count.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 15 s: the worm wheel's tooth space trimmed and patterned")]
 fn the_worm_wheel_is_hobbed_whole_by_its_worm() {
     let at = [0.,40.,0.];
     let blank = wheel();
