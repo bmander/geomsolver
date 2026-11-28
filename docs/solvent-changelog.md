@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.231] A power after a literal of one unit is the unit's** (#905). `10mm^3` is ten cubic
+millimetres, `10 * (1mm)^3`, as SI writes `10 mm³` and as a reading prints a figure (`42000
+mm^3`), so a figure the report says reads back as itself; the cube of the length is bracketed,
+`(10mm)^3`. A bare number's power is the number's and a name's is what the name stands for
+(`w^3`, `w := 10mm`, is 1000 mm³). A power after feet and inches (`1' 6"^2`) is no one unit's and
+is refused, saying to bracket the length or write a number of one unit. Through 0.230 the power
+bound the number with its unit, so `claim volume(<= 10mm^3) t0` judged a bound of 1000 mm³ and was
+kept on a body a hundred times larger than the bound written, and `42cm^3` was the cube of 42
+centimetres; `42 * 1cm^3`, the spelling the primer taught, reads as it did, and a document that
+meant the cube of a length written as a literal (`75mm^2` for (75 mm)²) brackets it now.
+
 **[0.230] A given body: a `use` of a STEP file names the body it gives** (#993). A text a `use`
 resolves to that is an ISO 10303-21 exchange file (its first token `ISO-10303-21;`, or any text a
 host found as `NAME.step` or `NAME.stp`) is a *given module* (§14.4): never parsed, it contributes

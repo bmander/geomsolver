@@ -41,7 +41,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   [analysis.md](analysis.md)'s).  `Units::to_si` moves a value from the document's units to SI
   by its powers of length alone.  `*` and `/` derive,
   `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and the result is
-  checked against its slot (`SpecKind::dim()`).  `Aff` carries the dimension beside the value.
+  checked against its slot (`SpecKind::dim()`).  **A power after a literal of one unit is the
+  unit's** (#905, [0.231]): the tokenizer keeps what a literal's number is a number of
+  (`parser::Of`), and `Parser::power` reads `10mm^3` as `10 * (1mm)^3`, so a volume is written
+  as the report reads it (`42000 mm^3`) and `(10mm)^3` is the cube; a bare number's power and a
+  name's (written in bracketed, `(10mm)`, by `flatten::values::substitute_in`) are the whole
+  value's, and a power after feet and inches, two units, is refused.
+  `tests/expr.rs`'s `a_power_after_a_unit_is_the_units` and `tests/measured.rs`'s
+  `a_volume_is_written_as_the_report_reads_it` are the gate.  `Aff` carries the dimension beside the value.
   **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* (a slot, a
   function's argument) may take a bare number; two *operands* may not mix: `90 / N + ivp` is an
   error, `90deg / N + ivp` the answer.  A **name** is worth a number (`w = 80` in a Length slot

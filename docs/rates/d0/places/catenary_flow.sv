@@ -28,7 +28,7 @@ component Pull(c: Length, v: Length, s: Length) {
 }
 
 component Closed(a: point, c: Length, s: Length) {
-  p := point(x: a.x + 50mm + c * ln((s - 75mm) / c + sqrt(((s - 75mm) / c)^2 + 1)), y: a.y + sqrt(c^2 + (s - 75mm)^2) - sqrt(c^2 + 75mm^2))
+  p := point(x: a.x + 50mm + c * ln((s - 75mm) / c + sqrt(((s - 75mm) / c)^2 + 1)), y: a.y + sqrt(c^2 + (s - 75mm)^2) - sqrt(c^2 + (75mm)^2))
 }
 
 in std.front {

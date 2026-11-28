@@ -275,8 +275,9 @@ rust/examples/given/bought_block.sv: solved
   block.volume = 21345.4
 ```
 
-`24000 − 720π − 6.25π · 20 = 21345.354`. The bound is written `21400 * 1mm^3`: `21400mm^3` is
-(21400 mm)³, and `claim volume(<= 21400mm^3) part` is kept against `9.80034e+12 mm^3`.
+`24000 − 720π − 6.25π · 20 = 21345.354`. The bound is written `21400 * 1mm^3`; since [0.231]
+`21400mm^3` says the same (#905), where through 0.230 it was (21400 mm)³ and the claim was kept
+against `9.80034e+12 mm^3`.
 
 ## Measurements
 

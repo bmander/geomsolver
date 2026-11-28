@@ -33,6 +33,57 @@ fn arithmetic_reads_as_on_paper() {
     assert!(close(ev("pi"), std::f64::consts::PI));
 }
 
+/// **A power after a literal of one unit is its unit's** (#905, [0.231]): `10mm^3` is ten cubic
+/// millimetres, as SI writes `10 mm³` and as a reading prints `10 mm^3`, and the cube of the
+/// length is bracketed, `(10mm)^3`.  A bare number's power is the number's, a name's is what the
+/// name stands for, and a power after feet and inches is no one unit's, so it is refused.
+#[test]
+fn a_power_after_a_unit_is_the_units() {
+    use gcs_core::units::{Dim, Units};
+    let read = |text: &str, unit: &str| {
+        let units = Units::with_length(unit).unwrap();
+        let a = eval(&expr::parse_in(text, units).unwrap().body, &BTreeMap::new()).unwrap();
+        (a.number().expect("a number"), a.dim)
+    };
+    let volume = Dim::LENGTH.powf(3.0).unwrap();
+    let area = Dim::LENGTH.powf(2.0).unwrap();
+    assert_eq!(read("10mm^3", "mm"), (10.0, volume));
+    assert_eq!(read("10mm**3", "mm"), (10.0, volume));
+    assert_eq!(read("10 * 1mm^3", "mm"), (10.0, volume));
+    assert_eq!(read("(10mm)^3", "mm"), (1000.0, volume));
+    assert_eq!(read("-10mm^2", "mm"), (-10.0, area));
+    assert_eq!(read("2^3", "mm"), (8.0, Dim::SCALAR));
+    assert_eq!(read("4mm^-1", "mm"), (4.0, Dim::LENGTH.powf(-1.0).unwrap()));
+    assert_eq!(read("10mm^(1 + 2)", "mm"), (10.0, volume));
+    // the unit converts to the document's, raised to the power, and the number stays as written
+    let (v, d) = read("42cm^3", "mm");
+    assert!(close(v, 42000.0) && d == volume, "{v}");
+    let (v, _) = read("42cm^3", "m");
+    assert!(close(v, 42e-6), "{v}");
+    let (v, _) = read("3 1/2in^2", "mm");
+    assert!(close(v, 3.5 * 25.4 * 25.4), "{v}");
+    let (v, _) = read("6\"^2", "in");
+    assert!(close(v, 6.0), "{v}");
+    let (v, _) = read("2ft^2", "in");
+    assert!(close(v, 288.0), "{v}");
+    let (v, d) = read("7850kg / 1m^3", "mm");
+    assert!(close(v, 7850e-9) && d == Dim::DENSITY, "{v}");
+    // a name is what it stands for, so a power after one is the whole value's
+    let mut env = BTreeMap::new();
+    env.insert("w".to_string(), eval(&parse("10mm").unwrap().body, &BTreeMap::new()).unwrap());
+    let a = eval(&parse("w^3").unwrap().body, &env).unwrap();
+    assert_eq!((a.number(), a.dim), (Some(1000.0), volume));
+    // feet and inches are two units, and a power of the pair is no one unit's
+    let e = parse("1' 6\"^2").unwrap_err();
+    assert!(e.contains("feet and inches") && e.contains("(1' 6\")^2"), "{e}");
+    let (v, _) = read("(1' 6\")^2", "in");
+    assert!(close(v, 324.0), "{v}");
+    // a reading prints a volume as its number of the unit cubed, and that text reads back
+    let printed = volume.reading(42000.0, Units::with_length("mm").unwrap(), 6);
+    assert_eq!(printed, "42000 mm^3");
+    assert_eq!(read(&printed.replace(' ', ""), "mm"), (42000.0, volume));
+}
+
 #[test]
 fn functions_work_in_degrees() {
     assert!(close(ev("sin(30)"), 0.5));

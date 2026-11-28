@@ -3,7 +3,7 @@
 // `volume(30 * 1cm^3) rib` stated of the drawing.  The volume is a row over the rib's face, its
 // area through its depth: the leg up the wall the solve finds is 2 V / (t a), 120mm.  Its mass is
 // claimed beside it, judged on the solved drawing.  A volume is written as its number of a unit
-// cubed: `30cm^3` would be the cube of 30 centimetres.
+// cubed; `30cm^3` says the same, a power after a literal being its unit's.
 unit mm
 use std
 use std.solids
