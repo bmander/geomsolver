@@ -2187,8 +2187,10 @@ before anything else (a tool no thread, a motion no rack to it, or ends in the r
 (a point of each of one tooth space's five sheets within the wheel read by the sweep's own
 membership a hair either side), `a_thread_whose_ends_reach_the_wheel_is_left_to_the_other_roads`; brep-bench's
 `worm-wheel-hobbed-by-its-worm` is built (`the_worm_wheel_is_hobbed_whole_by_its_worm`, slow: its
-volume and area cadrs's within 1.8e-9 and 3.1e-9, its 182 faces), in 25 s on four cores (278 s
-trimming the thirty copies at once, nearly all of it membership over the thirty-turn roll). **A
+volume and area cadrs's within 1.8e-9 and 3.1e-9, its 182 faces), in 2 s on four cores and
+written as STEP in 0.8 s more, 20 MB (29 s and 108 MB before membership read a point's side by its
+nearest feature and the sheets were fitted on sites halved where they miss; 278 s trimming the
+thirty copies at once, nearly all of it membership over the thirty-turn roll). **A
 ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch

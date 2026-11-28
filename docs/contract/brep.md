@@ -67,10 +67,10 @@ a worm wheel's flank's pcurves took three poles to each span of their edges' cub
 on a parabola; `step::breaks_of`); joints where the curve is smooth share their rate and are double
 knots. **Every use's pcurve is read before anything is written** (`step::pcurve_plan`, on every core
 with each use's distance off its face, `Brep::standing`), and written in the edges' order
-(`pcurve_written`), so the file does not depend on the cores that read it; an inverse pcurve's feet along one edge
-are each sought from the foot found nearest it (`topo::Feet`), kept within the edge's tolerance of
-the edge's point and else sought again from the line between its ends, as `inverse_from` seeks
-any. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+(`pcurve_written`), so the file is the same byte for byte; an inverse pcurve's feet along one edge
+are each found once (`topo::Feet`, a cubic's end read both as a point and for its rate), each from
+the line between the edge's ends as `Pcurve::at` finds it — sought from a foot found beside it, a
+face read on its sheet's rows had a pcurve written 3.4e-3 off its edge. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
 parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
 points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
 wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a

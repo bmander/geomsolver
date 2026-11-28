@@ -122,7 +122,7 @@ fn a_thread_whose_ends_reach_the_wheel_is_left_to_the_other_roads() {
 /// within 1.8e-9 and 3.1e-9 (34429.34922122754 and 10356.511065918847), at a hundred-millionth; 182
 /// faces, cadrs's count.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 55 s: the worm wheel's tooth space trimmed and patterned")]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 15 s: the worm wheel's tooth space trimmed and patterned")]
 fn the_worm_wheel_is_hobbed_whole_by_its_worm() {
     let at = [0.,40.,0.];
     let blank = wheel();
