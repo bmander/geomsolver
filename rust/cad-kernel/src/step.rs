@@ -788,10 +788,26 @@ fn hermite_fit<const N: usize>(at: &dyn Fn(f64) -> [f64;N],rate: &dyn Fn(f64) ->
 /// **Where, over `[t0, t1]`, a curve the file fits may stop being smooth**, its ends among them
 /// where they are such points, as `hermite_fit` reads them: its own breaks — a traced curve's the
 /// points beside a stretch it reads on a parabola (`Traced::kinks`), across every other of which
-/// it runs on smoothly, its pace too (#1034), so a cubic over several of them follows it.
+/// it runs on smoothly, its pace too (#1034), so a cubic over several of them follows it; a
+/// B-spline's knots where it is no more than once differentiable (as many times over as its
+/// degree less one), across every other of which its rate and its curvature run on, so a cubic
+/// over several of them follows it, its miss measured as every piece's is. Stopped at every knot,
+/// a pcurve on a worm wheel's flank took a cubic of three poles to each span of its edge's cubic,
+/// 290 poles beside the edge's 105, held to a bar it met thirty times over.
 fn breaks_of(c: &Curve,[t0,t1]: [f64;2]) -> Vec<f64> {
     let w = 1e-9*(t1-t0).abs();
-    let mut out = match c { Curve::Traced(tr) => tr.kinks([t0-w,t1+w]),_ => c.breaks([t0-w,t1+w]) };
+    let mut out = match c {
+        Curve::Traced(tr) => tr.kinks([t0-w,t1+w]),
+        Curve::BSpline(bs) => {
+            let mut out: Vec<f64> = Vec::new();
+            for k in c.breaks([t0-w,t1+w]) {
+                let times = bs.knots.iter().filter(|&&x| x == k).count();
+                if times+1 >= bs.degree { out.push(k) }
+            }
+            out
+        }
+        _ => c.breaks([t0-w,t1+w]),
+    };
     for end in [t0,t1] { if out.iter().any(|&k| (k-end).abs() <= w) && !out.contains(&end) { out.push(end); } }
     out
 }
@@ -849,6 +865,23 @@ fn bezier_curve(c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>,f64)> 
     hermite_fit(&at,&rate,&off,t,&breaks_of(c,t),bar)
 }
 
+/// **What a use's pcurve is written as** (`pcurve_plan`), read before anything is written: every
+/// inversion onto the face and every fit, so the uses of a solid's edges are read on every core
+/// (`solid`) and only written in order. Its points in the file's parameters.
+enum PcurvePlan {
+    /// A line through `origin` along `d` (its rate in the edge's parameter).
+    Line { origin: [f64;2],d: [f64;2] },
+    /// The kernel's own spline in the face's parameters, its poles as they are written.
+    Own { degree: usize,poles: Vec<[f64;2]>,knots: Vec<f64>,weights: Option<Vec<f64>> },
+    /// A plane's circle: its centre, its axis's direction and radius.
+    Circle { centre: [f64;2],x: [f64;2],r: f64 },
+    /// A spline of its poles and knots: a plane's B-spline carried over, or a fitted cubic, with
+    /// how far it was measured off the edge.
+    Spline { degree: usize,poles: Vec<[f64;2]>,knots: Vec<f64>,weights: Option<Vec<f64>>,miss: f64 },
+    /// The degree-one B-spline through its points at its knots, within its bar.
+    Polyline { points: Vec<[f64;2]>,knots: Vec<f64>,within: f64 },
+}
+
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
 /// where a plane's edge is one turning the plane's way, otherwise the cubic within `fit`'s bar
 /// of the edge (`bezier_pcurve`), over the edge's parameter; and where that does not close in, the degree-one B-spline through its parameters at points
@@ -857,27 +890,18 @@ fn bezier_curve(c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>,f64)> 
 /// is past the bar): the foot of an edge standing off is the kernel's search, which a cubic held
 /// to a thousandth of the edge's own distance chased into pieces of `2⁻³⁰` of the edge (the
 /// drill's flutes, the toolpaths' nets: a rate read just past a joint some six times the feet's
-/// own). With its id, how far its image was measured off the edge's foot (nought where it is
-/// written exactly), and whether it is the kernel's own curve in the face's parameters written as
-/// it is (`Pcurve::Curve`, a spline built there); `None`, no pcurve written, where neither the
-/// cubic nor a polyline of `MOST` points holds it.
-fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,fit: Fit,net: Option<&OnNet>,
-    gap: f64) -> Option<(usize,f64,bool)> {
+/// own). Read before anything is written (`PcurvePlan`), and written by `pcurve_written`; `None`,
+/// no pcurve written, where neither the cubic nor a polyline of `MOST` points holds it.
+fn pcurve_plan(b: &Brep,fi: usize,u: &super::topo::Coedge,tol: f64,fit: Fit,net: Option<&OnNet>,gap: f64) -> Option<PcurvePlan> {
     use super::topo::Pcurve;
     let f = &b.faces[fi];
     let e = &b.edges[u.edge as usize];
     let EdgeCurve::Curve(c) = &e.curve else { unreachable!("a degenerate edge has no pcurve written") };
+    // (each foot sought from the nearest found: the fits read hundreds near one another)
+    let feet = super::topo::Feet::new(&u.pcurve,e,&f.surface,&b.vertices);
     let at = |t: f64| {
-        let uv = u.pcurve.at(t,e,&f.surface,&b.vertices);
+        let uv = feet.at(t);
         match net { Some(n) => n.uv(uv).0,None => step_uv(&f.surface,uv) }
-    };
-    let p2 = |o: &mut Out,p: [f64;2]| o.add(format!("CARTESIAN_POINT('',({},{}))",real(p[0]),real(p[1])));
-    let line = |o: &mut Out,origin: [f64;2],d: [f64;2]| {
-        let l = d[0].dhypot(d[1]);
-        let p = p2(o,origin);
-        let dir = o.add(format!("DIRECTION('',({},{}))",real(d[0]/l),real(d[1]/l)));
-        let v = o.add(format!("VECTOR('',#{dir},{})",real(l)));
-        o.add(format!("LINE('',#{p},#{v})"))
     };
     let (a,z) = (at(e.t[0]),at(e.t[1]));
     // a reader places a closed curve's vertices within its first period: the pcurve's parameter is
@@ -894,40 +918,29 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     });
     // (held to the edge's own distance off the face where that is past the fit's bar)
     let bar = fit.bar().max(gap);
-    let written = |o: &mut Out,curve: usize| {
-        let rep = o.add(format!("DEFINITIONAL_REPRESENTATION('',(#{curve}),#{context2})"));
-        o.add(format!("PCURVE('',#{surface},#{rep})"))
-    };
-    let (curve,miss) = match (&u.pcurve,&f.surface,c) {
+    Some(match (&u.pcurve,&f.surface,c) {
         // linear in the edge's parameter: a line through where it is at t = 0
         (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).dhypot(z[1]-a[1]) > 0. => {
             let d = [(z[0]-a[0])/(e.t[1]-e.t[0]),(z[1]-a[1])/(e.t[1]-e.t[0])];
-            (line(o,[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d),0.)
+            PcurvePlan::Line {origin:[a[0]-d[0]*(e.t[0]-shift),a[1]-d[1]*(e.t[0]-shift)],d}
         }
         // a kernel's own curve in the face's parameters (`brep::json`): its poles, exactly
         (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) && net.is_none_or(OnNet::plain) => {
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
-            let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
-            let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
-            let own = spline(o,bs.degree,&ids,&knots,bs.weights.as_deref());
-            return Some((written(o,own),0.,true))
+            PcurvePlan::Own {degree:bs.degree,poles:bs.poles.iter().map(|q| step_uv(&f.surface,[q[0],q[1]])).collect(),
+                knots:bs.knots.iter().map(|k| k-shift).collect(),weights:bs.weights.clone()}
         }
         (_,Surface::Plane(pl),Curve::Line {p,d}) => {
             let (l,dl) = (pl.local(*p),pl.dir_local(*d));
-            (line(o,[l[0],l[1]],[dl[0],dl[1]]),0.)
+            PcurvePlan::Line {origin:[l[0],l[1]],d:[dl[0],dl[1]]}
         }
         (_,Surface::Plane(pl),Curve::Circle(cf,r)) if crate::util::space::dot(cf.z,pl.z) > 0. => {
             let (l,x) = (pl.local(cf.o),pl.dir_local(cf.x));
-            let p = p2(o,[l[0],l[1]]);
-            let dir = o.add(format!("DIRECTION('',({},{}))",real(x[0]),real(x[1])));
-            let ax = o.add(format!("AXIS2_PLACEMENT_2D('',#{p},#{dir})"));
-            (o.add(format!("CIRCLE('',#{ax},{})",real(*r))),0.)
+            PcurvePlan::Circle {centre:[l[0],l[1]],x:[x[0],x[1]],r:*r}
         }
         // a plane's parameters are an affine image of space: a B-spline's poles carried over
-        (_,Surface::Plane(pl),Curve::BSpline(bs)) => {
-            let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
-            (spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref()),0.)
-        }
+        (_,Surface::Plane(pl),Curve::BSpline(bs)) => PcurvePlan::Spline {degree:bs.degree,
+            poles:bs.poles.iter().map(|&q| { let l = pl.local(q); [l[0],l[1]] }).collect(),knots:bs.knots.clone(),weights:bs.weights.clone(),miss:0.},
         // a cubic in the edge's parameter through its parameters and rates, its pieces as few as
         // map within `fit`'s bar of the edge (`hermite_fit`; a cubic's error changes sign about
         // the edge less than a chord's, which always cuts inside, so a reader measuring the face it
@@ -935,21 +948,19 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         // writes — a net's, where they need be no affine image of the face's own
         _ if let Some((poles,knots,miss,off)) = match net {
             Some(n) => bezier_pcurve(&at,&|t| {
-                let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
+                let (uv,d) = feet.at_and_derivative(t);
                 let rate = n.uv(uv).1;
                 [rate[0]*d[0],rate[1]*d[1]]
             },&n.surface,c,e.t,bar),
-            None => bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
+            None => bezier_pcurve(&|t| feet.at(t),&|t| feet.derivative(t),
                 &f.surface,c,e.t,bar).map(|(poles,knots,miss,off)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots,miss,off)),
         } => {
-            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
-            let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
             // (the edge's distance off the face where the fit found it farther than `standing`)
-            (spline(o,3,&ids,&knots,None),miss+(off-gap).max(0.))
+            PcurvePlan::Spline {degree:3,poles,knots:knots.iter().map(|k| k-shift).collect(),weights:None,miss:miss+(off-gap).max(0.)}
         }
         _ => {
             let off = |ta: f64,tz: f64| {
-                let (ua,uz) = (u.pcurve.at(ta,e,&f.surface,&b.vertices),u.pcurve.at(tz,e,&f.surface,&b.vertices));
+                let (ua,uz) = (feet.at(ta),feet.at(tz));
                 distance(f.surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),c.point((ta+tz)/2.))
             };
             let within = fit.polyline(tol).max(gap);
@@ -958,12 +969,88 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 let middle = crate::util::warm::kept(|| at((e.t[0]+e.t[1])/2.));
                 eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {middle:?}",c.kind(),f.surface.kind(),ts.len());
             }
-            let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();
-            let knots: Vec<f64> = ts.iter().map(|&t| t-shift).collect();
+            PcurvePlan::Polyline {points:ts.iter().map(|&t| at(t)).collect(),knots:ts.iter().map(|&t| t-shift).collect(),within}
+        }
+    })
+}
+
+/// **Whether a reader reads a use's pcurve off its edge's curve alone** (`solid`'s pcurves): the
+/// edge walked onto its face as a reader walks it (the kernel's own, `step_read`'s `track`) — its
+/// first point's foot sought over the whole surface, each next one's from the last, at `WALKED`
+/// points — each foot within `tol` of the edge's point, its parameters the pcurve's own (a whole
+/// period apart, on a surface closed round one). Where any is not — a sheet that pinches or passes
+/// near itself, where the walk settles on another foot (a V wheel's groove, read back 0.49 mm off
+/// its edge), or a net closed on itself with no period, its two sides one place — the pcurve is
+/// the only thing that says where the edge is, and is written.
+fn derivable(b: &Brep,fi: usize,u: &super::topo::Coedge,span: [f64;2],tol: f64) -> bool {
+    const WALKED: usize = 64;
+    let (f,e) = (&b.faces[fi],&b.edges[u.edge as usize]);
+    let s = &f.surface;
+    let periods = s.periods();
+    let feet = super::topo::Feet::new(&u.pcurve,e,s,&b.vertices);
+    // (parameters a part of the face's own span apart, `span`: no foot is that near another of its own)
+    let same = |w: super::geom::Uv,k: super::geom::Uv| (0..2).all(|i| {
+        let mut d = w[i]-k[i];
+        if let Some(p) = periods[i] { d -= p*(d/p).round() }
+        d.abs() <= 1e-6*(span[i].abs()+1e-300)
+    });
+    let mut uv: Option<super::geom::Uv> = None;
+    (0..=WALKED).all(|j| {
+        let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/WALKED as f64;
+        let x = e.point(t,&b.vertices);
+        let w = match uv { None => s.inverse(x),Some(last) => s.inverse_near(x,last) };
+        uv = Some(w);
+        distance(s.point(w),x) <= tol.max(e.tol) && same(w,feet.at(t))
+    })
+}
+
+/// How far face `fi`'s parameters span, each way: its uses' pcurves' ends'.
+fn parameter_span(b: &Brep,fi: usize) -> [f64;2] {
+    let f = &b.faces[fi];
+    let (lo,hi) = f.loops.iter().flatten().flat_map(|c| { let e = &b.edges[c.edge as usize];
+        [c.pcurve.at(e.t[0],e,&f.surface,&b.vertices),c.pcurve.at(e.t[1],e,&f.surface,&b.vertices)] })
+        .fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),x| ([l[0].min(x[0]),l[1].min(x[1])],[h[0].max(x[0]),h[1].max(x[1])]));
+    [hi[0]-lo[0],hi[1]-lo[1]]
+}
+
+/// A use's pcurve as `pcurve_plan` read it, written: its id, how far its image was measured off
+/// the edge's foot (nought where it is written exactly), and whether it is the kernel's own curve
+/// in the face's parameters written as it is (`Pcurve::Curve`, a spline built there).
+fn pcurve_written(o: &mut Out,plan: PcurvePlan,surface: usize,context2: usize) -> (usize,f64,bool) {
+    let p2 = |o: &mut Out,p: [f64;2]| o.add(format!("CARTESIAN_POINT('',({},{}))",real(p[0]),real(p[1])));
+    let written = |o: &mut Out,curve: usize| {
+        let rep = o.add(format!("DEFINITIONAL_REPRESENTATION('',(#{curve}),#{context2})"));
+        o.add(format!("PCURVE('',#{surface},#{rep})"))
+    };
+    let (curve,miss) = match plan {
+        PcurvePlan::Line {origin,d} => {
+            let l = d[0].dhypot(d[1]);
+            let p = p2(o,origin);
+            let dir = o.add(format!("DIRECTION('',({},{}))",real(d[0]/l),real(d[1]/l)));
+            let v = o.add(format!("VECTOR('',#{dir},{})",real(l)));
+            (o.add(format!("LINE('',#{p},#{v})")),0.)
+        }
+        PcurvePlan::Own {degree,poles,knots,weights} => {
+            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
+            let own = spline(o,degree,&ids,&knots,weights.as_deref());
+            return (written(o,own),0.,true)
+        }
+        PcurvePlan::Circle {centre,x,r} => {
+            let p = p2(o,centre);
+            let dir = o.add(format!("DIRECTION('',({},{}))",real(x[0]),real(x[1])));
+            let ax = o.add(format!("AXIS2_PLACEMENT_2D('',#{p},#{dir})"));
+            (o.add(format!("CIRCLE('',#{ax},{})",real(r))),0.)
+        }
+        PcurvePlan::Spline {degree,poles,knots,weights,miss} => {
+            let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
+            (spline(o,degree,&ids,&knots,weights.as_deref()),miss)
+        }
+        PcurvePlan::Polyline {points,knots,within} => {
+            let ids: Vec<String> = points.iter().map(|&q| format!("#{}",p2(o,q))).collect();
             (bspline(o,&ids,&knots),within)
         }
     };
-    Some((written(o,curve),miss,false))
+    (written(o,curve),miss,false)
 }
 
 /// The solid as a STEP file, `name` its product's: stating the uncertainty `tol` (millimetres, no
@@ -1270,7 +1357,39 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
         None => o.surface(&f.surface),
     }).collect::<Result<Vec<_>,String>>()?.into_iter().unzip();
     let context2 = o.add("( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )".into());
+    // the edge's uses in the faces, each its face and coedge: a seam's two in one face, or one in each
+    let mut uses_of: Vec<Vec<(usize,&super::topo::Coedge)>> = vec![Vec::new();b.edges.len()];
+    for (fi,f) in b.faces.iter().enumerate() { for c in f.loops.iter().flatten() { if let Some(u) = uses_of.get_mut(c.edge as usize) { u.push((fi,c)) } } }
+    // **a pcurve is written only where the curve in space does not say it** (#1045): a seam's two,
+    // which alone say which side of the seam each use is; one a reader walking the edge onto its
+    // face would not read (`derivable`); and the kernel's own spline in a face's parameters where
+    // the curve in space was fitted to it (the master representation, below).
+    // Every other is the edge's curve read on the face, which a reader reads as the kernel does —
+    // brep-bench measures each face by its edges' curves in space, and cadrs writes no pcurve —
+    // and the worm wheel's were a fifth of its file, fitted within `EXACT` to what the file
+    // already held exactly.
+    let seam_of = |ei: usize| { let u = &uses_of[ei]; u.len() == 2 && u[0].0 == u[1].0 };
+
+    // **each use's distance off its face and its pcurve read on every core** (`pcurve_plan`): the
+    // inversions onto the faces and the fits are nine tenths of a fitted solid's writing (a worm
+    // wheel's 180 faces, 3.5 s), and each use's are its own; only the writing is in order
+    let flat: Vec<(usize,usize,&super::topo::Coedge)> = uses_of.iter().enumerate()
+        .filter(|(ei,_)| matches!(b.edges[*ei].curve,EdgeCurve::Curve(_)))
+        .flat_map(|(ei,us)| us.iter().map(move |&(fi,u)| (ei,fi,u))).collect();
+    let spans: Vec<[f64;2]> = crate::util::par::indices(b.faces.len(),|fi| parameter_span(b,fi));
+    let read: Vec<(f64,bool,Option<PcurvePlan>)> = crate::util::par::map(&flat,|&(ei,fi,u)| {
+        let gap = b.standing(fi,u).max(b.edges[ei].tol);
+        // (and one a reader would not read off the edge's curve alone, `derivable`)
+        let seam = seam_of(ei);
+        let derived = !seam && derivable(b,fi,u,spans[fi],tol);
+        let planned = seam || !derived || matches!(u.pcurve,super::topo::Pcurve::Curve(_));
+        (gap,derived,if planned { pcurve_plan(b,fi,u,tol,fit,nets[fi].as_ref(),gap) } else { None })
+    });
+    let mut read_of: Vec<Vec<(f64,bool,Option<PcurvePlan>)>> = (0..b.edges.len()).map(|_| Vec::new()).collect();
+    for (&(ei,..),r) in flat.iter().zip(read) { read_of[ei].push(r) }
+    let mut read_of = read_of.into_iter();
     let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| -> Result<Option<usize>,String> {
+        let read = read_of.next().expect("an edge's reading");
         let EdgeCurve::Curve(c) = &e.curve else { return Ok(None) };
         // the curve, and how far it was measured off the edge's
         let (curve,miss) = match c {
@@ -1321,13 +1440,16 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
             }
         };
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
-        let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()
-            .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
-        let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
+        let uses = &uses_of[ei];
+        let seam = seam_of(ei);
         let before = (o.text.len(),o.next);
-        let gaps: Vec<f64> = uses.iter().map(|&(fi,u)| b.standing(fi,u).max(e.tol)).collect();
-        let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(&gaps)
-            .map(|(&(fi,u),&gap)| pcurve(o,b,fi,u,surfaces[fi],context2,tol,fit,nets[fi].as_ref(),gap)).collect();
+        let gaps: Vec<f64> = read.iter().map(|r| r.0).collect();
+        let (derived,plans): (Vec<bool>,Vec<Option<PcurvePlan>>) = read.into_iter().map(|r| (r.1,r.2)).unzip();
+        // (the curve in space fitted: a pcurve of the kernel's own spline is then the exact one)
+        let fitted = miss > 0. || !matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_));
+        let kept = |fi: usize,derived: bool,plan: &PcurvePlan| seam || !derived || (fitted && sheets[fi] == 0. && matches!(plan,PcurvePlan::Own {..}));
+        let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(derived).zip(plans)
+            .map(|((&(fi,_),derived),plan)| plan.filter(|plan| kept(fi,derived,plan)).map(|plan| pcurve_written(o,plan,surfaces[fi],context2))).collect();
         // (a seam's two curves are written both or neither: one alone does not say which side of
         // the seam it is)
         if seam && pcurves.iter().any(Option::is_none) {
@@ -1350,7 +1472,6 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
         // a face's parameters is fitted to it or read off it; a pcurve only where it is such a
         // spline, on a surface written exactly, and the curve in space was fitted (a curve built
         // in a surface's parameters, carried into space and traced or fitted there)
-        let fitted = miss > 0. || !matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_));
         let master = match uses.iter().zip(&pcurves).filter_map(|(&(fi,_),p)| p.map(|p| (fi,p))).position(|(fi,p)| p.2 && sheets[fi] == 0.) {
             Some(k) if fitted => format!(".PCURVE_S{}.",k+1),
             _ => ".CURVE_3D.".into(),

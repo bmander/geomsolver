@@ -1401,7 +1401,9 @@ of a thousandth of the ring stand beside them. (brep-bench's cadrs builds the ba
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
 edge's, its two triangles' summed (Bærentzen & Aanæs 2005) — exact for a closed mesh turned
-consistently outward, where it fell to the generalised winding number over every triangle. A vertex
+consistently outward, where it fell to the generalised winding number over every triangle; a point
+member or not (`Swept::member`) is read so at every stretch of the roll as well (the winding over
+every triangle there was nine tenths of the worm wheel's hobbing, 28 s of 31). A vertex
 with an edge not bounding exactly two triangles, and such an edge, has none, and is read by the
 winding. Zoning the leaning torus's sheet, where most of what is read is far from any pose of the
 tool, fell from over twenty-five minutes to thirty-six seconds. Held at four thousand points about a
@@ -2167,8 +2169,31 @@ of the observer and whole leads of the slide (so the sweep is the endless motion
 bounds it, and the turn a lead on, `O(L/δ)`, carries the sheets of one tooth of the rack onto the
 next's) and the observer a turn. One tooth's elements that reach the reach in one window of the
 screw's turn (a point sliding along itself at no instant, its normal square to the rate, reaches
-nothing) are one candidate: fitted at degree 5 on one grid of the turn within a quarter of the
-tolerance, each two sharing their rail as one curve (laid by `build::sheets`; the trim meets no two
+nothing) are one candidate: fitted at degree 5 within a quarter of the tolerance on one grid along
+them — each element's sites across it and the run's along it halved only where a point between two
+misses, then graded so no span is more than twice a neighbour (`generated::refined`) — each two
+sharing their rail as one curve. **Charted by the observer's slices** (`generated::Slices`, as
+cadrs charts a cut by its mate): the observer's turn and the slide along the thread's axis, square
+to the observer's, keep a point's height along the observer's axis, so a sheet's point at a height
+is its thread point's there, and the turn at which a generator's point stands at a height is read
+in closed form (on the side facing the observer's axis, in the window's period) — each element over
+its fraction across and the height, over the reach's span a three-hundredth past it either way
+(`SLAB`), each corner read at the turn it stands at that height. A face ending the run is charted
+from its rail out to where each slice first crosses the cylinder about the observer's axis halfway
+between the reach and the nearest any slice's far end comes (`generated::Joints`): past it a
+flank's generator, down to the worm's root, touches far along the roll and is carried far round the
+axis (99 mm out at the bottom slice); where some slice's far end stays within the reach the face is
+charted whole. The slices are taken where they read every point of the run's sheets within the
+reach, in closed form (`Slices::new`): the thread's axis farther from the observer's than the
+reach's radius, so no point on its far side — at least that far off along the way between the
+axes, which neither motion changes — is ever within it; and every generator of the run (a line,
+its point nearest the axis in closed form) farther from the thread's axis than any slice, so each
+slice has its turn. Else the sheets are charted over the screw's turn, as before. `fitted` reads
+each row of its chart once (`generated::Chart`: a slice's corners each at its own turn and its
+ending faces' joints, or a turn's corners) and each element's points from it. Over the turn a flank bends hardest at the
+window's ends (65 × 257 poles doubled all over, 108 MB of STEP; 28 × 73 halved where it misses,
+20 MB); over the slices it runs as its tooth's profile does from slice to slice, 23 × 45 (12.7 MB;
+cadrs's 28 × 10, within 1e-8 of the tool's size, 4.6 MB) (laid by `build::sheets`; the trim meets no two
 faces of one candidate); a concave corner in the reach, and a whole section reaching it, are
 refused by name. **One copy, patterned:** where one copy's turns
 about the observer's axis within the reach, read at its sheets' exact points, span a pitch less
@@ -2180,9 +2205,13 @@ before anything else (a tool no thread, a motion no rack to it, or ends in the r
 `None`). Gates: `swept_generated::each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary`
 (a point of each of one tooth space's five sheets within the wheel read by the sweep's own
 membership a hair either side), `a_thread_whose_ends_reach_the_wheel_is_left_to_the_other_roads`; brep-bench's
-`worm-wheel-hobbed-by-its-worm` is built (`the_worm_wheel_is_hobbed_whole_by_its_worm`, slow: its
-volume and area cadrs's within 1.8e-9 and 3.1e-9, its 182 faces), in 25 s on four cores (278 s
-trimming the thirty copies at once, nearly all of it membership over the thirty-turn roll). **A
+`worm-wheel-hobbed-by-its-worm` is built (`the_worm_wheel_is_hobbed_whole_by_its_worm`, 9 s in the
+test profile: its volume and area cadrs's within 1.8e-9 and 3.1e-9, its 182 faces), built and
+written as STEP in 1.6 s on four cores, 12.7 MB (29 s and 108 MB before membership read a point's
+side by its nearest feature and the sheets were charted by slices on sites halved where they miss;
+278 s trimming the thirty copies at once, nearly all of it membership over the thirty-turn roll);
+`a_tooth_spaces_sheets_are_charted_by_slices_on_sites_halved_where_they_miss` holds its tooth
+space's five sheets to some 3 000 poles. **A
 ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch

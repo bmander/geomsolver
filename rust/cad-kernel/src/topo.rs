@@ -136,6 +136,38 @@ impl Pcurve {
     }
 }
 
+/// **A use's pcurve read at many parameters of its edge, each foot found once** (`Pcurve::Inverse`):
+/// a fit or a measure reads one edge's feet in hundreds of places, a cubic's ends among them both
+/// as points and for their rates, and each inverse foot is a Newton search. Each is `Pcurve::at`'s
+/// own, from the line between the ends, kept by its parameter and read again where it is asked
+/// again. (Sought from a foot found beside it instead, a face read on its sheet's rows — the
+/// crumpled corner's — had a pcurve written 3.4e-3 off its edge.) Any other pcurve is read as it is.
+pub struct Feet<'a> { pcurve: &'a Pcurve,edge: &'a Edge,surface: &'a Surface,vertices: &'a [Vertex],
+    found: std::cell::RefCell<std::collections::BTreeMap<u64,Uv>> }
+
+impl<'a> Feet<'a> {
+    pub fn new(pcurve: &'a Pcurve,edge: &'a Edge,surface: &'a Surface,vertices: &'a [Vertex]) -> Feet<'a> {
+        Feet {pcurve,edge,surface,vertices,found:Default::default()}
+    }
+    /// `Pcurve::at`.
+    pub fn at(&self,t: f64) -> Uv {
+        let Pcurve::Inverse {..} = self.pcurve else { return self.pcurve.at(t,self.edge,self.surface,self.vertices) };
+        if let Some(&uv) = self.found.borrow().get(&t.to_bits()) { return uv }
+        let uv = self.pcurve.at(t,self.edge,self.surface,self.vertices);
+        self.found.borrow_mut().insert(t.to_bits(),uv);
+        uv
+    }
+    /// `Pcurve::derivative`, at the foot `at` finds.
+    pub fn derivative(&self,t: f64) -> Uv {
+        match self.pcurve {
+            Pcurve::Inverse {..} => inverse_derivative(self.at(t),t,self.edge,self.surface),
+            _ => self.pcurve.derivative(t,self.edge,self.surface,self.vertices),
+        }
+    }
+    /// `Pcurve::at_and_derivative`.
+    pub fn at_and_derivative(&self,t: f64) -> (Uv,Uv) { (self.at(t),self.derivative(t)) }
+}
+
 /// The point the fraction `s` of the way along the line from `a` to `b`.
 fn along(a: Uv,b: Uv,s: f64) -> Uv { [a[0]+s*(b[0]-a[0]),a[1]+s*(b[1]-a[1])] }
 
@@ -1135,7 +1167,8 @@ impl Brep {
         ts.sort_by(f64::total_cmp);
         let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
         ts.extend(halves);
-        ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
+        let feet = Feet::new(&u.pcurve,e,&f.surface,&self.vertices);
+        ts.iter().map(|&t| distance(f.surface.point(feet.at(t)),e.point(t,&self.vertices))).fold(0.,f64::max)
     }
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image, read

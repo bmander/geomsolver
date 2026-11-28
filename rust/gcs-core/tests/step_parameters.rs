@@ -38,7 +38,9 @@ fn pcurves_off(text: &str) -> (f64, usize) {
         };
         let closed = v[1].reference() == v[2].reference();
         let (a, z) = (vertex(1), vertex(2));
-        let Some((_, sc)) = file.get(v[3].reference().unwrap()).simple() else { panic!("#{}: a surface curve", e.id) };
+        let Some((kind, sc)) = file.get(v[3].reference().unwrap()).simple() else { panic!("#{}: a surface curve", e.id) };
+        // (an edge whose pcurves a reader reads off its curve is written as that curve alone)
+        if kind != "SURFACE_CURVE" && kind != "SEAM_CURVE" { continue }
         let spatial = g.curve(e.id, sc[1].reference()).unwrap();
         let (c, rate) = (&spatial.curve, spatial.rate);
         let t0 = c.inverse(a);

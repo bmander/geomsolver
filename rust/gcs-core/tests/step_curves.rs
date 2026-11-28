@@ -92,7 +92,9 @@ impl File {
         self.e.iter().filter(|(_, (n, _))| n == "EDGE_CURVE").map(|(_, (_, p))| {
             let p = items(p);
             let vertex = |s: &str| { let (_, v) = self.get(reference(s)); self.point(reference(v[1])) };
-            let (_, g) = self.get(reference(p[3]));
+            // (an edge whose pcurves a reader reads off its curve is written as that curve alone)
+            let (kind, g) = self.get(reference(p[3]));
+            if kind != "SURFACE_CURVE" && kind != "SEAM_CURVE" { return (reference(p[3]), [vertex(p[1]), vertex(p[2])], Vec::new()) }
             let pcurves = list(g[2]).into_iter().map(|pc| {
                 let (_, pc) = self.get(reference(pc));
                 let (_, rep) = self.get(reference(pc[2]));
@@ -218,7 +220,9 @@ fn follows(what: &str, b: &Brep) {
     for w in reads.windows(2) {
         let ((coarse, a), (fine, z)) = (&w[0], &w[1]);
         assert!(a != z, "{what}: two tolerances write one file");
-        assert!(fine.poles > coarse.poles && fine.pcurve_poles > coarse.pcurve_poles, "{what}: a finer tolerance in no more poles");
+        // (its pcurves too, where it writes any: a reader reads most off their curves, #1045)
+        let pcurves = fine.pcurve_poles > coarse.pcurve_poles || fine.pcurve_poles == 0 && coarse.pcurve_poles == 0;
+        assert!(fine.poles > coarse.poles && pcurves, "{what}: a finer tolerance in no more poles");
         assert!(fine.miss() < coarse.miss(), "{what}: a finer tolerance no nearer ({:e} against {:e})", fine.miss(), coarse.miss());
     }
     // as few poles as the bar allows: a cubic's miss goes as the fourth power of its pieces'

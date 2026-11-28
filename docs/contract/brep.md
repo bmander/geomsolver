@@ -31,8 +31,8 @@ unit ball on that frame stretched — and what is no such solid refused by name:
 speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
 staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
-assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`.
+assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214, its pcurves only
+where the curve in space does not say them, and seam curves), `recipe`.
 **A traced intersection is written as a cubic, held to the kernel's own bar where no tolerance
 is stated and to the tolerance where one is** (#961, `step::bezier_curve`, `step::hermite_fit`,
 `step::Fit`): no entity of the standard writes a `Traced` curve, so the file carries a piecewise
@@ -59,9 +59,31 @@ there), so the cubic and each pcurve's image stand within twice the bar of each 
 parameter, and their ends are the edge's vertices. The pieces are marched along the curve as long
 as the bar allows (a cubic's miss goes as the fourth power of its length, so each is shortened
 where it misses and the next lengthened by the fourth root of the bar over the miss), stopping at
-every break of the curve (a spline's knots; a trace's kinks, `Traced::kinks`, its points beside a
-stretch read on a parabola); joints where the curve is smooth share their rate and are double
-knots. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+every break of the curve (a spline's knots where it is no more than once differentiable, as many
+times over as its degree less one — across a cubic's simple knot its rate and curvature run on,
+and a cubic over several follows it, its miss measured as every piece's is: stopped at every knot,
+a worm wheel's flank's pcurves took three poles to each span of their edges' cubics, 290 beside
+105, at a thirtieth of the bar; a trace's kinks, `Traced::kinks`, its points beside a stretch read
+on a parabola; `step::breaks_of`); joints where the curve is smooth share their rate and are double
+knots. **Every use's pcurve is read before anything is written** (`step::pcurve_plan`, on every core
+with each use's distance off its face, `Brep::standing`), and written in the edges' order
+(`pcurve_written`), so the file is the same byte for byte; an inverse pcurve's feet along one edge
+are each found once (`topo::Feet`, a cubic's end read both as a point and for its rate), each from
+the line between the edge's ends as `Pcurve::at` finds it — sought from a foot found beside it, a
+face read on its sheet's rows had a pcurve written 3.4e-3 off its edge. **A pcurve is written
+only where the curve in space does not say it** (#1045, `step::solid`): a seam's two, which alone
+say which side of the seam each use is; one a reader would not read off the edge's curve alone
+(`step::derivable`: the edge walked onto its face as the reader walks it, its first foot sought
+over the whole surface and each next from the last, at 64 points, each foot within the tolerance
+of the edge's point and its parameters the pcurve's own, a whole period apart on a surface closed
+round one); and the kernel's own spline in a face's parameters where the curve in space was
+fitted to it (the master representation, `.PCURVE_S1.`). Every other is the edge's curve read on
+the face, which a reader reads as the kernel does (brep-bench measures each face by its edges'
+curves in space; cadrs writes no pcurve), and is neither fitted nor written — an edge with none is
+written as its curve alone, no `SURFACE_CURVE`. The worm wheel: 10.2 MB of STEP, from 12.7, and
+nothing read back moved. (Its points written to 1e-11 mm besides, a V wheel's groove read back
+0.49 mm off its edge, and the files of the library read surfaces back with other numbers: every
+real is written as the shortest that reads back to it.) **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
 parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
 points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
 wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a

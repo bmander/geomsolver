@@ -74,11 +74,17 @@ impl Solid {
         let mesh_sag = {
             let off = |f: usize,x: V| b.faces[f].surface.implicit(x).abs();
             // (spread over the cores: a free-form face's implicit is a search, and a fine mesh has
-            // tens of thousands of triangles)
-            let measured = crate::util::par::indices(m.tris.len(),|i| {
-                let [p,q,r] = m.tris[i].map(|k| m.pts[k as usize]);
-                let centre = [(p[0]+q[0]+r[0])/3.,(p[1]+q[1]+r[1])/3.,(p[2]+q[2]+r[2])/3.];
-                [lerp(p,q,0.5),lerp(q,r,0.5),lerp(r,p,0.5),centre].into_iter().map(|x| off(m.of[i] as usize,x)).fold(0_f64,f64::max)
+            // tens of thousands of triangles — read in runs of `RUN` neighbours, each run one item,
+            // so a search starts warm from the foot found beside it (`util::warm`, forgotten at
+            // every item): a screwed sheet's searched from cold at each of 77 000 points was a
+            // fifth of a worm wheel's hobbing)
+            const RUN: usize = 64;
+            let measured = crate::util::par::indices(m.tris.len().div_ceil(RUN),|run| {
+                (run*RUN..((run+1)*RUN).min(m.tris.len())).map(|i| {
+                    let [p,q,r] = m.tris[i].map(|k| m.pts[k as usize]);
+                    let centre = [(p[0]+q[0]+r[0])/3.,(p[1]+q[1]+r[1])/3.,(p[2]+q[2]+r[2])/3.];
+                    [lerp(p,q,0.5),lerp(q,r,0.5),lerp(r,p,0.5),centre].into_iter().map(|x| off(m.of[i] as usize,x)).fold(0_f64,f64::max)
+                }).fold(0_f64,f64::max)
             }).into_iter().fold(0_f64,f64::max);
             m.sag.max(measured)/scale+1e-12*(1.+size)
         };
@@ -384,10 +390,13 @@ impl Swept<'_> {
             if reads > MOST_READS { return Err(near.map_or(Unsettled::Unbounded,|at| Unsettled::Near {at})) }
             let m = 0.5*(lo+hi);
             let pose = self.path.pose(m).map_err(|e| Unsettled::Unread(e.msg))?;
-            // the side, by the winding number, only where the distance can settle either way
+            // the side read off the nearest triangle's pseudo-normal, as `beyond` reads it, the
+            // winding number only where the mesh is no closed manifold there (`signed_near`): the
+            // winding number over every triangle at every stretch was nine tenths of a worm wheel's
+            // hobbing (19 382 triangles, 28 s of 31)
             let back = pose.inverse().point(x);
-            let mut d = self.tool.distance(back);
-            if d > sag && self.tool.winding(back) > 0.5 { d = -d }
+            let (mut d,inside) = self.tool.signed_near(back);
+            if d > sag && inside { d = -d }
             if d < -sag { return Ok(true) }
             let h = 0.5*(hi-lo);
             // **how far the point carried back strays from where it stands at the middle** over
