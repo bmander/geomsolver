@@ -41,8 +41,8 @@ arm := beam(span, {section}) of steel
 
 /// The section of a `b`-wide rectangle `h` deep.
 fn rectangle(b: &str, h: &str) -> String {
-    format!("A: ({b}) * ({h}), Iy: ({h}) * ({b})^3 / 12, Iz: ({b}) * ({h})^3 / 12, \
-             J: 0.229 * ({h}) * ({b})^3")
+    format!("A: {b} * {h}, Iy: {h} * ({b})^3 / 12, Iz: {b} * ({h})^3 / 12, \
+             J: 0.229 * {h} * ({b})^3")
 }
 
 /// A plate 160 by 60 in the front, 5 thick, with a hole of radius `r` (an unknown) at its
@@ -79,6 +79,11 @@ web := solid(std.solids.Prism(plate, from: -2.5mm, to: 2.5mm)) of alloy
 }
 
 /// `src` elaborated with no error and solved.
+/// The radius of `holed`'s hole when the plate's volume is 42 000 mm³: `√((L h − V / t) / π)`.
+fn hole_radius() -> f64 {
+    ((160.0 * 60.0 - 42000.0 / 5.0) / std::f64::consts::PI).sqrt()
+}
+
 fn sized(src: &str) -> (Elaborated, Sketch) {
     let e = crate::common::read(src);
     let sk = crate::common::solved(&e);
@@ -227,7 +232,7 @@ fn the_librarys_measures_hold_their_closed_forms() {
 /// beside it are judged, kept and refuted.
 #[test]
 fn a_volume_sizes_a_hole() {
-    let want = ((160.0 * 60.0 - 42000.0 / 5.0) / std::f64::consts::PI).sqrt();
+    let want = hole_radius();
     let claims = "volume(42 * 1cm^3) web\nclaim mass(<= 1kg) web\nclaim mass(>= 1kg) web\n";
     for reading in ["scenario s {\n  plane stress web\n  fixed web.root\n}", "", "scenario s {\n  \
                      fixed web.root\n  claim deflection(b, along: std.x) >= 0mm\n}"] {
@@ -251,9 +256,9 @@ fn a_volume_sizes_a_hole() {
 /// bound meant: kept above the volume and refuted below it, never a million times looser.
 #[test]
 fn a_volume_is_written_as_the_report_reads_it() {
-    let want = ((160.0 * 60.0 - 42000.0 / 5.0) / std::f64::consts::PI).sqrt();
+    let want = hole_radius();
+    let claims = "claim volume(<= 42100mm^3) web\nclaim volume(<= 41900mm^3) web\n";
     for stated in ["volume(42cm^3) web", "volume(42000mm^3) web"] {
-        let claims = "claim volume(<= 42100mm^3) web\nclaim volume(<= 41900mm^3) web\n";
         let (e, sk) = sized(&holed(&format!("{stated}\n{claims}")));
         let r = unknown(&sk, "r");
         assert!((r - want).abs() <= 1e-5 * want, "{stated}: {r} against {want}");

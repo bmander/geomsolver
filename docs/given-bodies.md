@@ -611,8 +611,8 @@ in the kernel or the evaluator, and the measurements above are after the fixes.
 - **A file turned against its own loops is refused, not healed** (cgb240): nothing guesses which
   of the face's sense and its boundary the file meant.
 - **The OCCT route** refuses a given body, naming `--kernel rust`; the core's kernel is the export.
-- **A bound written `21400mm^3` is (21400 mm)³**, silently: write `21400 * 1mm^3`. A rule of the
-  units, older than stage 2.
+- **A bound written `21400mm^3` was (21400 mm)³**, silently, through 0.230: since [0.231] a power
+  after a literal is its unit's, and it is the 21 400 mm³ meant (#905).
 
 ## The issue's open questions, as the experiment answers them
 

@@ -15,6 +15,13 @@ fn ev(text: &str) -> f64 {
     eval(&parse(text).unwrap().body, &BTreeMap::new()).unwrap().number().expect("a number")
 }
 
+/// `text` worked out in a document of length unit `unit`: its number and its dimension.
+fn ev_in(text: &str, unit: &str) -> (f64, gcs_core::units::Dim) {
+    let units = gcs_core::units::Units::with_length(unit).unwrap();
+    let a = eval(&expr::parse_in(text, units).unwrap().body, &BTreeMap::new()).unwrap();
+    (a.number().expect("a number"), a.dim)
+}
+
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-9 * (1.0 + a.abs().max(b.abs()))
 }
@@ -40,34 +47,30 @@ fn arithmetic_reads_as_on_paper() {
 #[test]
 fn a_power_after_a_unit_is_the_units() {
     use gcs_core::units::{Dim, Units};
-    let read = |text: &str, unit: &str| {
-        let units = Units::with_length(unit).unwrap();
-        let a = eval(&expr::parse_in(text, units).unwrap().body, &BTreeMap::new()).unwrap();
-        (a.number().expect("a number"), a.dim)
-    };
     let volume = Dim::LENGTH.powf(3.0).unwrap();
     let area = Dim::LENGTH.powf(2.0).unwrap();
-    assert_eq!(read("10mm^3", "mm"), (10.0, volume));
-    assert_eq!(read("10mm**3", "mm"), (10.0, volume));
-    assert_eq!(read("10 * 1mm^3", "mm"), (10.0, volume));
-    assert_eq!(read("(10mm)^3", "mm"), (1000.0, volume));
-    assert_eq!(read("-10mm^2", "mm"), (-10.0, area));
-    assert_eq!(read("2^3", "mm"), (8.0, Dim::SCALAR));
-    assert_eq!(read("4mm^-1", "mm"), (4.0, Dim::LENGTH.powf(-1.0).unwrap()));
-    assert_eq!(read("10mm^(1 + 2)", "mm"), (10.0, volume));
-    // the unit converts to the document's, raised to the power, and the number stays as written
-    let (v, d) = read("42cm^3", "mm");
-    assert!(close(v, 42000.0) && d == volume, "{v}");
-    let (v, _) = read("42cm^3", "m");
-    assert!(close(v, 42e-6), "{v}");
-    let (v, _) = read("3 1/2in^2", "mm");
-    assert!(close(v, 3.5 * 25.4 * 25.4), "{v}");
-    let (v, _) = read("6\"^2", "in");
-    assert!(close(v, 6.0), "{v}");
-    let (v, _) = read("2ft^2", "in");
-    assert!(close(v, 288.0), "{v}");
-    let (v, d) = read("7850kg / 1m^3", "mm");
-    assert!(close(v, 7850e-9) && d == Dim::DENSITY, "{v}");
+    assert_eq!(ev_in("10mm^3", "mm"), (10.0, volume));
+    assert_eq!(ev_in("10mm**3", "mm"), (10.0, volume));
+    assert_eq!(ev_in("10 * 1mm^3", "mm"), (10.0, volume));
+    assert_eq!(ev_in("(10mm)^3", "mm"), (1000.0, volume));
+    assert_eq!(ev_in("-10mm^2", "mm"), (-10.0, area));
+    assert_eq!(ev_in("2^3", "mm"), (8.0, Dim::SCALAR));
+    assert_eq!(ev_in("4mm^-1", "mm"), (4.0, Dim::LENGTH.powf(-1.0).unwrap()));
+    assert_eq!(ev_in("10mm^(1 + 2)", "mm"), (10.0, volume));
+    // the unit converts to the document's, raised to the power, and the number stays as written;
+    // feet and inches bracketed are the length's power
+    for (text, unit, want, dim) in [
+        ("42cm^3", "mm", 42000.0, volume),
+        ("42cm^3", "m", 42e-6, volume),
+        ("3 1/2in^2", "mm", 3.5 * 25.4 * 25.4, area),
+        ("6\"^2", "in", 6.0, area),
+        ("2ft^2", "in", 288.0, area),
+        ("(1' 6\")^2", "in", 324.0, area),
+        ("7850kg / 1m^3", "mm", 7850e-9, Dim::DENSITY),
+    ] {
+        let (v, d) = ev_in(text, unit);
+        assert!(close(v, want) && d == dim, "{text} in {unit}: {v}");
+    }
     // a name is what it stands for, so a power after one is the whole value's
     let mut env = BTreeMap::new();
     env.insert("w".to_string(), eval(&parse("10mm").unwrap().body, &BTreeMap::new()).unwrap());
@@ -76,12 +79,10 @@ fn a_power_after_a_unit_is_the_units() {
     // feet and inches are two units, and a power of the pair is no one unit's
     let e = parse("1' 6\"^2").unwrap_err();
     assert!(e.contains("feet and inches") && e.contains("(1' 6\")^2"), "{e}");
-    let (v, _) = read("(1' 6\")^2", "in");
-    assert!(close(v, 324.0), "{v}");
     // a reading prints a volume as its number of the unit cubed, and that text reads back
     let printed = volume.reading(42000.0, Units::with_length("mm").unwrap(), 6);
     assert_eq!(printed, "42000 mm^3");
-    assert_eq!(read(&printed.replace(' ', ""), "mm"), (42000.0, volume));
+    assert_eq!(ev_in(&printed.replace(' ', ""), "mm"), (42000.0, volume));
 }
 
 #[test]

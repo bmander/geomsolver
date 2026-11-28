@@ -104,7 +104,8 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
     match unit(&word) {
         Some(u) => {
             *i = j;
-            Ok((units.convert(v, u), u.dim, Of::Unit(v, units.convert(1.0, u))))
+            let one = units.convert(1.0, u);
+            Ok((units.convert(v, u), u.dim, Of::Unit(v, one)))
         }
         // not a unit: it is a name, and `2r` is two times r as it always was
         None => Ok((v, Dim::SCALAR, Of::Bare)),
@@ -454,27 +455,27 @@ impl Parser {
     /// would be no one unit's, so it is refused, saying to bracket the length.
     fn power(&mut self) -> Result<Ast, String> {
         let at = self.here();
-        let of = match self.peek() {
-            Tok::Num(_, _, of) => *of,
-            _ => Of::Bare,
+        let literal = match self.peek() {
+            Tok::Num(_, dim, of) => Some((*dim, *of)),
+            _ => None,
         };
         let base = self.atom()?;
-        if *self.peek() == Tok::Pow {
-            self.next();
-            let e = self.unary()?;
-            return match (of, base) {
-                (Of::Unit(n, one), Ast::Num(_, dim)) => {
-                    let unit = Ast::Bin(Op::Pow, Box::new(Ast::Num(one, dim)), Box::new(e));
-                    Ok(Ast::Bin(Op::Mul, Box::new(Ast::Num(n, Dim::SCALAR)), Box::new(unit)))
-                }
-                (Of::FeetInches, _) => Err(format!(
-                    "a power after feet and inches at {at} is no one unit's: bracket the length \
-                     for its power (`(1' 6\")^2`), or write a number of one unit (`18in^2`)"
-                )),
-                (_, base) => Ok(Ast::Bin(Op::Pow, Box::new(base), Box::new(e))),
-            };
+        if *self.peek() != Tok::Pow {
+            return Ok(base);
         }
-        Ok(base)
+        self.next();
+        let e = self.unary()?;
+        match literal {
+            Some((dim, Of::Unit(n, one))) => {
+                let unit = Ast::Bin(Op::Pow, Box::new(Ast::Num(one, dim)), Box::new(e));
+                Ok(Ast::Bin(Op::Mul, Box::new(Ast::Num(n, Dim::SCALAR)), Box::new(unit)))
+            }
+            Some((_, Of::FeetInches)) => Err(format!(
+                "a power after feet and inches at {at} is no one unit's: bracket the length for \
+                 its power (`(1' 6\")^2`), or write a number of one unit (`18in^2`)"
+            )),
+            _ => Ok(Ast::Bin(Op::Pow, Box::new(base), Box::new(e))),
+        }
     }
 
     fn atom(&mut self) -> Result<Ast, String> {
