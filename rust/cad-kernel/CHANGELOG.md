@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.28.0] - 2026-11-28
+
 - **A worm wheel hobbed by its worm** (`swept::generated`, new; brep-bench's
   `worm-wheel-hobbed-by-its-worm`, refused before). A tool a screw carries onto itself — every
   face a screw's sheet of one generator, its ends planes square to the axis (`Thread::read`) —
