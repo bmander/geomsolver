@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.28.0] - 2026-11-28
+
 - **A worm wheel hobbed by its worm** (`swept::generated`, new; brep-bench's
   `worm-wheel-hobbed-by-its-worm`, refused before). A tool a screw carries onto itself — every
   face a screw's sheet of one generator, its ends planes square to the axis (`Thread::read`) —
@@ -19,7 +21,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   apart from its neighbours it trims one tooth space within its sector and patterns the cut. The
   worm wheel's volume and area are cadrs's within 1.8e-9 and 3.1e-9, in 25 s on four cores.
 - **`trim::Reach::Sector`** (new): one sector of a cylinder about an axis, a sweep's copy trimmed
-  within it alone.
+  within it alone. **Breaking** for code matching `Reach` exhaustively.
 - **`pattern::pattern` takes a sector through its axis**: what its two sides share (the axis) is
   left out with them, so a solid disc's slice patterns into the disc, refused before ("across a
   side, a plane meets a plane").
