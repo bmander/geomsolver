@@ -2183,9 +2183,14 @@ from its rail out to where each slice first crosses the cylinder about the obser
 between the reach and the nearest any slice's far end comes (`generated::Joints`): past it a
 flank's generator, down to the worm's root, touches far along the roll and is carried far round the
 axis (99 mm out at the bottom slice); where some slice's far end stays within the reach the face is
-charted whole. The slices are taken only where every point of the run's sheets within the reach,
-read over the window's turns, is the slice chart's own at its height (`generated::charts`); else
-the sheets are charted over the screw's turn, as before. Over the turn a flank bends hardest at the
+charted whole. The slices are taken where they read every point of the run's sheets within the
+reach, in closed form (`Slices::new`): the thread's axis farther from the observer's than the
+reach's radius, so no point on its far side — at least that far off along the way between the
+axes, which neither motion changes — is ever within it; and every generator of the run (a line,
+its point nearest the axis in closed form) farther from the thread's axis than any slice, so each
+slice has its turn. Else the sheets are charted over the screw's turn, as before. `fitted` reads
+each row of its chart once (`generated::Chart`: a slice's corners each at its own turn and its
+ending faces' joints, or a turn's corners) and each element's points from it. Over the turn a flank bends hardest at the
 window's ends (65 × 257 poles doubled all over, 108 MB of STEP; 28 × 73 halved where it misses,
 20 MB); over the slices it runs as its tooth's profile does from slice to slice, 23 × 45 (12.7 MB;
 cadrs's 28 × 10, within 1e-8 of the tool's size, 4.6 MB) (laid by `build::sheets`; the trim meets no two

@@ -27,9 +27,9 @@
 //! whose sheets reach the blank (`Reach`) in each period, and every copy is that one turned. The
 //! elements reaching the blank, in the section's order, are one candidate: their sheets fitted on
 //! one grid along them — the observer's slices, which the turn and the slide keep, where they chart
-//! the sheets (`Slices`), else `φ` — each rail between two of them one curve, so the candidate is closed along its
-//! rails by construction and no meeting between its faces is sought (the trim meets no two faces
-//! of one candidate). Where one copy's turns about the observer's axis within the reach span less
+//! the sheets (`Slices`), else `φ` — each rail between two of them one curve, so the candidate is
+//! closed along its rails by construction and no meeting between its faces is sought (the trim
+//! meets no two faces of one candidate). Where one copy's turns about the observer's axis within the reach span less
 //! than a pitch, by `CLEAR` of it either way, its sector holds it alone (`Sector`): the caller
 //! trims that one copy within the sector and patterns what it cuts, the copies being the turn's.
 //!
@@ -50,6 +50,7 @@ use crate::trajectory::{Screw,Trajectory,Twist};
 use crate::util::space::{cross,distance,dot,norm,scale,sub,unit};
 use super::closed::Unbuilt;
 use super::trim::Reach;
+use crate::util::fmath::Det;
 use std::collections::BTreeMap;
 use std::f64::consts::{PI,TAU};
 
@@ -277,82 +278,136 @@ fn corner(thread: &Thread,rack: &Rack,k: usize,phi: f64) -> Result<Corner,Unbuil
 /// tolerance on 21 × 45 poles over the slices, 23 × 62 over the turn (and its file 12.7 MB, not
 /// 19.8; cadrs's, within 1e-8 of the tool's size, on 28 × 10).
 #[derive(Clone,Copy,Debug)]
-struct Slices { toward: V,z: V,side: f64,height: f64,middle: f64,span: [f64;2] }
+struct Slices { o: V,z: V,toward: V,side: f64,height: f64,middle: f64,span: [f64;2] }
 
 impl Slices {
-    /// The chart of `thread` by slices square to the observer's axis (through `o` along the unit
-    /// `z`) over the heights `span`, its turns in the period about `middle`: None where the thread's
-    /// axis does not stand square to `z` or passes through the observer's.
-    fn new(thread: &Thread,o: V,z: V,middle: f64,span: [f64;2]) -> Option<Slices> {
+    /// **The chart of `run` by slices square to the observer's axis** (through `o` along the unit
+    /// `z`) over the heights `span`, its turns in the period about `middle` — taken where it reads
+    /// every point of the run's sheets within the reach (of radius `r` about that axis), in closed
+    /// form: the thread's axis square to `z` and farther from the observer's than `r`, so no point
+    /// on its far side (`cos ψ ≤ 0`, at least that far off along `toward`, which neither motion
+    /// changes) is ever within the reach; and every generator of the run, its whole run (a line's
+    /// nearest the axis in closed form; any other generator is not read), farther from the thread's
+    /// axis than any slice stands from it, so each slice has its turn. The window is narrower than a
+    /// period and centred on `middle`, so a point the window's turns carry into the reach is read
+    /// at its own turn. None otherwise, and the sheets are charted over the turn.
+    fn new(thread: &Thread,run: &[Element],o: V,z: V,r: f64,middle: f64,span: [f64;2]) -> Option<Slices> {
         if dot(thread.axis,z).abs() > 1e-12 { return None }
         let across = cross(z,thread.axis);
         let way = dot(sub(o,thread.centre),across);
-        if way == 0. { return None }
+        if !(way.abs() > r) { return None }
         let toward = scale(across,way.signum());
-        Some(Slices {toward,z,side:dot(cross(thread.axis,toward),z),height:dot(sub(thread.centre,o),z),middle,span})
+        let height = dot(sub(thread.centre,o),z);
+        let sl = Slices {o,z,toward,side:dot(cross(thread.axis,toward),z),height,middle,span};
+        let farthest = (span[0]-height).abs().max((span[1]-height).abs());
+        let generators = run.iter().flat_map(|&el| match el { Element::Face(k) => vec![k],Element::Fan(k) => vec![k,(k+thread.generators.len()-1)%thread.generators.len()] });
+        for g in generators {
+            let gen = &thread.generators[g];
+            let Curve::Line {..} = gen.curve else { return None };
+            let [p,q] = gen.t.map(|t| sl.radial(thread,gen.curve.point(t)));
+            let d = sub(q,p);
+            let w = if dot(d,d) > 0. { (-dot(p,d)/dot(d,d)).clamp(0.,1.) } else { 0. };
+            if !(norm(crate::util::space::add(p,scale(d,w))) > farthest) { return None }
+        }
+        Some(sl)
     }
     /// The height of the slice the fraction `s` of the way over the span.
     fn height_at(&self,s: f64) -> f64 { self.span[0]+s*(self.span[1]-self.span[0]) }
+    /// `p`'s offset from the thread's axis, square to it.
+    fn radial(&self,thread: &Thread,p: V) -> V { let q = sub(p,thread.centre); sub(q,scale(thread.axis,dot(q,thread.axis))) }
     /// The turn at which the thread's point that stands at `p` unturned stands at height `h`, facing
     /// the observer's axis, in the window's period; None where it never reaches that height.
     fn turn(&self,thread: &Thread,p: V,h: f64) -> Option<f64> {
-        let q = sub(p,thread.centre);
-        let rho = sub(q,scale(thread.axis,dot(q,thread.axis)));
-        let r = norm(rho);
-        let sine = (h-self.height)/r;
+        let rho = self.radial(thread,p);
+        let sine = (h-self.height)/norm(rho);
         if !(sine.abs() < 1.) { return None }
-        let psi0 = dot(rho,self.z).atan2(dot(rho,self.toward));
-        let phi = self.side*(sine.asin()-psi0);
+        let psi0 = dot(rho,self.z).datan2(dot(rho,self.toward));
+        let phi = self.side*(sine.dasin()-psi0);
         Some(phi+TAU*((self.middle-phi)/TAU).round())
     }
-    /// The turn at which element `el`'s point at `w` across it stands at height `h`: a face's at
-    /// its generator's point there, a fan's at its corner's.
-    fn element_turn(&self,thread: &Thread,el: Element,w: f64,h: f64) -> Option<f64> {
-        let (g,u) = match el { Element::Face(k) => (k,w),Element::Fan(k) => (k,0.) };
+    /// The turn at which generator `g`'s point at `u` along it stands at height `h`.
+    fn generator_turn(&self,thread: &Thread,g: usize,u: f64,h: f64) -> Option<f64> {
         let gen = &thread.generators[g];
         self.turn(thread,gen.curve.point(gen.t[0]+u*(gen.t[1]-gen.t[0])),h)
     }
-    /// **Element `el`'s sheet at `w` across it and height `h`**: its rails each corner's read at the
-    /// turn that corner stands at that height (so two elements sharing one read the same points).
-    fn point(&self,thread: &Thread,rack: &Rack,el: Element,w: f64,h: f64) -> Result<V,Unbuilt> {
-        let m = thread.generators.len();
-        let missed = || unfitted("a slice no point of the thread reaches");
-        let at = |k: usize| -> Result<Corner,Unbuilt> {
-            let phi = self.element_turn(thread,Element::Fan(k),0.,h).ok_or_else(missed)?;
-            corner(thread,rack,k,phi)
-        };
-        match el {
-            Element::Face(k) if w == 0. => Ok(at(k)?.rails[1]),
-            Element::Face(k) if w == 1. => Ok(at((k+1)%m)?.rails[0]),
-            Element::Face(k) => {
-                let phi = self.element_turn(thread,el,w,h).ok_or_else(missed)?;
-                let (x,_,n) = thread.at(k,w,phi);
-                let t = rack.contact(x,n).ok_or(Unbuilt::Curved {at:x})?;
-                rack.carried(x,t)
-            }
-            Element::Fan(k) => {
-                let c = at(k)?;
-                match w { 0. => Ok(c.rails[0]),1. => Ok(c.rails[1]),_ => { let [t0,t1] = c.times; rack.carried(c.point,t0+w*(t1-t0)) } }
-            }
-        }
+}
+
+/// **A way the run's sheets are charted** (`fitted`): one row read at each site along (`row`: the
+/// readings every point of it shares, read once), and each element's point of it at `w` across.
+trait Chart: Sync {
+    type Row: Send+Sync;
+    fn row(&self,s: f64) -> Result<Self::Row,Unbuilt>;
+    fn point(&self,row: &Self::Row,e: usize,w: f64) -> Result<V,Unbuilt>;
+}
+
+/// **Over the screw's turn** across the window: a row is the turn and its corners.
+struct Turns<'a> { thread: &'a Thread,rack: &'a Rack,run: &'a [Element],window: [f64;2] }
+
+impl Chart for Turns<'_> {
+    type Row = (f64,Vec<Corner>);
+    fn row(&self,s: f64) -> Result<(f64,Vec<Corner>),Unbuilt> {
+        let phi = self.window[0]+s*(self.window[1]-self.window[0]);
+        Ok((phi,corners(self.thread,self.rack,phi)?))
+    }
+    fn point(&self,(phi,at): &(f64,Vec<Corner>),e: usize,w: f64) -> Result<V,Unbuilt> {
+        sheet_point(self.thread,self.rack,self.run[e],w,*phi,&|k| Ok(at[k]))
     }
 }
 
-/// **Element `el`'s sheet at `w` across it and turn `φ`**, `at` the corners there: its rails
-/// exactly the corners' (so two elements sharing one read the same points there).
-fn sheet_point(thread: &Thread,rack: &Rack,el: Element,w: f64,phi: f64,at: &[Corner]) -> Result<V,Unbuilt> {
+/// **Over the observer's slices** (`Slices`): a row is its height, each corner read at the turn it
+/// stands at there (so two elements sharing one read the same points), and each element's span
+/// across charted there (`Joints`); a face's point inside it read at its own turn for the height.
+struct Sliced<'a> { sl: Slices,thread: &'a Thread,rack: &'a Rack,run: &'a [Element],joints: Joints }
+
+/// A slice's readings (`Sliced`): its height, each corner there (none where it never stands
+/// there), and each element's span across.
+struct Slice { h: f64,at: Vec<Option<Corner>>,ranges: Vec<[f64;2]> }
+
+impl Sliced<'_> {
+    /// Element `e`'s point at `w` across the whole of it, at height `h`, `at` the corners there.
+    fn whole(&self,h: f64,at: &[Option<Corner>],e: usize,w: f64) -> Result<V,Unbuilt> {
+        let missed = || unfitted("a slice no point of the thread reaches");
+        let el = self.run[e];
+        let phi = match el { Element::Face(k) if w > 0. && w < 1. => self.sl.generator_turn(self.thread,k,w,h).ok_or_else(missed)?,_ => 0. };
+        sheet_point(self.thread,self.rack,el,w,phi,&|k| at[k].ok_or_else(missed))
+    }
+    /// The corners at height `h`.
+    fn corners_at(&self,h: f64) -> Vec<Option<Corner>> {
+        (0..self.thread.generators.len()).map(|k| self.sl.generator_turn(self.thread,k,0.,h)
+            .and_then(|phi| corner(self.thread,self.rack,k,phi).ok())).collect()
+    }
+}
+
+impl Chart for Sliced<'_> {
+    type Row = Slice;
+    fn row(&self,s: f64) -> Result<Slice,Unbuilt> {
+        let h = self.sl.height_at(s);
+        let at = self.corners_at(h);
+        let ranges = (0..self.run.len()).map(|e| self.joints.range(self,h,&at,e)).collect::<Result<_,_>>()?;
+        Ok(Slice {h,at,ranges})
+    }
+    fn point(&self,row: &Slice,e: usize,w: f64) -> Result<V,Unbuilt> {
+        let [a,b] = row.ranges[e];
+        self.whole(row.h,&row.at,e,a+w*(b-a))
+    }
+}
+
+/// **Element `el`'s sheet at `w` across it**, a face's inside read at the turn `φ`, `at` each
+/// corner's reading: its rails exactly the corners' (so two elements sharing one read the same
+/// points there).
+fn sheet_point(thread: &Thread,rack: &Rack,el: Element,w: f64,phi: f64,at: &dyn Fn(usize) -> Result<Corner,Unbuilt>) -> Result<V,Unbuilt> {
     let m = thread.generators.len();
     match el {
-        Element::Face(k) if w == 0. => Ok(at[k].rails[1]),
-        Element::Face(k) if w == 1. => Ok(at[(k+1)%m].rails[0]),
+        Element::Face(k) if w == 0. => Ok(at(k)?.rails[1]),
+        Element::Face(k) if w == 1. => Ok(at((k+1)%m)?.rails[0]),
         Element::Face(k) => {
             let (x,_,n) = thread.at(k,w,phi);
             let t = rack.contact(x,n).ok_or(Unbuilt::Curved {at:x})?;
             rack.carried(x,t)
         }
-        Element::Fan(k) if w == 0. => Ok(at[k].rails[0]),
-        Element::Fan(k) if w == 1. => Ok(at[k].rails[1]),
-        Element::Fan(k) => { let [t0,t1] = at[k].times; rack.carried(at[k].point,t0+w*(t1-t0)) }
+        Element::Fan(k) if w == 0. => Ok(at(k)?.rails[0]),
+        Element::Fan(k) if w == 1. => Ok(at(k)?.rails[1]),
+        Element::Fan(k) => { let c = at(k)?; let [t0,t1] = c.times; rack.carried(c.point,t0+w*(t1-t0)) }
     }
 }
 
@@ -362,7 +417,7 @@ fn reached<'a>(thread: &'a Thread,rack: &'a Rack,el: Element,phi: f64,at: &'a [C
     -> impl Iterator<Item=V> + 'a {
     let fan_of_concave = matches!(el,Element::Fan(k) if !at[k].convex);
     (0..=count).filter(move |_| !fan_of_concave)
-        .filter_map(move |i| sheet_point(thread,rack,el,i as f64/count as f64,phi,at).ok()).filter(move |&p| inside(p))
+        .filter_map(move |i| sheet_point(thread,rack,el,i as f64/count as f64,phi,&|k| Ok(at[k])).ok()).filter(move |&p| inside(p))
 }
 
 /// The degree the sheets are fitted at, both ways.
@@ -376,7 +431,8 @@ const ACROSS: usize = 12;
 /// **The candidates of the swept solid within `reach`** (see the module), or None where the tool
 /// is no thread, the motion no rack to it, its ends play a part within the reach, or the reach is no
 /// cylinder about the observer's axis: one candidate per copy of the period, each the section's
-/// elements that reach the reach, their sheets fitted within `tol / 4` on one grid of the turn — or,
+/// elements that reach the reach, their sheets fitted within `tol / 4` on one grid along them (the
+/// observer's slices where they read them, else the turn, `fitted`) — or,
 /// where one copy's sector holds it apart, that one copy and its sector. No meeting is given: the
 /// elements of one candidate share their rails, and two copies meet nowhere the trim does not find.
 pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol: f64) -> Result<Option<Generated>,Unbuilt> {
@@ -437,22 +493,20 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol:
     }
     if crate::debug() { eprintln!("generated: window [{:.4}, {:.4}] of the turn, runs {runs:?}, {} copies",window[0],window[1],rack.copies) }
     // **the chart**: by the observer's slices over the reach's span and a little past it (so no
-    // sheet ends in the plane the reach ends in), where every point of the run's sheets within the
-    // reach read over the window's turns is the slice chart's own at its height; else the turn's
+    // sheet ends in the plane the reach ends in), where they read the run's sheets (`Slices::new`);
+    // else the turn's
     let slab = SLAB*(span[1]-span[0]);
-    let slices = Slices::new(&thread,o,z,0.5*(window[0]+window[1]),[span[0]-slab,span[1]+slab])
-        .filter(|sl| charts(sl,&thread,&rack,&runs,window,&inside));
-    if crate::debug() { eprintln!("generated: the sheets charted by {}",if slices.is_some() { "the observer's slices" } else { "the screw's turn" }) }
     let chains: Vec<Brep> = runs.iter().map(|run| {
-        let nets = match &slices {
+        let middle = 0.5*(window[0]+window[1]);
+        let nets = match Slices::new(&thread,run,o,z,r,middle,[span[0]-slab,span[1]+slab]) {
             Some(sl) => {
-                let joints = Joints::new(sl,&thread,&rack,run,o,r*(1.+OUT))?;
-                if crate::debug() { eprintln!("generated: the run's outer joints on the cylinder of radius {:?}",joints.radius) }
-                fitted(run,&|el,w,s| { let h = sl.height_at(s); let [a,b] = joints.range(sl,&thread,&rack,run,el,h)?; sl.point(&thread,&rack,el,a+w*(b-a),h) },0.25*tol)?
+                let joints = Joints::new(&sl,&thread,&rack,run,r*(1.+OUT))?;
+                if crate::debug() { eprintln!("generated: {run:?} charted by the observer's slices, its ending faces cut on the cylinder of radius {:?}",joints.radius) }
+                fitted(run,&Sliced {sl,thread:&thread,rack:&rack,run,joints},0.25*tol)?
             }
             None => {
-                let phi = |s: f64| window[0]+s*(window[1]-window[0]);
-                fitted(run,&|el,w,s| sheet_point(&thread,&rack,el,w,phi(s),&corners(&thread,&rack,phi(s))?),0.25*tol)?
+                if crate::debug() { eprintln!("generated: {run:?} charted by the screw's turn") }
+                fitted(run,&Turns {thread:&thread,rack:&rack,run,window},0.25*tol)?
             }
         };
         let named = nets.into_iter().zip(run).map(|(net,el)| (net,match el {
@@ -481,55 +535,58 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol:
 /// nears the blank, its points touching far along the roll and carried far round the observer's
 /// axis (99 mm from it at the bottom slice, where the middle slice's whole flank stays within 33):
 /// such a face is charted from its rail out to where its slice first crosses the cylinder about
-/// the observer's axis (through `o` along the slices' `z`) halfway between the reach's radius and
-/// the least any slice's far end stands from the axis (`radius`) — a smooth curve on the sheet, so
-/// its net's last row — each crossing found once a height. Where some slice's far end stands
-/// within the reach, there is no cylinder, and the face is charted whole.
-struct Joints { o: V,radius: Option<f64>,found: std::sync::Mutex<BTreeMap<(usize,u64),f64>> }
+/// the observer's axis halfway between the reach's radius and the least any slice's far end stands
+/// from the axis (`radius`) — a smooth curve on the sheet, so its net's last row — each crossing
+/// found once a height. Where some slice's far end stands within the reach, there is no cylinder,
+/// and the face is charted whole.
+struct Joints { radius: Option<f64>,
+    /// Each element's rail with its neighbour where it is a face ending the run: at `w = 1` (true,
+    /// the run's first) or `w = 0` (its last).
+    ending: Vec<Option<bool>>,found: std::sync::Mutex<BTreeMap<(usize,u64),f64>> }
 
 impl Joints {
     /// The joints of `run`'s ending faces, past the reach's radius `r`, read on `RANGED` slices.
-    fn new(sl: &Slices,thread: &Thread,rack: &Rack,run: &[Element],o: V,r: f64) -> Result<Joints,Unbuilt> {
-        let ends: Vec<(usize,f64)> = Joints::ending(run);
+    fn new(sl: &Slices,thread: &Thread,rack: &Rack,run: &[Element],r: f64) -> Result<Joints,Unbuilt> {
+        let n = run.len();
+        let ending: Vec<Option<bool>> = (0..n).map(|e| match run[e] {
+            Element::Face(_) if n > 1 && e == 0 => Some(true),
+            Element::Face(_) if n > 1 && e == n-1 => Some(false),
+            _ => None,
+        }).collect();
+        let chart = Sliced {sl:*sl,thread,rack,run,joints:Joints {radius:None,ending:ending.clone(),found:Default::default()}};
         let mut least = f64::INFINITY;
-        for &(e,inner) in &ends {
+        for (e,&end) in ending.iter().enumerate() {
+            let Some(rail_at_one) = end else { continue };
             let far = crate::util::par::indices(RANGED+1,|j| -> Result<f64,Unbuilt> {
-                Ok(off_axis(sl.point(thread,rack,run[e],1.-inner,sl.height_at(j as f64/RANGED as f64))?,o,sl.z))
+                let h = sl.height_at(j as f64/RANGED as f64);
+                Ok(off_axis(chart.whole(h,&chart.corners_at(h),e,if rail_at_one { 0. } else { 1. })?,sl.o,sl.z))
             }).into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(f64::INFINITY,f64::min);
             least = least.min(far);
         }
-        let radius = (!ends.is_empty() && least > r).then(|| 0.5*(r+least));
-        Ok(Joints {o,radius,found:Default::default()})
+        let radius = (least.is_finite() && least > r).then(|| 0.5*(r+least));
+        Ok(Joints {radius,ending,found:Default::default()})
     }
-    /// The faces ending `run` that reach out past their rail: each's place in the run and the
-    /// fraction its rail with its neighbour stands at.
-    fn ending(run: &[Element]) -> Vec<(usize,f64)> {
-        let n = run.len();
-        if n < 2 { return Vec::new() }
-        [(0,1.),(n-1,0.)].into_iter().filter(|&(e,_)| matches!(run[e],Element::Face(_))).collect()
-    }
-    /// The span of element `el` of `run` charted at height `h`: from its rail to its joint where it
-    /// ends the run, else all of it.
-    fn range(&self,sl: &Slices,thread: &Thread,rack: &Rack,run: &[Element],el: Element,h: f64) -> Result<[f64;2],Unbuilt> {
-        let Some(radius) = self.radius else { return Ok([0.,1.]) };
-        let Some(&(e,inner)) = Joints::ending(run).iter().find(|&&(e,_)| run[e] == el) else { return Ok([0.,1.]) };
+    /// The span across element `e` of `chart`'s run charted at height `h` (`at` the corners
+    /// there): from its rail to its joint where it is a face ending the run, else all of it.
+    fn range(&self,chart: &Sliced,h: f64,at: &[Option<Corner>],e: usize) -> Result<[f64;2],Unbuilt> {
+        let (Some(radius),Some(rail_at_one)) = (self.radius,self.ending[e]) else { return Ok([0.,1.]) };
+        // (`x` the fraction of the way from the rail out to the far end)
+        let w = |x: f64| if rail_at_one { 1.-x } else { x };
+        let span = |w: f64| if rail_at_one { [w,1.] } else { [0.,w] };
         let key = (e,h.to_bits());
-        if let Some(&w) = self.found.lock().expect("the joints").get(&key) { return Ok(if inner == 1. { [w,1.] } else { [0.,w] }) }
-        // from the rail out (`x` the fraction of the way to the far end), the first step past the
-        // cylinder, then halved to rounding
-        let past = |x: f64| -> Result<bool,Unbuilt> {
-            let w = if inner == 1. { 1.-x } else { x };
-            Ok(off_axis(sl.point(thread,rack,el,w,h)?,self.o,sl.z) > radius)
-        };
+        if let Some(&x) = self.found.lock().expect("the joints").get(&key) { return Ok(span(w(x))) }
+        let past = |x: f64| -> Result<bool,Unbuilt> { Ok(off_axis(chart.whole(h,at,e,w(x))?,chart.sl.o,chart.sl.z) > radius) };
+        // the first step past the cylinder from the rail out, then halved to rounding
         let mut hi = None;
         for i in 1..=RANGED { let x = i as f64/RANGED as f64; if past(x)? { hi = Some(x); break } }
-        let Some(mut hi) = hi else { return Err(unfitted("a slice of a face ending the run never leaves the reach")) };
-        let mut lo = hi-1./RANGED as f64;
-        for _ in 0..60 { let m = 0.5*(lo+hi); if past(m)? { hi = m } else { lo = m } }
+        let Some(hi) = hi else { return Err(unfitted("a slice of a face ending the run never leaves the reach")) };
+        let mut failed = None;
+        let (lo,hi) = crate::util::roots::bisect(hi-1./RANGED as f64,hi,|a,b| 0.5*(a+b),|a,b| { let m = 0.5*(a+b); m != a && m != b },
+            |m| match past(m) { Ok(p) => !p,Err(why) => { failed.get_or_insert(why); false } });
+        if let Some(why) = failed { return Err(why) }
         let x = 0.5*(lo+hi);
-        let w = if inner == 1. { 1.-x } else { x };
-        self.found.lock().expect("the joints").insert(key,w);
-        Ok(if inner == 1. { [w,1.] } else { [0.,w] })
+        self.found.lock().expect("the joints").insert(key,x);
+        Ok(span(w(x)))
     }
 }
 
@@ -542,27 +599,6 @@ const SLAB: f64 = 0.00317;
 /// steps across a face its joint is first sought.
 const OUT: f64 = 0.0103;
 const RANGED: usize = 64;
-
-/// **Whether the slices chart the run's sheets** (`Slices`): at `SPREAD` points of each element
-/// over the window's turns, every one within the reach stands at the turn the slice chart reads
-/// for its height, to rounding — so the sheets fitted over the slices are the ones the window
-/// holds, and none the slices read is another period's or the far side's.
-fn charts(sl: &Slices,thread: &Thread,rack: &Rack,runs: &[Vec<Element>],window: [f64;2],inside: &dyn Fn(V) -> bool) -> bool {
-    (0..=SPREAD[0]).all(|j| {
-        let phi = window[0]+(window[1]-window[0])*j as f64/SPREAD[0] as f64;
-        let Ok(at) = corners(thread,rack,phi) else { return true };
-        runs.iter().flatten().all(|&el| {
-            if matches!(el,Element::Fan(k) if !at[k].convex) { return true }
-            (0..=SPREAD[1]).all(|i| {
-                let w = i as f64/SPREAD[1] as f64;
-                let Ok(p) = sheet_point(thread,rack,el,w,phi,&at) else { return true };
-                if !inside(p) { return true }
-                sl.element_turn(thread,el,w,dot(sub(p,thread.centre),sl.z)+sl.height)
-                    .is_some_and(|t| (t-phi).abs() <= 1e-9*(1.+phi.abs()))
-            })
-        })
-    })
-}
 
 /// **What the rack's road found** (`candidates`): the candidates, no meeting between them known —
 /// every copy's, or, where one copy's sector holds it apart from the others (`sector`), the one
@@ -609,37 +645,36 @@ fn sector_of(thread: &Thread,rack: &Rack,runs: &[Vec<Element>],window: [f64;2],r
 /// The road's refusal of a sheet it could not fit or lay.
 fn unfitted(why: &str) -> Unbuilt { Unbuilt::Failed(format!("the thread's generated sheets: {why}")) }
 
-/// **The run's sheets fitted on one grid along them** (the turn's, or the slices', `point` reading
-/// element `el`'s sheet at `w` across it and the fraction `s` along), each within `tol`: each
-/// element's rows across it interpolated at every site of the grid, through its exact points (its
-/// rails the corners' points, shared with its neighbours), then their poles along it
-/// (`nurbs::net_of_rows`). Each element's sites across it, and the run's sites along it, are
-/// halved only where a point between two of them misses (`refined`): a flank's sheet over the turn
-/// bends hardest at the window's ends, where its miss at the middle of a span stood five orders of
-/// magnitude over the miss at the window's middle on the same grid — so a grid doubled all over to
-/// fit its ends (the worm wheel's flanks on 64 × 256, 108 MB of STEP) carried eight times the poles
-/// one halved where it misses does (27 × 72). Each two neighbours' shared rail is then one curve,
-/// laid as both nets' edge row.
-fn fitted(run: &[Element],point: &(dyn Fn(Element,f64,f64) -> Result<V,Unbuilt> + Sync),tol: f64) -> Result<Vec<Net>,Unbuilt> {
+/// **The run's sheets fitted on one grid along them** (`chart`'s: the slices', or the turn's), each
+/// within `tol`: each element's rows across it interpolated at every site of the grid, through its
+/// exact points (its rails the corners' points, shared with its neighbours), then their poles along
+/// it (`nurbs::net_of_rows`). Each element's sites across it, and the run's sites along it, start
+/// as few as the degree takes and are halved only where a point between two of them misses
+/// (`refined`): a sheet bends harder in some places than others — a flank over the turn hardest at
+/// the window's ends, where its miss at the middle of a span stood five orders of magnitude over
+/// the miss at the window's middle, so a grid doubled all over to fit its ends (64 × 256, 108 MB
+/// of STEP) carried eight times the poles one halved where it misses does (27 × 72). Each two
+/// neighbours' shared rail is then one curve, laid as both nets' edge row.
+fn fitted<C: Chart>(run: &[Element],chart: &C,tol: f64) -> Result<Vec<Net>,Unbuilt> {
     let even = |n: usize| -> Vec<f64> { (0..=n).map(|i| i as f64/n as f64).collect() };
-    // (across from as few sites as the degree takes: a fan's and a crest's sheets hold far within
-    // the tolerance on any grid)
     let mut across: Vec<Vec<f64>> = vec![even(DEGREE);run.len()];
-    let mut along = even(16);
+    let mut along = even(DEGREE);
     loop {
-        // every site along and halfway between each two (the misses along read there)
+        // every site along and halfway between each two (the misses along read there), each row
+        // read once
         let halves: Vec<f64> = along.windows(2).flat_map(|w| [w[0],0.5*(w[0]+w[1])]).chain(along.last().copied()).collect();
+        let rows: Vec<C::Row> = crate::util::par::map(&halves,|&s| chart.row(s)).into_iter().collect::<Result<_,_>>()?;
         let mut nets = Vec::with_capacity(run.len());
         let mut grown = false;
         let mut missed_along = vec![false;along.len()-1];
         for (e,&el) in run.iter().enumerate() {
             let tu = &across[e];
-            let rows: Vec<BSpline> = crate::util::par::map(&along,|&s| {
-                let pts = tu.iter().map(|&w| point(el,w,s)).collect::<Result<Vec<V>,_>>()?;
+            let lines: Vec<BSpline> = crate::util::par::indices(along.len(),|i| {
+                let pts = tu.iter().map(|&w| chart.point(&rows[2*i],e,w)).collect::<Result<Vec<V>,_>>()?;
                 interpolate(&pts,tu,DEGREE).ok_or_else(|| unfitted("a row not interpolated"))
             }).into_iter().collect::<Result<_,_>>()?;
-            let net = crate::nurbs::net_of_rows(&rows,&along,DEGREE).ok_or_else(|| unfitted("a column not interpolated"))?;
-            let off = |u: f64,j: usize| -> Result<f64,Unbuilt> { Ok(distance(net.point(u,halves[j]),point(el,u,halves[j])?)) };
+            let net = crate::nurbs::net_of_rows(&lines,&along,DEGREE).ok_or_else(|| unfitted("a column not interpolated"))?;
+            let off = |u: f64,j: usize| -> Result<f64,Unbuilt> { Ok(distance(net.point(u,halves[j]),chart.point(&rows[j],e,u)?)) };
             // across: at the middle of each span of its sites, at every site along; along: at every
             // site across, halfway between each two sites along
             let read: Vec<(Vec<f64>,Vec<f64>)> = crate::util::par::indices(halves.len(),|j| -> Result<_,Unbuilt> {
