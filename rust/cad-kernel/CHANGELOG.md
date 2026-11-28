@@ -19,7 +19,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   apart from its neighbours it trims one tooth space within its sector and patterns the cut. The
   worm wheel's volume and area are cadrs's within 1.8e-9 and 3.1e-9, in 25 s on four cores.
 - **`trim::Reach::Sector`** (new): one sector of a cylinder about an axis, a sweep's copy trimmed
-  within it alone.
+  within it alone. **Breaking** for code matching `Reach` exhaustively.
 - **`pattern::pattern` takes a sector through its axis**: what its two sides share (the axis) is
   left out with them, so a solid disc's slice patterns into the disc, refused before ("across a
   side, a plane meets a plane").
