@@ -72,16 +72,18 @@ are each found once (`topo::Feet`, a cubic's end read both as a point and for it
 the line between the edge's ends as `Pcurve::at` finds it — sought from a foot found beside it, a
 face read on its sheet's rows had a pcurve written 3.4e-3 off its edge. **A pcurve is written
 only where the curve in space does not say it** (#1045, `step::solid`): a seam's two, which alone
-say which side of the seam each use is, and the kernel's own spline in a face's parameters where
-the curve in space was fitted to it (the master representation, `.PCURVE_S1.`); every other is the
-edge's curve read on the face, which a reader reads as the kernel does (brep-bench measures each
-face by its edges' curves in space; cadrs writes no pcurve), and is neither fitted nor written —
-the worm wheel's were a fifth of its file. **A point in space is written to `step::PLACE`**, a
-hundredth of `EXACT` (1e-11 mm): a B-spline's basis sums to one, so poles each moved by at most
-that move the surface or curve by at most that, and thirteen digits hold a coordinate of tens of
-millimetres where seventeen were written; knots, weights, directions and points in a face's
-parameters are written exactly (a knot moved may meet its neighbour). The worm wheel: 8.9 MB of
-STEP, from 12.7, its volume moved by 1.3e-13. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+say which side of the seam each use is; one a reader would not read off the edge's curve alone
+(`step::derivable`: the edge walked onto its face as the reader walks it, its first foot sought
+over the whole surface and each next from the last, at 64 points, each foot within the tolerance
+of the edge's point and its parameters the pcurve's own, a whole period apart on a surface closed
+round one); and the kernel's own spline in a face's parameters where the curve in space was
+fitted to it (the master representation, `.PCURVE_S1.`). Every other is the edge's curve read on
+the face, which a reader reads as the kernel does (brep-bench measures each face by its edges'
+curves in space; cadrs writes no pcurve), and is neither fitted nor written — an edge with none is
+written as its curve alone, no `SURFACE_CURVE`. The worm wheel: 10.2 MB of STEP, from 12.7, and
+nothing read back moved. (Its points written to 1e-11 mm besides, a V wheel's groove read back
+0.49 mm off its edge, and the files of the library read surfaces back with other numbers: every
+real is written as the shortest that reads back to it.) **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
 parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
 points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
 wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a

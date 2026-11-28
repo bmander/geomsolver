@@ -38,24 +38,6 @@ fn push_real(out: &mut String,x: f64) {
     }
 }
 
-/// **How finely a point in space is written** (millimetres): a hundredth of `EXACT`, the nearest
-/// any fitted curve is held. A B-spline's basis sums to one, so poles each moved by at most this
-/// move the surface or curve by at most this; a coordinate of tens of millimetres is written in
-/// thirteen digits where seventeen were (#1045). Knots, weights, directions and points in a
-/// face's parameters are written exactly: a knot moved may meet its neighbour and change the
-/// spline's smoothness there.
-const PLACE: f64 = EXACT/100.;
-
-/// `x` to the nearest `PLACE` (as the nearest double to that decimal, which `real` writes in its
-/// fewest digits); as it is where that is no nearer than its own rounding.
-fn placed(x: f64) -> f64 {
-    // (by the whole number of places in a millimetre, exact as a double, so each is the decimal's
-    // own nearest double)
-    let per = PLACE.recip().round();
-    let n = (x*per).round();
-    if n.abs() < 2f64.powi(52) { n/per } else { x }
-}
-
 struct Out { text: String,next: usize }
 
 impl Out {
@@ -73,7 +55,7 @@ impl Out {
         let id = self.next;
         self.next += 1;
         let _ = write!(self.text,"#{id} = CARTESIAN_POINT('',(");
-        for (k,&x) in p.iter().enumerate() { if k > 0 { self.text.push(',') } push_real(&mut self.text,placed(x)) }
+        for (k,&x) in p.iter().enumerate() { if k > 0 { self.text.push(',') } push_real(&mut self.text,x) }
         self.text.push_str("));\n");
         id
     }
@@ -992,6 +974,45 @@ fn pcurve_plan(b: &Brep,fi: usize,u: &super::topo::Coedge,tol: f64,fit: Fit,net:
     })
 }
 
+/// **Whether a reader reads a use's pcurve off its edge's curve alone** (`solid`'s pcurves): the
+/// edge walked onto its face as a reader walks it (the kernel's own, `step_read`'s `track`) — its
+/// first point's foot sought over the whole surface, each next one's from the last, at `WALKED`
+/// points — each foot within `tol` of the edge's point, its parameters the pcurve's own (a whole
+/// period apart, on a surface closed round one). Where any is not — a sheet that pinches or passes
+/// near itself, where the walk settles on another foot (a V wheel's groove, read back 0.49 mm off
+/// its edge), or a net closed on itself with no period, its two sides one place — the pcurve is
+/// the only thing that says where the edge is, and is written.
+fn derivable(b: &Brep,fi: usize,u: &super::topo::Coedge,span: [f64;2],tol: f64) -> bool {
+    const WALKED: usize = 64;
+    let (f,e) = (&b.faces[fi],&b.edges[u.edge as usize]);
+    let s = &f.surface;
+    let periods = s.periods();
+    let feet = super::topo::Feet::new(&u.pcurve,e,s,&b.vertices);
+    // (parameters a part of the face's own span apart, `span`: no foot is that near another of its own)
+    let same = |w: super::geom::Uv,k: super::geom::Uv| (0..2).all(|i| {
+        let mut d = w[i]-k[i];
+        if let Some(p) = periods[i] { d -= p*(d/p).round() }
+        d.abs() <= 1e-6*(span[i].abs()+1e-300)
+    });
+    let mut uv: Option<super::geom::Uv> = None;
+    (0..=WALKED).all(|j| {
+        let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/WALKED as f64;
+        let x = e.point(t,&b.vertices);
+        let w = match uv { None => s.inverse(x),Some(last) => s.inverse_near(x,last) };
+        uv = Some(w);
+        distance(s.point(w),x) <= tol.max(e.tol) && same(w,feet.at(t))
+    })
+}
+
+/// How far face `fi`'s parameters span, each way: its uses' pcurves' ends'.
+fn parameter_span(b: &Brep,fi: usize) -> [f64;2] {
+    let f = &b.faces[fi];
+    let (lo,hi) = f.loops.iter().flatten().flat_map(|c| { let e = &b.edges[c.edge as usize];
+        [c.pcurve.at(e.t[0],e,&f.surface,&b.vertices),c.pcurve.at(e.t[1],e,&f.surface,&b.vertices)] })
+        .fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),x| ([l[0].min(x[0]),l[1].min(x[1])],[h[0].max(x[0]),h[1].max(x[1])]));
+    [hi[0]-lo[0],hi[1]-lo[1]]
+}
+
 /// A use's pcurve as `pcurve_plan` read it, written: its id, how far its image was measured off
 /// the edge's foot (nought where it is written exactly), and whether it is the kernel's own curve
 /// in the face's parameters written as it is (`Pcurve::Curve`, a spline built there).
@@ -1340,25 +1361,31 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
     let mut uses_of: Vec<Vec<(usize,&super::topo::Coedge)>> = vec![Vec::new();b.edges.len()];
     for (fi,f) in b.faces.iter().enumerate() { for c in f.loops.iter().flatten() { if let Some(u) = uses_of.get_mut(c.edge as usize) { u.push((fi,c)) } } }
     // **a pcurve is written only where the curve in space does not say it** (#1045): a seam's two,
-    // which alone say which side of the seam each use is, and the kernel's own spline in a face's
-    // parameters where the curve in space was fitted to it (the master representation, below).
+    // which alone say which side of the seam each use is; one a reader walking the edge onto its
+    // face would not read (`derivable`); and the kernel's own spline in a face's parameters where
+    // the curve in space was fitted to it (the master representation, below).
     // Every other is the edge's curve read on the face, which a reader reads as the kernel does —
     // brep-bench measures each face by its edges' curves in space, and cadrs writes no pcurve —
     // and the worm wheel's were a fifth of its file, fitted within `EXACT` to what the file
     // already held exactly.
     let seam_of = |ei: usize| { let u = &uses_of[ei]; u.len() == 2 && u[0].0 == u[1].0 };
+
     // **each use's distance off its face and its pcurve read on every core** (`pcurve_plan`): the
     // inversions onto the faces and the fits are nine tenths of a fitted solid's writing (a worm
     // wheel's 180 faces, 3.5 s), and each use's are its own; only the writing is in order
     let flat: Vec<(usize,usize,&super::topo::Coedge)> = uses_of.iter().enumerate()
         .filter(|(ei,_)| matches!(b.edges[*ei].curve,EdgeCurve::Curve(_)))
         .flat_map(|(ei,us)| us.iter().map(move |&(fi,u)| (ei,fi,u))).collect();
-    let read: Vec<(f64,Option<PcurvePlan>)> = crate::util::par::map(&flat,|&(ei,fi,u)| {
+    let spans: Vec<[f64;2]> = crate::util::par::indices(b.faces.len(),|fi| parameter_span(b,fi));
+    let read: Vec<(f64,bool,Option<PcurvePlan>)> = crate::util::par::map(&flat,|&(ei,fi,u)| {
         let gap = b.standing(fi,u).max(b.edges[ei].tol);
-        let wanted = seam_of(ei) || matches!(u.pcurve,super::topo::Pcurve::Curve(_));
-        (gap,if wanted { pcurve_plan(b,fi,u,tol,fit,nets[fi].as_ref(),gap) } else { None })
+        // (and one a reader would not read off the edge's curve alone, `derivable`)
+        let seam = seam_of(ei);
+        let derived = !seam && derivable(b,fi,u,spans[fi],tol);
+        let planned = seam || !derived || matches!(u.pcurve,super::topo::Pcurve::Curve(_));
+        (gap,derived,if planned { pcurve_plan(b,fi,u,tol,fit,nets[fi].as_ref(),gap) } else { None })
     });
-    let mut read_of: Vec<Vec<(f64,Option<PcurvePlan>)>> = (0..b.edges.len()).map(|_| Vec::new()).collect();
+    let mut read_of: Vec<Vec<(f64,bool,Option<PcurvePlan>)>> = (0..b.edges.len()).map(|_| Vec::new()).collect();
     for (&(ei,..),r) in flat.iter().zip(read) { read_of[ei].push(r) }
     let mut read_of = read_of.into_iter();
     let edges: Vec<Option<usize>> = b.edges.iter().enumerate().map(|(ei,e)| -> Result<Option<usize>,String> {
@@ -1416,12 +1443,13 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64,Vec<L
         let uses = &uses_of[ei];
         let seam = seam_of(ei);
         let before = (o.text.len(),o.next);
-        let (gaps,plans): (Vec<f64>,Vec<Option<PcurvePlan>>) = read.into_iter().unzip();
+        let gaps: Vec<f64> = read.iter().map(|r| r.0).collect();
+        let (derived,plans): (Vec<bool>,Vec<Option<PcurvePlan>>) = read.into_iter().map(|r| (r.1,r.2)).unzip();
         // (the curve in space fitted: a pcurve of the kernel's own spline is then the exact one)
         let fitted = miss > 0. || !matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_));
-        let kept = |fi: usize,plan: &PcurvePlan| seam || (fitted && sheets[fi] == 0. && matches!(plan,PcurvePlan::Own {..}));
-        let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(plans)
-            .map(|(&(fi,_),plan)| plan.filter(|plan| kept(fi,plan)).map(|plan| pcurve_written(o,plan,surfaces[fi],context2))).collect();
+        let kept = |fi: usize,derived: bool,plan: &PcurvePlan| seam || !derived || (fitted && sheets[fi] == 0. && matches!(plan,PcurvePlan::Own {..}));
+        let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(derived).zip(plans)
+            .map(|((&(fi,_),derived),plan)| plan.filter(|plan| kept(fi,derived,plan)).map(|plan| pcurve_written(o,plan,surfaces[fi],context2))).collect();
         // (a seam's two curves are written both or neither: one alone does not say which side of
         // the seam it is)
         if seam && pcurves.iter().any(Option::is_none) {

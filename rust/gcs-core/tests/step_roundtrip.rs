@@ -749,6 +749,13 @@ pub fn paths(b: &Brep,text: &str) -> BTreeSet<String> {
         if let Some(rest) = l.strip_prefix("SURFACE_CURVE(").or_else(|| l.strip_prefix("SEAM_CURVE(")) {
             if let Some(&c) = refs(rest).first() { out.insert(format!("edge curve written: {}",kind(c))); }
         }
+        // (an edge whose pcurves a reader reads off its curve is written as that curve alone, #1045)
+        if let Some(rest) = l.strip_prefix("EDGE_CURVE(") {
+            if let Some(&g) = refs(rest).get(2) {
+                let geometry = lines.get(&g).copied().unwrap_or("");
+                if !geometry.starts_with("SURFACE_CURVE(") && !geometry.starts_with("SEAM_CURVE(") { out.insert(format!("edge curve written: {}",kind(g))); }
+            }
+        }
         if let Some(rest) = l.strip_prefix("SURFACE_OF_LINEAR_EXTRUSION(").or_else(|| l.strip_prefix("SURFACE_OF_REVOLUTION(")) {
             if let Some(&c) = refs(rest).first() { out.insert(format!("swept curve written: {}",kind(c))); }
         }
@@ -1117,25 +1124,14 @@ const PATHS: &[&str] = &[
     "kernel pcurve: line on a revolution",
     "kernel pcurve: line on a sphere",
     "kernel pcurve: line on a torus",
-    "pcurve written: CIRCLE on a PLANE",
     "pcurve written: LINE on a B_SPLINE_SURFACE rational",
     "pcurve written: LINE on a B_SPLINE_SURFACE_WITH_KNOTS",
     "pcurve written: LINE on a CONICAL_SURFACE",
     "pcurve written: LINE on a CYLINDRICAL_SURFACE",
-    "pcurve written: LINE on a PLANE",
     "pcurve written: LINE on a SPHERICAL_SURFACE",
-    "pcurve written: LINE on a SURFACE_OF_LINEAR_EXTRUSION",
     "pcurve written: LINE on a SURFACE_OF_REVOLUTION",
     "pcurve written: LINE on a TOROIDAL_SURFACE",
-    "pcurve written: rational spline on a PLANE",
-    "pcurve written: spline of degree 2 on a PLANE",
     "pcurve written: spline of degree 3 on a B_SPLINE_SURFACE rational",
-    "pcurve written: spline of degree 3 on a CONICAL_SURFACE",
-    "pcurve written: spline of degree 3 on a CYLINDRICAL_SURFACE",
-    "pcurve written: spline of degree 3 on a PLANE",
-    "pcurve written: spline of degree 3 on a SPHERICAL_SURFACE",
-    "pcurve written: spline of degree 3 on a SURFACE_OF_LINEAR_EXTRUSION",
-    "pcurve written: spline of degree 3 on a TOROIDAL_SURFACE",
     "seam on a affine",
     "seam on a bspline",
     "seam on a cone",
@@ -1241,16 +1237,17 @@ fn the_sample_reads_back_at_export_tolerances() { sample_holds(&[1,2]) }
 /// **The file prefers the curve in space wherever it writes it as itself** (ISO 10303-42's
 /// `master_representation`): every `SURFACE_CURVE` and `SEAM_CURVE` of the kernel's own solids
 /// whose curve is a line, a conic or a spline written as the kernel's names `.CURVE_3D.`, and
-/// none names a pcurve unless its curve in space is a fit.
+/// none names a pcurve unless its curve in space is a fit. (A solid whose every pcurve a reader
+/// reads off its curve writes none, #1045: the sample as a whole writes some.)
 #[test]
 fn the_curve_in_space_is_the_master_where_it_is_exact() {
+    let mut seen = 0;
     for (name,b) in kernel_solids() {
         let text = write(&b,name,1e-7,Fit::Exact).unwrap();
         let lines: BTreeMap<u32,&str> = text.lines().filter_map(|l| {
             let id = l.strip_prefix('#')?.split(' ').next()?.parse().ok()?;
             Some((id,l.split_once(" = ")?.1))
         }).collect();
-        let mut seen = 0;
         for l in lines.values() {
             let Some(rest) = l.strip_prefix("SURFACE_CURVE('',#").or_else(|| l.strip_prefix("SEAM_CURVE('',#")) else { continue };
             let curve: u32 = rest.split(',').next().unwrap().parse().unwrap();
@@ -1259,8 +1256,8 @@ fn the_curve_in_space_is_the_master_where_it_is_exact() {
             assert!(l.trim_end_matches(';').ends_with(".CURVE_3D.)") || !exact,"{name}: a {kind} in space, not the master: {l}");
             seen += 1;
         }
-        assert!(seen > 0,"{name}: no curve on a surface written");
     }
+    assert!(seen > 0,"no curve on a surface written");
 }
 
 /// One solid's worst face laid bare (a tool): `STEP_ROUNDTRIP_ONE=example:solid`,
