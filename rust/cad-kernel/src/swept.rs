@@ -24,6 +24,7 @@ pub mod closed;
 pub mod trim;
 pub mod contacts;
 pub mod general;
+pub mod generated;
 pub mod shadow;
 pub mod through;
 pub mod planar_solid;

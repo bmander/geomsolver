@@ -2052,7 +2052,10 @@ tube's wall beside the seat stays' ends (#904 / `shaft_drive` finding 22,
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
 surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring
-keeps its last junction as seam. `Net::segment` cuts sheets exactly. `Built::mesh` meshes the
+keeps its last junction as seam. A sector through the axis (a solid disc's slice, its sides meeting
+along it): what its two sides share is the turn's own, left out with them — no vertex of it
+partnered (in matching a far edge to a near one, it is its own), no face joined across it — so the
+caps' pieces close into whole discs (`brep::a_disc_sliced_through_its_axis_patterned_is_the_disc`). `Net::segment` cuts sheets exactly. `Built::mesh` meshes the
 sector once (`mesh::mesh_with`) and shares seam points by index. Full verification reads our STEP
 back by OCCT and measures it by `props` (1e-5; OCCT's volume held only to 1e-4).
 **Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: blank from its

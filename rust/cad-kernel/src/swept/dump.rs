@@ -589,6 +589,8 @@ pub fn dump_trim(dir: &std::path::Path,tool: &Brep,path: &crate::trajectory::Tra
         ("reach",trim.reach.map_or(Json::Null,|r| match r {
             super::trim::Reach::Box(lo,hi) => Json::Arr(vec![v3(lo),v3(hi)]),
             super::trim::Reach::Turned {o,z,r,span} => object([("o",v3(o)),("z",v3(z)),("r",r.into()),("span",reals(&span))]),
+            super::trim::Reach::Sector {o,z,x,r,span,from,pitch} => object([("o",v3(o)),("z",v3(z)),("x",v3(x)),("r",r.into()),
+                ("span",reals(&span)),("from",from.into()),("pitch",pitch.into())]),
         }))]);
     let meta = object([("tol",tol.into()),("bar",bar.into()),("roll",reals(&roll)),("trim",reading),("trajectory",path),
         ("candidates",candidates.len().into()),("given",givens(given)?),("why",why.into())]);
@@ -608,6 +610,8 @@ pub fn load_trim(dir: &std::path::Path) -> Result<Trimming,String> {
     let reach = match field(t,"reach")? {
         Json::Null => None,
         r @ Json::Arr(_) => { let r = r.arr(); Some(super::trim::Reach::Box(rv3(&r[0]),rv3(&r[1]))) }
+        r if field(r,"x").is_ok() => Some(super::trim::Reach::Sector {o:rv3(field(r,"o")?),z:rv3(field(r,"z")?),x:rv3(field(r,"x")?),
+            r:num(r,"r")?,span:pair(r,"span")?,from:num(r,"from")?,pitch:num(r,"pitch")?}),
         r => Some(super::trim::Reach::Turned {o:rv3(field(r,"o")?),z:rv3(field(r,"z")?),r:num(r,"r")?,span:pair(r,"span")?}),
     };
     let trim = super::trim::Trim {resolution:num(t,"resolution")?,hair:num(t,"hair")?,reach};

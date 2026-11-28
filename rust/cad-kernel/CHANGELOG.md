@@ -8,6 +8,22 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A worm wheel hobbed by its worm** (`swept::generated`, new; brep-bench's
+  `worm-wheel-hobbed-by-its-worm`, refused before). A tool a screw carries onto itself — every
+  face a screw's sheet of one generator, its ends planes square to the axis (`Thread::read`) —
+  turned about its axis seen from a turn is the endless thread slid along the axis wherever its
+  ends play no part, so each point of a face touches at one instant, read in closed form
+  (`Rack`), and each face's sheet and each convex corner's fan is exact at every point, nothing
+  traced. `closed::cut_from` takes this road before K2's and the general road's, where the roll is
+  whole turns of the observer and whole leads of the slide; where one copy of the period stands
+  apart from its neighbours it trims one tooth space within its sector and patterns the cut. The
+  worm wheel's volume and area are cadrs's within 1.8e-9 and 3.1e-9, in 25 s on four cores.
+- **`trim::Reach::Sector`** (new): one sector of a cylinder about an axis, a sweep's copy trimmed
+  within it alone.
+- **`pattern::pattern` takes a sector through its axis**: what its two sides share (the axis) is
+  left out with them, so a solid disc's slice patterns into the disc, refused before ("across a
+  side, a plane meets a plane").
+
 ## [0.27.0] - 2026-11-27
 
 - **A traced meeting is a smooth curve, its rates exact and its enclosure proved** (#1034,

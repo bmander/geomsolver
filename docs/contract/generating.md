@@ -2151,7 +2151,37 @@ bound, `v(m)` the carried point's own velocity and `A` its acceleration bound wh
 `membership_settles_a_hair_outside_where_the_tool_passes_close_by`; brep-bench's
 `hypoid-gear-cut-by-its-pinion` is built (`the_hypoid_gears_tooth_space_is_cut_by_its_pinion`, slow:
 its volume and area cadrs's within 7e-10 and 2e-9), in 59 s on four cores (156 before the trim within
-the reach first, the judge's mesh and the pairs across the cores), within the bench's two minutes. **A ring's fold pair born partway**
+the reach first, the judge's mesh and the pairs across the cores), within the bench's two minutes.
+**A thread hobbing a wheel (`brep::swept::generated`, the rack's road):** a tool a screw carries onto
+itself — every face a screw's sheet of one generator (`Blend` under `Carry::Screw`), on one line at
+one rise, or a plane square to it, the generators one closed loop (`Thread::read`) — turned about
+that line (or screwed) seen from a turn is the endless thread slid along it at `δ = α − kρ`, wherever
+its ends play no part: the cylinder about its axis holding it meets the reach (a cylinder about the
+observer's axis, square to the thread's) within its length, read in closed form
+(`Rack::ends_clear`). Under the slide seen from the turn `n · V_t(x)` is affine in the roll, so each
+point of a face touches at one instant, read from the two twists at the roll's ends
+(`Rack::contact`), and a face's sheet is that point carried there, `M(t(x)) x`, exact at every point,
+nothing traced; a convex corner's fan is its point carried between the instants its two faces touch
+there, tangent to each face's sheet along that face's rail. Asked only where the roll is whole turns
+of the observer and whole leads of the slide (so the sweep is the endless motion's, no end pose
+bounds it, and the turn a lead on, `O(L/δ)`, carries the sheets of one tooth of the rack onto the
+next's) and the observer a turn. One tooth's elements that reach the reach in one window of the
+screw's turn (a point sliding along itself at no instant, its normal square to the rate, reaches
+nothing) are one candidate: fitted at degree 5 on one grid of the turn within a quarter of the
+tolerance, each two sharing their rail as one curve (the trim meets no two faces of one candidate);
+a concave corner in the reach is refused by name. **One copy, patterned:** where one copy's turns
+about the observer's axis within the reach, read at its sheets' exact points, span a pitch less
+`CLEAR` of it either way, the copy is trimmed within its sector (`trim::Reach::Sector`), cut from the
+blank's sector (only where every face of the blank is one the turn keeps, `closed::kept_by_turns`)
+and patterned round (`brep::pattern`); otherwise every copy is trimmed at once. `closed::k2` asks it
+before anything else (a tool no thread, a motion no rack to it, or ends in the reach, is not its:
+`None`). Gates: `swept_generated::each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary`
+(a point of each of one tooth space's five sheets within the wheel read by the sweep's own
+membership a hair either side), `a_thread_whose_ends_reach_the_wheel_is_left_to_the_other_roads`; brep-bench's
+`worm-wheel-hobbed-by-its-worm` is built (`the_worm_wheel_is_hobbed_whole_by_its_worm`, slow: its
+volume and area cadrs's within 1.8e-9 and 3.1e-9, its 182 faces), in 25 s on four cores (278 s
+trimming the thirty copies at once, nearly all of it membership over the thirty-turn roll). **A
+ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

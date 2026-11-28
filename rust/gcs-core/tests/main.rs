@@ -375,6 +375,7 @@ mod swept_trim;
 mod swept_contacts;
 mod swept_reach;
 mod swept_general;
+mod swept_generated;
 mod swept_vertex;
 mod tool_reading;
 mod touch_curves;

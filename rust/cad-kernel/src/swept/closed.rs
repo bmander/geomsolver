@@ -1126,6 +1126,10 @@ const K2_POSES: usize = 128;
 /// classified by membership, as every other build is.
 fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    // **a thread turned about its own axis seen from a turn**, its ends clear of the blank: the
+    // rack's road, each point of it touching once in closed form (`generated`) — read off the
+    // tool's B-rep before anything is built, every other tool and motion going on as before
+    if let Some(built) = generated_built(tool,path,[a,b],bar,tol,blank) { return built }
     // (a tool no convex solid of revolution, every face a plane and every edge a line, is the
     // general road's (#880 T1d): its contact read face by face and edge by edge at every instant;
     // a tool it cannot read either keeps K2's refusal)
@@ -1194,6 +1198,63 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
         }
     };
     cut_blank(swept,blank,tol)
+}
+
+/// **A thread hobbing a blank** (`swept::generated`): within the cylinder about the
+/// observer's axis just past the blank's reach (`HUGGED`, as the general road's), the candidates —
+/// the sheets each tooth of the rack the thread is generates there, exact at every point and fitted
+/// — trimmed by membership and judged, and cut from the blank. Where one copy's sector holds it
+/// apart from the others and the blank is one the turn keeps (`kept_by_turns`), the one copy is
+/// trimmed within the sector, cut from the blank's sector and patterned round the axis
+/// (`pattern::pattern`): the sweep's copies are the turn's, so the cut's are too. None where it is
+/// not this road's: no blank, a tool no thread, a motion no rack to it, or the thread's ends within
+/// the blank's reach.
+fn generated_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Option<Result<Brep,Unbuilt>> {
+    let b = blank?;
+    let Trajectory::Relative {observer,..} = path else { return None };
+    let s = observer.screw().filter(|s| s.ratio != 0.)?;
+    let (o,z) = (s.origin,unit(s.axis));
+    let [lo,hi] = axial_span(b,o,z);
+    let r = radial_reach(b,o,z);
+    let (r,span) = (r*(1.+HUGGED),[lo-HUGGED*r,hi+HUGGED*r]);
+    let reach = super::trim::Reach::Turned {o,z,r,span};
+    let found = match super::generated::candidates(tool,path,roll,&reach,tol) {
+        Ok(Some(c)) => c,
+        Ok(None) => return None,
+        Err(why) => return Some(Err(why)),
+    };
+    if crate::debug() { eprintln!("swept: the rack's road: {} candidates, {} faces",found.candidates.len(),found.candidates.iter().map(|c| c.faces.len()).sum::<usize>()) }
+    let trim = road_trim(tool,tol);
+    let built = || -> Result<Brep,Unbuilt> {
+        match found.sector {
+            Some(sec) if kept_by_turns(b,o,z,tol) => {
+                let within = super::trim::Reach::Sector {o,z,x:sec.x,r,span,from:sec.from,pitch:sec.pitch};
+                let swept = trimmed_or_dumped(tool,path,roll,&found.candidates,&found.given,bar,tol,super::trim::Trim {reach:Some(within),..trim})?;
+                fn failed<E: std::fmt::Display>(what: &'static str) -> impl Fn(E) -> Unbuilt { move |e| Unbuilt::Failed(format!("{what}: {e}")) }
+                let wedge = within.solid().map_err(failed("the blank's sector"))?;
+                let sector = crate::boolean::combined(b,&wedge,crate::boolean::Op::Common,tol).map_err(failed("the blank's sector"))?;
+                let cut = cut_blank(swept,Some(&sector),tol)?;
+                Ok(crate::pattern::pattern(&cut,o,z,sec.count,tol).map_err(failed("the cut sector patterned"))?.solid)
+            }
+            _ => {
+                let swept = trimmed_or_dumped(tool,path,roll,&found.candidates,&found.given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})?;
+                cut_blank(swept,blank,tol)
+            }
+        }
+    };
+    Some(built())
+}
+
+/// **Whether every turn about the line through `o` along the unit `z` keeps `b`**: each face a
+/// cylinder, cone, ball, torus or surface of revolution about the line, or a plane square to it.
+fn kept_by_turns(b: &Brep,o: V,z: V,tol: f64) -> bool {
+    let tol = tol.max(1e-9*(1.+b.size()));
+    b.faces.iter().all(|f| match &f.surface {
+        Surface::Plane(frame) => norm(cross(frame.z,z)) <= 1e-12,
+        Surface::Cylinder(frame,..) | Surface::Cone(frame,..) | Surface::Sphere(frame,..) | Surface::Torus(frame,..)
+            | Surface::Revolution(frame,..) => crate::geom::about_axis(frame,o,z,tol),
+        _ => false,
+    })
 }
 
 /// How far past the blank's reach from the axis a turn sees it from the cylinder the general road's
