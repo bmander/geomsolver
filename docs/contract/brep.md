@@ -31,8 +31,8 @@ unit ball on that frame stretched — and what is no such solid refused by name:
 speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
 staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
-assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`.
+assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214, its pcurves only
+where the curve in space does not say them, and seam curves), `recipe`.
 **A traced intersection is written as a cubic, held to the kernel's own bar where no tolerance
 is stated and to the tolerance where one is** (#961, `step::bezier_curve`, `step::hermite_fit`,
 `step::Fit`): no entity of the standard writes a `Traced` curve, so the file carries a piecewise
@@ -70,7 +70,18 @@ with each use's distance off its face, `Brep::standing`), and written in the edg
 (`pcurve_written`), so the file is the same byte for byte; an inverse pcurve's feet along one edge
 are each found once (`topo::Feet`, a cubic's end read both as a point and for its rate), each from
 the line between the edge's ends as `Pcurve::at` finds it — sought from a foot found beside it, a
-face read on its sheet's rows had a pcurve written 3.4e-3 off its edge. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
+face read on its sheet's rows had a pcurve written 3.4e-3 off its edge. **A pcurve is written
+only where the curve in space does not say it** (#1045, `step::solid`): a seam's two, which alone
+say which side of the seam each use is, and the kernel's own spline in a face's parameters where
+the curve in space was fitted to it (the master representation, `.PCURVE_S1.`); every other is the
+edge's curve read on the face, which a reader reads as the kernel does (brep-bench measures each
+face by its edges' curves in space; cadrs writes no pcurve), and is neither fitted nor written —
+the worm wheel's were a fifth of its file. **A point in space is written to `step::PLACE`**, a
+hundredth of `EXACT` (1e-11 mm): a B-spline's basis sums to one, so poles each moved by at most
+that move the surface or curve by at most that, and thirteen digits hold a coordinate of tens of
+millimetres where seventeen were written; knots, weights, directions and points in a face's
+parameters are written exactly (a knot moved may meet its neighbour). The worm wheel: 8.9 MB of
+STEP, from 12.7, its volume moved by 1.3e-13. **A traced curve is written over its own parameter, as any smooth curve** (#1034): its
 parameter runs evenly along its length, its rates the meeting's own, so a cubic over several of its
 points follows it. (Before, it counted the march's points and its speed stepped at each, so the file
 wrote it over a length of its own, `Along`, `C¹` across the points; and where no cubic closed in, a
