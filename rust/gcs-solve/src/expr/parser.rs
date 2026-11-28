@@ -3,9 +3,21 @@
 use super::{Ast, Cmp, Cond, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
 use crate::units::{unit, Dim, Units};
 
+/// What a literal's number is a number *of*, so a power after it can be its unit's (#905).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Of {
+    /// A bare number, `3` or `3 1/2`: a power after it is the number's.
+    Bare,
+    /// A number of one unit, `10mm`, `6"`, `3 1/2in`: the number as written and one of the unit
+    /// in the document's units, so `10mm^3` is ten of `(1mm)^3`, as SI writes `10 mm³`.
+    Unit(f64, f64),
+    /// Feet and inches, `1' 6"`: a length of two units, so a power after it is no one unit's.
+    FeetInches,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Tok {
-    Num(f64, Dim),
+    Num(f64, Dim, Of),
     Ident(String),
     Op(char),
     Pow,
@@ -51,8 +63,9 @@ fn mixed_fraction(chars: &[char], from: usize) -> Option<(f64, f64, usize)> {
 }
 
 /// Parse a numeric unit suffix, including feet/inches and mixed fractions.
-/// Convert to document units and retain the dimension for type checking.
-fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, Dim), String> {
+/// Convert to document units and retain the dimension for type checking, and what the number is
+/// a number of (`Of`), which a power after the literal reads.
+fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, Dim, Of), String> {
     // `'` and `"` are punctuation, not words, so they are read here rather than from the table
     let mark = |c: Option<&char>| match c {
         Some('\'') => unit("ft"),
@@ -62,6 +75,7 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
     if let Some(u) = mark(chars.get(*i)) {
         *i += 1;
         let mut total = units.convert(v, u);
+        let mut of = Of::Unit(v, units.convert(1.0, u));
         // feet *and* inches: the second half across a space, in the smaller unit
         let mut j = *i;
         while chars.get(j).is_some_and(|c| c.is_whitespace()) {
@@ -70,10 +84,11 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
         if j > *i {
             if let Some((inches, end)) = inch_part(chars, j) {
                 total += units.convert(inches, unit("in").expect("in"));
+                of = Of::FeetInches;
                 *i = end;
             }
         }
-        return Ok((total, Dim::LENGTH));
+        return Ok((total, Dim::LENGTH, of));
     }
     // a word: `mm`, `deg`, …  Only immediately after the digits — `2 mm` is a juxtaposition and
     // not a unit, the same rule the mark above follows.
@@ -83,16 +98,17 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
         j += 1;
     }
     if j == start {
-        return Ok((v, Dim::SCALAR));
+        return Ok((v, Dim::SCALAR, Of::Bare));
     }
     let word: String = chars[start..j].iter().collect();
     match unit(&word) {
         Some(u) => {
             *i = j;
-            Ok((units.convert(v, u), u.dim))
+            let one = units.convert(1.0, u);
+            Ok((units.convert(v, u), u.dim, Of::Unit(v, one)))
         }
         // not a unit: it is a name, and `2r` is two times r as it always was
-        None => Ok((v, Dim::SCALAR)),
+        None => Ok((v, Dim::SCALAR, Of::Bare)),
     }
 }
 
@@ -164,8 +180,8 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             // a unit on the number — `80mm`, `45deg`, `1' 6 3/16"`.  A *space* is what tells
             // the readings apart, which is the rule `mixed_fraction` already keeps: `1' 6"` is
             // one literal for the same reason `3 1/2` is.
-            let (v, d) = suffix(&chars, &mut i, v, units)?;
-            out.push((Tok::Num(v, d), at));
+            let (v, d, of) = suffix(&chars, &mut i, v, units)?;
+            out.push((Tok::Num(v, d, of), at));
             continue;
         }
         // A name may begin with `#`: a block copy's prefix (`#3.0.`) is what the flattener puts
@@ -432,20 +448,40 @@ impl Parser {
     }
 
     /// Right-associative, and the exponent may carry its own sign: `2^-1`.
+    ///
+    /// **A power after a literal of one unit is its unit's** (#905): `10mm^3` is ten cubic
+    /// millimetres, `10 * (1mm)^3`, as SI writes `10 mm³` and as a reading prints one, and
+    /// `(10mm)^3` is the cube of ten millimetres.  A power after feet and inches (`1' 6"^2`)
+    /// would be no one unit's, so it is refused, saying to bracket the length.
     fn power(&mut self) -> Result<Ast, String> {
+        let at = self.here();
+        let literal = match self.peek() {
+            Tok::Num(_, dim, of) => Some((*dim, *of)),
+            _ => None,
+        };
         let base = self.atom()?;
-        if *self.peek() == Tok::Pow {
-            self.next();
-            let e = self.unary()?;
-            return Ok(Ast::Bin(Op::Pow, Box::new(base), Box::new(e)));
+        if *self.peek() != Tok::Pow {
+            return Ok(base);
         }
-        Ok(base)
+        self.next();
+        let e = self.unary()?;
+        match literal {
+            Some((dim, Of::Unit(n, one))) => {
+                let unit = Ast::Bin(Op::Pow, Box::new(Ast::Num(one, dim)), Box::new(e));
+                Ok(Ast::Bin(Op::Mul, Box::new(Ast::Num(n, Dim::SCALAR)), Box::new(unit)))
+            }
+            Some((_, Of::FeetInches)) => Err(format!(
+                "a power after feet and inches at {at} is no one unit's: bracket the length for \
+                 its power (`(1' 6\")^2`), or write a number of one unit (`18in^2`)"
+            )),
+            _ => Ok(Ast::Bin(Op::Pow, Box::new(base), Box::new(e))),
+        }
     }
 
     fn atom(&mut self) -> Result<Ast, String> {
         let at = self.here();
         match self.next() {
-            Tok::Num(v, d) => Ok(Ast::Num(v, d)),
+            Tok::Num(v, d, _) => Ok(Ast::Num(v, d)),
             Tok::Ident(name) => {
                 if *self.peek() != Tok::LParen {
                     return Ok(Ast::Var(name));
@@ -583,7 +619,7 @@ pub fn parse_condition_in(text: &str, units: Units) -> Result<Cond, String> {
 
 fn tok_text(t: &Tok) -> String {
     match t {
-        Tok::Num(v, _) => format!("{v}"),
+        Tok::Num(v, _, _) => format!("{v}"),
         Tok::Ident(s) => s.clone(),
         Tok::Op(c) => c.to_string(),
         Tok::Pow => "^".to_string(),
@@ -621,8 +657,8 @@ pub fn notation(text: &str) -> bool {
     let Ok(toks) = tokenize(t, mm) else { return false };
     // a sign in front changes nothing about whether the text is one number
     let v = match toks.as_slice() {
-        [(Tok::Num(v, _), _), (Tok::End, _)]
-        | [(Tok::Op('-' | '+'), _), (Tok::Num(v, _), _), (Tok::End, _)] => *v,
+        [(Tok::Num(v, ..), _), (Tok::End, _)]
+        | [(Tok::Op('-' | '+'), _), (Tok::Num(v, ..), _), (Tok::End, _)] => *v,
         _ => return false,
     };
     v.is_finite()
@@ -635,8 +671,8 @@ pub fn names_unit(text: &str) -> bool {
     let mm = Units::with_length("mm").expect("mm is a unit");
     let Ok(toks) = tokenize(text.trim(), mm) else { return false };
     match toks.as_slice() {
-        [(Tok::Num(_, d), _), (Tok::End, _)]
-        | [(Tok::Op('-' | '+'), _), (Tok::Num(_, d), _), (Tok::End, _)] => !d.is_scalar(),
+        [(Tok::Num(_, d, _), _), (Tok::End, _)]
+        | [(Tok::Op('-' | '+'), _), (Tok::Num(_, d, _), _), (Tok::End, _)] => !d.is_scalar(),
         _ => false,
     }
 }

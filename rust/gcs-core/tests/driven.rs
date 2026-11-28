@@ -39,8 +39,8 @@ scenario s {{
 
 /// The section of a `b`-wide rectangle `h` deep, either a name or a number.
 fn rectangle(b: &str, h: &str) -> String {
-    format!("A: {b} * {h}, Iy: {h} * {b}^3 / 12, Iz: {b} * {h}^3 / 12, J: 0.229 * {h} * {b}^3, \
-             Sy: {h} * {b}^2 / 6, Sz: {b} * {h}^2 / 6")
+    format!("A: {b} * {h}, Iy: {h} * ({b})^3 / 12, Iz: {b} * ({h})^3 / 12, \
+             J: 0.229 * {h} * ({b})^3, Sy: {h} * ({b})^2 / 6, Sz: {b} * ({h})^2 / 6")
 }
 
 /// `src` elaborated with no error and solved: the drawing, and what an unknown came to.

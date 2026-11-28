@@ -275,8 +275,9 @@ rust/examples/given/bought_block.sv: solved
   block.volume = 21345.4
 ```
 
-`24000 − 720π − 6.25π · 20 = 21345.354`. The bound is written `21400 * 1mm^3`: `21400mm^3` is
-(21400 mm)³, and `claim volume(<= 21400mm^3) part` is kept against `9.80034e+12 mm^3`.
+`24000 − 720π − 6.25π · 20 = 21345.354`. The bound is written `21400 * 1mm^3`; since [0.231]
+`21400mm^3` says the same (#905), where through 0.230 it was (21400 mm)³ and the claim was kept
+against `9.80034e+12 mm^3`.
 
 ## Measurements
 
@@ -610,8 +611,8 @@ in the kernel or the evaluator, and the measurements above are after the fixes.
 - **A file turned against its own loops is refused, not healed** (cgb240): nothing guesses which
   of the face's sense and its boundary the file meant.
 - **The OCCT route** refuses a given body, naming `--kernel rust`; the core's kernel is the export.
-- **A bound written `21400mm^3` is (21400 mm)³**, silently: write `21400 * 1mm^3`. A rule of the
-  units, older than stage 2.
+- **A bound written `21400mm^3` was (21400 mm)³**, silently, through 0.230: since [0.231] a power
+  after a literal is its unit's, and it is the 21 400 mm³ meant (#905).
 
 ## The issue's open questions, as the experiment answers them
 

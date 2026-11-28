@@ -399,9 +399,10 @@ about. Radii mean the same in every view.
 ### 1.6 Values, unknowns and units
 
 **Expressions**: `+ - * / ^`, parentheses, `pi`, `tau`, and `sqrt abs sin cos tan asin acos atan
-atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.** A power binds
-the number with its unit: `21400mm^3` is (21400 mm)³, so a volume of 21 400 mm³ is `21400 *
-1mm^3` (`claim volume(<= 21400mm^3) part` is kept against `9.80034e+12 mm^3`).
+atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.** A power after
+a number with a unit is the unit's, as the report prints a figure: `21400mm^3` is 21 400 mm³ (the
+same as `21400 * 1mm^3`), and the cube of a length is bracketed, `(10mm)^3`. A power after feet
+and inches is refused: write `(1' 6")^2` or `18in^2`.
 
 **A chosen number**: `if(COND, A, B)` is `A` where `COND` holds and `B` where not, `COND` a
 `when`'s comparisons (1.7) — `pitch := if(n > 12, 2mm, 3mm)`, or a copy's own number in one
@@ -2925,8 +2926,8 @@ scenario tip_load {
 - **The section** is stated in each member's own axes: x along it, z the normal of the plane its
   line is drawn in. `Iz` is its second moment bending in that plane, `Iy` across it, `A` its area
   and `J` its torsion constant — all four required; `Sy` and `Sz` (section moduli) only where a
-  `safety` is asked. Write each from the section's sizes, or as a number of its unit: a unit is
-  a suffix, so `65104mm^4` is (65104 mm)⁴, and a figure is `65104 * 1mm^4`. A beam may name
+  `safety` is asked. Write each from the section's sizes, or as a number of its unit:
+  `65104mm^4`. A beam may name
   several lines: `beam(left, top, right, …)`.
 - **Joints** are where members' ends meet, or an end lies on another member; a point the scenario
   names on a member (a load's) cuts it there. Every joint is rigid.
@@ -2942,8 +2943,7 @@ scenario tip_load {
   an axis or a line the drawing holds.
 - **A mass is the drawing's, not a scenario's**: what a body is made of answers no load, so it is
   written beside the scenarios, never in one — with `use std.measures (mass, volume)`,
-  `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
-  `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a member's
+  `mass(10kg) arm` (or `volume(1200cm^3) arm`) is a row over the beam's members, or a member's
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a

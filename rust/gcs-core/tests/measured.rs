@@ -41,7 +41,8 @@ arm := beam(span, {section}) of steel
 
 /// The section of a `b`-wide rectangle `h` deep.
 fn rectangle(b: &str, h: &str) -> String {
-    format!("A: {b} * {h}, Iy: {h} * {b}^3 / 12, Iz: {b} * {h}^3 / 12, J: 0.229 * {h} * {b}^3")
+    format!("A: {b} * {h}, Iy: {h} * ({b})^3 / 12, Iz: {b} * ({h})^3 / 12, \
+             J: 0.229 * {h} * ({b})^3")
 }
 
 /// A plate 160 by 60 in the front, 5 thick, with a hole of radius `r` (an unknown) at its
@@ -78,6 +79,11 @@ web := solid(std.solids.Prism(plate, from: -2.5mm, to: 2.5mm)) of alloy
 }
 
 /// `src` elaborated with no error and solved.
+/// The radius of `holed`'s hole when the plate's volume is 42 000 mm³: `√((L h − V / t) / π)`.
+fn hole_radius() -> f64 {
+    ((160.0 * 60.0 - 42000.0 / 5.0) / std::f64::consts::PI).sqrt()
+}
+
 fn sized(src: &str) -> (Elaborated, Sketch) {
     let e = crate::common::read(src);
     let sk = crate::common::solved(&e);
@@ -226,7 +232,7 @@ fn the_librarys_measures_hold_their_closed_forms() {
 /// beside it are judged, kept and refuted.
 #[test]
 fn a_volume_sizes_a_hole() {
-    let want = ((160.0 * 60.0 - 42000.0 / 5.0) / std::f64::consts::PI).sqrt();
+    let want = hole_radius();
     let claims = "volume(42 * 1cm^3) web\nclaim mass(<= 1kg) web\nclaim mass(>= 1kg) web\n";
     for reading in ["scenario s {\n  plane stress web\n  fixed web.root\n}", "", "scenario s {\n  \
                      fixed web.root\n  claim deflection(b, along: std.x) >= 0mm\n}"] {
@@ -240,6 +246,26 @@ fn a_volume_sizes_a_hole() {
         assert!(said[0].contains(": 42000 mm^3") && said[0].ends_with("held"), "{}", said[0]);
         assert!(said[1].ends_with("<= 1 kg: claimed, kept"), "{}", said[1]);
         assert!(said[2].ends_with(">= 1 kg: claimed, refuted"), "{}", said[2]);
+    }
+}
+
+/// **A volume is written as the report reads it** (#905, [0.231]): a power after a literal of one
+/// unit is the unit's, so `volume(42cm^3) web` states the 42 000 mm³ that `42 * 1cm^3` does —
+/// where through 0.230 it was the cube of 42 cm, more than the plate holds — and the figure the
+/// report prints, `42000 mm^3`, written back states the same again.  A bound written so is the
+/// bound meant: kept above the volume and refuted below it, never a million times looser.
+#[test]
+fn a_volume_is_written_as_the_report_reads_it() {
+    let want = hole_radius();
+    let claims = "claim volume(<= 42100mm^3) web\nclaim volume(<= 41900mm^3) web\n";
+    for stated in ["volume(42cm^3) web", "volume(42000mm^3) web"] {
+        let (e, sk) = sized(&holed(&format!("{stated}\n{claims}")));
+        let r = unknown(&sk, "r");
+        assert!((r - want).abs() <= 1e-5 * want, "{stated}: {r} against {want}");
+        let said = said(&e, &sk);
+        assert!(said[0].contains(": 42000 mm^3") && said[0].ends_with("held"), "{}", said[0]);
+        assert!(said[1].ends_with("<= 42100 mm^3: claimed, kept"), "{}", said[1]);
+        assert!(said[2].ends_with("<= 41900 mm^3: claimed, refuted"), "{}", said[2]);
     }
 }
 
