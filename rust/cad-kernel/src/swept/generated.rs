@@ -38,19 +38,18 @@
 //! the endless motion's (`Rack::read`); and the ends of the thread clear of the blank's reach,
 //! read in closed form: the cylinder about the thread's axis holding it meets the reach — a
 //! cylinder about the observer's axis, square to it — within the thread's length
-//! (`Rack::ends_clear`). Any other is not this road's (`None`), and the general road is asked. A
-//! concave edge in the reach (the sheets of its two faces crossing, not meeting along a rail) is
-//! refused by name; a sheet that folds within the reach is left to the trim's membership and the
-//! judge, which refuse it.
-use crate::geom::{off_axis,Carry,Curve,Frame,Rigid,Surface};
+//! (`Thread::ends_clear`). Any other is not this road's (`None`), and the general road is asked.
+//! A concave edge in the reach (the sheets of its two faces crossing, not meeting along a rail) and
+//! a whole section reaching it are refused by name; a sheet that folds within the reach is left to
+//! the trim's membership and the judge, which refuse it.
+use crate::geom::{off_axis,Carry,Curve,Rigid,Surface};
 use crate::nurbs::{interpolate,BSpline,Net};
-use crate::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
+use crate::topo::Brep;
 use crate::trajectory::{Screw,Trajectory,Twist};
 use crate::util::space::{cross,distance,dot,norm,scale,sub,unit};
 use super::closed::Unbuilt;
 use super::trim::Reach;
 use std::f64::consts::{PI,TAU};
-use std::sync::Arc;
 
 type V = [f64;3];
 
@@ -72,6 +71,12 @@ impl Thread {
     /// square to that line (an end); the generators joined end to end into one closed loop, the
     /// thread's section. None for any other tool.
     pub fn read(tool: &Brep) -> Option<Thread> {
+        // (every face a screw's sheet or a plane, read before the tool's size is: K2 asks this of
+        // every tool it is given)
+        if !tool.faces.iter().all(|f| match &f.surface {
+            Surface::Blend(_,b) => matches!(b.carry,Carry::Screw {..}),
+            s => matches!(s,Surface::Plane(_)),
+        }) { return None }
         let eps = 1e-9*(1.+tool.size());
         let mut screw: Option<(V,V,f64)> = None;
         let mut found: Vec<Generator> = Vec::new();
@@ -84,21 +89,16 @@ impl Thread {
                     // (an axis the other way round turns the angle and the advance both: the rise a
                     // radian along the axis the same)
                     let (a,rise) = (unit(axis),advance/angle);
-                    match screw {
-                        None => screw = Some((center,a,rise)),
-                        Some((c0,a0,r0)) => {
-                            if (dot(a,a0).abs()-1.).abs() > 1e-12 || off_axis(center,c0,a0) > eps
-                                || (rise-r0).abs() > 1e-12*(1.+r0.abs()) { return None }
-                        }
-                    }
+                    let &mut (centre,a0,r0) = screw.get_or_insert((center,a,rise));
+                    if (dot(a,a0).abs()-1.).abs() > 1e-12 || off_axis(center,centre,a0) > eps
+                        || (rise-r0).abs() > 1e-12*(1.+r0.abs()) { return None }
                     let (p,q) = (b.a.point(b.ta[0]),b.a.point(b.ta[1]));
                     if found.iter().any(|g| {
                         let (x,y) = (g.curve.point(g.t[0]),g.curve.point(g.t[1]));
                         (distance(x,p) <= eps && distance(y,q) <= eps) || (distance(x,q) <= eps && distance(y,p) <= eps)
                     }) { continue }
                     // the sign turning `X_u × X_φ` outward, read where the face's own surface is
-                    let (centre,a,rise) = screw.expect("a screw read");
-                    let carry = Carry::Screw {center:centre,axis:a,angle:1.,advance:rise};
+                    let carry = Carry::Screw {center:centre,axis:a0,angle:1.,advance:r0};
                     let (s,phi) = (0.5*(b.ta[0]+b.ta[1]),0.5*angle);
                     let (x0,dx) = b.a.d1(s);
                     let x = carry.at(x0,phi);
@@ -110,7 +110,7 @@ impl Thread {
                     found.push(Generator {curve:b.a.clone(),t:b.ta,sign});
                 }
                 Surface::Plane(frame) => caps.push((frame.o,frame.z)),
-                _ => return None,
+                _ => unreachable!("every face read a screw's or a plane"),
             }
         }
         let (centre,axis,rise) = screw?;
@@ -155,10 +155,31 @@ impl Thread {
         (x,xu,scale(unit(cross(xu,c.rate(x))),gen.sign))
     }
 
-    /// Corner `k` of the section (where generator `k` starts) turned by `φ`.
-    fn corner(&self,k: usize,phi: f64) -> V {
-        let g = &self.generators[k];
-        self.screw().at(g.curve.point(g.t[0]),phi)
+    /// **Whether the thread's ends play no part within the reach** — the cylinder of radius `r`
+    /// about the line through `o` along the unit `z`, over `span` along it — under the observer's
+    /// turn about that line: the cylinder about the thread's axis holding it, met with the reach,
+    /// stands within the thread's length, so wherever the slid thread enters the reach the endless
+    /// one is the same. Read in closed form: in the plane square to the observer's axis, the
+    /// thread's band about its axis met with the reach's disc, at the height where the thread's
+    /// cylinder is widest within the reach's span.
+    fn ends_clear(&self,o: V,z: V,r: f64,span: [f64;2]) -> bool {
+        let (c,a) = (self.centre,self.axis);
+        if dot(a,z).abs() > 1e-12 { return false }
+        // the thread's axis's height along the observer's, and the height within the span nearest it
+        let h = dot(sub(c,o),z);
+        let near = h.clamp(span[0],span[1]);
+        let wide = self.reach*self.reach-(near-h)*(near-h);
+        if wide < 0. { return true }
+        let wide = wide.sqrt();
+        // in the plane: the axis's offset from the observer's across it, and the nearest offset in the band
+        let e = dot(sub(c,o),unit(cross(z,a)));
+        let m = if e-wide > 0. { e-wide } else if e+wide < 0. { e+wide } else { 0. };
+        if m.abs() > r { return true }
+        let s = (r*r-m*m).sqrt();
+        let at = dot(sub(c,o),a);
+        let [lo,hi] = self.ends;
+        // (the reach's chord along the thread's axis, from the thread's centre)
+        -s-at >= lo && s-at <= hi
     }
 }
 
@@ -214,33 +235,6 @@ impl Rack {
         Ok(Rigid {r:q.r,t:q.p})
     }
 
-    /// **Whether the thread's ends play no part within `reach`**: the cylinder about the thread's
-    /// axis holding it, met with the reach — a cylinder about the observer's axis, square to the
-    /// thread's — stands within the thread's length, so wherever the slid thread enters the reach
-    /// the endless one is the same. Read in closed form: in the plane square to the observer's
-    /// axis, the thread's band about its axis met with the reach's disc, at the height where the
-    /// thread's cylinder is widest within the reach's span.
-    fn ends_clear(&self,thread: &Thread,reach: &Reach) -> bool {
-        let Reach::Turned {o,z,r,span} = *reach else { return false };
-        let (c,a) = (thread.centre,thread.axis);
-        if dot(a,z).abs() > 1e-12 { return false }
-        // the thread's axis's height along the observer's, and the height within the span nearest it
-        let h = dot(sub(c,o),z);
-        let near = h.clamp(span[0],span[1]);
-        let wide = thread.reach*thread.reach-(near-h)*(near-h);
-        if wide < 0. { return true }
-        let wide = wide.sqrt();
-        // in the plane: the axis's offset from the observer's across it, and the nearest offset in the band
-        let across = unit(cross(z,a));
-        let e = dot(sub(c,o),across);
-        let m = if e-wide > 0. { e-wide } else if e+wide < 0. { e+wide } else { 0. };
-        if m.abs() > r { return true }
-        let s = (r*r-m*m).sqrt();
-        let at = dot(sub(c,o),a);
-        let [lo,hi] = thread.ends;
-        // (the reach's chord along the thread's axis, from the thread's centre)
-        -s-at >= lo && s-at <= hi
-    }
 }
 
 /// An element of the thread's section: a face (generator `k` screwed) or the fan of corner `k`
@@ -249,29 +243,20 @@ impl Rack {
 enum Element { Face(usize),Fan(usize) }
 
 /// What a corner of the section does at one turn `φ`: its point, the instants its two faces touch
-/// there (the face before it, then the face it starts), and where each carries it.
+/// there (the face before it, then the face it starts), where each carries it, and whether it is
+/// convex — the face it starts leaving it behind the face before it.
 #[derive(Clone,Copy,Debug)]
-struct Corner { point: V,times: [f64;2],rails: [V;2] }
+struct Corner { point: V,times: [f64;2],rails: [V;2],convex: bool }
 
 /// The road's reading at one turn: each corner's.
 fn corners(thread: &Thread,rack: &Rack,phi: f64) -> Result<Vec<Corner>,Unbuilt> {
     let m = thread.generators.len();
     (0..m).map(|k| {
-        let point = thread.corner(k,phi);
         let before = thread.at((k+m-1)%m,1.,phi).2;
-        let after = thread.at(k,0.,phi).2;
-        let times = [rack.contact(point,before),rack.contact(point,after)];
-        let [Some(t0),Some(t1)] = times else { return Err(Unbuilt::Curved {at:point}) };
-        Ok(Corner {point,times:[t0,t1],rails:[rack.carried(point,t0)?,rack.carried(point,t1)?]})
+        let (point,into,after) = thread.at(k,0.,phi);
+        let [Some(t0),Some(t1)] = [rack.contact(point,before),rack.contact(point,after)] else { return Err(Unbuilt::Curved {at:point}) };
+        Ok(Corner {point,times:[t0,t1],rails:[rack.carried(point,t0)?,rack.carried(point,t1)?],convex:dot(before,into) < 0.})
     }).collect()
-}
-
-/// Whether the corner `k` is convex at `φ`: the face it starts leaves it behind the face before it.
-fn convex(thread: &Thread,k: usize,phi: f64) -> bool {
-    let m = thread.generators.len();
-    let before = thread.at((k+m-1)%m,1.,phi).2;
-    let into = thread.at(k,0.,phi).1;
-    dot(before,into) < 0.
 }
 
 /// **Element `el`'s sheet at `w` across it and turn `φ`**, `at` the corners there: its rails
@@ -279,20 +264,26 @@ fn convex(thread: &Thread,k: usize,phi: f64) -> bool {
 fn sheet_point(thread: &Thread,rack: &Rack,el: Element,w: f64,phi: f64,at: &[Corner]) -> Result<V,Unbuilt> {
     let m = thread.generators.len();
     match el {
+        Element::Face(k) if w == 0. => Ok(at[k].rails[1]),
+        Element::Face(k) if w == 1. => Ok(at[(k+1)%m].rails[0]),
         Element::Face(k) => {
-            if w == 0. { return Ok(at[k].rails[1]) }
-            if w == 1. { return Ok(at[(k+1)%m].rails[0]) }
             let (x,_,n) = thread.at(k,w,phi);
             let t = rack.contact(x,n).ok_or(Unbuilt::Curved {at:x})?;
             rack.carried(x,t)
         }
-        Element::Fan(k) => {
-            if w == 0. { return Ok(at[k].rails[0]) }
-            if w == 1. { return Ok(at[k].rails[1]) }
-            let [t0,t1] = at[k].times;
-            rack.carried(at[k].point,t0+w*(t1-t0))
-        }
+        Element::Fan(k) if w == 0. => Ok(at[k].rails[0]),
+        Element::Fan(k) if w == 1. => Ok(at[k].rails[1]),
+        Element::Fan(k) => { let [t0,t1] = at[k].times; rack.carried(at[k].point,t0+w*(t1-t0)) }
     }
+}
+
+/// **Element `el`'s points within the reach at turn `φ`**, `count` + 1 of them across it read
+/// exactly (none of a concave corner's fan, which has none).
+fn reached<'a>(thread: &'a Thread,rack: &'a Rack,el: Element,phi: f64,at: &'a [Corner],count: usize,inside: &'a dyn Fn(V) -> bool)
+    -> impl Iterator<Item=V> + 'a {
+    let fan_of_concave = matches!(el,Element::Fan(k) if !at[k].convex);
+    (0..=count).filter(move |_| !fan_of_concave)
+        .filter_map(move |i| sheet_point(thread,rack,el,i as f64/count as f64,phi,at).ok()).filter(move |&p| inside(p))
 }
 
 /// The degree the sheets are fitted at, both ways.
@@ -304,24 +295,22 @@ const LOOKS: usize = 720;
 const ACROSS: usize = 12;
 
 /// **The candidates of the swept solid within `reach`** (see the module), or None where the tool
-/// is no thread, the motion no rack to it, or its ends play a part within the reach: one candidate
-/// per copy of the period, each the section's elements that reach the reach, their sheets fitted
-/// within `tol / 4` on one grid of the turn — or, where one copy's sector holds it apart, that one
-/// copy and its sector. No meeting is given: the elements of one candidate share their rails, and
-/// two copies meet nowhere the trim does not find.
+/// is no thread, the motion no rack to it, its ends play a part within the reach, or the reach is no
+/// cylinder about the observer's axis: one candidate per copy of the period, each the section's
+/// elements that reach the reach, their sheets fitted within `tol / 4` on one grid of the turn — or,
+/// where one copy's sector holds it apart, that one copy and its sector. No meeting is given: the
+/// elements of one candidate share their rails, and two copies meet nowhere the trim does not find.
 pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol: f64) -> Result<Option<Generated>,Unbuilt> {
+    let Reach::Turned {o,z,r,span} = *reach else { return Ok(None) };
     let Some(thread) = Thread::read(tool) else { return Ok(None) };
     let Some(rack) = Rack::read(&thread,path,roll)? else { return Ok(None) };
-    if !rack.ends_clear(&thread,reach) {
+    if !thread.ends_clear(o,z,r,span) {
         if crate::debug() { eprintln!("generated: the thread's ends reach the blank: not the rack's road") }
         return Ok(None)
     }
     let m = thread.generators.len();
     let elements: Vec<Element> = (0..m).flat_map(|k| [Element::Fan(k),Element::Face(k)]).collect();
-    let inside = |p: V| match *reach {
-        Reach::Turned {o,z,r,span} | Reach::Sector {o,z,r,span,..} => { let h = dot(sub(p,o),z); off_axis(p,o,z) <= r && h >= span[0] && h <= span[1] }
-        Reach::Box(lo,hi) => (0..3).all(|k| p[k] >= lo[k] && p[k] <= hi[k]),
-    };
+    let inside = |p: V| { let h = dot(sub(p,o),z); off_axis(p,o,z) <= r && h >= span[0] && h <= span[1] };
     // **the window**: the turns of one period at which some element's sheet reaches the reach, and
     // which elements do
     let mut looked = vec![false;LOOKS];
@@ -332,10 +321,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol:
         // motion's rate there, the point sliding along itself throughout — is no turn that reaches)
         let Ok(at) = corners(&thread,&rack,phi) else { continue };
         for (e,&el) in elements.iter().enumerate() {
-            if let Element::Fan(k) = el { if !convex(&thread,k,phi) { continue } }
-            for i in 0..=ACROSS {
-                if sheet_point(&thread,&rack,el,i as f64/ACROSS as f64,phi,&at).is_ok_and(|p| inside(p)) { *seen = true; reaching[e] = true; }
-            }
+            if reached(&thread,&rack,el,phi,&at,ACROSS,&inside).next().is_some() { *seen = true; reaching[e] = true; }
         }
     }
     if looked.iter().all(|&x| x) || !looked.iter().any(|&x| x) {
@@ -353,59 +339,50 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],reach: &Reach,tol:
     let window = [-PI+dphi*(start as f64-spare),-PI+dphi*((start+len) as f64-1.+spare)];
     if window[1]-window[0] >= TAU-2.*dphi { return Err(Unbuilt::Failed("the thread's window spans its period".into())) }
     // **the runs of elements reaching it**, round the section: a fan between two faces reaching it
-    // reaches it too
+    // reaches it too; a concave corner's (its two faces' sheets crossing, not meeting along a rail)
+    // and a whole section's (a tube, no tooth of a rack) are refused by name
     let n = elements.len();
+    let middle = corners(&thread,&rack,0.5*(window[0]+window[1]))?;
     for e in 0..n {
-        if let Element::Fan(_) = elements[e] { if reaching[(e+n-1)%n] && reaching[(e+1)%n] { reaching[e] = true } }
+        let Element::Fan(k) = elements[e] else { continue };
+        if reaching[(e+n-1)%n] && reaching[(e+1)%n] { reaching[e] = true }
+        if reaching[e] && !middle[k].convex { return Err(Unbuilt::Curved {at:middle[k].point}) }
     }
-    for (e,&el) in elements.iter().enumerate() {
-        if let (Element::Fan(k),true) = (el,reaching[e]) {
-            if !convex(&thread,k,0.5*(window[0]+window[1])) {
-                return Err(Unbuilt::Curved {at:thread.corner(k,0.5*(window[0]+window[1]))})
-            }
-        }
+    if reaching.iter().all(|&x| x) { return Err(Unbuilt::Failed("the thread's whole section reaches the blank".into())) }
+    let first = (0..n).find(|&e| reaching[e] && !reaching[(e+n-1)%n]).expect("a run begins");
+    let mut runs: Vec<Vec<Element>> = Vec::new();
+    for i in 0..n {
+        let e = (first+i)%n;
+        if !reaching[e] { continue }
+        if i > 0 && reaching[(e+n-1)%n] { runs.last_mut().expect("a run").push(elements[e]) } else { runs.push(vec![elements[e]]) }
     }
-    let runs: Vec<Vec<Element>> = if reaching.iter().all(|&x| x) { vec![elements.clone()] } else {
-        let first = (0..n).find(|&e| reaching[e] && !reaching[(e+n-1)%n]).expect("a run begins");
-        let mut out: Vec<Vec<Element>> = Vec::new();
-        for i in 0..n {
-            let e = (first+i)%n;
-            if !reaching[e] { continue }
-            if i > 0 && reaching[(e+n-1)%n] { out.last_mut().expect("a run").push(elements[e]) } else { out.push(vec![elements[e]]) }
-        }
-        out
-    };
-    let closed = runs.len() == 1 && runs[0].len() == n;
     if crate::debug() { eprintln!("generated: window [{:.4}, {:.4}] of the turn, runs {runs:?}, {} copies",window[0],window[1],rack.copies) }
-    let mut chains: Vec<Brep> = Vec::new();
-    for run in &runs {
-        let nets = fitted(&thread,&rack,run,window,closed,0.25*tol)?;
-        chains.push(chain(nets,closed,run)?);
-    }
+    let chains: Vec<Brep> = runs.iter().map(|run| {
+        let nets = fitted(&thread,&rack,run,window,0.25*tol)?;
+        let named = nets.into_iter().zip(run).map(|(net,el)| (net,match el {
+            Element::Face(k) => format!("generated face {k}"),Element::Fan(k) => format!("generated fan {k}") })).collect();
+        crate::build::sheets(named).map_err(|e| unfitted(&e))
+    }).collect::<Result<_,_>>()?;
     // **one copy's sector, where the copies stand apart**: the turns about the observer's axis the
     // period's sheets take within the reach, read at their exact points; where they span less than
     // a pitch by a margin either way, the sector a pitch wide about their middle holds the one copy
     // and its sides stand in the material between it and its neighbours
     if let Some(sector) = sector_of(&thread,&rack,&runs,window,reach,&inside)? {
-        if crate::debug() { eprintln!("generated: one copy within the sector from {:.6} by {:.6}",sector.from,sector.pitch) }
-        return Ok(Some(Generated {candidates:chains,given:Vec::new(),sector:Some(sector)}))
+        if crate::debug() { eprintln!("generated: one copy within {sector:?}") }
+        return Ok(Some(Generated {candidates:chains,sector:Some((sector,rack.copies))}))
     }
     let mut out = Vec::new();
     for c in 0..rack.copies {
         let r = rack.copy(c)?;
         out.extend(chains.iter().map(|b| b.moved(&r)));
     }
-    Ok(Some(Generated {candidates:out,given:Vec::new(),sector:None}))
+    Ok(Some(Generated {candidates:out,sector:None}))
 }
 
-/// **What the rack's road found** (`candidates`): the candidates and their meetings known — every
-/// copy's, or, where one copy's sector holds it apart from the others (`sector`), the one copy's.
-pub struct Generated { pub candidates: Vec<Brep>,pub given: Vec<crate::boolean::Given>,pub sector: Option<Sector> }
-
-/// **One copy's sector about the observer's axis** (`Reach::Sector`'s): its turns from the unit `x`
-/// square to the axis, from `from` by `pitch`, and how many copies the whole is.
-#[derive(Clone,Copy,Debug)]
-pub struct Sector { pub x: V,pub from: f64,pub pitch: f64,pub count: usize }
+/// **What the rack's road found** (`candidates`): the candidates, no meeting between them known —
+/// every copy's, or, where one copy's sector holds it apart from the others (`sector`), the one
+/// copy's, with that sector (`Reach::Sector`) and how many copies the whole is.
+pub struct Generated { pub candidates: Vec<Brep>,pub sector: Option<(Reach,usize)> }
 
 /// The share of a pitch a copy's turns must stand clear of each side of its sector by.
 const CLEAR: f64 = 0.04;
@@ -414,12 +391,13 @@ const CLEAR: f64 = 0.04;
 /// element.
 const SPREAD: [usize;2] = [384,48];
 
-/// **The sector holding one copy** (`Sector`), or none where the copies' turns within the reach
-/// overlap or come within `CLEAR` of a pitch of one another: the sheets' points within the reach,
-/// read exactly on a grid of the window, their turns about the observer's axis from the first.
+/// **The sector of `reach` holding one copy** (`Reach::Sector`), or none where the copies' turns
+/// within the reach overlap or come within `CLEAR` of a pitch of one another: the sheets' points
+/// within the reach, read exactly on a grid of the window, their turns about the observer's axis
+/// from the first.
 fn sector_of(thread: &Thread,rack: &Rack,runs: &[Vec<Element>],window: [f64;2],reach: &Reach,inside: &dyn Fn(V) -> bool)
-    -> Result<Option<Sector>,Unbuilt> {
-    let Reach::Turned {o,z,..} = *reach else { return Ok(None) };
+    -> Result<Option<Reach>,Unbuilt> {
+    let Reach::Turned {o,z,r,span} = *reach else { return Ok(None) };
     if rack.copies < 2 { return Ok(None) }
     let pitch = TAU/rack.copies as f64;
     // (the observer's axis must be the reach's: the copies turn about it)
@@ -431,12 +409,7 @@ fn sector_of(thread: &Thread,rack: &Rack,runs: &[Vec<Element>],window: [f64;2],r
         let phi = window[0]+(window[1]-window[0])*j as f64/SPREAD[0] as f64;
         let Ok(at) = corners(thread,rack,phi) else { continue };
         for &el in runs.iter().flatten() {
-            for i in 0..=SPREAD[1] {
-                let Ok(p) = sheet_point(thread,rack,el,i as f64/SPREAD[1] as f64,phi,&at) else { continue };
-                if !inside(p) { continue }
-                let q = sub(p,o);
-                turns.push(dot(q,y).atan2(dot(q,x)));
-            }
+            turns.extend(reached(thread,rack,el,phi,&at,SPREAD[1],inside).map(|p| { let q = sub(p,o); dot(q,y).atan2(dot(q,x)) }));
         }
     }
     let Some(&first) = turns.first() else { return Ok(None) };
@@ -445,114 +418,69 @@ fn sector_of(thread: &Thread,rack: &Rack,runs: &[Vec<Element>],window: [f64;2],r
         if crate::debug() { eprintln!("generated: a copy within the reach spans {:.6} of a pitch {pitch:.6}: no sector",hi-lo) }
         return Ok(None)
     }
-    Ok(Some(Sector {x,from:first+0.5*(lo+hi)-0.5*pitch,pitch,count:rack.copies}))
+    Ok(Some(Reach::Sector {o,z,x,r,span,from:first+0.5*(lo+hi)-0.5*pitch,pitch}))
 }
+
+/// The road's refusal of a sheet it could not fit or lay.
+fn unfitted(why: &str) -> Unbuilt { Unbuilt::Failed(format!("the thread's generated sheets: {why}")) }
 
 /// **The run's sheets fitted on one grid of the turn** over `window`, each within `tol`: each
 /// element's rows across it interpolated at every turn of the grid, through its exact points (its
-/// rails the corners' points, shared with its neighbours), then their poles along the turn; the
-/// grid across each element and the grid of the turn doubled where a point between them misses.
-/// Each two neighbours' shared rail is then one curve, laid as both nets' edge row.
-fn fitted(thread: &Thread,rack: &Rack,run: &[Element],window: [f64;2],closed: bool,tol: f64) -> Result<Vec<Net>,Unbuilt> {
+/// rails the corners' points, shared with its neighbours), then their poles along the turn
+/// (`nurbs::net_of_rows`); the grid across each element and the grid of the turn doubled where a
+/// point between them misses. Each two neighbours' shared rail is then one curve, laid as both
+/// nets' edge row.
+fn fitted(thread: &Thread,rack: &Rack,run: &[Element],window: [f64;2],tol: f64) -> Result<Vec<Net>,Unbuilt> {
     let mut across = vec![8usize;run.len()];
     let mut along = 16usize;
     let phi = |s: f64| window[0]+s*(window[1]-window[0]);
-    let refuse = |why: &str| Unbuilt::Failed(format!("the thread's generated sheets: {why}"));
     loop {
-        let tv: Vec<f64> = (0..=along).map(|j| j as f64/along as f64).collect();
-        let mids: Vec<f64> = tv.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
-        let at: Vec<Vec<Corner>> = crate::util::par::map(&tv,|&s| corners(thread,rack,phi(s))).into_iter().collect::<Result<_,_>>()?;
-        let at_mid: Vec<Vec<Corner>> = crate::util::par::map(&mids,|&s| corners(thread,rack,phi(s))).into_iter().collect::<Result<_,_>>()?;
+        // the corners at every turn of the grid and halfway between (the misses along read there)
+        let halves: Vec<f64> = (0..=2*along).map(|j| j as f64/(2*along) as f64).collect();
+        let at: Vec<Vec<Corner>> = crate::util::par::map(&halves,|&s| corners(thread,rack,phi(s))).into_iter().collect::<Result<_,_>>()?;
+        let tv: Vec<f64> = halves.iter().step_by(2).copied().collect();
         let mut nets = Vec::with_capacity(run.len());
-        let mut grow_along = false;
         let mut grown = false;
+        let mut grow_along = false;
         for (e,&el) in run.iter().enumerate() {
             let tu: Vec<f64> = (0..=across[e]).map(|i| i as f64/across[e] as f64).collect();
-            let rows: Vec<BSpline> = tv.iter().zip(&at).map(|(&s,c)| {
+            let rows: Vec<BSpline> = tv.iter().zip(at.iter().step_by(2)).map(|(&s,c)| {
                 let pts = tu.iter().map(|&w| sheet_point(thread,rack,el,w,phi(s),c)).collect::<Result<Vec<V>,_>>()?;
-                interpolate(&pts,&tu,DEGREE).ok_or_else(|| refuse("a row not interpolated"))
+                interpolate(&pts,&tu,DEGREE).ok_or_else(|| unfitted("a row not interpolated"))
             }).collect::<Result<_,_>>()?;
-            let cols: Vec<BSpline> = (0..rows[0].poles.len()).map(|i| {
-                interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&tv,DEGREE).ok_or_else(|| refuse("a column not interpolated"))
-            }).collect::<Result<_,_>>()?;
-            let net = Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
-                poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
-            // how far it misses between its points across, and between its rows along
-            let mut miss_across = 0f64;
-            for (&s,c) in tv.iter().zip(&at) {
-                for w in tu.windows(2) {
-                    let u = 0.5*(w[0]+w[1]);
-                    miss_across = miss_across.max(distance(net.point(u,s),sheet_point(thread,rack,el,u,phi(s),c)?));
+            let net = crate::nurbs::net_of_rows(&rows,&tv,DEGREE).ok_or_else(|| unfitted("a column not interpolated"))?;
+            // how far it misses at the points `us` across, at the turns of the grid `rows` (even or odd)
+            let miss = |us: &mut dyn Iterator<Item=f64>,odd: usize| -> Result<f64,Unbuilt> {
+                let us: Vec<f64> = us.collect();
+                let mut most = 0f64;
+                for (j,c) in at.iter().enumerate().skip(odd).step_by(2) {
+                    let s = halves[j];
+                    for &u in &us { most = most.max(distance(net.point(u,s),sheet_point(thread,rack,el,u,phi(s),c)?)) }
                 }
-            }
-            let mut miss_along = 0f64;
-            for (&s,c) in mids.iter().zip(&at_mid) {
-                for &u in &tu { miss_along = miss_along.max(distance(net.point(u,s),sheet_point(thread,rack,el,u,phi(s),c)?)) }
-            }
+                Ok(most)
+            };
+            let miss_across = miss(&mut tu.windows(2).map(|w| 0.5*(w[0]+w[1])),0)?;
+            let miss_along = miss(&mut tu.iter().copied(),1)?;
             if crate::debug() { eprintln!("generated: {el:?} on {} × {along}: misses {miss_across:.2e} across, {miss_along:.2e} along",across[e]) }
             if miss_across > tol {
-                if across[e] >= 512 { return Err(refuse("a sheet not fitted across within the tolerance")) }
+                if across[e] >= 512 { return Err(unfitted("a sheet not fitted across within the tolerance")) }
                 across[e] *= 2;
                 grown = true;
             }
-            if miss_along > tol { grow_along = true }
+            grow_along |= miss_along > tol;
             nets.push(net);
         }
         if grow_along {
-            if along >= 1024 { return Err(refuse("a sheet not fitted along the turn within the tolerance")) }
+            if along >= 1024 { return Err(unfitted("a sheet not fitted along the turn within the tolerance")) }
             along *= 2;
             grown = true;
         }
         if grown { continue }
         // each shared rail one curve, the edge row of both its nets
-        let rails = if closed { run.len() } else { run.len()-1 };
-        for r in 0..rails {
-            let (a,b) = (r,(r+1)%run.len());
-            let last = nets[a].poles.len()-1;
-            let rail = nets[a].poles[last].clone();
-            nets[b].poles[0] = rail;
+        for r in 1..run.len() {
+            let rail = nets[r-1].poles.last().expect("a row of poles").clone();
+            nets[r].poles[0] = rail;
         }
         return Ok(nets)
     }
-}
-
-/// **The run's sheets as one candidate**, each a face of its net, the faces in the run's order and
-/// each two neighbours sharing their rail as one edge (a closed run's last sharing its first's).
-fn chain(nets: Vec<Net>,closed: bool,run: &[Element]) -> Result<Brep,Unbuilt> {
-    let refuse = |why: String| Unbuilt::Failed(format!("the thread's generated sheets: {why}"));
-    for net in &nets { net.check().map_err(refuse)? }
-    let q = nets.len();
-    let mut b = Brep::default();
-    // the rails: the first net's first row, then each net's last row (a closed run's last its first's)
-    let rows: Vec<BSpline> = std::iter::once(nets[0].row(0)).chain(nets.iter().map(|n| n.row(n.poles.len()-1))).collect();
-    let rails = if closed { q } else { q+1 };
-    let mut bottom = Vec::with_capacity(rails);
-    let mut top = Vec::with_capacity(rails);
-    let mut edges = Vec::with_capacity(rails);
-    for row in rows.iter().take(rails) {
-        let [v0,v1] = row.domain();
-        let (p0,p1) = (row.point(v0),row.point(v1));
-        let (x,y) = (b.vertex(p0),b.vertex(p1));
-        edges.push(b.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(row.clone()))),[v0,v1],[x,y]));
-        bottom.push(x);
-        top.push(y);
-    }
-    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
-    for (i,net) in nets.into_iter().enumerate() {
-        let (l,r) = (i,if closed { (i+1)%q } else { i+1 });
-        let [[u0,u1],[v0,v1]] = net.domain();
-        let (last_v,lo,hi) = (net.poles[0].len()-1,net.column(0),net.column(net.poles[0].len()-1));
-        let _ = last_v;
-        let e0 = b.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(lo))),[u0,u1],[bottom[l],bottom[r]]);
-        let e2 = b.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(hi))),[u0,u1],[top[l],top[r]]);
-        let lp = vec![
-            Coedge {edge:e0,reversed:false,pcurve:line([u0,v0],[u1,v0])},
-            Coedge {edge:edges[r],reversed:false,pcurve:line([u1,v0],[u1,v1])},
-            Coedge {edge:e2,reversed:true,pcurve:line([u0,v1],[u1,v1])},
-            Coedge {edge:edges[l],reversed:true,pcurve:line([u0,v0],[u0,v1])},
-        ];
-        let name = match run[i] { Element::Face(k) => format!("generated face {k}"),Element::Fan(k) => format!("generated fan {k}") };
-        b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],name});
-    }
-    Ok(b)
 }

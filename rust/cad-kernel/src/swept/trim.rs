@@ -115,9 +115,9 @@ impl Reach {
         if !crate::boolean::overlap(&b,&own,r) { return false }
         match *self {
             Reach::Box(..) => true,
-            Reach::Turned {o,z,r: radius,..} => crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
-            // (no nearer than the cylinder's: a sector's candidates are one copy's, within it)
-            Reach::Sector {o,z,r: radius,..} => crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
+            // (a sector's no nearer than its cylinder's: its candidates are one copy's, within it)
+            Reach::Turned {o,z,r: radius,..} | Reach::Sector {o,z,r: radius,..} =>
+                crate::geom::off_axis(scale(add(b.0,b.1),0.5),o,z)-0.5*distance(b.0,b.1) <= radius+r,
         }
     }
     /// The region as a solid.

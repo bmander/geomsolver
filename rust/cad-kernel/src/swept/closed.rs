@@ -1129,7 +1129,7 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     // **a thread turned about its own axis seen from a turn**, its ends clear of the blank: the
     // rack's road, each point of it touching once in closed form (`generated`) — read off the
     // tool's B-rep before anything is built, every other tool and motion going on as before
-    if let Some(built) = generated_built(tool,path,[a,b],bar,tol,blank) { return built }
+    if let Some(built) = generated_built(tool,path,[a,b],bar,tol,blank)? { return Ok(built) }
     // (a tool no convex solid of revolution, every face a plane and every edge a line, is the
     // general road's (#880 T1d): its contact read face by face and edge by edge at every instant;
     // a tool it cannot read either keeps K2's refusal)
@@ -1172,23 +1172,11 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
     // flank's fold meets its heel edge's fan outside the blank, the whole's trim refused there (at
     // 31.8 from the axis, the blank's reach 30.9) after 50 s of the build's 156. Where the region's
     // trim refuses, the whole is asked, as it was before
-    let reach = blank.map(|b| {
-        let turned = match path {
-            Trajectory::Relative {observer,..} => observer.screw().filter(|s| s.ratio != 0.),
-            _ => None,
-        };
-        match turned {
-            Some(s) => {
-                let (o,z) = (s.origin,unit(s.axis));
-                let [lo,hi] = axial_span(b,o,z);
-                // (its ends as near the blank's as its side: `REACH` of the blank's size took the
-                // tooth's toe a quarter of the gear's width below the blank into the trim)
-                let r = radial_reach(b,o,z);
-                super::trim::Reach::Turned {o,z,r:r*(1.+HUGGED),span:[lo-HUGGED*r,hi+HUGGED*r]}
-            }
-            None => { let (lo,hi) = b.bounds(); let g = REACH*b.size(); super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g)) }
-        }
-    });
+    let reach = blank.map(|b| turned_reach(b,path).unwrap_or_else(|| {
+        let (lo,hi) = b.bounds();
+        let g = REACH*b.size();
+        super::trim::Reach::Box(lo.map(|x| x-g),hi.map(|x| x+g))
+    }));
     let swept = match reach.map(|reach| super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})) {
         Some(Ok((swept,_))) => swept,
         Some(Err(why @ Unbuilt::Budget {..})) => return Err(why),
@@ -1204,57 +1192,53 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
 /// observer's axis just past the blank's reach (`HUGGED`, as the general road's), the candidates —
 /// the sheets each tooth of the rack the thread is generates there, exact at every point and fitted
 /// — trimmed by membership and judged, and cut from the blank. Where one copy's sector holds it
-/// apart from the others and the blank is one the turn keeps (`kept_by_turns`), the one copy is
-/// trimmed within the sector, cut from the blank's sector and patterned round the axis
-/// (`pattern::pattern`): the sweep's copies are the turn's, so the cut's are too. None where it is
-/// not this road's: no blank, a tool no thread, a motion no rack to it, or the thread's ends within
-/// the blank's reach.
-fn generated_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Option<Result<Brep,Unbuilt>> {
-    let b = blank?;
+/// apart from the others and the blank is one the turn keeps (`pattern::kept_by_turns`), the one
+/// copy is cut so and patterned round the axis (`sector_cut`): the sweep's copies are the turn's,
+/// so the cut's are too. None where it is not this road's: no blank, a tool no thread, a motion no
+/// rack to it, or the thread's ends within the blank's reach.
+fn generated_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Option<Brep>,Unbuilt> {
+    // (no blank, or a tool no thread: not this road's, read before any blank is measured)
+    let Some(b) = blank.filter(|_| super::generated::Thread::read(tool).is_some()) else { return Ok(None) };
+    let Some(reach) = turned_reach(b,path) else { return Ok(None) };
+    let Some(found) = super::generated::candidates(tool,path,roll,&reach,tol)? else { return Ok(None) };
+    if crate::debug() { eprintln!("swept: the rack's road: {} candidates, {} faces",found.candidates.len(),found.candidates.iter().map(|c| c.faces.len()).sum::<usize>()) }
+    let trim = road_trim(tool,tol);
+    let super::trim::Reach::Turned {o,z,..} = reach else { unreachable!("a turned reach") };
+    if let Some((within,count)) = found.sector.filter(|_| crate::pattern::kept_by_turns(b,o,z,tol)) {
+        return sector_cut(tool,path,roll,&found.candidates,bar,tol,b,within,count).map(Some)
+    }
+    let swept = trimmed_or_dumped(tool,path,roll,&found.candidates,&[],bar,tol,super::trim::Trim {reach:Some(reach),..trim})?;
+    cut_blank(swept,blank,tol).map(Some)
+}
+
+/// **One copy of a sweep the observer's turn carries onto itself `count` times, cut from a blank the
+/// turn keeps, patterned round**: `candidates`, one copy's, trimmed by membership within its sector
+/// (`within`, a `trim::Reach::Sector`) and judged there, cut from the blank's sector, and that
+/// turned into its copies (`pattern::pattern`).
+#[allow(clippy::too_many_arguments)]
+fn sector_cut(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],bar: f64,tol: f64,blank: &Brep,within: super::trim::Reach,
+    count: usize) -> Result<Brep,Unbuilt> {
+    let super::trim::Reach::Sector {o,z,..} = within else { return Err(Unbuilt::Failed("a sector cut within no sector".into())) };
+    let swept = trimmed_or_dumped(tool,path,roll,candidates,&[],bar,tol,super::trim::Trim {reach:Some(within),..road_trim(tool,tol)})?;
+    let sector = within.solid().and_then(|wedge| crate::boolean::combined(blank,&wedge,crate::boolean::Op::Common,tol).map_err(|e| e.to_string()))
+        .map_err(|e| Unbuilt::Failed(format!("the blank's sector: {e}")))?;
+    let cut = cut_blank(swept,Some(&sector),tol)?;
+    crate::pattern::pattern(&cut,o,z,count,tol).map(|p| p.solid).map_err(|e| Unbuilt::Failed(format!("the cut sector patterned: {e}")))
+}
+
+
+/// **The cylinder a sweep seen from a turn is trimmed within, cut from `b`** (the general road's and
+/// the rack's): about the observer's axis, just past the blank's reach from it and its span along it
+/// (`HUGGED`; no round number, so its faces stand clear of the blank's) — its ends as near the
+/// blank's as its side: `REACH` of the blank's size took the hypoid tooth's toe a quarter of the
+/// gear's width below the blank into the trim. None where `path` is seen from no turn.
+fn turned_reach(b: &Brep,path: &Trajectory) -> Option<super::trim::Reach> {
     let Trajectory::Relative {observer,..} = path else { return None };
     let s = observer.screw().filter(|s| s.ratio != 0.)?;
     let (o,z) = (s.origin,unit(s.axis));
     let [lo,hi] = axial_span(b,o,z);
     let r = radial_reach(b,o,z);
-    let (r,span) = (r*(1.+HUGGED),[lo-HUGGED*r,hi+HUGGED*r]);
-    let reach = super::trim::Reach::Turned {o,z,r,span};
-    let found = match super::generated::candidates(tool,path,roll,&reach,tol) {
-        Ok(Some(c)) => c,
-        Ok(None) => return None,
-        Err(why) => return Some(Err(why)),
-    };
-    if crate::debug() { eprintln!("swept: the rack's road: {} candidates, {} faces",found.candidates.len(),found.candidates.iter().map(|c| c.faces.len()).sum::<usize>()) }
-    let trim = road_trim(tool,tol);
-    let built = || -> Result<Brep,Unbuilt> {
-        match found.sector {
-            Some(sec) if kept_by_turns(b,o,z,tol) => {
-                let within = super::trim::Reach::Sector {o,z,x:sec.x,r,span,from:sec.from,pitch:sec.pitch};
-                let swept = trimmed_or_dumped(tool,path,roll,&found.candidates,&found.given,bar,tol,super::trim::Trim {reach:Some(within),..trim})?;
-                fn failed<E: std::fmt::Display>(what: &'static str) -> impl Fn(E) -> Unbuilt { move |e| Unbuilt::Failed(format!("{what}: {e}")) }
-                let wedge = within.solid().map_err(failed("the blank's sector"))?;
-                let sector = crate::boolean::combined(b,&wedge,crate::boolean::Op::Common,tol).map_err(failed("the blank's sector"))?;
-                let cut = cut_blank(swept,Some(&sector),tol)?;
-                Ok(crate::pattern::pattern(&cut,o,z,sec.count,tol).map_err(failed("the cut sector patterned"))?.solid)
-            }
-            _ => {
-                let swept = trimmed_or_dumped(tool,path,roll,&found.candidates,&found.given,bar,tol,super::trim::Trim {reach:Some(reach),..trim})?;
-                cut_blank(swept,blank,tol)
-            }
-        }
-    };
-    Some(built())
-}
-
-/// **Whether every turn about the line through `o` along the unit `z` keeps `b`**: each face a
-/// cylinder, cone, ball, torus or surface of revolution about the line, or a plane square to it.
-fn kept_by_turns(b: &Brep,o: V,z: V,tol: f64) -> bool {
-    let tol = tol.max(1e-9*(1.+b.size()));
-    b.faces.iter().all(|f| match &f.surface {
-        Surface::Plane(frame) => norm(cross(frame.z,z)) <= 1e-12,
-        Surface::Cylinder(frame,..) | Surface::Cone(frame,..) | Surface::Sphere(frame,..) | Surface::Torus(frame,..)
-            | Surface::Revolution(frame,..) => crate::geom::about_axis(frame,o,z,tol),
-        _ => false,
-    })
+    Some(super::trim::Reach::Turned {o,z,r:r*(1.+HUGGED),span:[lo-HUGGED*r,hi+HUGGED*r]})
 }
 
 /// How far past the blank's reach from the axis a turn sees it from the cylinder the general road's

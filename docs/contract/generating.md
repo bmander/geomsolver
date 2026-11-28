@@ -2158,7 +2158,7 @@ one rise, or a plane square to it, the generators one closed loop (`Thread::read
 that line (or screwed) seen from a turn is the endless thread slid along it at `δ = α − kρ`, wherever
 its ends play no part: the cylinder about its axis holding it meets the reach (a cylinder about the
 observer's axis, square to the thread's) within its length, read in closed form
-(`Rack::ends_clear`). Under the slide seen from the turn `n · V_t(x)` is affine in the roll, so each
+(`Thread::ends_clear`). Under the slide seen from the turn `n · V_t(x)` is affine in the roll, so each
 point of a face touches at one instant, read from the two twists at the roll's ends
 (`Rack::contact`), and a face's sheet is that point carried there, `M(t(x)) x`, exact at every point,
 nothing traced; a convex corner's fan is its point carried between the instants its two faces touch
@@ -2168,12 +2168,14 @@ bounds it, and the turn a lead on, `O(L/δ)`, carries the sheets of one tooth of
 next's) and the observer a turn. One tooth's elements that reach the reach in one window of the
 screw's turn (a point sliding along itself at no instant, its normal square to the rate, reaches
 nothing) are one candidate: fitted at degree 5 on one grid of the turn within a quarter of the
-tolerance, each two sharing their rail as one curve (the trim meets no two faces of one candidate);
-a concave corner in the reach is refused by name. **One copy, patterned:** where one copy's turns
+tolerance, each two sharing their rail as one curve (laid by `build::sheets`; the trim meets no two
+faces of one candidate); a concave corner in the reach, and a whole section reaching it, are
+refused by name. **One copy, patterned:** where one copy's turns
 about the observer's axis within the reach, read at its sheets' exact points, span a pitch less
 `CLEAR` of it either way, the copy is trimmed within its sector (`trim::Reach::Sector`), cut from the
-blank's sector (only where every face of the blank is one the turn keeps, `closed::kept_by_turns`)
-and patterned round (`brep::pattern`); otherwise every copy is trimmed at once. `closed::k2` asks it
+blank's sector (only where every face of the blank is one the turn keeps, `pattern::kept_by_turns`,
+the pattern's own test) and patterned round (`closed::sector_cut`); otherwise every copy is trimmed
+at once. The cylinder it reads within is the general road's (`closed::turned_reach`). `closed::k2` asks it
 before anything else (a tool no thread, a motion no rack to it, or ends in the reach, is not its:
 `None`). Gates: `swept_generated::each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary`
 (a point of each of one tooth space's five sheets within the wheel read by the sweep's own

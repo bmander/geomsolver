@@ -2,7 +2,8 @@
 //! axis while the wheel turns, read as a rack slid along that axis, each point of its faces touching
 //! the sweep's boundary at one instant in closed form; one tooth space's sheets trimmed within its
 //! sector of the wheel by membership, judged, cut from the blank's sector and patterned round.
-use gcs_core::brep::build::{disc,kept,prism,screwed,Profile,ProfileEdge};
+use crate::swept_rings::polygon;
+use gcs_core::brep::build::{disc,kept,prism,screwed};
 use gcs_core::brep::geom::Rigid;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
@@ -10,14 +11,6 @@ use gcs_core::space::{add,cross,scale,unit};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 type V = [f64;3];
-
-/// The planar polygon through `points`, its normal by their winding.
-fn polygon(points: &[V]) -> Profile {
-    let n = points.len();
-    let normal = (0..n).fold([0.;3],|s,k| add(s,cross(points[k],points[(k+1)%n])));
-    let edges = (0..n).map(|k| ProfileEdge::Line {a:points[k],b:points[(k+1)%n]}).collect();
-    Profile {origin:points[0],normal:unit(normal),loops:vec![edges],names:Vec::new()}
-}
 
 /// brep-bench's worm (`swept/worm-wheel-hobbed-by-its-worm`): its thread on the line through `at`
 /// along x from x = `from` to `to` — a single start of lead 2π, its axial section the trapezoid π
@@ -66,9 +59,10 @@ fn each_sheet_of_a_tooth_space_lies_on_the_worm_wheels_boundary() {
     let tol = gcs_core::brep::geom::tolerance(wheel().size());
     let found = gcs_core::brep::swept::generated::candidates(&thread,&path,ROLL,&reach(),tol).unwrap_or_else(|u| panic!("{u:?}"))
         .expect("the worm's thread is the rack's road's");
-    let sector = found.sector.expect("one tooth space within a sector");
-    assert_eq!(sector.count,30);
-    assert!((sector.pitch-TAU/30.).abs() <= 1e-15);
+    let (sector,count) = found.sector.expect("one tooth space within a sector");
+    assert_eq!(count,30);
+    let gcs_core::brep::swept::trim::Reach::Sector {pitch,..} = sector else { panic!("{sector:?} no sector") };
+    assert!((pitch-TAU/30.).abs() <= 1e-15);
     let [candidate] = &found.candidates[..] else { panic!("{} candidates for one copy",found.candidates.len()) };
     assert_eq!(candidate.faces.len(),5,"the flanks, the crest corners and the crest");
     let solid = Solid::new(&thread,0.01,1.).unwrap();
